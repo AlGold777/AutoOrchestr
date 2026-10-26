@@ -1,7 +1,7 @@
 const DraftPlan = require('../disput/debate-draft-plan');
 
 describe('DraftPlan — persistent Canvas execution graph', () => {
-  test('materializes Canvas rounds and final synthesis as one ordered graph', () => {
+  test('materializes Canvas rounds as one ordered graph; a synthesizer is not a stage of its own', () => {
     const plan = DraftPlan.createCanvasPlan({
       planId: 'p1', synthesizer: 'Claude',
       rounds: [
@@ -9,33 +9,17 @@ describe('DraftPlan — persistent Canvas execution graph', () => {
         { plannedStageId: 'canvas-r2', purpose: 'response', participantIds: ['Claude'] }
       ]
     });
-    expect(plan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(['canvas-r1', 'canvas-r2', 'planned-final-synthesis']);
+    expect(plan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(['canvas-r1', 'canvas-r2']);
     expect(plan.plannedStages[1].upstream).toEqual(['canvas-r1']);
-    expect(plan.plannedStages[2]).toMatchObject({ participantIds: ['Claude'], upstream: ['canvas-r2'], outputIntent: 'candidate_final' });
+    expect(DraftPlan).not.toHaveProperty('insertSynthesis');
   });
 
-  test('inserts a working synthesis and atomically rewires the downstream stage', () => {
-    const original = DraftPlan.createCanvasPlan({
-      synthesizer: 'Claude',
-      rounds: [
-        { plannedStageId: 'canvas-r1', participantIds: ['GPT'] },
-        { plannedStageId: 'canvas-r2', participantIds: ['Gemini'] }
-      ]
-    });
-    const result = DraftPlan.insertSynthesis(original, { afterPlannedStageId: 'canvas-r1', participantIds: ['Claude'], plannedStageId: 'checkpoint-1' });
-    expect(result.ok).toBe(true);
-    expect(result.plan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(['canvas-r1', 'checkpoint-1', 'canvas-r2', 'planned-final-synthesis']);
-    expect(result.stage).toMatchObject({ outputIntent: 'working_synthesis', terminalPolicy: 'continue', assignmentPolicy: 'explicit_required' });
-    expect(result.plan.plannedStages.find((stage) => stage.plannedStageId === 'canvas-r2').upstream).toEqual(['checkpoint-1']);
-    expect(original.plannedStages.find((stage) => stage.plannedStageId === 'canvas-r2').upstream).toEqual(['canvas-r1']);
-  });
-
-  test('rejects an explicit synthesis without a participant or an unknown insertion point', () => {
-    const plan = DraftPlan.createCanvasPlan({ rounds: [{ plannedStageId: 'canvas-r1', participantIds: ['GPT'] }] });
-    expect(DraftPlan.insertSynthesis(plan, { afterPlannedStageId: 'missing', participantIds: ['Claude'] }))
-      .toMatchObject({ ok: false, code: 'SEMANTIC_INVALID', reasonCode: 'INVALID_INSERTION_POINT' });
-    expect(DraftPlan.insertSynthesis(plan, { afterPlannedStageId: 'canvas-r1', participantIds: [] }))
-      .toMatchObject({ ok: false, code: 'SEMANTIC_INVALID', reasonCode: 'SYNTHESIS_PARTICIPANT_REQUIRED' });
+  test('a stored plan with a synthesis stage of an older version is still read', () => {
+    const plan = DraftPlan.normalize({ plannedStages: [
+      { plannedStageId: 'canvas-r1', purpose: 'position', participantIds: ['GPT'] },
+      { plannedStageId: 'planned-final-synthesis', purpose: 'synthesis', participantIds: ['Claude'], upstream: ['canvas-r1'], outputIntent: 'candidate_final' }
+    ] });
+    expect(plan.plannedStages.map((stage) => stage.plannedStageId)).toEqual(['canvas-r1', 'planned-final-synthesis']);
   });
 
   test('detects a dependency cycle before a DraftPlan can start a run', () => {

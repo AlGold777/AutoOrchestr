@@ -12,7 +12,7 @@
 (function initMessageDelivery(root) {
   'use strict';
 
-  const JOURNAL_KEY = 'messageDelivery.journal';
+  const JOURNAL_KEY = 'messageDelivery.journal.v2';
   // A multi-stage run of ten models produces ~20 events per message.
   const JOURNAL_LIMIT = 3000;
   const EXPECTED_LIMIT = 200;
@@ -26,7 +26,14 @@
 
   const expectedByRequest = new Map(); // transportRequestId -> entry
   const latestByModel = new Map(); // model -> entry (requests without a transport id)
+  const lastStatusByModel = new Map(); // model -> last unassigned status
   const journal = [];
+  const producerId = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  let producerSeq = 0;
+  let unconfirmedQueue = [];
+  let appendTimer = null;
+  let appendFlight = false;
+  let appendEpoch = 0;
   let mirrorTimer = null;
   const collection = { recorded: 0, evicted: 0, focusDetailsOmitted: 0, limit: JOURNAL_LIMIT, focusDetailLimit: FOCUS_EVENTS_PER_REQUEST };
   const proof = root.AnswerProofNormalization || (typeof require === 'function' ? require('./answer-proof-normalization') : null);
@@ -83,14 +90,56 @@
     return found.length ? 'foreign' : 'missing';
   }
 
+  function scheduleAppend() {
+    if (appendTimer) return;
+    appendTimer = setTimeout(() => {
+      appendTimer = null;
+      void flushAppend();
+    }, 40);
+  }
+
+  async function flushAppend() {
+    if (appendFlight || unconfirmedQueue.length === 0) return;
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (!runtime?.sendMessage) return;
+    appendFlight = true;
+    const epochAtStart = appendEpoch;
+    const batch = unconfirmedQueue.slice();
+    try {
+      await new Promise((resolve) => {
+        runtime.sendMessage({ type: 'DELIVERY_JOURNAL_APPEND', events: batch, producerId }, (res) => {
+          if (appendEpoch === epochAtStart) {
+            if (!runtime.lastError && res?.ok) {
+              const batchIds = new Set(batch.map((e) => e.eventId));
+              unconfirmedQueue = unconfirmedQueue.filter((e) => !batchIds.has(e.eventId));
+            }
+          }
+          resolve();
+        });
+      });
+    } catch (_) {
+      // Keep in queue on error if epoch matches
+    } finally {
+      appendFlight = false;
+      if (appendEpoch === epochAtStart && unconfirmedQueue.length > 0) scheduleAppend();
+    }
+  }
+
   function record(event) {
-    journal.push({ at: new Date().toISOString(), ...event });
+    if (!event.eventId) {
+      if (event.sourceEventId) {
+        const ord = Number.isInteger(event.ordinal) ? event.ordinal : 0;
+        event.eventId = `${event.sourceEventId}:${event.kind || 'evt'}:${ord}`;
+      } else {
+        event.eventId = `${producerId}:${++producerSeq}`;
+      }
+    }
+    const item = { at: new Date().toISOString(), ...event };
+    journal.push(item);
     collection.recorded += 1;
     if (journal.length > JOURNAL_LIMIT) { collection.evicted += journal.length - JOURNAL_LIMIT; journal.splice(0, journal.length - JOURNAL_LIMIT); }
-    const storage = root.chrome?.storage?.session;
-    if (!storage) return;
-    clearTimeout(mirrorTimer);
-    mirrorTimer = setTimeout(() => { try { storage.set({ [JOURNAL_KEY]: journal }); } catch (_) { /* telemetry only */ } }, 300);
+    unconfirmedQueue.push(item);
+    scheduleAppend();
   }
 
   const completionOf = (status, text) => {
@@ -98,7 +147,75 @@
     return contract?.classifyCompletion ? contract.classifyCompletion(status, text) : null;
   };
 
-  const requestIdOf = (message) => String(message?.transportRequestId || message?.metadata?.transportRequestId || '') || null;
+  const requestIdOf = (message) => String(message?.transportRequestId || message?.metadata?.transportRequestId || message?.meta?.transportRequestId || '') || null;
+
+  function resolveObservedEntry(message) {
+    const explicitId = requestIdOf(message);
+    if (explicitId) {
+      const entry = expectedByRequest.get(explicitId) || null;
+      if (entry) {
+        return {
+          entry,
+          requestId: explicitId,
+          sourceTransportRequestId: explicitId,
+          attemptCorrelation: 'linked',
+          correlationReason: null
+        };
+      }
+      return {
+        entry: null,
+        requestId: null,
+        sourceTransportRequestId: explicitId,
+        attemptCorrelation: 'unassigned',
+        correlationReason: 'unknown_request_id'
+      };
+    }
+    const tabId = message?.tabId ?? message?.data?.tabId ?? message?.meta?.tabId ?? message?.metadata?.tabId ?? (message?.sender?.tab?.id != null ? message.sender.tab.id : null);
+    if (tabId != null) {
+      const activeEntries = [];
+      const seenEntries = new Set();
+      expectedByRequest.forEach((ent) => {
+        if (!ent.final && !seenEntries.has(ent)) {
+          seenEntries.add(ent);
+          activeEntries.push(ent);
+        }
+      });
+      const matches = activeEntries.filter((ent) => ent.tabId === tabId && (!message.llmName || ent.model === message.llmName));
+      if (matches.length === 1) {
+        const entry = matches[0];
+        return {
+          entry,
+          requestId: entry.requestId || null,
+          sourceTransportRequestId: null,
+          attemptCorrelation: 'linked',
+          correlationReason: 'tab_bound'
+        };
+      }
+      if (matches.length > 1) {
+        return {
+          entry: null,
+          requestId: null,
+          sourceTransportRequestId: null,
+          attemptCorrelation: 'conflict',
+          correlationReason: 'ambiguous_tab_binding'
+        };
+      }
+      return {
+        entry: null,
+        requestId: null,
+        sourceTransportRequestId: null,
+        attemptCorrelation: 'unassigned',
+        correlationReason: 'unbound_tab'
+      };
+    }
+    return {
+      entry: null,
+      requestId: null,
+      sourceTransportRequestId: null,
+      attemptCorrelation: 'unassigned',
+      correlationReason: 'missing_request_id'
+    };
+  }
 
   function pruneExpected() {
     if (expectedByRequest.size <= EXPECTED_LIMIT) return;
@@ -234,13 +351,18 @@
   // dispatch phases (TRANSPORT_DISPATCH_PHASE) and provider stop results.
   function observeRuntime(message) {
     if (!message) return;
+    const sourceEventId = String(message.sourceEventId || message.meta?.sourceEventId || '') || null;
     if (message.type === 'TRANSPORT_DISPATCH_PHASE') {
       const entry = entryFor(message);
+      if (entry && message.tabId != null) {
+        entry.tabId = message.tabId;
+      }
       const phaseKey = `${requestIdOf(message)}|${message.phase}|${message.dispatchId}|${message.at || ''}`;
       if (entry && entry.lastPhaseKey === phaseKey) return;
       if (entry) entry.lastPhaseKey = phaseKey;
       record({
         kind: 'dispatch', model: message.llmName, token: entry?.token || null, requestId: requestIdOf(message),
+        sourceEventId, ordinal: 0,
         phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
         reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
         promptArtifact: message.phase === 'submitted' ? entry?.promptArtifact || null : undefined,
@@ -254,57 +376,153 @@
       return;
     }
     if (message.type === 'TRANSPORT_FOCUS') {
-      const entry = entryFor(message) || latestByModel.get(message.llmName) || null;
-      if (!entry || entry.final) return;
-      entry.focusCount = (entry.focusCount || 0) + 1;
-      // The count is exact; the first events carry the detail, the rest only the count.
-      if (entry.focusCount <= FOCUS_EVENTS_PER_REQUEST) {
-        record({ kind: 'focus', model: message.llmName || null, token: entry.token, requestId: entry.requestId, source: message.source || null, tabId: message.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt });
-      } else {
-        collection.focusDetailsOmitted += 1;
-        if (entry.focusCount % 10 === 0) {
-        record({ kind: 'focus_count', model: message.llmName || null, token: entry.token, requestId: entry.requestId, n: entry.focusCount, ms: Date.now() - entry.sentAt });
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
+      const eventReason = message.source || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
+        : (eventReason || correlationReason);
+      if (entry && !entry.final) {
+        entry.focusCount = (entry.focusCount || 0) + 1;
+        // The count is exact; the first events carry the detail, the rest only the count.
+        if (entry.focusCount <= FOCUS_EVENTS_PER_REQUEST) {
+          record({
+            kind: 'focus', model: message.llmName || entry.model || null, token: entry.token,
+            requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+            sourceEventId, ordinal: entry.focusCount,
+            attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+            source: message.source || null, tabId: message.tabId ?? entry.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt
+          });
+        } else {
+          collection.focusDetailsOmitted += 1;
+          if (entry.focusCount % 10 === 0) {
+            record({
+              kind: 'focus_count', model: message.llmName || entry.model || null, token: entry.token,
+              requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+              sourceEventId, ordinal: entry.focusCount,
+              attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+              n: entry.focusCount, ms: Date.now() - entry.sentAt
+            });
+          }
         }
+      } else if (!entry) {
+        record({
+          kind: 'focus', model: message.llmName || null, token: null,
+          requestId: null, sourceTransportRequestId: explicitId || null,
+          sourceEventId, ordinal: 0,
+          attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+          source: message.source || null, tabId: message.tabId ?? null
+        });
       }
       return;
     }
     if (message.type === 'LLM_COMPLETION_TERMINAL') {
-      const entry = latestByModel.get(message.llmName);
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
       const result = message.meta?.terminalResult || {};
+      const eventReason = result.reason || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
+        : (eventReason || correlationReason);
       record({
-        kind: 'completion_terminal', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
-        status: result.status || null, reason: result.reason || null, dispatchId: message.meta?.dispatchId || null,
+        kind: 'completion_terminal', model: message.llmName || entry?.model || null, token: entry?.token || null,
+        requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        sourceEventId, ordinal: 0,
+        attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+        status: result.status || null, dispatchId: message.meta?.dispatchId || null,
         ms: entry ? Date.now() - entry.sentAt : null
       });
       return;
     }
     if (message.type === 'SPA_NAVIGATION') {
-      const entry = latestByModel.get(message.llmName);
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
       const path = (url) => { try { return new URL(url).pathname; } catch (_) { return String(url || ''); } };
+      const eventReason = message.reason || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
+        : (eventReason || correlationReason);
       record({
-        kind: 'navigation', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null,
-        from: path(message.oldUrl), to: path(message.newUrl), reason: message.reason || null,
+        kind: 'navigation', model: message.llmName || entry?.model || null, token: entry?.token || null,
+        requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        sourceEventId, ordinal: 0,
+        attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+        from: path(message.oldUrl), to: path(message.newUrl),
         ms: entry ? Date.now() - entry.sentAt : null
       });
       return;
     }
     if (message.type === 'PROVIDER_STOP_RESULT') {
-      const entry = latestByModel.get(message.llmName);
-      record({ kind: 'provider_stop', model: message.llmName || null, token: entry?.token || null, requestId: entry?.requestId || null, stopped: message.stopped === true, reason: message.reason || null });
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
+      const eventReason = message.reason || null;
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
+        : (eventReason || correlationReason);
+      record({
+        kind: 'provider_stop', model: message.llmName || entry?.model || null, token: entry?.token || null,
+        requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        sourceEventId, ordinal: 0,
+        attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+        stopped: message.stopped === true
+      });
       return;
     }
     if (message.type === 'STATUS_UPDATE') {
-      const entry = latestByModel.get(message.llmName);
+      const explicitId = requestIdOf(message);
+      const resolved = resolveObservedEntry(message);
+      const entry = resolved.entry;
       const status = String(message.status || '').toUpperCase();
-      if (!entry || entry.final || !status || entry.lastStatus === status) return;
-      entry.lastStatus = status;
-      record({ kind: 'status', model: message.llmName, token: entry.token, requestId: entry.requestId, status });
+      const correlationReason = resolved.correlationReason || null;
+      const recordReason = resolved.attemptCorrelation === 'unassigned' ? correlationReason : null;
+      if (entry) {
+        if (entry.final || !status || entry.lastStatus === status) return;
+        entry.lastStatus = status;
+        entry.statusCount = (entry.statusCount || 0) + 1;
+        record({
+          kind: 'status', model: message.llmName || entry.model, token: entry.token,
+          requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+          sourceEventId, ordinal: entry.statusCount,
+          attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+          status
+        });
+      } else {
+        if (!status) return;
+        const model = message.llmName || null;
+        if (model) {
+          if (lastStatusByModel.get(model) === status) return;
+          lastStatusByModel.set(model, status);
+        }
+        record({
+          kind: 'status', model, token: null,
+          requestId: null, sourceTransportRequestId: explicitId || null,
+          sourceEventId, ordinal: 0,
+          attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
+          status
+        });
+      }
+      return;
     } else if (message.type === 'GLOBAL_STATE_BROADCAST') {
       const map = message.state?.tabs?.map || {};
+      let ord = 0;
       latestByModel.forEach((entry, model) => {
+        if (Number.isInteger(map[model])) entry.tabId = map[model];
         if (entry.tabSeen || entry.final || !Number.isInteger(map[model])) return;
         entry.tabSeen = true;
-        record({ kind: 'tab', model, token: entry.token, requestId: entry.requestId, tabId: map[model], ms: Date.now() - entry.sentAt });
+        ord += 1;
+        record({
+          kind: 'tab', model, token: entry.token, requestId: entry.requestId,
+          sourceEventId, ordinal: ord,
+          tabId: map[model], ms: Date.now() - entry.sentAt
+        });
       });
     }
   }
@@ -326,26 +544,94 @@
   // Batch-level facts from the panel (start, refusals, acceptance, outcome) and
   // answers the panel refused for their identity. Not tied to one token.
   function batchEvent(kind, fields = {}) {
-    record({ kind, ...fields });
+    const payload = { ...fields };
+    if ('kind' in payload && payload.kind !== kind) {
+      if (!payload.stepKind && (kind.startsWith('custom_step') || payload.kind === 'round' || payload.kind === 'owner')) {
+        payload.stepKind = payload.kind;
+      }
+      if (!payload.waitKind && (kind.startsWith('custom_wait') || ['decision', 'owner', 'asks', 'unknown'].includes(payload.kind))) {
+        payload.waitKind = payload.kind;
+      }
+      delete payload.kind;
+    }
+    record({ ...payload, kind });
+  }
+
+  async function snapshot() {
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (runtime?.sendMessage) {
+      try {
+        const resp = await new Promise((resolve) => {
+          runtime.sendMessage({ type: 'DELIVERY_JOURNAL_SNAPSHOT' }, (res) => {
+            if (runtime.lastError || !res?.ok) resolve(null);
+            else resolve(res.snapshot);
+          });
+        });
+        if (resp && Array.isArray(resp.events)) {
+          const seen = new Set(resp.events.map((e) => e.eventId));
+          const unconfirmed = unconfirmedQueue.filter((e) => e.eventId && !seen.has(e.eventId));
+          const merged = resp.events.concat(unconfirmed);
+          return {
+            version: 2,
+            events: merged,
+            collection: {
+              ...(resp.collection || {}),
+              retained: merged.length,
+              unconfirmedTail: unconfirmed.length
+            }
+          };
+        }
+      } catch (_) {}
+    }
+    return {
+      version: 2,
+      events: journal.slice(),
+      collection: { retained: journal.length, localOnly: true }
+    };
   }
 
   // Clears only the journal; tokens of requests still in flight stay valid.
   function clearJournal() {
+    appendEpoch += 1;
+    if (appendTimer) {
+      clearTimeout(appendTimer);
+      appendTimer = null;
+    }
     journal.length = 0;
-    try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
+    unconfirmedQueue.length = 0;
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (runtime?.sendMessage) {
+      try { runtime.sendMessage({ type: 'DELIVERY_JOURNAL_CLEAR' }, () => {}); } catch (_) {}
+    }
+    try {
+      const sess = root.chrome?.storage?.session || globalThis.chrome?.storage?.session;
+      sess?.remove?.(JOURNAL_KEY);
+    } catch (_) { /* ignore */ }
   }
 
   function reset() {
+    appendEpoch += 1;
+    if (appendTimer) {
+      clearTimeout(appendTimer);
+      appendTimer = null;
+    }
     expectedByRequest.clear();
     latestByModel.clear();
+    lastStatusByModel.clear();
     journal.length = 0;
-    try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
+    unconfirmedQueue.length = 0;
+    producerSeq = 0;
+    const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+    if (runtime?.sendMessage) {
+      try { runtime.sendMessage({ type: 'DELIVERY_JOURNAL_CLEAR' }, () => {}); } catch (_) {}
+    }
+    try {
+      const sess = root.chrome?.storage?.session || globalThis.chrome?.storage?.session;
+      sess?.remove?.(JOURNAL_KEY);
+    } catch (_) { /* ignore */ }
   }
 
-  // A page load starts a new session: the previous journal is not carried over.
-  try { root.chrome?.storage?.session?.remove(JOURNAL_KEY); } catch (_) { /* ignore */ }
-
-  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, clearJournal, reset, collection: () => ({ ...collection, retained: journal.length }), journal: () => journal.slice() });
+  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, snapshot, clearJournal, reset, collection: () => ({ ...collection, retained: journal.length }), journal: () => journal.slice() });
   root.MessageDelivery = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -34,8 +34,6 @@
     {
       "ref": "r2",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "chat": "new",
       "input": [
         {
@@ -58,8 +56,8 @@
       "task": "S02, независимо: расширить сценарии, capabilities и продуктовые вопросы. Чужие ответы не видны."
     },
     {
-      "ref": "synth:s03",
-      "kind": "synthesis",
+      "ref": "r3",
+      "kind": "round",
       "input": [
         "owner:s01",
         "r2"
@@ -67,17 +65,18 @@
       "models": [
         {
           "name": "Claude",
-          "id": "S03-synth"
+          "id": "S03-synth",
+          "role": "interaction_meta_synthesis"
         }
       ],
       "task": "S03, Synthesizer: дедуплицировать предложения, разделить составные, сохранить provenance."
     },
     {
-      "ref": "r3",
+      "ref": "r4",
       "kind": "round",
       "input": [
         {
-          "step": "synth:s03",
+          "step": "r3",
           "participant": "S03-synth",
           "required": true
         },
@@ -92,11 +91,11 @@
       "task": "S03, Decision Closer: закрыть решения в пределах Decision Policy; остальные маршрутизировать. Выход — Decision Register."
     },
     {
-      "ref": "synth:s04",
-      "kind": "synthesis",
+      "ref": "r5",
+      "kind": "round",
       "input": [
         {
-          "step": "r3",
+          "step": "r4",
           "participant": "S03-closer",
           "required": true
         }
@@ -104,24 +103,23 @@
       "models": [
         {
           "name": "Claude",
-          "id": "S04-synth"
+          "id": "S04-synth",
+          "role": "interaction_meta_synthesis"
         }
       ],
       "task": "S04: собрать Product Concept из принятых решений; новых решений не принимать."
     },
     {
-      "ref": "r4",
+      "ref": "r6",
       "kind": "round",
-      "order": "parallel",
-      "require": 2,
       "input": [
         {
-          "step": "r3",
+          "step": "r4",
           "participant": "S03-closer",
           "required": true
         },
         {
-          "step": "synth:s04",
+          "step": "r5",
           "participant": "S04-synth",
           "required": true
         }

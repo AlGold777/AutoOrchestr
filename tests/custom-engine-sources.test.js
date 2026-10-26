@@ -35,18 +35,9 @@ describe('Custom engine: a required whole-step source (D3, ТЗ 3.1)', () => {
     expect(prompt.indexOf('ответ B')).toBeLessThan(prompt.indexOf('ответ A'));
   });
 
-  test('a participant that did not answer is left out when the threshold of the step is met', async () => {
+  test('a required whole result with one participant failed (the owner skips the round) is missing: no request to C', async () => {
     const { send, calls } = transport({ A: ['ответ A'], B: [''], C: ['ок'] });
-    const result = await Engine.run({ task: 'T', steps: [R1({ require: 1 }), R2({ step: 'r1', required: true })], send, maxAttempts: 1 });
-    expect(result.stopReason).toBe('steps_done');
-    const prompt = sentTo(calls, 'C')[0].prompts.C;
-    expect(prompt).toContain('ответ A');
-    expect(prompt).not.toContain('участник B');
-  });
-
-  test('a required whole result below the threshold (require all, one failed) is missing: no request to C', async () => {
-    const { send, calls } = transport({ A: ['ответ A'], B: [''], C: ['ок'] });
-    const result = await Engine.run({ task: 'T', steps: [R1({ require: 'all' }), R2({ step: 'r1', required: true })], send, maxAttempts: 1, decide: async () => 'skip' });
+    const result = await Engine.run({ task: 'T', steps: [R1(), R2({ step: 'r1', required: true })], send, maxAttempts: 1, decide: async () => 'skip' });
     expect(result.stopReason).toBe('missing_input');
     expect(result.stopDetail).toContain('шаг «r1»');
     expect(sentTo(calls, 'C')).toEqual([]);
@@ -61,6 +52,15 @@ describe('Custom engine: a required whole-step source (D3, ТЗ 3.1)', () => {
     expect(sentTo(calls, 'C')).toEqual([]);
   });
 
+  test('an artifact of a skipped step is not an input: the reference to the artifact excludes it as the reference to the step does', async () => {
+    const { send, calls } = transport({ A: ['{"d":"данные A"}'], B: [''], C: ['ок'] });
+    const output = { format: 'json', artifacts: [{ id: 'doc', name: 'Doc', pointer: '/d' }] };
+    const source = { artifact: { step: 'r1', participant: 'A', id: 'doc' }, version: 'latest', required: true };
+    const result = await Engine.run({ task: 'T', steps: [R1({ output }), R2(source)], send, maxAttempts: 1, decide: async () => 'skip' });
+    expect(result.stopReason).toBe('missing_input');
+    expect(sentTo(calls, 'C')).toEqual([]);
+  });
+
   test('a required source that names a switched-off step is missing before the request', async () => {
     const { send, calls } = transport({ C: ['ок'] });
     const result = await Engine.run({ task: 'T', steps: [R2({ step: 'r9', required: true })], send, maxAttempts: 1 });
@@ -71,7 +71,7 @@ describe('Custom engine: a required whole-step source (D3, ТЗ 3.1)', () => {
 
   test('a participant source stays exact: a required participant that did not answer is missing, the others do not matter', async () => {
     const { send, calls } = transport({ A: ['ответ A'], B: [''], C: ['ок'] });
-    const result = await Engine.run({ task: 'T', steps: [R1({ require: 1 }), R2({ step: 'r1', participant: 'B', required: true })], send, maxAttempts: 1 });
+    const result = await Engine.run({ task: 'T', steps: [R1(), R2({ step: 'r1', participant: 'B', required: true })], send, maxAttempts: 1, decide: async () => 'skip' });
     expect(result.stopReason).toBe('missing_input');
     expect(result.stopDetail).toContain('участник «B»');
     expect(sentTo(calls, 'C')).toEqual([]);
@@ -82,16 +82,6 @@ describe('Custom engine: a required whole-step source (D3, ТЗ 3.1)', () => {
     const result = await Engine.run({ task: 'T', steps: [R1({ models: ['A'] }), R2('r1')], send, maxAttempts: 1, decide: async () => 'skip' });
     expect(result.stopReason).toBe('steps_done');
     expect(sentTo(calls, 'C')).toHaveLength(1);
-  });
-
-  test('a required gate that did not pass gives no input: the consumer is missing before its request', async () => {
-    const { send, calls } = transport({ A: ['ответ A'], G: ['НЕ ВЫПОЛНЕНО: check\nВЕРДИКТ: НЕ ПРОШЁЛ'], C: ['ок'] });
-    const gate = { ref: 'g', kind: 'gate', input: 'previous', criteria: ['check'], models: ['G'], onFail: 'ask' };
-    const steps = [R1({ models: ['A'] }), gate, R2({ step: 'g', required: true })];
-    const result = await Engine.run({ task: 'T', steps, send, maxAttempts: 1, decide: async () => 'continue' });
-    expect(result.stopReason).toBe('missing_input');
-    expect(result.stopDetail).toContain('шаг «g» не прошёл проверку');
-    expect(sentTo(calls, 'C')).toEqual([]);
   });
 
   test('a whole-step source to a later step is refused before the first request, with the address', async () => {

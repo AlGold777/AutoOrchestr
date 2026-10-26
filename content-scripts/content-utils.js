@@ -126,10 +126,31 @@
     console.warn('[ContentUtils] Extension context invalidated');
   };
 
+  const generateSourceEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
   const safeRuntimeSendMessage = (message, callback) => {
     if (!isExtensionContextValid()) {
       handleContextInvalidation();
       return false;
+    }
+    if (message && typeof message === 'object') {
+      if (!message.sourceEventId) {
+        message.sourceEventId = generateSourceEventId();
+      }
+      const trId = message.transportRequestId
+        || message.meta?.transportRequestId
+        || storedTransportRequestId
+        || window.__CURRENT_TRANSPORT_REQUEST_ID__
+        || null;
+      if (trId) {
+        if (!message.transportRequestId) message.transportRequestId = trId;
+        if (message.meta && typeof message.meta === 'object' && !message.meta.transportRequestId) {
+          message.meta.transportRequestId = trId;
+        }
+      }
+      if (message.meta && typeof message.meta === 'object' && !message.meta.sourceEventId) {
+        message.meta.sourceEventId = message.sourceEventId;
+      }
     }
     try {
       chrome.runtime.sendMessage(message, (response) => {
@@ -189,6 +210,7 @@
   let storedDispatchId = null;
   let storedTabSessionId = null;
   let storedGenerationEpoch = null;
+  let storedTransportRequestId = null;
   let sessionExpired = false;
   const resetSessionExpiredState = () => {
     sessionExpired = false;
@@ -209,6 +231,10 @@
       storedRunSessionId = runSessionId;
       storedSessionId = storedSessionId || runSessionId;
       window.__CURRENT_SESSION_ID__ = storedSessionId;
+    }
+    if (meta.transportRequestId) {
+      storedTransportRequestId = meta.transportRequestId;
+      window.__CURRENT_TRANSPORT_REQUEST_ID__ = meta.transportRequestId;
     }
     if (meta.pipelineRunId) {
       storedPipelineRunId = meta.pipelineRunId;
@@ -233,6 +259,9 @@
       if (!base.sessionId) {
         base.sessionId = runSessionId;
       }
+    }
+    if (storedTransportRequestId && !base.transportRequestId) {
+      base.transportRequestId = storedTransportRequestId;
     }
     if (storedDispatchId && !base.dispatchId) {
       base.dispatchId = storedDispatchId;
@@ -984,11 +1013,34 @@
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
       if (!isStopCommandCurrent(message)) return false;
+      const explicitMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const stopTransportRequestId = explicitMeta.transportRequestId
+        || message.transportRequestId
+        || storedTransportRequestId
+        || window.__CURRENT_TRANSPORT_REQUEST_ID__
+        || null;
+      const stopSessionId = explicitMeta.runSessionId || explicitMeta.sessionId
+        || message.runSessionId || message.sessionId || storedSessionId || null;
+      const stopDispatchId = explicitMeta.dispatchId || message.dispatchId || null;
+
       stopProviderGeneration()
         .catch((err) => ({ stopped: false, reason: `stop_failed:${err?.message || err}` }))
         .then((result) => {
           // Visible in the Pipeline Automation journal (provider_stop).
-          safeRuntimeSendMessage({ type: 'PROVIDER_STOP_RESULT', llmName: detectLlmNameFromLocation(), ...result });
+          safeRuntimeSendMessage({
+            type: 'PROVIDER_STOP_RESULT',
+            llmName: detectLlmNameFromLocation(),
+            transportRequestId: stopTransportRequestId,
+            runSessionId: stopSessionId,
+            dispatchId: stopDispatchId,
+            meta: {
+              ...explicitMeta,
+              transportRequestId: stopTransportRequestId,
+              runSessionId: stopSessionId,
+              dispatchId: stopDispatchId
+            },
+            ...result
+          });
         });
       return false;
     });
@@ -1570,6 +1622,8 @@
     getMainBridgeToken,
     setMainBridgeToken,
     getPipelineRunId,
+    getTransportRequestId: () => storedTransportRequestId || window.__CURRENT_TRANSPORT_REQUEST_ID__ || null,
+    generateSourceEventId,
     safeRuntimeSendMessage,
     sendRuntimeMessageForAck,
     storeSessionId,

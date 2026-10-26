@@ -5,13 +5,13 @@ const fixture = require('./fixtures/basic-architecture-s01-s30.json');
 const SPEC_KEYS = ['purpose', 'inputs', 'result', 'application', 'readiness', 'rules', 'boundaries', 'failure'];
 const byKey = (list, key) => list.find((item) => item.key === key);
 
-// Template A: one round of three models and the final synthesis.
+// Template A: one round of three models and the synthesis: a round of one model with a role.
 const templateA = () => ({
   schemaVersion: 1,
   origin: 'user',
   steps: [
     { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', role: 'critic' }, { name: 'Gemini', enabled: false }] },
-    { ref: 'final', kind: 'synthesis', models: [{ name: 'Claude' }] }
+    { ref: 'r2', kind: 'round', models: [{ name: 'Claude', role: 'interaction_meta_synthesis' }] }
   ]
 });
 
@@ -29,10 +29,10 @@ describe('Basic spec: the interface and the three layers', () => {
 
     expect(model.whole.map((item) => item.key)).toEqual([...SPEC_KEYS, 'ownerInvolvement', 'volume']);
     SPEC_KEYS.forEach((key) => expect(byKey(model.whole, key)).toMatchObject({ value: '', source: 'missing' }));
-    expect(byKey(model.whole, 'ownerInvolvement')).toMatchObject({ source: 'schema', value: 'владелец решает после каждого этапа' });
+    expect(byKey(model.whole, 'ownerInvolvement')).toMatchObject({ source: 'schema', value: 'User решает после каждого этапа' });
     expect(byKey(model.whole, 'volume').value).toContain('этапов: 2; участников: 2; запросов не меньше 3');
 
-    expect(model.scheme.stages.map((item) => item.title)).toEqual(['Раунд 1', 'Итоговый синтез']);
+    expect(model.scheme.stages.map((item) => item.title)).toEqual(['Раунд 1', 'Раунд 2']);
     expect(model.scheme.links).toEqual([{ from: 1, to: 2, label: 'ответы этапа «Раунд 1»' }]);
 
     const [round, synthesis] = model.stages;
@@ -41,14 +41,16 @@ describe('Basic spec: the interface and the three layers', () => {
       { name: 'Claude', role: 'critic', id: '', words: 300 }
     ]);
     expect(round.count).toBe(2);
-    expect(round.order).toMatchObject({ value: 'параллельно; мнения участников независимы', source: 'schema' });
+    expect(round).not.toHaveProperty('order');
     // The first round has no input, and Basic's task is not sent to it: nothing is written, so nothing is shown as default.
     expect(round.input.value).toBe('нет: этап получает только задание');
     expect(round.task).toMatchObject({ value: '', source: 'missing' });
     expect(round.title).toMatchObject({ value: 'Раунд 1', source: 'schema' });
     expect(round.goal).toMatchObject({ value: '', source: 'missing' });
 
-    expect(synthesis.title).toMatchObject({ value: 'Итоговый синтез', source: 'schema' });
+    expect(synthesis.title).toMatchObject({ value: 'Раунд 2', source: 'schema' });
+    expect(synthesis.kindLabel).toBe('раунд');
+    expect(synthesis.participants).toEqual([{ name: 'Claude', role: 'interaction_meta_synthesis', id: '', words: 300 }]);
     expect(synthesis.input.value).toBe('ответы: «Раунд 1»');
     expect(synthesis.task).toMatchObject({ value: '', source: 'default' });
     expect(synthesis.output.value).toContain('ответ в свободной форме (выход не задан)');
@@ -57,14 +59,14 @@ describe('Basic spec: the interface and the three layers', () => {
 
     expect(model.completeness.total).toBe(8 + 4 * 2);
     expect(model.completeness.filled).toBe(0);
-    expect(model.completeness.missing).toEqual(expect.arrayContaining(['spec.purpose', 'spec.failure', 'r1.title', 'r1.goal', 'final.quality']));
+    expect(model.completeness.missing).toEqual(expect.arrayContaining(['spec.purpose', 'spec.failure', 'r1.title', 'r1.goal', 'r2.quality']));
     expect(model.completeness.missing).toHaveLength(16);
   });
 
   test('toMarkdown: the title, the three layers, stage names, and the mark of a missing field', () => {
     const md = Spec.toMarkdown(Spec.build(templateA(), { name: 'A' }));
     expect(md.startsWith('# Спецификация pipeline «A»')).toBe(true);
-    ['## Pipeline в целом', '## Схема процесса', '## 1. Раунд 1', '## 2. Итоговый синтез'].forEach((heading) => expect(md).toContain(heading));
+    ['## Pipeline в целом', '## Схема процесса', '## 1. Раунд 1', '## 2. Раунд 2'].forEach((heading) => expect(md).toContain(heading));
     expect(md).toContain('- **Назначение:** _не заполнено_');
     expect(md).toContain('- **Задание этапа:** _умолчание Basic_');
     expect(md).toContain('Заполнено полей автора: 0 из 16.');
@@ -96,7 +98,7 @@ describe('Basic spec: the author fields', () => {
 });
 
 describe('Basic spec: the links of the input', () => {
-  // Stages: 1 r1 (answer with a name), 2 r2 (previous), 3 gate (previous), 4 r3 (previous, skips the gate),
+  // Stages: 1 r1 (answer with a name), 2 r2 (previous), 3 owner (previous), 4 r3 (previous: the owner's answer),
   // 5 r4 (a list: a participant of r1, r2, an artifact of r3), 6 r5 (all answer steps before it).
   const linked = () => ({
     schemaVersion: 1,
@@ -104,7 +106,7 @@ describe('Basic spec: the links of the input', () => {
     steps: [
       { ref: 'r1', kind: 'round', models: [{ name: 'A' }, { name: 'B' }], output: { name: 'Decision Policy', form: 'Текст' } },
       { ref: 'r2', kind: 'round', input: 'previous', models: [{ name: 'C' }] },
-      { ref: 'gate:g', kind: 'gate', input: 'previous', criteria: ['полнота'], models: [{ name: 'K' }], onFail: 'ask' },
+      { ref: 'owner:g', kind: 'owner', input: 'previous', task: 'Проверьте полноту', models: [] },
       { ref: 'r3', kind: 'round', input: 'previous', models: [{ name: 'D' }] },
       {
         ref: 'r4', kind: 'round', models: [{ name: 'E' }],
@@ -120,11 +122,11 @@ describe('Basic spec: the links of the input', () => {
     expect(model.stages[1].input.value).toBe('ответы: «Раунд 1»');
   });
 
-  test('previous skips a gate: the step after the gate reads the round before it', () => {
+  test('an owner step is an answer step: the step after it reads the owner answer', () => {
     const model = Spec.build(linked());
     expect(model.scheme.links.filter((link) => link.to === 3)).toEqual([{ from: 2, to: 3, label: 'ответы этапа «Раунд 2»' }]);
-    expect(model.scheme.links.filter((link) => link.to === 4)).toEqual([{ from: 2, to: 4, label: 'ответы этапа «Раунд 2»' }]);
-    expect(model.stages[3].input.value).toBe('ответы: «Раунд 2»');
+    expect(model.scheme.links.filter((link) => link.to === 4)).toEqual([{ from: 3, to: 4, label: 'ответы этапа «User g»' }]);
+    expect(model.stages[3].input.value).toBe('ответы: «User g»');
   });
 
   test('all takes every earlier answer step', () => {
@@ -132,10 +134,11 @@ describe('Basic spec: the links of the input', () => {
     expect(model.scheme.links.filter((link) => link.to === 6)).toEqual([
       { from: 1, to: 6, label: 'Decision Policy' },
       { from: 2, to: 6, label: 'ответы этапа «Раунд 2»' },
+      { from: 3, to: 6, label: 'ответы этапа «User g»' },
       { from: 4, to: 6, label: 'ответы этапа «Раунд 3»' },
       { from: 5, to: 6, label: 'ответы этапа «Раунд 4»' }
     ]);
-    expect(model.stages[5].input.value).toBe('ответы: «Раунд 1», «Раунд 2», «Раунд 3», «Раунд 4»');
+    expect(model.stages[5].input.value).toBe('ответы: «Раунд 1», «Раунд 2», «User g», «Раунд 3», «Раунд 4»');
   });
 
   test('a list takes the named sources: a participant, a step, an artifact (the label is the step label)', () => {
@@ -174,13 +177,11 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
       ]
     };
     const model = Spec.build(schema);
-    expect(byKey(model.whole, 'ownerInvolvement').value).toBe('владелец решает только при проблемах; утверждает этапы: Раунд 2; этапы владельца: Владелец s01');
-    expect(model.stages[1]).toMatchObject({ kindLabel: 'владелец', count: 0, participants: [] });
-    expect(model.stages[1].owner.value).toBe('этап выполняет владелец');
-    expect(model.stages[1].order.value).toBe('не применяется');
+    expect(byKey(model.whole, 'ownerInvolvement').value).toBe('User решает только при проблемах; утверждает этапы: Раунд 2; этапы User: User s01');
+    expect(model.stages[1]).toMatchObject({ kindLabel: 'User', count: 0, participants: [] });
+    expect(model.stages[1].owner.value).toBe('этап выполняет User');
     expect(model.stages[1].task).toMatchObject({ value: 'Утвердить', source: 'schema' });
-    expect(model.stages[2].owner.value).toBe('владелец утверждает ответ этапа');
-    expect(model.stages[2].order.value).toBe('параллельно; мнения участников независимы');
+    expect(model.stages[2].owner.value).toBe('User утверждает ответ этапа');
     expect(model.stages[2].task).toMatchObject({ value: '', source: 'default' });
     // The owner reads r1 (its input); r2 reads the owner by default (previous), so the owner's output name is the label.
     expect(model.scheme.links).toEqual([{ from: 1, to: 2, label: 'ответы этапа «Раунд 1»' }, { from: 2, to: 3, label: 'Policy' }]);
@@ -193,51 +194,28 @@ describe('Basic spec: the owner, the participants and the stage kinds', () => {
       steps: [
         { ref: 'r1', kind: 'round', models: [{ name: 'A' }, { name: 'B', enabled: false }] },
         { ref: 'r2', kind: 'round', models: [{ name: 'C', enabled: false }] },
-        { ref: 'final', kind: 'synthesis', models: [{ name: 'A' }] }
+        { ref: 'r3', kind: 'round', models: [{ name: 'A' }] }
       ]
     };
     const model = Spec.build(schema);
-    expect(model.stages.map((stage) => stage.ref)).toEqual(['r1', 'final']);
+    expect(model.stages.map((stage) => stage.ref)).toEqual(['r1', 'r3']);
     expect(model.stages[0].participants.map((item) => item.name)).toEqual(['A']);
     expect(byKey(model.whole, 'volume').value).toContain('этапов: 2; участников: 1; запросов не меньше 2');
   });
 
-  test('gate and route transitions are shown in the scheme; a rule condition is not described', () => {
+  test('the scheme lists the stages in order without transitions: there are no branches', () => {
     const schema = {
       schemaVersion: 1,
       origin: 'user',
-      run: { policy: 'manual' },
       steps: [
         { ref: 'r1', kind: 'round', models: [{ name: 'A' }] },
-        {
-          ref: 'gate:g1', kind: 'gate', input: 'previous', criteria: ['полнота'], models: [{ name: 'K' }],
-          onPass: { goto: 'r2' }, onFail: { goto: 'r1', maxLoops: 2 }
-        },
-        { ref: 'r2', kind: 'round', models: [{ name: 'B' }] },
-        {
-          ref: 'route:r', kind: 'route', input: ['r1'], select: {
-            by: 'rule', cases: [{ id: 'stop', when: { source: 0, pointer: '/x', op: 'exists' }, action: { stop: 'нет данных' } }],
-            otherwise: { goto: 'r2' }
-          }
-        }
+        { ref: 'owner:ok', kind: 'owner', input: 'previous', task: 'Решите, принять ли ответ', models: [] },
+        { ref: 'r2', kind: 'round', models: [{ name: 'B' }] }
       ]
     };
     const model = Spec.build(schema);
-    const [, gate, , route] = model.scheme.stages;
-    expect(gate.transitions).toEqual([
-      'проверяющие: нужны все прошедшие',
-      'при прохождении: переход к «Раунд 2»',
-      'при провале: переход к «Раунд 1», не больше 2 раз'
-    ]);
-    expect(route.transitions).toEqual([
-      'выбирает по правилу; при нескольких подходящих: остановка',
-      'вариант «stop»: остановка: нет данных',
-      'иначе: переход к «Раунд 2»'
-    ]);
-    expect(model.stages[1].criteria).toMatchObject({ value: 'полнота', source: 'schema' });
-    expect(model.stages[1].title.value).toBe('Проверка g1');
-    expect(model.stages[3].title.value).toBe('Маршрут r');
-    expect(Spec.toMarkdown(model)).toContain('   - при провале: переход к «Раунд 1», не больше 2 раз');
+    expect(model.scheme.stages.map((stage) => [stage.title, stage.kindLabel])).toEqual([['Раунд 1', 'раунд'], ['User ok', 'User'], ['Раунд 2', 'раунд']]);
+    expect(model.scheme.stages.every((stage) => !('transitions' in stage))).toBe(true);
   });
 });
 
@@ -257,7 +235,7 @@ describe('Basic spec: the Basic fixture S01–S30', () => {
     const md = Spec.toMarkdown(model);
     model.stages.forEach((stage) => expect(md).toContain(`## ${stage.number}. ${stage.title.value}`));
     expect(md).toContain('## Схема процесса');
-    expect(byKey(model.whole, 'ownerInvolvement').value).toContain('владелец решает только при проблемах');
+    expect(byKey(model.whole, 'ownerInvolvement').value).toContain('User решает только при проблемах');
   });
 });
 
@@ -271,5 +249,20 @@ describe('Basic spec: empty and partial schemas', () => {
     expect(Spec.toMarkdown(one)).toContain('## 1. Раунд 1');
     expect(Spec.toMarkdown(Spec.build({}))).toContain('_Этапов нет._');
     expect(() => Spec.toMarkdown({})).not.toThrow();
+  });
+});
+
+describe('Basic spec: the default input after an owner step (B-2)', () => {
+  test('B-2: a round without input after an owner step is linked to the owner step', () => {
+    const model = Spec.build({
+      schemaVersion: 1,
+      origin: 'user',
+      steps: [
+        { ref: 'owner:u', kind: 'owner', task: 'Уточните', models: [] },
+        { ref: 'r1', kind: 'round', models: [{ name: 'A' }] }
+      ]
+    });
+    expect(model.scheme.links.filter((link) => link.to === 2)).toEqual([{ from: 1, to: 2, label: 'ответы этапа «User u»' }]);
+    expect(model.stages[1].input.value).toBe('ответы: «User u»');
   });
 });

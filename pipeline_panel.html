@@ -123,12 +123,12 @@
                     <div class="top-bar-right">
                         <div class="sidebar-toggle-stack">
                         <button type="button" class="sidebar-toggle-btn right-sidebar-toggle-btn" id="right-sidebar-toggle" aria-pressed="false" aria-controls="pipeline-sidebar" data-tooltip="Pipeline panel" aria-label="Pipeline">
-                            <svg class="sidebar-toggle-icon sidebar-toggle-icon-branch-v3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M7 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"></path>
-                                <path d="M7 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"></path>
-                                <path d="M17 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"></path>
-                                <path d="M7 8l0 8"></path>
-                                <path d="M7 8a4 4 0 0 0 4 4h4"></path>
+                            <svg class="sidebar-toggle-icon sidebar-toggle-icon-branch-v3" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.688" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="13" cy="12" r="7"></circle>
+                                <circle cx="13" cy="52" r="7"></circle>
+                                <circle cx="51" cy="32" r="7"></circle>
+                                <path d="M 17.5 17.35 C 24 27.5, 33 32, 44 32"></path>
+                                <path d="M 17.5 46.65 C 24 36.5, 33 32, 44 32"></path>
                             </svg>
                             <span class="sr-only">Pipeline</span>
                         </button>
@@ -317,9 +317,11 @@
                 <div class="pipeline-list-header-actions" aria-label="Pipeline actions">
                     <button type="button" class="btn btn-icon" id="pipeline-add-btn" title="New empty pipeline flow" aria-label="New empty pipeline flow">+</button>
                     <button type="button" class="btn btn-icon" id="pipeline-save-btn" title="Save current pipeline as user pipeline" aria-label="Save current pipeline as user pipeline"><i class="ti ti-device-floppy" aria-hidden="true"></i></button>
+                    <button type="button" class="btn btn-icon" id="pipeline-arrows-toggle" title="Стрелки: показать или скрыть" aria-label="Стрелки" aria-pressed="true"><i class="ti ti-arrows-right" aria-hidden="true"></i></button>
                     <button type="button" class="btn" id="pipeline-export-btn" title="Export schema" aria-label="Export schema"><i class="ti ti-download" aria-hidden="true"></i></button>
+                    <button type="button" class="btn" id="pipeline-export-all-btn" title="Export all schemas" aria-label="Export all schemas"><i class="ti ti-package-export" aria-hidden="true"></i></button>
                     <button type="button" class="btn" id="pipeline-import-btn" title="Import schema" aria-label="Import schema"><i class="ti ti-upload" aria-hidden="true"></i></button>
-                    <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Pipeline profiles" aria-label="Pipeline profiles"><svg viewBox="96 64 320 384" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="256" cy="112" r="42"/><path d="M206 196C218 184 236 176 254 176C278 176 294 190 294 214L294 354C294 372 302 382 320 389C331 393 339 400 339 409C339 419 330 426 317 426H194C181 426 172 419 172 409C172 400 180 393 191 389C209 382 217 372 217 354V232C217 221 212 216 202 216H194C184 216 178 211 178 203C178 196 183 190 190 190C196 190 201 192 206 196Z"/></svg></button>
+                    <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Вставить схему" aria-label="Вставить схему"><i class="ti ti-clipboard-text" aria-hidden="true"></i></button>
                 </div>
             </div>
             <div class="pipeline-canvas">
@@ -336,7 +338,7 @@
                     </div>
 
                         <div class="stage-column" id="round1" data-round="1" data-planned-stage-id="canvas-r1">
-                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden="">×</button></div><button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r1" aria-label="Add stage after R1" title="Add stage" disabled></button></div>
+                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R1</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden="">×</button></div></div>
                         <div class="model-stack" id="r1-models" data-render="pipeline-model-stack-r1"><!-- pipeline-model-stack-r1 rendered by pipeline/pipeline-runtime.js --></div>
                     </div>
 
@@ -345,20 +347,11 @@
                     </div>
 
                     <div class="stage-column" id="round2" data-round="2" data-planned-stage-id="canvas-r2">
-                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R2</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden="">×</button></div><button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r2" aria-label="Add stage after R2" title="Add stage" disabled></button></div>
+                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R2</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden="">×</button></div></div>
                         <div class="model-stack" id="r2-models" data-render="pipeline-model-stack-r2"><!-- pipeline-model-stack-r2 rendered by pipeline/pipeline-runtime.js --></div>
                     </div>
 
                     <div id="insertionPoint"></div>
-
-                    <div class="connector-group synthesis-capable" id="connectorToSynthesis" hidden="" aria-hidden="true">
-                        <svg class="connector-svg" id="svg-r-last-synthesis"></svg>
-                    </div>
-
-                    <div class="stage-column synthesis-capable" id="synthesisColumn" data-stage="synthesis" hidden="" aria-hidden="true">
-                        <div class="stage-label"><span class="round-badge" title="Click to enable/disable final synthesis; double-click for its request">Final</span></div>
-                        <div class="model-stack synthesis-stack" id="synthesis-stack" data-render="pipeline-synthesis-stack"><!-- pipeline-synthesis-stack rendered by results.js --></div>
-                    </div>
 
                 </div>
 
@@ -375,7 +368,7 @@
                     </div>
                 </div>
                 <dialog class="pipeline-stage-dialog owner-ask-dialog" id="owner-ask-dialog" aria-labelledby="owner-ask-title">
-                    <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос владельцу</h2></header>
+                    <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос User</h2></header>
                     <p class="owner-ask-hint" id="owner-ask-hint"></p>
                     <div class="pipeline-stage-card" id="owner-ask-list"></div>
                     <div class="owner-ask-actions">
@@ -619,6 +612,7 @@
                                         <label class="disput-only-problems-label" title="Display filter only; JSON and MD exports are always complete"><input type="checkbox" id="disput-only-problems"> Only problems</label>
                                     </div>
                                         <div class="disput-extract-controls">
+                                            <button type="button" class="devtools-pill-btn" id="disput-basic" title="Export Basic run, model routing and transport telemetry as JSON">Basic</button>
                                             <button type="button" class="devtools-pill-btn" id="disput-extract" title="Download the full report, transport JSON and Markdown">Extract</button>
                                             <select id="disput-extract-type" class="devtools-select" aria-label="Extract type"><option value="transport">transport</option></select>
                                         </div>
@@ -873,9 +867,9 @@
     <script src="disput/pipeline-presets.js"></script>
     <script src="disput/basic-artifacts.js"></script>
     <script src="disput/basic-output.js"></script>
-    <script src="disput/basic-control.js"></script>
     <script src="disput/custom-engine.js"></script>
     <script src="disput/basic-schema.js"></script>
+    <script src="disput/schema-text-reader.js"></script>
     <script src="disput/basic-spec.js"></script>
     <script src="disput/custom-run-record.js"></script>
     <script src="shared/run-error.js"></script>
@@ -903,14 +897,17 @@
     <script src="results/debate-controller.js"></script>
     <script src="results/stage-card.js"></script>
     <script src="results/choice-dialog.js"></script>
+    <script src="results/documents-folder.js"></script>
     <script src="results/owner-ask.js"></script>
     <script src="results/debate-renderer.js"></script>
     <script src="results/debate-sessions-store.js"></script>
     <script src="results/debate-export.js"></script>
     <script src="results/debate-telemetry-view.js"></script>
     <script src="shared/report-digest.js"></script>
+    <script src="shared/basic-telemetry.js"></script>
     <script src="utils/selection-block-format.js"></script>
     <script src="results/pipeline-card-cover.js"></script>
+    <script src="results/basic-card-history.js"></script>
     <script src="results.js"></script>
     <!-- results-devtools.js is lazy-loaded by results.js (ensureTelemetryDevtoolsLoaded)
          just after boot; not loaded synchronously here to keep its parse cost off

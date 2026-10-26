@@ -1,45 +1,52 @@
 // Стенд схем прототипа холста Basic: клавиша I (или Ш) открывает окно вставки JSON-схемы этапов,
-// «Применить» проверяет схему и перерисовывает холст по ней. Раунды и синтезы схемы кладутся в
+// «Применить» проверяет схему и перерисовывает холст по ней. Этапы моделей схемы (раунды) кладутся в
 // window.ProtoState, поэтому их окна — настоящие окна cards.js; остальные блоки — окна «Из схемы».
 // Холст (canvas.js) отдаёт отрисовку сюда, пока ProtoStand.active; «Сбросить» возвращает исходный холст.
 // Каталог шаблонов: Save сохраняет применённую схему шаблоном в JSON-файл на компьютере; шаблоны — пункты списка Pipelines.
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '17';
+  const STAND_VERSION = '64';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const own = (value) => typeof value === 'string' && Boolean(value.trim());
+  // Подсказка элемента холста: data-tip — название, data-desc — описание (из схемы); пусто в схеме — видимая строка.
+  const NO_DESC = 'Описание не задано';
+  const tipAttrs = (name, desc) => ` data-tip="${esc(name)}" data-desc="${esc(own(desc) ? desc.trim() : NO_DESC)}"`;
   const cut = (text, n) => { const s = String(text || '').trim().replace(/\s+/g, ' '); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 
   // ---------- Формат схемы ----------
-  const COMMON = ['id', 'block', 'title', 'inputs', 'optional_inputs', 'artifacts', 'repeats', 'because', 'why'];
+  const COMMON = ['id', 'block', 'title', 'inputs', 'artifacts', 'why'];
   const FIELDS = {
-    round: ['models', 'order', 'task'], synthesis: ['model', 'role', 'task', 'maxWords', 'request', 'discipline'], gate: ['criteria'], route: ['choices'],
-    owner: ['ask'], form: ['purpose'], source: ['kind', 'content', 'attachment'], file: ['file', 'mode'], list: ['from', 'rule'],
-    foreach: ['over', 'body'], block: ['name'], assemble: ['template'], score: ['criteria', 'weights']
+    round: ['models', 'task', 'chat'], owner: ['ask', 'document'], file: ['file', 'mode']
   };
+  // Поля, которых больше нет: значение игнорируется, проверка предупреждает.
+  const REMOVED_FIELDS = {
+    request: 'Свой запрос не записывается: задание пишется в task'
+  };
+  // Блоки, где работает User: в холсте — зелёная рамка, в окне — «Назначение».
+  const HUMAN_BLOCKS = ['owner'];
   const KIND = {
-    round: ['Раунд', 'ti-users'], synthesis: ['Синтез', 'ti-git-merge'], gate: ['Проверка', 'ti-shield-check'], route: ['Развилка', 'ti-arrows-split'],
-    owner: ['Владелец', 'ti-user'], form: ['Форма', 'ti-forms'], source: ['Источник', 'ti-file-text'], file: ['Файл', 'ti-file-export'],
-    list: ['Список', 'ti-list'], foreach: ['Каждый', 'ti-repeat'], block: ['Блок', 'ti-box'], assemble: ['Сборка', 'ti-stack-2'], score: ['Оценка', 'ti-star']
+    round: ['Раунд', 'ti-users'],
+    owner: ['Ответ User', 'ti-user'], file: ['Файл', 'ti-file-export']
   };
-  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'request', 'discipline'];
+  // Этапы приложения (без нейросети): в холсте помечаются словом «приложение».
+  const APP_BLOCKS = ['file'];
+  const MODEL_KEYS = ['name', 'role', 'task', 'maxWords', 'discipline', 'enabled'];
   const MODEL_NAMES = ['Claude', 'GPT', 'Gemini', 'Grok', 'Le Chat', 'Qwen', 'DeepSeek', 'Perplexity', 'Z.ai', 'Kimi'];
-  const ENUMS = { order: ['parallel', 'sequential'], kind: ['text', 'document', 'link'], mode: ['overwrite', 'append', 'read'] };
+  const ENUMS = { mode: ['overwrite', 'append'], chat: ['new', 'continue'] };
   const LABELS = {
-    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', optional_inputs: 'вход, если этап был', artifacts: 'артефакты', repeats: 'повтор', because: 'условие повтора',
-    models: 'модели', order: 'порядок', task: 'задание', model: 'модель', role: 'роль', criteria: 'критерии', choices: 'варианты', ask: 'вопрос',
-    purpose: 'цель', kind: 'вид', file: 'файл', mode: 'режим', from: 'из', rule: 'правило', over: 'по', body: 'тело', name: 'имя',
-    template: 'шаблон', content: 'содержимое', attachment: 'приложенный файл', weights: 'веса', maxWords: 'предел слов', request: 'свой запрос', discipline: 'дисциплина',
+    id: 'этап', block: 'блок', title: 'название', why: 'зачем', inputs: 'вход', artifacts: 'артефакты',
+    models: 'модели', task: 'задание', model: 'модель', role: 'роль', ask: 'вопрос',
+    file: 'файл', mode: 'режим', maxWords: 'предел слов', discipline: 'дисциплина',
     defaults: 'общие значения ▶', run: 'запуск'
   };
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const DISC_LABELS = { limit: 'длина', content: 'содержание', delivery: 'доставка', correction: 'повторный запрос', lines: 'строки' };
   const POLICY_TEXT = { auto: 'автоматически', manual: 'вручную' };
-  const ORDER_TEXT = { parallel: 'параллельно', sequential: 'по очереди' };
   // Роли окна модели (cards.js, ROLES) по словам схемы.
   const ROLE_IDS = [
     [/свод|свести|синтез|synth/i, 'interaction_meta_synthesis'],
@@ -58,6 +65,9 @@
   // Модели присылают JSON в обёртке (```json … ```, текст до и после), «мягкий» JSON, оборванный ответ,
   // Mermaid или внутреннее состояние прототипа. Однозначно исправимое исправляется с замечанием, остальное — ошибка.
   const isObj = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
+  // Артефакт этапа: строка (имя) или объект { name, description }. Имя и описание читаются через эти хелперы.
+  const artName = (a) => (isObj(a) ? String(a.name ?? '') : String(a ?? '')).trim();
+  const artDesc = (a) => (isObj(a) && typeof a.description === 'string' ? a.description.trim() : '');
   const STATE_MSG = 'Это не схема, а внутреннее состояние прототипа (rounds, models…). Попросите ответ в формате { "task": …, "steps": […] }.';
   const QUOTES = { '"': '"', '“': '”“', '”': '”“', '„': '“”', "'": "'", '‘': '’‘', '’': '’‘' };
   const KEY_START = /[A-Za-z_$Ѐ-ӿ]/;
@@ -245,7 +255,6 @@
   const STUB = /^\s*(?:\.{2,}|…|todo|tbd|и\s*т\.\s*д\.?|etc\.?)\s*$|(?:…|\.\.\.)\s*$/i;
   function stubs(obj, path, key, add) {
     Object.entries(obj).forEach(([k, val]) => {
-      if (k === 'body') return;
       const at = `${path}${k}`;
       if (typeof val === 'string' && STUB.test(val)) add('warn', key, `Заглушка вместо текста в поле ${at}: «${cut(val, 30)}» — модель сократила ответ.`);
       else if (Array.isArray(val)) val.forEach((x, i) => {
@@ -268,28 +277,24 @@
       }
       if (typeof st.block === 'string') {
         const b = st.block.trim().toLowerCase();
-        if (b !== st.block && FIELDS[b]) { fixed(`block «${st.block}» → «${b}».`); st.block = b; }
+        if (b !== st.block && has(FIELDS, b)) { fixed(`block «${st.block}» → «${b}».`); st.block = b; }
       }
-      if (st.title == null && st.block !== 'block' && own(st.name)) { st.title = st.name; delete st.name; fixed('«name» вместо «title» — переименовано.'); }
+      if (st.title == null && own(st.name)) { st.title = st.name; delete st.name; fixed('«name» вместо «title» — переименовано.'); }
       if (st.inputs == null) {
         const a = ['input', 'depends_on', 'requires'].find((k) => st[k] != null);
         if (a) { st.inputs = st[a]; delete st[a]; fixed(`«${a}» вместо «inputs» — переименовано.`); }
       }
-      ['inputs', 'optional_inputs', 'artifacts'].forEach((k) => { if (typeof st[k] === 'string') { st[k] = [st[k]]; fixed(`${k} строкой — превращён в список.`); } });
+      ['inputs', 'artifacts'].forEach((k) => { if (typeof st[k] === 'string') { st[k] = [st[k]]; fixed(`${k} строкой — превращён в список.`); } });
       if (Array.isArray(st.models) && st.models.some((m) => typeof m === 'string')) {
         st.models = st.models.map((m) => (typeof m === 'string' ? { name: m.trim() } : m));
         fixed('models списком имён — превращён в объекты { name }.');
       }
       stubs(st, '', key, add);
-      if (st.block === 'foreach' && st.body != null) {
-        st.body = mapToList(st.body, `${key}.body`, key, add);
-        fixSteps(st.body, `${key}.body`, add);
-      }
     });
   }
   // Новые поля: предел слов, дисциплина, defaults, run.
   const DISC_KEYS = ['limit', 'content', 'delivery', 'correction', 'lines'];
-  const DEFAULTS_KEYS = ['roundTask', 'synthesisTask', 'discipline', 'modelNotes'];
+  const DEFAULTS_KEYS = ['roundTask', 'discipline', 'modelNotes'];
   const RUN_WORDS = [300, 500, 700, 1000];
   const wordsOf = (v) => {
     const n = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+\s*$/.test(v) ? Number(v) : NaN;
@@ -318,10 +323,10 @@
   function checkRoot(schema, add) {
     const d = schema.defaults;
     if (d != null) {
-      if (!isObj(d)) add('warn', null, 'defaults должен быть объектом { roundTask, synthesisTask, discipline, modelNotes }; не применён.');
+      if (!isObj(d)) add('warn', null, 'defaults должен быть объектом { roundTask, discipline, modelNotes }; не применён.');
       else {
         Object.keys(d).filter((k) => !DEFAULTS_KEYS.includes(k)).forEach((k) => add('warn', null, `defaults.${k}: неизвестное поле; допустимы ${DEFAULTS_KEYS.join(', ')}.`));
-        ['roundTask', 'synthesisTask'].forEach((k) => checkText(d, k, 'defaults.', null, add));
+        checkText(d, 'roundTask', 'defaults.', null, add);
         checkDiscipline(d.discipline, 'defaults.', null, add);
         if (d.modelNotes != null) {
           if (!isObj(d.modelNotes)) add('warn', null, 'defaults.modelNotes должен быть объектом { "Claude": "текст", … }; не применён.');
@@ -347,8 +352,23 @@
   // Свои поля модели раунда и синтеза.
   function checkOwnFields(owner, where, key, add) {
     checkWords(owner, where, key, add);
-    checkText(owner, 'request', where, key, add);
     checkDiscipline(owner.discipline, where, key, add);
+    if (owner.enabled != null && typeof owner.enabled !== 'boolean') add('warn', key, `${where}enabled должен быть true или false; не применён.`);
+  }
+  // Исходные артефакты (верхнеуровневый artifacts): name и content или attachment.
+  function checkSources(schema, add) {
+    const list = schema.artifacts;
+    if (list == null) return [];
+    if (!Array.isArray(list)) { add('error', null, 'artifacts верхнего уровня должен быть списком исходных артефактов { name, content | attachment }.'); return []; }
+    const names = [];
+    list.forEach((a, i) => {
+      if (!isObj(a)) { add('error', null, `artifacts[${i}]: ожидается объект { "name", "content" | "attachment" }.`); return; }
+      if (!own(a.name)) { add('error', null, `artifacts[${i}]: нет name.`); return; }
+      names.push(a.name.trim());
+      if (!own(a.content) && !own(a.attachment)) add('warn', null, `Артефакт «${a.name}» не передан: нет ни content (текст), ни attachment (имя файла, приложенного к ответу).`);
+      if (own(a.attachment) && !/\.[A-Za-z0-9]{1,8}$/.test(a.attachment.trim())) add('warn', null, `attachment «${a.attachment}»: нужно точное имя файла с расширением.`);
+    });
+    return names;
   }
 
   // ---------- Проверка ----------
@@ -362,33 +382,25 @@
     if (value == null) return fail();
     const schema = rootOf(value, add);
     if (!schema) return fail();
-    Object.keys(schema).filter((k) => !['task', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    Object.keys(schema).filter((k) => !['task', 'version', 'description', 'artifacts', 'steps', 'defaults', 'run'].includes(k)).forEach((k) => add('warn', null, `Неизвестное поле схемы «${k}».`));
+    const sourceNames = checkSources(schema, add);
+    if ('version' in schema && !(Number.isInteger(schema.version) && schema.version >= 1)) add('warn', null, 'version должен быть целым числом от 1 — показано v1.');
+    if ('description' in schema && typeof schema.description !== 'string') add('warn', null, 'description должен быть строкой — описание не показано.');
     if (!own(schema.task)) add('warn', null, 'Нет task — фразы задачи.');
     else if (STUB.test(schema.task)) add('warn', null, `Заглушка вместо текста в поле task: «${cut(schema.task, 30)}» — модель сократила ответ.`);
     if (!Array.isArray(schema.steps) || !schema.steps.length) { add('error', null, 'steps должен быть непустым списком этапов.'); return fail(); }
     checkRoot(schema, add);
     fixSteps(schema.steps, 'steps', add);
 
-    // Порядок проверки ссылок: этапы списка, тело foreach — сразу после самого foreach.
-    const flat = [];
-    const walk = (steps, parent) => steps.forEach((step, i) => {
-      const entry = { step: step && typeof step === 'object' && !Array.isArray(step) ? step : {}, key: '', pos: flat.length, parent, raw: step };
-      entry.key = own(entry.step.id) ? entry.step.id : `${parent ? `${parent.key}.body` : 'steps'}[${i}]`;
-      flat.push(entry);
-      if (entry.step.block === 'foreach' && Array.isArray(entry.step.body)) walk(entry.step.body, entry);
-    });
-    walk(schema.steps, null);
-    // Повтор наследует настройки повторяемого этапа: models, model, order, role, если у него их нет.
-    const firstById = new Map();
-    flat.forEach((e) => { if (own(e.step.id) && !firstById.has(e.step.id)) firstById.set(e.step.id, e); });
-    flat.forEach((e) => {
-      const src = own(e.step.repeats) ? firstById.get(e.step.repeats) : null;
-      if (!src || src.pos >= e.pos || src.step.block !== e.step.block) return;
-      ['models', 'model', 'order', 'role'].forEach((k) => {
-        if (e.step[k] == null && src.step[k] != null) { e.step[k] = JSON.parse(JSON.stringify(src.step[k])); (e.inherited = e.inherited || []).push(k); }
-      });
+    const flat = schema.steps.map((step, i) => {
+      const obj = isObj(step) ? step : {};
+      return { step: obj, key: own(obj.id) ? obj.id : `steps[${i}]`, pos: i, raw: step };
     });
     const byId = new Map();
+    // Артефакт без описания — мягкое замечание; одно и то же имя предупреждается один раз, если ни один этап не дал описания.
+    const described = new Set();
+    flat.forEach((e) => listOf(e.step.artifacts).forEach((a) => { if (own(artDesc(a))) described.add(artName(a)); }));
+    const warnedArt = new Set();
     flat.forEach((e) => {
       const st = e.step;
       if (e.raw !== st) {
@@ -401,102 +413,118 @@
       if (!FIELDS[st.block]) add('error', e.key, st.block ? `Неизвестный блок «${st.block}».` : 'Нет block.');
       if (!own(st.title)) add('error', e.key, 'Нет title.');
       if (!own(st.why)) add('error', e.key, 'Нет why — зачем этот этап.');
-      if (FIELDS[st.block]) {
-        Object.keys(st).filter((k) => !COMMON.includes(k) && !FIELDS[st.block].includes(k) && !(st.block === 'source' && k === 'title'))
-          .forEach((k) => add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`));
-      }
+      Object.keys(st).forEach((k) => {
+        if (k === 'optional_inputs') add('warn', e.key, 'Поле «optional_inputs» не поддерживается и не применяется: пропускаемых этапов нет, все входы обязательны.');
+        else if (k === 'order') add('warn', e.key, 'Поле «order» не поддерживается и не применяется: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд.');
+        else if (has(REMOVED_FIELDS, k)) add('warn', e.key, `Поле «${k}» не поддерживается и не применяется. ${REMOVED_FIELDS[k]}.`);
+        else if (FIELDS[st.block] && !COMMON.includes(k) && !FIELDS[st.block].includes(k)) add('warn', e.key, `Неизвестное поле «${k}» для блока ${st.block}.`);
+      });
       Object.entries(ENUMS).forEach(([k, values]) => {
         if (st[k] != null && FIELDS[st.block]?.includes(k) && !values.includes(st[k])) add('warn', e.key, `${k}: «${st[k]}» — ожидается ${values.join(' | ')}.`);
       });
       ['inputs', 'artifacts'].forEach((k) => { if (st[k] != null && !Array.isArray(st[k])) add('error', e.key, `${k} должен быть списком.`); });
+      listOf(st.artifacts).forEach((a, i) => {
+        if (typeof a !== 'string' && !isObj(a)) { add('error', e.key, `artifacts[${i}]: ожидается имя или объект { "name", "description" }.`); return; }
+        const name = artName(a);
+        if (!own(name)) { add('error', e.key, `artifacts[${i}]: нет name.`); return; }
+        if (!described.has(name) && !warnedArt.has(name)) { warnedArt.add(name); add('warn', e.key, `У артефакта «${name}» нет описания.`); }
+        if (a.document != null) {
+          if (st.block !== 'round') add('warn', e.key, 'Признак document у артефакта только в раунде из одной модели.');
+          else if (!['read', 'form'].includes(a.document)) add('warn', e.key, `document: «${a.document}» — ожидается read | form.`);
+        }
+      });
+      if (st.block === 'round' && listOf(st.artifacts).filter((a) => isObj(a) && a.document != null).length > 1) add('warn', e.key, 'В раунде не больше одного артефакта-документа.');
       if (st.block === 'round' && (!Array.isArray(st.models) || !st.models.length)) add('error', e.key, 'У раунда нет models.');
       if (st.block === 'round' && Array.isArray(st.models)) st.models.forEach((m, i) => {
         if (!own(m?.name)) add('error', e.key, `models[${i}]: нет name.`);
-        if (!isObj(m) || e.inherited?.includes('models')) return;
+        if (!isObj(m)) return;
         Object.keys(m).filter((k) => !MODEL_KEYS.includes(k)).forEach((k) => add('warn', e.key, `models[${i}].${k}: неизвестное поле модели; допустимы ${MODEL_KEYS.join(', ')}.`));
         checkOwnFields(m, `models[${i}].`, e.key, add);
       });
-      if (st.block === 'synthesis' && !own(st.model)) add('warn', e.key, 'У синтеза нет model.');
-      if (st.block === 'synthesis') checkOwnFields(st, '', e.key, add);
-      if (st.block === 'source' && !own(st.content) && !own(st.attachment)) add('warn', e.key, 'Материал не передан: нет ни content (текст), ни attachment (имя файла, приложенного к ответу).');
-      if (own(st.attachment) && !/\.[A-Za-z0-9]{1,8}$/.test(st.attachment.trim())) add('warn', e.key, `attachment «${st.attachment}»: нужно точное имя файла с расширением.`);
-      if (st.block === 'route' && !Array.isArray(st.choices)) add('error', e.key, 'У route нет choices.');
-      if (st.block === 'foreach' && !Array.isArray(st.body)) add('error', e.key, 'У foreach нет body (списка этапов).');
-      if (own(st.repeats) && !own(st.because)) add('error', e.key, `Повтор ${st.repeats} без because.`);
-      if (own(st.because) && !own(st.repeats)) add('warn', e.key, 'because без repeats.');
     });
-    // Ссылки: вверх — inputs/repeats/over/from; вниз — route.goes.
+    // Ссылки: только вверх — inputs; «in.Имя» — исходный артефакт.
     flat.forEach((e) => {
       const st = e.step;
       const refs = [];
       if (Array.isArray(st.inputs)) st.inputs.forEach((r) => refs.push(['inputs', r, 'up']));
-      if (Array.isArray(st.optional_inputs)) st.optional_inputs.forEach((r) => refs.push(['optional_inputs', r, 'up']));
-      if (st.repeats != null) refs.push(['repeats', st.repeats, 'up']);
-      if (st.block === 'foreach' && st.over != null) refs.push(['over', st.over, 'up']);
-      if (st.block === 'list' && st.from != null) refs.push(['from', st.from, 'up']);
-      if (st.block === 'route' && Array.isArray(st.choices)) st.choices.forEach((c) => listOf(c?.goes).forEach((r) => refs.push(['goes', r, 'down'])));
-      refs.forEach(([field, ref, dir]) => {
+      refs.forEach(([field, ref]) => {
         if (!own(ref)) { add('error', e.key, `${field}: пустая ссылка.`); return; }
-        if (refId(ref) === 'item') {
-          if (field === 'inputs' && e.parent) return;
-          add('error', e.key, `${field}: «item» можно только в inputs этапов внутри body у foreach.`);
+        if (/^in\./.test(ref)) {
+          const name = String(ref).slice(3);
+          if (!sourceNames.includes(name)) add('error', e.key, `${field}: нет исходного артефакта «${name}» в artifacts верхнего уровня.`);
           return;
         }
         const target = byId.get(refId(ref));
         if (!target) { add('error', e.key, `${field}: этапа «${refId(ref)}» нет.`); return; }
-        if (dir === 'up' && target.pos >= e.pos) add('error', e.key, `${field}: «${ref}» — ссылка ${target.pos === e.pos ? 'на себя' : 'вниз'}; можно только на этапы выше.`);
-        if (dir === 'down' && target.pos <= e.pos) add('error', e.key, `goes: «${ref}» — переход назад; route ведёт только к этапам ниже.`);
-        if (field === 'repeats' && target.step.block !== st.block) add('warn', e.key, `repeats: ${ref} — блок ${target.step.block}, а этот ${st.block}.`);
+        if (target.pos >= e.pos) add('error', e.key, `${field}: «${ref}» — ссылка ${target.pos === e.pos ? 'на себя' : 'вниз'}; можно только на этапы выше.`);
         const dot = String(ref).indexOf('.');
         if (dot > 0) {
           const name = String(ref).slice(dot + 1);
-          if (!listOf(target.step.artifacts).includes(name)) add('error', e.key, `${field}: у ${refId(ref)} нет артефакта «${name}» в artifacts.`);
+          if (!listOf(target.step.artifacts).map(artName).includes(name)) add('error', e.key, `${field}: у ${refId(ref)} нет артефакта «${name}» в artifacts.`);
         }
       });
     });
-    // Этапы, которые маршрут может пропустить: между развилкой и ближайшей целью каждого варианта.
-    const conditional = new Set();
-    flat.forEach((r) => {
-      if (r.step.block !== 'route' || !Array.isArray(r.step.choices)) return;
-      r.step.choices.forEach((c) => {
-        const pos = listOf(c?.goes).map((g) => byId.get(refId(g))?.pos).filter((x) => x != null && x > r.pos);
-        if (!pos.length) return;
-        const first = Math.min(...pos);
-        flat.forEach((x) => { if (x.pos > r.pos && x.pos < first && x.parent === r.parent) conditional.add(x.step.id); });
+    // Предупреждения (не ошибки): ответ User должен читать этап ниже; раунд из нескольких моделей не даёт артефакта
+    // и личного задания без общего; документ для User — из раунда из одной модели с артефактом-документом.
+    const enabledOf = (s) => (Array.isArray(s.models) ? s.models.filter((m) => m?.enabled !== false) : []);
+    flat.forEach((e) => {
+      const st = e.step;
+      if (st.block === 'owner' && own(st.id) && flat.some((x) => x.pos > e.pos)) {
+        const read = flat.some((x) => x.pos > e.pos && listOf(x.step.inputs).some((r) => own(r) && refId(r) === st.id));
+        if (!read) add('warn', e.key, `Ответ User «${st.id}» не читает ни один этап ниже: добавьте «${st.id}» во inputs этапа, который должен использовать ответ (этот этап исправляет артефакт по правкам User, а не приклеивает их отдельным разделом).`);
+      }
+      if (st.block === 'round' && listOf(st.artifacts).length && enabledOf(st).length > 1) {
+        add('warn', e.key, `Артефакт объявлен в раунде из нескольких моделей: у каждой модели своя линия артефакта, ссылка «${st.id}.Имя» неоднозначна. Объявите артефакт в этапе из одной модели: общий документ — раунд из нескольких моделей без артефакта, затем этап «свести» из одной модели.`);
+      }
+      if (st.block === 'round' && own(st.task) && Array.isArray(st.models)) {
+        const personal = st.models.map((m, i) => (own(m?.task) ? i : -1)).filter((i) => i >= 0);
+        if (personal.length) add('warn', e.key, `models[${personal.join(', ')}].task заменяет общее task этапа для этих моделей (общее задание им не отправляется): повторите общие требования в личных заданиях или уберите личные.`);
+      }
+      if (st.block === 'owner' && st.document != null) {
+        const src = byId.get(st.document);
+        let problem = null;
+        if (!src || src.pos >= e.pos) problem = `этапа «${st.document}» выше нет.`;
+        else if (src.step.block !== 'round') problem = 'источник — раунд.';
+        else if (enabledOf(src.step).length !== 1) problem = 'документ для User даёт раунд из одной модели.';
+        else if (!listOf(src.step.artifacts).some((a) => isObj(a) && (a.document === 'read' || a.document === 'form'))) problem = `у раунда «${st.document}» нет артефакта с признаком document (read или form).`;
+        if (problem) add('warn', e.key, `document: ${problem}`);
+      }
+    });
+    // Повтор документа во входах: все включённые модели этапа уже получили ссылку в этом же чате — вход лишний.
+    // Модель m имеет X с этапа K, если X — вход K для m (и без chat: new после K до этапа) или m — единственный автор X.
+    flat.forEach((e) => {
+      const st = e.step;
+      if (st.block !== 'round') return;
+      const ms = enabledOf(st);
+      if (!ms.length) return;
+      // Модели сравниваются по имени: у каждого этапа свои объекты моделей.
+      const has = (step, name) => enabledOf(step).some((y) => y?.name === name);
+      const earliest = (X, name) => {
+        const fresh = (kPos) => !flat.some((x) => x.pos > kPos && x.pos <= e.pos && x.step.chat === 'new' && has(x.step, name));
+        const cands = flat.filter((x) => x.pos < e.pos && has(x.step, name) && listOf(x.step.inputs).includes(X));
+        if (!/^in\./.test(X)) {
+          const p = byId.get(refId(X));
+          if (p && p.pos < e.pos && p.step.block === 'round' && enabledOf(p.step).length === 1 && has(p.step, name)) cands.push(p);
+        }
+        return cands.filter((x) => fresh(x.pos)).sort((a, b) => a.pos - b.pos)[0] || null;
+      };
+      [...new Set(listOf(st.inputs).filter(own))].forEach((X) => {
+        const firsts = ms.map((m) => earliest(X, m?.name));
+        if (firsts.some((k) => !k)) return;
+        add('warn', e.key, `Этап ${st.id}: все модели уже получали «${X}» (этап ${firsts[0].step.id}, тот же чат). Уберите вход и сошлитесь на документ по названию в задании.`);
       });
     });
     flat.forEach((e) => {
       const st = e.step;
-      listOf(st.inputs).forEach((r) => {
-        if (conditional.has(refId(r)) && !conditional.has(st.id) && !listOf(st.optional_inputs).some((o) => refId(o) === refId(r))) {
-          add('warn', e.key, `inputs: ${refId(r)} может быть пропущен развилкой; вынесите «${r}» в optional_inputs.`);
-        }
-      });
-      // Петля должна заканчиваться повторной проверкой.
-      if (own(st.repeats) && own(st.because)) {
-        const gate = flat.find((x) => x.step.block === 'gate' && own(x.step.id) && new RegExp(`(^|[^\\w])${x.step.id}([^\\w]|$)`).test(st.because) && x.pos < e.pos);
-        if (gate && !flat.some((x) => x.pos > e.pos && x.step.block === 'gate' && x.step.repeats === gate.step.id)
-            && flat.find((x) => own(x.step.repeats) && own(x.step.because) && x.step.because.includes(gate.step.id)) === e) {
-          add('warn', e.key, `После повтора по условию «${st.because}» нет повторной проверки: добавьте этап gate с repeats: «${gate.step.id}».`);
-        }
-      }
       [...(Array.isArray(st.models) ? st.models.map((m) => m?.name) : []), st.model].filter(own).forEach((n) => {
         if (!MODEL_NAMES.includes(n)) add('warn', e.key, `Неизвестное имя модели «${n}»; допустимы: ${MODEL_NAMES.join(', ')}.`);
       });
-      if (st.block === 'score' && st.weights != null && (typeof st.weights !== 'object' || Array.isArray(st.weights))) {
-        add('warn', e.key, 'weights должен быть объектом { "критерий": число }.');
-      }
-      const texts = [st.task, ...(Array.isArray(st.models) ? st.models.map((m) => m?.task) : [])].filter(own);
-      if (texts.some((x) => x.includes('{item}'))) {
-        if (!e.parent) add('error', e.key, '{item} в задании можно только внутри body у foreach.');
-        else if (!listOf(st.inputs).includes('item')) add('warn', e.key, 'В задании есть {item}, но «item» нет в inputs.');
-      }
     });
     return { schema, flat, issues, comment: ctx.comment };
   }
 
   // ---------- Состояние стенда ----------
-  const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'final', 'selectedModel'];
+  const DATA_KEYS = ['models', 'defaults', 'run', 'rounds', 'selectedModel'];
   const stand = { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, text: '', comment: '' };
 
   // Дисциплина и свои поля модели/синтеза схемы → поля ProtoState.
@@ -507,9 +535,9 @@
     out.lines = listOf(d.lines).filter(own).map((x) => x.trim());
     return out;
   }
-  const ownFields = (o) => ({ request: own(o.request) ? o.request.trim() : '', maxWords: wordsOf(o.maxWords), discipline: disciplineOf(o.discipline) });
+  const ownFields = (o) => ({ maxWords: wordsOf(o.maxWords), discipline: disciplineOf(o.discipline) });
 
-  // Схема → ProtoState: раунды и синтезы в порядке списка; layout — колонки холста.
+  // Схема → ProtoState: раунды в порядке списка (синтез — раунд из одной модели); layout — колонки холста.
   function applySchema(schema, flat, issues) {
     const state = S();
     if (!stand.snapshot) {
@@ -518,7 +546,7 @@
     }
     const steps = schema.steps.filter((st) => st && typeof st === 'object');
     const names = new Set(stand.snapshot.models);
-    steps.forEach((st) => { listOf(st.models).forEach((m) => own(m?.name) && names.add(m.name)); if (own(st.model)) names.add(st.model); });
+    steps.forEach((st) => { listOf(st.models).forEach((m) => own(m?.name) && names.add(m.name)); });
     state.models = [...names];
     // defaults / run схемы поверх значений, бывших до первого «Применить».
     const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -527,56 +555,42 @@
     const notes = isObj(d.modelNotes) ? Object.fromEntries(Object.entries(d.modelNotes).filter(([, v]) => own(v)).map(([n, v]) => [n, v.trim()])) : {};
     state.defaults = { ...snapD,
       roundTask: own(d.roundTask) ? d.roundTask.trim() : snapD.roundTask || '',
-      synthesisTask: own(d.synthesisTask) ? d.synthesisTask.trim() : snapD.synthesisTask || '',
       discipline: isObj(d.discipline) ? disciplineOf(d.discipline) : snapD.discipline || state.emptyDiscipline(),
       modelNotes: { ...(snapD.modelNotes || {}), ...notes }, roundPrompts: snapD.roundPrompts || {} };
     const r = isObj(schema.run) ? schema.run : {};
     state.run = { ...clone(stand.snapshot.run || {}), ...(['auto', 'manual'].includes(r.policy) ? { policy: r.policy } : {}), ...(wordsOf(r.maxWords) ? { maxWords: wordsOf(r.maxWords) } : {}) };
     state.rounds = [];
-    const lastSynth = steps.map((st) => st.block).lastIndexOf('synthesis');
-    const finalAt = lastSynth >= 0 && !steps.slice(lastSynth + 1).some((st) => st.block === 'round') ? lastSynth : -1;
-    let final = null;
-    stand.layout = steps.map((st, i) => {
+    // Исходные артефакты (верхнеуровневый artifacts) — не этапы: лежат в зоне над колонкой In. Все этапы схемы — колонки потока.
+    const flow = steps;
+    stand.layout = flow.map((st, i) => {
       const col = { step: st, key: flat.find((e) => e.raw === st)?.key || st.id };
       if (st.block === 'round') {
         const index = state.rounds.length;
         const inputs = listOf(st.inputs);
         state.rounds.push({
           ref: own(st.id) ? st.id : `r${index + 1}`,
-          order: ENUMS.order.includes(st.order) ? st.order : '',
           input: inputs.length ? (inputs.length > 1 ? 'all' : 'previous') : (index === 0 ? '' : 'none'),
           task: own(st.task) ? st.task : '', role: 'None',
           models: listOf(st.models).filter((m) => m && typeof m === 'object').map((m) => {
             const id = roleIdOf(m.role);
             const roleLine = own(m.role) && !id ? `Роль: ${m.role.trim()}.` : '';
-            return { name: String(m.name || '?'), enabled: true, send: true, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '',
+            return { name: String(m.name || '?'), enabled: m.enabled !== false, role: id || 'None', schemaRole: own(m.role) ? m.role.trim() : '', schemaTask: own(m.task) ? m.task.trim() : '',
               task: [roleLine, own(m.task) ? m.task.trim() : ''].filter(Boolean).join('\n\n'), ...ownFields(m) };
           }),
-          intermediateSynthesis: null,
-          artifacts: listOf(st.artifacts).map((title, k) => ({ id: `${st.id}-a${k + 1}`, title: String(title), version: 1 }))
+          artifacts: listOf(st.artifacts).map((a, k) => ({ id: `${st.id}-a${k + 1}`, title: artName(a), version: 1 }))
         });
         col.round = index;
-      } else if (st.block === 'synthesis') {
-        col.synth = { model: own(st.model) ? st.model : (state.models.includes('Claude') ? 'Claude' : state.models[0]),
-          task: [own(st.role) ? `Роль: ${st.role.trim()}.` : '', own(st.task) ? st.task.trim() : ''].filter(Boolean).join('\n\n'),
-          ...ownFields(st) };
-        col.after = state.rounds.length - 1; // раунд, после которого стоит синтез (−1 — раундов выше нет)
-        if (i === finalAt) { col.final = true; col.synth.on = true; final = col.synth; }
       }
       return col;
     });
-    // Промежуточный синтез между раундами — в слот раунда, после которого он стоит.
-    stand.layout.forEach((col) => {
-      const round = col.synth && !col.final && col.after >= 0 && col.after < state.rounds.length - 1 ? state.rounds[col.after] : null;
-      if (round && !round.intermediateSynthesis) round.intermediateSynthesis = col.synth;
-    });
-    state.final = final || { on: false, model: state.models.includes('Claude') ? 'Claude' : state.models[0], task: '', discipline: state.emptyDiscipline() };
+    // Исходные артефакты крепятся к In: от каждого стрелка к этапу, который берёт его через «in.Имя».
+    stand.inDocs = listOf(schema.artifacts).filter((a) => isObj(a) && own(a.name)).map((a) => ({ id: a.name.trim(), title: a.name.trim(), src: a }));
     stand.schema = schema;
     stand.flat = flat;
     stand.issues = issues;
     stand.active = true;
     const name = $('currentPipelineName');
-    if (name) { name.textContent = own(schema.task) ? cut(schema.task, 60) : 'Схема'; name.title = schema.task || ''; }
+    if (name) { name.textContent = `v${Number.isInteger(schema.version) && schema.version >= 1 ? schema.version : 1}.${own(schema.task) ? cut(schema.task, 60) : 'Схема'}`; name.title = schema.task || ''; }
     render();
   }
 
@@ -585,6 +599,8 @@
     if (stand.snapshot) DATA_KEYS.forEach((k) => { state[k] = stand.snapshot[k]; });
     const name = $('currentPipelineName');
     if (name && stand.name != null) { name.textContent = stand.name; name.title = ''; }
+    const entry = $('entryPoint');
+    if (entry) entry.title = '';
     Object.assign(stand, { active: false, layout: [], issues: [], flat: [], schema: null, snapshot: null, name: null, current: null, comment: '' });
     canvas().render?.();
     drawIssues();
@@ -599,106 +615,169 @@
     const list = issuesOf(key);
     if (!list.length) return '';
     const err = list.some((it) => it.level === 'error');
-    return `<span class="proto-stand-bang${err ? '' : ' is-warn'}" title="${esc(list.map((it) => it.msg).join('\n'))}">!</span>`;
+    return `<span class="proto-stand-bang${err ? '' : ' is-warn'}"${tipAttrs(err ? 'Ошибка схемы' : 'Предупреждение схемы', list.map((it) => it.msg).join('\n'))}>!</span>`;
   };
-  const inputsText = (st, skip) => {
-    const rest = listOf(st.inputs).filter((r) => refId(r) !== skip);
-    return rest.length ? `<div class="proto-stand-line">вход: ${esc(rest.join(', '))}</div>` : '';
+  const inputsText = (st) => {
+    const req = listOf(st.inputs).filter(own);
+    return req.length ? `<div class="proto-stand-line">вход: ${esc(req.join(', '))}</div>` : '';
   };
-  const repeatText = (st) => (own(st.repeats) ? `<div class="proto-stand-line proto-stand-repeat">повтор ${esc(st.repeats)}${own(st.because) ? ` · ${esc(st.because)}` : ''}</div>` : '');
-  const artifactsHtml = (list) => {
-    const items = list.length
-      ? list.map((t) => `<span class="proto-artifact" title="${esc(t)} v1"><span class="proto-artifact-title">${esc(t)}</span><span class="proto-artifact-version">v1</span></span>`).join('')
-      : '<span class="proto-artifacts-empty">—</span>';
-    return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-label">Артефакты</div><div class="proto-artifacts-row">${items}</div></div>`;
+  // Артефакты этапа — в зоне над блоками моделей, под бейджем. Версия: сколько этапов выше (включая этот) выдали артефакт с тем же именем.
+  const artifactVersion = (k, name) => stand.layout.slice(0, k + 1).filter((c) => listOf(c.step.artifacts).map(artName).includes(name)).length;
+  // Описание артефакта: у первого этапа схемы, который его задал (имя может повторяться в нескольких этапах).
+  const artifactDesc = (name) => {
+    for (const c of stand.layout) { const a = listOf(c.step.artifacts).find((x) => artName(x) === name && own(artDesc(x))); if (a) return artDesc(a); }
+    return '';
   };
-  const modelBlock = (model, index) => {
+  // Вид исходного артефакта: текст в схеме или файл, приложенный к ответу.
+  const docKind = (d) => (own(d.src?.content) ? 'текст' : own(d.src?.attachment) ? 'файл' : 'не передан');
+  // Исходные артефакты — в зоне над In (k = -1); у колонок этапов исходных артефактов нет.
+  const docChips = (k) => (k === -1 ? (stand.inDocs || []) : []).map((d) => {
+    const label = docKind(d);
+    return `<span class="proto-art proto-art-doc" data-art="doc|${esc(d.id)}"${tipAttrs(`${d.title} · исходный артефакт (${label})`, artDesc(d.src))}><span class="proto-art-title">${esc(d.title)}</span><span class="proto-art-version">${esc(label)}</span></span>`;
+  }).join('');
+  const artifactZone = (k, st) => `<div class="proto-art-zone">${listOf(st.artifacts).map(artName).map((name) => {
+    const version = `v${artifactVersion(k, name)}`;
+    return `<span class="proto-art" data-art="${k}|${esc(name)}"${tipAttrs(`${name} ${version}`, artifactDesc(name))}><span class="proto-art-title">${esc(name)}</span><span class="proto-art-version">${esc(version)}</span></span>`;
+  }).join('')}${docChips(k)}</div>`;
+  function openArtifact(k, name) {
+    const col = stand.layout[k];
+    if (!col) return;
+    stand.current = null;
+    const modal = infoModal();
+    const users = artifactLinks().filter((l) => !l.doc && l.from === k && l.name === name).map((l) => stand.layout[l.to].step);
+    modal.querySelector('.modal-content').innerHTML = `
+      <header class="custom-card-top custom-defaults-top">
+        <h3 class="custom-card-model"><i class="ti ti-file-text" aria-hidden="true"></i>${esc(name)}<span class="custom-card-where">артефакт v${artifactVersion(k, name)} · ${esc(col.step.id || '')}</span></h3>
+        <button type="button" class="modal-button" data-stand-close>Закрыть</button>
+      </header>
+      <div class="custom-card-body">
+        <div class="proto-stand-rows">
+          <div class="proto-stand-row"><span>создаёт</span><div>${esc(col.step.id || '')} · ${esc(col.step.title || '')}</div></div>
+          <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
+        </div>
+        <div class="custom-card-marks"><strong>Описание</strong>
+          <div class="custom-card-note">${esc(artifactDesc(name) || NO_DESC)}</div>
+        </div>
+      </div>`;
+    show(modal);
+  }
+  // Стрелки: от артефакта в колонке производителя к бейджу этапа, который берёт "<id>.<имя>" во входе.
+  const artifactLinks = () => {
+    const links = [];
+    stand.layout.forEach((col, c) => listOf(col.step.inputs).forEach((ref) => {
+      const id = refId(ref);
+      const name = String(ref).slice(id.length + 1);
+      if (!name) return;
+      if (id === 'in') {
+        if ((stand.inDocs || []).some((d) => d.id === name) && !links.some((l) => l.from === -1 && l.to === c && l.name === name)) links.push({ from: -1, to: c, name, doc: true });
+        return;
+      }
+      const p = stand.layout.findIndex((x, k) => k < c && x.step.id === id && listOf(x.step.artifacts).map(artName).includes(name));
+      if (p >= 0 && !links.some((l) => l.from === p && l.to === c && l.name === name)) links.push({ from: p, to: c, name });
+    }));
+    return links;
+  };
+  function openSource(id) {
+    const st = (stand.inDocs || []).find((x) => x.id === id);
+    if (!st) return;
+    stand.current = null;
+    const modal = infoModal();
+    const users = stand.layout.filter((c) => listOf(c.step.inputs).some((r) => r === `in.${id}`)).map((c) => c.step);
+    modal.querySelector('.modal-content').innerHTML = `
+      <header class="custom-card-top custom-defaults-top">
+        <h3 class="custom-card-model"><i class="ti ti-file-text" aria-hidden="true"></i>${esc(st.title)}<span class="custom-card-where">исходный артефакт (${esc(docKind(st))})</span></h3>
+        <button type="button" class="modal-button" data-stand-close>Закрыть</button>
+      </header>
+      <div class="custom-card-body">
+        <div class="proto-stand-rows">
+          <div class="proto-stand-row"><span>источник</span><div>${own(st.src.content) ? 'текст в схеме' : esc(st.src.attachment || 'не передан')}</div></div>
+          <div class="proto-stand-row"><span>берут</span><div>${users.length ? users.map((u) => `${esc(u.id || '')} · ${esc(u.title || '')}`).join('<br>') : 'никто'}</div></div>
+        </div>
+        <div class="custom-card-marks"><strong>Описание</strong>
+          <div class="custom-card-note" style="white-space:pre-wrap">${esc(artDesc(st.src) || NO_DESC)}</div>
+        </div>
+      </div>`;
+    show(modal);
+  }
+  // Описание модели: роль и задание модели; нет их — задание раунда.
+  const modelDesc = (model, round) => {
+    const own2 = [model.schemaRole ? `Роль: ${model.schemaRole}` : '', model.schemaTask].filter(Boolean).join('\n');
+    return own2 || (round && own(round.task) ? `Задание раунда: ${round.task.trim()}` : '');
+  };
+  const modelBlock = (model, index, round) => {
     const on = model.enabled !== false;
-    const send = on && model.send !== false;
     const options = ROLE_OPTIONS.map(([value, label]) => {
       const text = value === 'None' && model.schemaRole && !roleIdOf(model.schemaRole) ? model.schemaRole : label;
       return `<option value="${esc(value)}"${(model.role || 'None') === value ? ' selected' : ''}>${esc(text)}</option>`;
     }).join('');
-    return `<div class="model-block ${on ? 'active' : 'inactive'} with-role" data-index="${index}" data-model="${esc(model.name)}">
+    return `<div class="model-block ${on ? 'active' : 'inactive'} with-role" data-index="${index}" data-model="${esc(model.name)}"${tipAttrs(model.name, modelDesc(model, round))}>
         <div class="model-header">
           <span class="status-indicator" data-llm-name="${esc(model.name)}"></span>
           <input type="checkbox" class="model-checkbox model-input-checkbox"${on ? ' checked' : ''} aria-label="Input" title="Input">
-          <span class="model-name" title="${esc(model.schemaRole ? `${model.name} — ${model.schemaRole}` : model.name)}">${esc(model.name)}</span>
-          <input type="checkbox" class="model-checkbox model-send-checkbox"${send ? ' checked' : ''}${on ? '' : ' disabled'} aria-label="Send" title="Send">
-        </div>
+          <span class="model-name">${esc(model.name)}</span>        </div>
         <select class="role-selector judge-prompt-selector"${on ? '' : ' disabled'}>${options}</select>
       </div>`;
   };
-  const nestedHtml = (body) => `<details class="proto-stand-body"><summary>Этапы: ${listOf(body).length}</summary>${listOf(body).map((sub) => {
-    const key = stand.flat.find((e) => e.raw === sub)?.key || '';
-    return `<div class="proto-stand-sub" data-stand-key="${esc(key)}" title="Двойной клик — поля этапа">${esc(sub?.id || '?')} · ${esc(KIND[sub?.block]?.[0] || sub?.block || '?')} — ${esc(cut(sub?.title, 40))}${bang(key)}</div>`;
-  }).join('')}</details>`;
-
   function columnHtml(col, k, prevId) {
     const st = col.step;
     const key = col.key;
     const stack = `stand-stack-${k}`;
-    const head = (badge, extra = '') => `<div class="stage-label"><span class="round-badge${extra}">${badge}</span></div>`;
-    const tail = `${repeatText(st)}${inputsText(st, prevId)}`;
+    const head = (badge, extra = '', tip = '') => `<div class="stage-label"${tip}><span class="round-badge${extra}">${badge}</span></div>`;
+    const tail = inputsText(st, prevId);
     if (col.round != null) {
       const round = S().rounds[col.round];
-      return `<div class="stage-column" data-round-index="${col.round}" data-stand-key="${esc(key)}">
-          ${head(`R${col.round + 1}`)}
-          <div class="model-stack" id="${stack}">${round.models.map(modelBlock).join('')}</div>
-          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}${round.order === 'sequential' ? ' · по очереди' : ''}</span>${tail}</div>
-          ${artifactsHtml(listOf(st.artifacts))}
-        </div>`;
-    }
-    if (col.synth) {
-      const options = S().models.map((n) => `<option value="${esc(n)}"${n === col.synth.model ? ' selected' : ''}>${esc(n)}</option>`).join('');
-      return `<div class="stage-column${col.final ? ' synthesis-capable' : ''}"${col.final ? ' id="synthesisColumn" data-stage="synthesis"' : ''} data-stand-key="${esc(key)}">
-          ${head(col.final ? 'Final' : 'Синтез')}
-          <div class="model-stack" id="${stack}">
-            <div class="model-block pipeline-synthesis-block selected-synthesizer proto-stand-card" data-stand-key="${esc(key)}">
-              <div class="model-header"><span class="status-indicator" aria-hidden="true"></span><span class="model-name">Synthesis</span>${bang(key)}</div>
-              <select class="synthesis-flow-select" data-stand-key="${esc(key)}" aria-label="Модель синтеза">${options}</select>
-              ${own(st.role) ? `<div class="proto-stand-line">роль: ${esc(st.role)}</div>` : ''}
-            </div>
-          </div>
-          <div class="proto-stand-meta"><span class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
-          ${artifactsHtml(listOf(st.artifacts))}
+      const tip = tipAttrs(`R${col.round + 1} · ${st.title || st.id || ''}`, st.why);
+      return `<div class="stage-column" data-round-index="${col.round}" data-stand-key="${esc(key)}"${tip}>
+          ${head(`R${col.round + 1}`, '', tip)}
+          ${artifactZone(k, st)}
+          <div class="model-stack" id="${stack}">${round.models.map((m, i) => modelBlock(m, i, round)).join('')}</div>
+          <div class="proto-stand-meta">${bang(key)}<span class="proto-stand-line"${tip}><b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}</span>${tail}</div>
         </div>`;
     }
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
-    const goes = st.block === 'route' ? listOf(st.choices).map((c) => `<div class="proto-stand-line">${esc(cut(c?.when, 30))} → ${esc(listOf(c?.goes).join(', '))}</div>`).join('') : '';
-    const from = st.block === 'list' && own(st.from) && refId(st.from) !== prevId ? `<div class="proto-stand-line">из: ${esc(st.from)}</div>` : '';
-    const over = st.block === 'foreach' && own(st.over) && refId(st.over) !== prevId ? `<div class="proto-stand-line">по: ${esc(st.over)}</div>` : '';
-    return `<div class="stage-column" data-stand-key="${esc(key)}">
-        ${head(esc(label), ' proto-stand-kind')}
+    const human = HUMAN_BLOCKS.includes(st.block);
+    const app = APP_BLOCKS.includes(st.block) ? '<div class="proto-stand-line proto-stand-app">приложение</div>' : '';
+    const extra = [own(st.ask) ? `Вопрос: ${st.ask.trim()}` : '', own(st.file) ? `Файл: ${st.file.trim()}${own(st.mode) ? ` (${st.mode.trim()})` : ''}` : ''].filter(Boolean);
+    const tip = tipAttrs(`${label} · ${st.title || st.id || ''}`, [own(st.why) ? st.why.trim() : '', ...extra].join('\n'));
+    return `<div class="stage-column" data-stand-key="${esc(key)}"${tip}>
+        ${head(esc(label), ` proto-stand-kind${human ? ' proto-human-kind' : ''}`, tip)}
+        ${artifactZone(k, st)}
         <div class="model-stack" id="${stack}">
-          <div class="model-block inactive proto-stand-card" data-stand-key="${esc(key)}">
-            <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name" title="${esc(st.title)}">${esc(st.title || '—')}</span>${bang(key)}</div>
-            <div class="proto-stand-line"><b>${esc(st.id || '')}</b> ${esc(cut(st.why, 70))}</div>
-            ${repeatText(st)}${goes}${from}${over}
-            ${st.block === 'foreach' ? nestedHtml(st.body) : ''}
+          <div class="model-block inactive proto-stand-card${human ? ' proto-human' : ''}" data-stand-key="${esc(key)}"${tip}>
+            <div class="model-header"><i class="ti ${icon} proto-stand-icon" aria-hidden="true"></i><span class="model-name">${human ? 'User' : esc(st.title || '—')}</span>${bang(key)}</div>
+            ${app}<div class="proto-stand-line"${tip}>${human ? `<b>${esc(st.id || '')}</b> ${esc(cut(st.title, 40))}` : `<b>${esc(st.id || '')}</b>`} ${esc(cut(st.why, 70))}</div>
           </div>
         </div>
         <div class="proto-stand-meta">${inputsText(st, prevId)}</div>
-        ${artifactsHtml(listOf(st.artifacts))}
       </div>`;
   }
 
-  // Линия к этапу активна, если он берёт вход у соседа слева (inputs/repeats/from/over); иначе — серая.
-  const linksTo = (st, id) => !!id && [...listOf(st.inputs), st.from, st.over].some((r) => own(r) && refId(r) === id);
+  // Линия к этапу активна, если он берёт вход у соседа слева (inputs); иначе — серая.
+  const linksTo = (st, id) => !!id && listOf(st.inputs).some((r) => own(r) && refId(r) === id);
 
+  // Верхний отступ под полосу стрелок: пусто, когда стрелки выключены, — схема поднимается наверх.
+  const arrowsPadding = () => (stand.arrows !== false && artifactLinks().length ? `${12 + artifactLinks().length * 6}px` : '');
   function render() {
     const root = $('pipelineFlow');
     if (!root) return;
     const cols = stand.layout;
-    let html = `<div class="stage-column entry-column">
-        <div class="stage-label"><span class="entry-badge">In</span></div>
-        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint" title="Общие значения" style="cursor:pointer">▶</div></div>
+    const inDesc = (stand.inDocs || []).map((d) => `${d.title} (${docKind(d)}) — ${artDesc(d.src) || NO_DESC}`).join('\n');
+    const inTip = tipAttrs('In · исходные артефакты', inDesc || (own(stand.schema?.description) ? cut(stand.schema.description, 400) : ''));
+    let html = `<div class="stage-column entry-column"${inTip}>
+        <button type="button" class="proto-arrows-toggle" id="protoArrowsToggle" aria-pressed="${stand.arrows !== false}" aria-label="Arrows" title="Стрелки артефактов"><svg viewBox="0 0 16 14" aria-hidden="true"><path d="M2 3h9M8.5 0.5 11 3 8.5 5.5"/><path d="M2 7h9M8.5 4.5 11 7 8.5 9.5"/><path d="M2 11h9M8.5 8.5 11 11 8.5 13.5"/></svg></button>
+        <div class="stage-label"${inTip}><span class="entry-badge">In</span></div>
+        <div class="proto-art-zone">${docChips(-1)}</div>
+        <div class="entry-wrapper" id="entryWrapper"><div class="entry-point" id="entryPoint"${tipAttrs('▶ Общие значения', own(stand.schema?.description) ? cut(stand.schema.description, 400) : '')} style="cursor:pointer">▶</div></div>
       </div>
       <div class="connector-group"><svg class="connector-svg" id="svg-in-models"></svg></div>`;
     cols.forEach((col, k) => {
       if (k > 0) html += `<div class="connector-group"><svg class="connector-svg" id="stand-svg-${k}"></svg></div>`;
       html += columnHtml(col, k, k > 0 ? cols[k - 1].step.id : '');
     });
+    const per = Math.max(0, (stand.inDocs || []).length, ...cols.map((col) => listOf(col.step.artifacts).length));
+    root.style.setProperty('--proto-art-zone', per ? '42px' : '0px');
+    root.style.paddingTop = arrowsPadding();
+    root.style.paddingLeft = '36px';
     root.innerHTML = html;
     // Шапка (число раундов, предел слов, Auto) — как у холста, из ProtoState.
     canvas().syncChrome?.();
@@ -717,6 +796,8 @@
       const last = stack.lastElementChild;
       if (last) max = Math.max(max, last.getBoundingClientRect().bottom - stack.getBoundingClientRect().top);
     });
+    // Все стопки одной высоты, блоки под ними (вход, название) стоят на одной линии по верхнему краю.
+    $('pipelineFlow')?.style.setProperty('--proto-stack-h', `${max}px`);
     panel.querySelectorAll('#pipelineFlow .connector-svg').forEach((svg) => { svg.style.height = `${max}px`; svg.setAttribute('height', `${max}`); });
     const entry = $('entryWrapper');
     if (entry) entry.style.height = `${max}px`;
@@ -724,8 +805,35 @@
     if (cols.length) canvas().drawInputSplitConnector?.('svg-in-models', 'stand-stack-0', 'active', mode(cols[0], 'input'));
     for (let k = 1; k < cols.length; k++) {
       const color = linksTo(cols[k].step, cols[k - 1].step.id) ? 'brain-flow' : 'inactive';
-      canvas().drawMergeSplitConnector?.(`stand-svg-${k}`, `stand-stack-${k - 1}`, `stand-stack-${k}`, color, { sourceMode: mode(cols[k - 1], 'send'), targetMode: mode(cols[k], 'input') });
+      canvas().drawMergeSplitConnector?.(`stand-svg-${k}`, `stand-stack-${k - 1}`, `stand-stack-${k}`, color, { sourceMode: mode(cols[k - 1], 'input'), targetMode: mode(cols[k], 'input') });
     }
+      drawArtifactLinks();
+  }
+  // Линии артефактов рисуются поверх потока: вверх в полосу над бейджами, вдоль неё и вниз на бейдж потребителя.
+  function drawArtifactLinks() {
+    const root = $('pipelineFlow');
+    if (!root) return;
+    root.querySelector(':scope > .proto-art-svg')?.remove();
+    const links = artifactLinks();
+    if (!links.length || stand.arrows === false) return;
+    const columns = [...root.querySelectorAll(':scope > .stage-column:not(.entry-column)')];
+    const base = root.getBoundingClientRect();
+    const rel = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cx: (r.left + r.right) / 2 - base.left, cy: (r.top + r.bottom) / 2 - base.top }; };
+    const slots = new Map();
+    let html = '';
+    links.forEach((link, i) => {
+      const col = link.from === -1 ? root.querySelector(':scope > .entry-column') : columns[link.from];
+      const to = columns[link.to]?.querySelector('.stage-label > span');
+      const box = [...(col?.querySelectorAll('.proto-art') || [])].find((el) => el.dataset.art === (link.doc ? `doc|${link.name}` : `${link.from}|${link.name}`));
+      if (!box || !to) return;
+      const a = rel(box); const c = rel(col); const t = rel(to);
+      const slot = slots.get(link.from) || 0; slots.set(link.from, slot + 1);
+      const xv = c.r + 6 + slot * 4;
+      const lane = 6 + i * 6;
+      const path = `M ${a.cx} ${a.t} V ${a.t - 4} H ${xv} V ${lane} H ${t.cx} V ${t.t - 2}`;
+      html += `<path d="${path}" class="proto-art-line"/><path d="M ${t.cx - 4} ${t.t - 7} L ${t.cx} ${t.t - 1} L ${t.cx + 4} ${t.t - 7}" class="proto-art-line"/>`;
+    });
+    root.insertAdjacentHTML('afterbegin', `<svg class="proto-art-svg" width="${root.scrollWidth}" height="${root.scrollHeight}" aria-hidden="true">${html}</svg>`);
   }
 
   // ---------- Окна ----------
@@ -737,8 +845,9 @@
     if (value == null || value === '') return '—';
     if (key === 'models' && Array.isArray(value)) {
       return value.map((m) => (m && typeof m === 'object' ? [`${m.name || '?'}${own(m.role) ? ` (роль: ${m.role})` : ''}${own(m.task) ? ` — ${m.task}` : ''}`,
-        ...Object.keys(m).filter((x) => !['name', 'role', 'task'].includes(x)).map((x) => indent(`${LABELS[x] || x}:${['discipline', 'request'].includes(x) ? `\n${indent(fmt(x, m[x]))}` : ` ${fmt(x, m[x])}`}`))].join('\n') : String(m))).join('\n');
+        ...Object.keys(m).filter((x) => !['name', 'role', 'task'].includes(x)).map((x) => indent(`${LABELS[x] || x}:${x === 'discipline' ? `\n${indent(fmt(x, m[x]))}` : ` ${fmt(x, m[x])}`}`))].join('\n') : String(m))).join('\n');
     }
+    if (key === 'artifacts' && Array.isArray(value)) return value.map((a) => (artDesc(a) ? `${artName(a)} — ${artDesc(a)}` : artName(a))).join('; ');
     if (key === 'discipline') return fmtDiscipline(value);
     if (key === 'maxWords') return wordsOf(value) ? `${wordsOf(value)} слов` : String(value);
     if (key === 'modelNotes' && isObj(value)) return Object.entries(value).map(([n, v]) => `${n}: ${v}`).join('\n') || '—';
@@ -746,19 +855,16 @@
       return Object.entries(value).map(([k, v]) => (k === 'policy' ? `запуск: ${v}${POLICY_TEXT[v] ? ` (${POLICY_TEXT[v]})` : ''}` : k === 'maxWords' ? `общий предел: ${fmt('maxWords', v)}` : `${k}: ${fmt(k, v)}`)).join('\n');
     }
     if (key === 'defaults' && isObj(value)) {
-      const names = { roundTask: 'задание раундов', synthesisTask: 'задание синтеза', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
+      const names = { roundTask: 'задание раундов', discipline: 'дисциплина', modelNotes: 'особенности моделей' };
       return Object.entries(value).map(([k, v]) => (isObj(v) ? `${names[k] || k}:\n${indent(fmt(k, v))}` : `${names[k] || k}: ${fmt(k, v)}`)).join('\n');
     }
-    if (key === 'choices' && Array.isArray(value)) return value.map((c) => `когда ${c?.when || '?'} → ${listOf(c?.goes).join(', ') || '—'}`).join('\n');
-    if (key === 'body' && Array.isArray(value)) return value.map((s) => `${s?.id || '?'} · ${s?.block || '?'} — ${s?.title || ''}`).join('\n');
-    if (key === 'order') return `${value}${ORDER_TEXT[value] ? ` (${ORDER_TEXT[value]})` : ''}`;
     if (Array.isArray(value)) return value.map((v) => (v && typeof v === 'object' ? fmt('', v) : String(v))).join(', ');
     if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${k}: ${typeof v === 'object' ? fmt(k, v) : v}`).join(', ');
     return String(value);
   };
   // isRoot — раздел окна ▶: поля верхнего уровня схемы (task, defaults, run) и общие замечания.
   function schemaSection(st, isRoot) {
-    const keys = isRoot ? ['task', 'defaults', 'run'] : [...COMMON.filter((k) => k in st || ['block', 'title', 'why', 'inputs', 'artifacts'].includes(k)),
+    const keys = isRoot ? ['task', 'artifacts', 'defaults', 'run'] : [...COMMON.filter((k) => k in st || ['block', 'title', 'why', 'inputs', 'artifacts'].includes(k)),
       ...Object.keys(st).filter((k) => !COMMON.includes(k))];
     const issues = isRoot ? issuesOf(null) : issuesOf(stand.flat.find((e) => e.raw === st)?.key);
     return `<div class="custom-card-marks proto-stand-schema"><strong>Из схемы</strong>
@@ -775,7 +881,19 @@
       : ($('pipeline-block-info-modal')?.classList.contains('is-visible') ? $('pipeline-block-info-modal').querySelector('.custom-card-body') : null);
     if (!box || box.querySelector(':scope > .proto-stand-schema')) return;
     box.insertAdjacentHTML('beforeend', schemaSection(cur.step, cur.root));
+    if (cur.root) box.insertAdjacentHTML('afterbegin', descriptionBlock(cur.step.description));
   }
+  // Описание схемы для пользователя: на работу не влияет. Свёрнуто до двух строк, по кнопке — на весь экран.
+  const descriptionBlock = (text) => `<div class="proto-stand-desc" id="proto-stand-desc"><div class="proto-stand-desc-head"><strong>Description</strong><button type="button" class="proto-stand-desc-toggle" aria-expanded="false" aria-controls="proto-stand-desc-text" title="Развернуть на весь экран">⤢</button></div><div class="proto-stand-desc-text" id="proto-stand-desc-text">${own(text) ? esc(text) : '<em>Описание не задано: в схеме нет поля description.</em>'}</div></div>`;
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('.proto-stand-desc-toggle');
+    if (!button) return;
+    const box = button.closest('.proto-stand-desc');
+    const full = box.classList.toggle('is-full');
+    button.setAttribute('aria-expanded', String(full));
+    button.textContent = full ? '✕' : '⤢';
+    button.title = full ? 'Свернуть' : 'Развернуть на весь экран';
+  });
   new MutationObserver(ensureSection).observe(document.body, { childList: true, subtree: true });
 
   function infoModal() {
@@ -792,16 +910,24 @@
     }
     return modal;
   }
+  // «Назначение» — первый раздел окна блока User: зачем он и что делает User.
+  const purposeSection = (st) => {
+    if (!HUMAN_BLOCKS.includes(st.block)) return '';
+    return `<div class="custom-card-marks proto-stand-purpose"><strong>Назначение</strong>
+      <div class="custom-card-note">${esc(own(st.why) ? st.why : 'не задано')}</div>
+      <div class="custom-card-note"><b>Вопрос User:</b> ${esc(own(st.ask) ? st.ask : 'не задан')}</div>
+    </div>`;
+  };
   function openInfo(st) {
     stand.current = null;
     const modal = infoModal();
     const [label, icon] = KIND[st.block] || [String(st.block || '?'), 'ti-help'];
     modal.querySelector('.modal-content').innerHTML = `
       <header class="custom-card-top custom-defaults-top">
-        <h3 class="custom-card-model"><i class="ti ${icon}" aria-hidden="true"></i>${esc(st.title || st.id || '—')}<span class="custom-card-where">${esc(label)} · ${esc(st.id || '')}</span></h3>
+        <h3 class="custom-card-model"><i class="ti ${icon}" aria-hidden="true"></i>${HUMAN_BLOCKS.includes(st.block) ? 'User' : esc(st.title || st.id || '—')}<span class="custom-card-where">${esc(label)} · ${esc(st.id || '')}${HUMAN_BLOCKS.includes(st.block) && own(st.title) ? ` · ${esc(st.title)}` : ''}</span></h3>
         <button type="button" class="modal-button" data-stand-close>Закрыть</button>
       </header>
-      <div class="custom-card-body">${schemaSection(st)}</div>`;
+      <div class="custom-card-body">${purposeSection(st)}${schemaSection(st)}</div>`;
     show(modal);
   }
   const show = (modal) => { modal.style.display = 'flex'; modal.classList.add('is-visible'); modal.setAttribute('aria-hidden', 'false'); document.body.classList.add('modal-open'); };
@@ -809,29 +935,31 @@
   const anyOpen = () => ['pipeline-block-info-modal', 'proto-stand-info', 'proto-stand-modal'].some((id) => $(id)?.classList.contains('is-visible')) || !!$('pipeline-stage-dialog')?.open;
 
   const colOf = (key) => stand.layout.find((c) => c.key === key);
-  const stepOf = (key) => stand.flat.find((e) => e.key === key)?.raw;
-  function openSynth(col) {
-    stand.current = { step: col.step, where: 'card' };
-    const state = S();
-    if (col.final) { state.final = col.synth; cards().openSynthesis?.('final'); return; }
-    if (col.after >= 0 && col.after < state.rounds.length - 1) {
-      state.rounds[col.after].intermediateSynthesis = col.synth;
-      cards().openSynthesis?.('intermediate', col.after);
-      return;
-    }
-    // Синтез без раунда перед ним (или после последнего раунда): открывается через слот финального синтеза.
-    const keep = state.final;
-    state.final = Object.assign(col.synth, { on: true });
-    cards().openSynthesis?.('final');
-    if (keep !== col.synth) state.final = keep;
-  }
-
   const CONTROLS = 'input, select, button, option, summary';
   function bindFlow() {
     const flow = $('pipelineFlow');
+    flow.addEventListener('transitionend', (event) => { if (event.target === flow && event.propertyName === 'padding-top' && stand.active) draw(); });
     flow.addEventListener('click', (event) => {
       if (!stand.active) return;
       const t = event.target;
+      const arrows = t.closest('#protoArrowsToggle');
+      if (arrows) {
+        event.stopPropagation();
+        stand.arrows = stand.arrows === false;
+        arrows.setAttribute('aria-pressed', String(stand.arrows));
+        // Верхний отступ под полосу стрелок плавно меняется (CSS transition); стрелки и связи перерисуются по его окончании.
+        flow.querySelector(':scope > .proto-art-svg')?.remove();
+        flow.style.paddingTop = arrowsPadding();
+        return;
+      }
+      const art = t.closest('.proto-art');
+      if (art) {
+        event.stopPropagation();
+        event.preventDefault();
+        const [k, ...rest] = art.dataset.art.split('|');
+        if (k === 'doc') openSource(rest.join('|')); else openArtifact(Number(k), rest.join('|'));
+        return;
+      }
       const badge = t.closest('.round-badge');
       if (badge) {
         event.stopPropagation();
@@ -847,8 +975,6 @@
       const t = event.target;
       if (t.closest('select, input, button, option')) return;
       event.stopPropagation();
-      const sub = t.closest('.proto-stand-sub');
-      if (sub) { const st = stepOf(sub.dataset.standKey); if (st) openInfo(st); return; }
       if (t.closest('summary')) return;
       const column = t.closest('.stage-column[data-stand-key]');
       const col = colOf(column?.dataset.standKey);
@@ -862,17 +988,7 @@
         else cards().openRound?.(col.round);
         return;
       }
-      if (col.synth) { openSynth(col); return; }
       openInfo(col.step);
-    }, true);
-    flow.addEventListener('change', (event) => {
-      if (!stand.active) return;
-      const select = event.target.closest('.synthesis-flow-select[data-stand-key]');
-      if (!select) return;
-      event.stopPropagation();
-      const col = colOf(select.dataset.standKey);
-      if (col?.synth) col.synth.model = select.value;
-      render();
     }, true);
     // «Новый pipeline» — только на исходном холсте.
     $('pipeline-add-btn')?.addEventListener('click', () => { if (stand.active) reset(); }, true);
@@ -907,7 +1023,7 @@
           <textarea id="proto-stand-json" spellcheck="false" placeholder='{ "task": "…", "steps": [ … ] }'></textarea>
         </div>
         <div class="proto-stand-issues" id="proto-stand-issues"></div>
-        <div class="custom-card-note"><button type="button" id="proto-stand-example-foreach">Пример с foreach</button> <button type="button" id="proto-stand-example-defaults">Пример с defaults</button></div>
+        <div class="custom-card-note"><button type="button" id="proto-stand-example-defaults">Пример с defaults</button></div>
       </div>
     </div>`;
     document.body.appendChild(modal);
@@ -915,7 +1031,6 @@
     modal.addEventListener('click', (event) => { if (event.target === modal) hide(modal); });
     modal.querySelector('#proto-stand-close').addEventListener('click', () => hide(modal));
     modal.querySelector('#proto-stand-example').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.basic, null, 2); area.focus(); });
-    modal.querySelector('#proto-stand-example-foreach').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.foreach, null, 2); area.focus(); });
     modal.querySelector('#proto-stand-example-defaults').addEventListener('click', () => { area.value = JSON.stringify(EXAMPLES.defaults, null, 2); area.focus(); });
     modal.querySelector('#proto-stand-clear').addEventListener('click', () => { area.value = ''; stand.text = ''; stand.comment = ''; drawIssues('Поле очищено.', []); area.focus(); });
     modal.querySelector('#proto-stand-reset').addEventListener('click', () => { area.value = ''; stand.text = ''; reset(); });
@@ -983,6 +1098,8 @@
   const CATALOG_FORMAT = 'autoorchestr-stand-templates';
   const CACHE_KEY = 'protoStandTemplates';
   const FILE_TYPES = [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
+  // Папка схем по умолчанию — Загрузки/Схемы: окно открывается в Загрузках, дальше браузер помнит последнюю папку для этого id.
+  const PICKER = { id: 'basicSchemas', startIn: 'downloads' };
   const catalog = {
     templates: [], handle: null, fileName: '', loaded: false, status: 'none', // none | ready | prompt | unread
     activeId: null, loadedId: null, unsaved: new Set(), deleted: new Set()
@@ -990,7 +1107,7 @@
   const plural = (n, forms) => forms[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
   const uid = () => (root.crypto?.randomUUID ? root.crypto.randomUUID()
     : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
-  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
+  const pickSchema = (s) => JSON.parse(JSON.stringify(['task', 'version', 'description', 'artifacts', 'steps', 'defaults', 'run'].reduce((o, k) => (s[k] !== undefined ? { ...o, [k]: s[k] } : o), {})));
   const countSteps = (s) => (Array.isArray(s?.steps) ? s.steps.length : 0);
   const catalogDoc = () => ({ format: CATALOG_FORMAT, version: 1, stand: STAND_VERSION, templates: catalog.templates });
   const catalogText = () => JSON.stringify(catalogDoc(), null, 2);
@@ -1083,7 +1200,7 @@
     if (!catalog.handle) {
       if (typeof root.showSaveFilePicker !== 'function') return { ok: false, msg: 'Нет доступа к файлам: используйте Export' };
       let h;
-      try { h = await root.showSaveFilePicker({ suggestedName: 'stand-templates.json', types: FILE_TYPES }); } catch (error) {
+      try { h = await root.showSaveFilePicker({ ...PICKER, suggestedName: 'stand-templates.json', types: FILE_TYPES }); } catch (error) {
         return { ok: false, msg: error?.name === 'AbortError' ? 'Файл не выбран: шаблон только в памяти' : `Файл не выбран (${error?.message || error}): шаблон только в памяти` };
       }
       Object.assign(catalog, { handle: h, fileName: h.name || 'stand-templates.json', loaded: true, status: 'ready' });
@@ -1168,15 +1285,19 @@
   async function importCatalog() {
     let h = null;
     let text;
+    let fileName = '';
     if (typeof root.showOpenFilePicker === 'function') {
-      try { [h] = await root.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); } catch (error) { if (error?.name !== 'AbortError') toast(`Файл не выбран: ${error?.message || error}`); return; }
+      try { [h] = await root.showOpenFilePicker({ ...PICKER, types: FILE_TYPES, multiple: false }); } catch (error) { if (error?.name !== 'AbortError') toast(`Файл не выбран: ${error?.message || error}`); return; }
+      fileName = h.name || '';
       try { text = await readHandle(h); } catch (error) { toast(`Файл не прочитан: ${error?.message || error}`); return; }
     } else {
       const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json,.json' });
       const file = await new Promise((resolve) => { input.addEventListener('change', () => resolve(input.files?.[0] || null), { once: true }); input.click(); });
       if (!file) return;
+      fileName = file.name;
       text = await file.text();
     }
+    if (importBasicText(text, fileName)) return;
     const list = parseCatalog(text);
     if (!list) { toast('Файл не похож на каталог шаблонов'); return; }
     if (catalog.templates.length && !root.confirm(`Заменить текущий каталог (${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}) шаблонами из файла (${list.length})?`)) return;
@@ -1187,24 +1308,65 @@
     if (catalog.activeId && !list.some((t) => t.id === catalog.activeId)) { catalog.activeId = null; catalog.loadedId = null; }
     saveCache();
     drawCatalog();
+    const open = list.find((t) => t.id === catalog.activeId) || list[0];
+    if (open) applyTemplate(open);
     toast(`Каталог: ${h ? catalog.fileName : 'из файла'} · ${list.length} ${plural(list.length, ['шаблон', 'шаблона', 'шаблонов'])}${h ? '' : '\nНет доступа к файлам: изменения — через Export'}`);
   }
 
+  // Файл Basic (schemaVersion + steps) → шаблон каталога и схема на холсте.
+  function importBasicText(text, fileName) {
+    let doc;
+    try { doc = JSON.parse(text); } catch (error) { return false; }
+    if (!isObj(doc) || !('schemaVersion' in doc) || !Array.isArray(doc.steps)) return false;
+    // Имя файла «Название v2.json»: номер версии уходит в version схемы, остальное — название.
+    const base = fileName.replace(/\.json$/i, '');
+    const ver = /^(.+?) v(\d+)$/.exec(base);
+    const { schema, warnings } = root.ProtoBasicExport.fromBasic(doc, { name: ver ? ver[1] : base });
+    if (ver && Number(ver[2]) >= 1) schema.version = Number(ver[2]);
+    const now = new Date().toISOString();
+    const tpl = { id: uid(), name: uniqueName(cut(schema.task, 48)), savedAt: now, schema: pickSchema(schema), comment: '' };
+    catalog.templates.push(tpl);
+    catalog.unsaved.add(tpl.id);
+    saveCache();
+    applyTemplate(tpl);
+    persist().then((res) => toast(`Импорт из Basic: ${tpl.name}${warnings.length ? `\n${warnings.join('\n')}` : ''}\n${res.msg}`));
+    return true;
+  }
+
+  // Export: схема на холсте → файл, который принимает кнопка Import в Basic.
   function exportCatalog() {
-    if (!catalog.templates.length) { toast('Каталог пуст: сохраните схему (Save)'); return; }
-    const url = URL.createObjectURL(new Blob([catalogText()], { type: 'application/json' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: 'stand-templates.json' });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(`Скачан stand-templates.json · ${catalog.templates.length} ${plural(catalog.templates.length, ['шаблон', 'шаблона', 'шаблонов'])}`);
+    if (!stand.active || !stand.schema) { toast('Сначала примените схему (кнопка i) или откройте шаблон'); return; }
+    const { schema, warnings } = root.ProtoBasicExport.toBasic(pickSchema(stand.schema), { roleIdOf });
+    if (!schema.steps.length) { toast(`Нечего экспортировать\n${warnings.join('\n')}`); return; }
+    // Тот же проверяющий код, что у Import в Basic: недопустимый файл не пишем.
+    const errors = root.BasicSchema?.validate(schema) || [];
+    if (errors.length) { toast(`Экспорт в Basic невозможен: ${errors.slice(0, 3).map((e) => `${e.path ? `${e.path}: ` : ''}${e.message}`).join('; ')}${warnings.length ? `\n${warnings.slice(0, 4).join('\n')}` : ''}`); return; }
+    const name = (own(stand.schema.task) ? cut(stand.schema.task, 48) : 'schema').replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    const versioned = `${name} v${Number.isInteger(stand.schema.version) && stand.schema.version >= 1 ? stand.schema.version : 1}`;
+    const text = JSON.stringify(schema, null, 2);
+    const note = warnings.length ? `\n${warnings.join('\n')}` : '';
+    const download = () => {
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const link = Object.assign(document.createElement('a'), { href: url, download: `${versioned}.json` });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`Скачан ${versioned}.json для Basic${note}`);
+    };
+    if (typeof root.showSaveFilePicker !== 'function') { download(); return; }
+    root.showSaveFilePicker({ ...PICKER, suggestedName: `${versioned}.json`, types: FILE_TYPES }).then(async (h) => {
+      const w = await h.createWritable();
+      await w.write(text);
+      await w.close();
+      toast(`Сохранён ${h.name} для Basic${note}`);
+    }).catch((error) => { if (error?.name !== 'AbortError') download(); });
   }
 
   // Пункт списка — разметка настоящего UI (results.js, buildPipelineItem).
   function itemHtml(name, title, active, attrs, deletable) {
     return `<div class="pipeline-item${active ? ' active' : ''}" data-name="${esc(name)}"${attrs}>
-      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" title="${esc(title)}">${esc(name)}</span></span>${deletable
+      <span class="pipeline-item-main"><input type="radio" name="pipeline" class="pipeline-radio"${active ? ' checked' : ''}><span class="pipeline-item-name" data-tip="${esc(name)}" data-desc="${esc(title)}">${esc(name)}</span></span>${deletable
       ? '<button type="button" class="pipeline-item-delete" title="Удалить шаблон" aria-label="Удалить шаблон">×</button>' : ''}</div>`;
   }
   function drawCatalog() {
@@ -1213,9 +1375,9 @@
     const status = catalog.status === 'none' ? 'Каталог: нет файла'
       : `Каталог: ${catalog.fileName}${catalog.status === 'prompt' ? ' · нет доступа' : catalog.status === 'unread' ? ' · не прочитан' : ''}`;
     const date = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? String(iso || '') : d.toLocaleString('ru-RU'); };
-    box.innerHTML = `<div class="proto-catalog-status" title="${esc(status)}">${esc(status)}</div>${itemHtml('Default', 'Default — исходный холст', !stand.active, ' data-catalog-default', false)}${catalog.templates.map((t) => {
+    box.innerHTML = `<div class="proto-catalog-status" title="${esc(status)}">${esc(status)}</div>${itemHtml('Default', 'Исходный холст', !stand.active, ' data-catalog-default', false)}${catalog.templates.map((t) => {
       const n = countSteps(t.schema);
-      return itemHtml(t.name, `${t.name} · ${n} ${plural(n, ['этап', 'этапа', 'этапов'])} · ${date(t.savedAt)}`, stand.active && t.id === catalog.activeId, ` data-template-id="${esc(t.id)}"`, true);
+      return itemHtml(t.name, `${n} ${plural(n, ['этап', 'этапа', 'этапов'])} · ${date(t.savedAt)}${own(t.schema?.description) ? `\n${cut(t.schema.description, 300)}` : ''}`, stand.active && t.id === catalog.activeId, ` data-template-id="${esc(t.id)}"`, true);
     }).join('')}${catalog.status === 'prompt' ? `<div class="pipeline-item proto-catalog-open" data-catalog-open title="Разрешить доступ и прочитать файл">
       <span class="pipeline-item-main"><i class="ti ti-folder-open" aria-hidden="true"></i><span class="pipeline-item-name">Открыть каталог: ${esc(catalog.fileName)}</span></span></div>` : ''}`;
   }
@@ -1224,6 +1386,60 @@
   const LONG_MS = 600;
   const press = { timer: 0, hide: 0, x: 0, y: 0, item: null, suppress: false };
   const clearLongpress = () => { clearTimeout(press.hide); document.querySelectorAll('.pipeline-item.is-longpress').forEach((el) => el.classList.remove('is-longpress')); };
+  // Подсказка на каждом элементе холста и списка шаблонов: один плавающий блок .entry-point-tooltip.
+  // Текст: data-tip → title (переносится в data-tip, чтобы не дублировала нативная) → текст обрезанного элемента из TIP_FALLBACK.
+  const TIP_FALLBACK = '.model-name, .proto-art-title, .proto-art-version, .proto-stand-line, .proto-stand-kind, .round-badge, .entry-badge';
+  function bindTooltips() {
+    const tip = document.createElement('div');
+    tip.className = 'entry-point-tooltip';
+    document.body.appendChild(tip);
+    let current = null;
+    const textOf = (target) => {
+      const holder = target.closest('[data-tip],[title]');
+      if (holder) {
+        if (!holder.dataset.tip && holder.getAttribute('title')) { holder.dataset.tip = holder.getAttribute('title'); }
+        if (holder.hasAttribute('title')) holder.removeAttribute('title');
+        if (holder.dataset.tip) return { el: holder, text: holder.dataset.tip, desc: holder.dataset.desc || '' };
+      }
+      const el = target.closest(TIP_FALLBACK);
+      if (el && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)) {
+        const text = el.textContent.split('\n').map((x) => x.trim()).filter(Boolean).join('\n').slice(0, 240);
+        return { el, text };
+      }
+      return null;
+    };
+    const hide = () => { current = null; tip.classList.remove('is-visible'); };
+    const place = (el, text, desc) => {
+      const head = document.createElement('b');
+      head.className = 'entry-point-tooltip-name';
+      head.textContent = text;
+      tip.replaceChildren(head);
+      if (desc) { const body = document.createElement('span'); body.className = 'entry-point-tooltip-desc'; body.textContent = desc; tip.appendChild(body); }
+      const r = el.getBoundingClientRect();
+      const t = tip.getBoundingClientRect();   // размеры верны и при opacity 0
+      const margin = 8;
+      const half = t.width / 2;
+      const cx = Math.min(Math.max(r.left + r.width / 2, margin + half), Math.max(margin + half, window.innerWidth - margin - half));
+      let top = r.top - margin - t.height;
+      if (top < margin) top = r.bottom + margin;
+      if (top + t.height > window.innerHeight - margin) top = window.innerHeight - t.height - margin;
+      tip.style.left = `${cx}px`;
+      tip.style.top = `${Math.max(margin, top)}px`;
+      tip.classList.add('is-visible');
+    };
+    document.addEventListener('pointerover', (event) => {
+      if (event.target.closest?.('.entry-point-tooltip')) return;
+      const found = event.target.closest ? textOf(event.target) : null;
+      if (!found || !found.text) { hide(); return; }
+      if (found.el === current && tip.classList.contains('is-visible')) return;
+      current = found.el;
+      place(found.el, found.text, found.desc);
+    });
+    document.addEventListener('pointerout', (event) => { if (!event.relatedTarget) hide(); });
+    document.addEventListener('pointerdown', hide, true);
+    document.addEventListener('scroll', hide, { passive: true, capture: true });
+    window.addEventListener('blur', hide);
+  }
   function bindCatalog() {
     const box = $('pipelineItems');
     if (!box) return;
@@ -1269,7 +1485,7 @@
       else if (btn.id === 'pipeline-import-btn') importCatalog();
       else exportCatalog();
     }, true);
-    const titles = { 'pipeline-save-btn': 'Сохранить схему шаблоном в каталог', 'pipeline-import-btn': 'Открыть файл каталога шаблонов', 'pipeline-export-btn': 'Скачать каталог шаблонов (stand-templates.json)' };
+    const titles = { 'pipeline-save-btn': 'Сохранить схему шаблоном в каталог', 'pipeline-import-btn': 'Открыть файл каталога шаблонов или схему Basic', 'pipeline-export-btn': 'Скачать схему для Basic' };
     Object.entries(titles).forEach(([id, text]) => { const b = $(id); if (b) { b.title = text; b.setAttribute('aria-label', text); } });
     loadCache();
     drawCatalog();
@@ -1284,15 +1500,13 @@
     .model-block.proto-stand-card { height: auto; min-height: var(--pipeline-block-height); justify-content: flex-start; gap: 3px; cursor: pointer; }
     .proto-stand-icon { font-size: 14px; color: var(--pipeline-muted); flex: 0 0 auto; }
     .proto-stand-line { display: block; font-size: 10px; line-height: 1.35; color: var(--pipeline-muted); overflow-wrap: anywhere; }
-    .proto-stand-repeat { color: #b45309; }
-    .proto-stand-meta { width: 139px; margin-top: 6px; }
+    .proto-stand-app { font-weight: 600; color: var(--pipeline-text); }
+    #pipelineFlow .model-stack { min-height: var(--proto-stack-h, 0px); }
+    .proto-stand-meta { width: 139px; margin-top: 12px; }
     .proto-stand-kind { background: #f1f5f9; color: #64748b; text-transform: uppercase; }
     .proto-stand-bang { flex: 0 0 auto; display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; cursor: help; }
     .proto-stand-bang.is-warn { background: #f59e0b; }
     .proto-stand-meta > .proto-stand-bang { float: right; }
-    .proto-stand-body { font-size: 10px; color: var(--pipeline-text); }
-    .proto-stand-body summary { cursor: pointer; color: var(--pipeline-muted); }
-    .proto-stand-sub { display: flex; gap: 4px; align-items: center; padding: 2px 0; border-top: 1px dashed #e2e8f0; cursor: pointer; overflow-wrap: anywhere; }
     .proto-stand-actions { display: flex; gap: 8px; justify-self: end; flex-wrap: wrap; }
     .proto-stand-actions .modal-button { padding: 6px 14px; font-size: 13px; }
     #proto-stand-modal .custom-card-field textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.5; }
@@ -1305,6 +1519,12 @@
     .proto-stand-comment > div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
     .proto-stand-summary { font-weight: 600; color: var(--pipeline-text); }
     .proto-stand-schema { grid-template-columns: 1fr; }
+    .proto-stand-desc { margin-bottom: 10px; }
+    .proto-stand-desc-head { display: flex; justify-content: space-between; align-items: center; }
+    .proto-stand-desc-toggle { border: 0; background: none; cursor: pointer; font-size: 16px; color: var(--pipeline-muted); }
+    .proto-stand-desc-text { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--pipeline-text); }
+    .proto-stand-desc.is-full { position: fixed; inset: 0; z-index: 10000; background: var(--pipeline-surface, #fff); padding: 16px 24px; overflow: auto; margin: 0; }
+    .proto-stand-desc.is-full .proto-stand-desc-text { display: block; overflow: visible; }
     #proto-stand-info .modal-content { height: auto; max-height: calc(100dvh - 32px); }
     .proto-stand-rows { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin-top: 6px; }
     .proto-stand-row { display: contents; }
@@ -1323,65 +1543,382 @@
 
   // ---------- Примеры ----------
   const EXAMPLES = {
-    basic: {
-      task: 'Подготовить план запуска нового тарифа для малого бизнеса',
-      steps: [
-        { id: 's1', block: 'source', kind: 'text', title: 'Описание тарифа', content: 'Тариф «Старт» для малого бизнеса: 5 пользователей, 990 ₽ в месяц, запуск через 6 недель.', artifacts: ['Бриф'], why: 'Даёт всем моделям одинаковые исходные данные о тарифе.' },
-        { id: 's2', block: 'round', title: 'Первые планы', order: 'parallel', task: 'Предложи план запуска тарифа по брифу.', inputs: ['s1.Бриф'], artifacts: ['Черновики'],
-          models: [{ name: 'Claude', role: 'автор', task: 'Сделай упор на сроки и этапы.' }, { name: 'GPT', role: 'критик', task: 'Ищи риски и слабые места.' }, { name: 'Gemini', role: 'аналитик', task: 'Оцени рынок и цены.' }],
-          why: 'Три независимых взгляда на одну задачу.' },
-        { id: 's3', block: 'synthesis', title: 'Сводный план', model: 'Claude', role: 'свести', task: 'Сведи черновики в один план.', inputs: ['s2.Черновики'], artifacts: ['План'], why: 'Нужен один план вместо трёх.' },
-        { id: 's4', block: 'gate', title: 'Проверка плана', criteria: 'Есть сроки, бюджет и ответственные; нет противоречий.', inputs: ['s3.План'], artifacts: ['Вердикт'], why: 'Не отдавать план без сроков и бюджета.' },
-        { id: 's5', block: 'round', title: 'Доработка', repeats: 's2', because: 'проверка s4 не пройдена', order: 'sequential', task: 'Исправь план по замечаниям проверки.', inputs: ['s3.План', 's4.Вердикт'], artifacts: ['Правки'],
-          models: [{ name: 'Claude', role: 'автор' }, { name: 'GPT', role: 'критик' }, { name: 'Gemini', role: 'аналитик' }], why: 'Закрыть замечания проверки.' },
-        { id: 's6', block: 'synthesis', title: 'Итоговый план', repeats: 's3', because: 'после доработки', model: 'GPT', role: 'судья', task: 'Собери итоговый план с учётом правок.', inputs: ['s5.Правки', 's3.План'], artifacts: ['Итог'], why: 'Окончательная версия плана.' },
-        { id: 's7', block: 'gate', title: 'Повторная проверка плана', repeats: 's4', because: 'после доработки', criteria: 'Есть сроки, бюджет и ответственные; нет противоречий.', inputs: ['s6.Итог'], why: 'Закрыть петлю проверкой.' },
-        { id: 's8', block: 'file', title: 'Сохранить план', file: 'plan.md', mode: 'overwrite', inputs: ['s6.Итог'], why: 'Результат нужен файлом.' }
+    "basic": {
+      "task": "Подготовить план запуска нового тарифа для малого бизнеса",
+      "artifacts": [
+        {
+          "name": "Бриф",
+          "description": "Исходные данные о тарифе для всех моделей",
+          "content": "Тариф «Старт» для малого бизнеса: 5 пользователей, 990 ₽ в месяц, запуск через 6 недель."
+        }
+      ],
+      "steps": [
+        {
+          "id": "s1",
+          "block": "round",
+          "title": "Первые планы",
+          "task": "Предложи план запуска тарифа по брифу.",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "автор",
+              "task": "Сделай упор на сроки и этапы."
+            },
+            {
+              "name": "GPT",
+              "role": "критик",
+              "task": "Ищи риски и слабые места."
+            },
+            {
+              "name": "Gemini",
+              "role": "аналитик",
+              "task": "Оцени рынок и цены."
+            }
+          ],
+          "inputs": [
+            "in.Бриф"
+          ],
+          "artifacts": [
+            "Черновики"
+          ],
+          "why": "Три независимых взгляда на одну задачу."
+        },
+        {
+          "id": "s2",
+          "block": "round",
+          "title": "Сводный план",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "свести"
+            }
+          ],
+          "task": "Сведи черновики в один план.",
+          "inputs": [
+            "s1.Черновики"
+          ],
+          "artifacts": [
+            "План"
+          ],
+          "why": "Нужен один план вместо трёх."
+        },
+        {
+          "id": "s3",
+          "block": "round",
+          "title": "Проверка плана",
+          "task": "Проверь по критериям: есть сроки, бюджет и ответственные; нет противоречий. Ответь «прошло» или «не прошло» и перечисли замечания.",
+          "inputs": [
+            "s2.План"
+          ],
+          "artifacts": [
+            {
+              "name": "Вердикт",
+              "description": "Вердикт «прошло» или «не прошло» с замечаниями"
+            }
+          ],
+          "why": "Не отдавать план без сроков и бюджета.",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "проверяющий"
+            }
+          ]
+        },
+        {
+          "id": "s4",
+          "block": "owner",
+          "title": "Решение по проверке",
+          "ask": "Прочитайте вердикт и напишите «доработать» или «утвердить».",
+          "inputs": [
+            "s3.Вердикт"
+          ],
+          "artifacts": [
+            {
+              "name": "Решение",
+              "description": "Слово «доработать» или «утвердить» и пожелания User"
+            }
+          ],
+          "why": "Нужна ли доработка плана, решает User."
+        },
+        {
+          "id": "s5a",
+          "block": "round",
+          "title": "Доработка (1/3)",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "автор"
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт",
+            "s4.Решение"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s5b",
+          "block": "round",
+          "title": "Доработка (2/3)",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "критик"
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт",
+            "s4.Решение",
+            "s5a.Правки"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s5c",
+          "block": "round",
+          "title": "Доработка (3/3)",
+          "task": "Исправь план по замечаниям проверки и решению User. Если доработка не нужна, верни план без изменений.",
+          "models": [
+            {
+              "name": "Gemini",
+              "role": "аналитик"
+            }
+          ],
+          "inputs": [
+            "s2.План",
+            "s3.Вердикт",
+            "s4.Решение",
+            "s5a.Правки",
+            "s5b.Правки"
+          ],
+          "artifacts": [
+            "Правки"
+          ],
+          "why": "Закрыть замечания проверки."
+        },
+        {
+          "id": "s6",
+          "block": "round",
+          "title": "Итоговый план",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "судья"
+            }
+          ],
+          "task": "Собери итоговый план с учётом правок.",
+          "inputs": [
+            "s2.План",
+            "s5a.Правки",
+            "s5b.Правки",
+            "s5c.Правки"
+          ],
+          "artifacts": [
+            "Итог"
+          ],
+          "why": "Окончательная версия плана."
+        },
+        {
+          "id": "s7",
+          "block": "round",
+          "title": "Повторная проверка плана",
+          "task": "Проверь по критериям: есть сроки, бюджет и ответственные; нет противоречий. Ответь «прошло» или «не прошло» и перечисли замечания.",
+          "inputs": [
+            "s6.Итог"
+          ],
+          "why": "Итоговый план проверяется тем же критерием.",
+          "models": [
+            {
+              "name": "GPT",
+              "role": "проверяющий"
+            }
+          ]
+        },
+        {
+          "id": "s8",
+          "block": "file",
+          "title": "Сохранить план",
+          "file": "plan.md",
+          "mode": "overwrite",
+          "inputs": [
+            "s6.Итог"
+          ],
+          "why": "Результат нужен файлом."
+        }
       ]
     },
-    foreach: {
-      task: 'Оценить каждую идею из списка и собрать рейтинг',
-      steps: [
-        { id: 's1', block: 'source', kind: 'document', title: 'Список идей', attachment: 'идеи.md', artifacts: ['Идеи'], why: 'Исходный материал — документ с идеями.' },
-        { id: 's2', block: 'list', title: 'Разбить на пункты', from: 's1.Идеи', rule: 'одна идея — один пункт', artifacts: ['Пункты'], why: 'Каждую идею разбираем отдельно.' },
-        { id: 's3', block: 'foreach', title: 'Разбор каждой идеи', over: 's2.Пункты', artifacts: ['Разборы'], why: 'Одинаковый разбор для всех пунктов.',
-          body: [
-            { id: 's3a', block: 'round', title: 'Разбор идеи', models: [{ name: 'Claude', role: 'аналитик' }, { name: 'GPT', role: 'критик' }], task: 'Разбери идею: плюсы, минусы, риски.', inputs: ['s3'], artifacts: ['Мнения'], why: 'Два взгляда на идею.' },
-            { id: 's3b', block: 'synthesis', title: 'Вывод по идее', model: 'Gemini', role: 'сгруппировать', inputs: ['s3a.Мнения'], artifacts: ['Вывод'], why: 'Один вывод на идею.' }
-          ] },
-        { id: 's4', block: 'assemble', title: 'Собрать отчёт', inputs: ['s3.Разборы'], template: '# Идеи\n{для каждой: название, вывод}', artifacts: ['Отчёт'], why: 'Все разборы в одном документе.' },
-        { id: 's5', block: 'score', title: 'Рейтинг', inputs: ['s4.Отчёт'], criteria: ['польза', 'стоимость', 'риск'], weights: { польза: 0.5, стоимость: 0.3, риск: 0.2 }, artifacts: ['Рейтинг'], why: 'Порядок, в котором браться за идеи.' }
-      ]
-    },
-    defaults: {
-      task: 'Выбрать технологический стек для внутреннего сервиса заявок',
-      defaults: {
-        roundTask: 'Учти ответы предыдущего раунда и улучши своё предложение.',
-        synthesisTask: 'Сведи предложения в одно решение с обоснованием.',
-        discipline: { content: 'Пиши по делу: варианты, плюсы, минусы, риски.', lines: ['Не повторяй чужие аргументы дословно.'] },
-        modelNotes: { Claude: 'Отвечай структурно, с короткими заголовками.', GPT: 'Называй конкретные библиотеки и версии.' }
+    "defaults": {
+      "task": "Выбрать технологический стек для внутреннего сервиса заявок",
+      "defaults": {
+        "roundTask": "Учти ответы предыдущего раунда и улучши своё предложение.",
+        "discipline": {
+          "content": "Пиши по делу: варианты, плюсы, минусы, риски.",
+          "lines": [
+            "Не повторяй чужие аргументы дословно."
+          ]
+        },
+        "modelNotes": {
+          "Claude": "Отвечай структурно, с короткими заголовками.",
+          "GPT": "Называй конкретные библиотеки и версии."
+        }
       },
-      run: { policy: 'manual', maxWords: 500 },
-      steps: [
-        { id: 's1', block: 'source', kind: 'text', title: 'Требования к сервису', content: 'Внутренний сервис заявок: до 200 пользователей, интеграция с почтой, срок разработки 3 месяца, команда из 4 человек.', artifacts: ['Требования'], why: 'Всем моделям — одинаковые требования.' },
-        { id: 's2', block: 'round', title: 'Первые предложения', order: 'parallel', task: 'Предложи стек для сервиса по требованиям.', inputs: ['s1.Требования'], artifacts: ['Предложения'],
-          models: [
-            { name: 'Claude', role: 'архитектор', maxWords: 700, discipline: { lines: ['Начни со схемы архитектуры в 3–5 пунктах.'] } },
-            { name: 'GPT', role: 'критик', task: 'Ищи слабые места каждого варианта.' },
-            { name: 'Gemini', role: 'аналитик', maxWords: 300 }
+      "run": {
+        "policy": "manual",
+        "maxWords": 500
+      },
+      "artifacts": [
+        {
+          "name": "Требования",
+          "description": "Одинаковые требования для всех моделей",
+          "content": "Внутренний сервис заявок: до 200 пользователей, интеграция с почтой, срок разработки 3 месяца, команда из 4 человек."
+        }
+      ],
+      "steps": [
+        {
+          "id": "s1",
+          "block": "round",
+          "title": "Первые предложения",
+          "task": "Предложи стек для сервиса по требованиям.",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "архитектор",
+              "maxWords": 700,
+              "discipline": {
+                "lines": [
+                  "Начни со схемы архитектуры в 3–5 пунктах."
+                ]
+              }
+            },
+            {
+              "name": "GPT",
+              "role": "критик",
+              "task": "Ищи слабые места каждого варианта."
+            },
+            {
+              "name": "Gemini",
+              "role": "аналитик",
+              "maxWords": 300
+            }
           ],
-          why: 'Три независимых предложения.' },
-        { id: 's3', block: 'round', title: 'Критика', order: 'sequential', inputs: ['s2.Предложения'], artifacts: ['Замечания'],
-          models: [
-            { name: 'GPT', role: 'критик', request: 'Задача:\n{задача}\n\nПредложения коллег:\n{вход}\n\nНайди в каждом предложении три главных риска и предложи, как их снизить.', discipline: { lines: ['Риски нумеруй: 1, 2, 3.'] } },
-            { name: 'Claude', role: 'архитектор', discipline: { limit: '[RESPONSE_LIMIT] Не больше {слов} слов.' } }
+          "inputs": [
+            "in.Требования"
           ],
-          why: 'Найти риски до выбора.' },
-        { id: 's4', block: 'round', title: 'Доработка', task: 'Исправь своё предложение по замечаниям.', inputs: ['s2.Предложения', 's3.Замечания'], artifacts: ['Доработки'],
-          models: [{ name: 'Claude', role: 'архитектор' }, { name: 'GPT', role: 'критик' }, { name: 'Gemini', role: 'аналитик', maxWords: 500 }],
-          why: 'Учесть критику.' },
-        { id: 's5', block: 'synthesis', title: 'Итоговое решение', model: 'Claude', role: 'свести', maxWords: 1000,
-          discipline: { lines: ['В конце — таблица: компонент, выбор, причина.'] }, inputs: ['s4.Доработки'], artifacts: ['Решение'], why: 'Одно решение вместо трёх.' }
+          "artifacts": [
+            "Предложения"
+          ],
+          "why": "Три независимых предложения."
+        },
+        {
+          "id": "s2a",
+          "block": "round",
+          "title": "Критика (1/2)",
+          "inputs": [
+            "s1.Предложения"
+          ],
+          "artifacts": [
+            "Замечания"
+          ],
+          "models": [
+            {
+              "name": "GPT",
+              "role": "критик",
+              "task": "Найди в каждом предложении три главных риска и предложи, как их снизить.",
+              "discipline": {
+                "lines": [
+                  "Риски нумеруй: 1, 2, 3."
+                ]
+              }
+            }
+          ],
+          "why": "Найти риски до выбора."
+        },
+        {
+          "id": "s2b",
+          "block": "round",
+          "title": "Критика (2/2)",
+          "inputs": [
+            "s1.Предложения",
+            "s2a.Замечания"
+          ],
+          "artifacts": [
+            "Замечания"
+          ],
+          "models": [
+            {
+              "name": "Claude",
+              "role": "архитектор",
+              "discipline": {
+                "limit": "[RESPONSE_LIMIT] Не больше {слов} слов."
+              }
+            }
+          ],
+          "why": "Найти риски до выбора."
+        },
+        {
+          "id": "s3",
+          "block": "round",
+          "title": "Доработка",
+          "task": "Исправь своё предложение по замечаниям.",
+          "inputs": [
+            "s1.Предложения",
+            "s2a.Замечания",
+            "s2b.Замечания"
+          ],
+          "artifacts": [
+            "Доработки"
+          ],
+          "models": [
+            {
+              "name": "Claude",
+              "role": "архитектор"
+            },
+            {
+              "name": "GPT",
+              "role": "критик"
+            },
+            {
+              "name": "Gemini",
+              "role": "аналитик",
+              "maxWords": 500
+            }
+          ],
+          "why": "Учесть критику."
+        },
+        {
+          "id": "s4",
+          "block": "round",
+          "title": "Итоговое решение",
+          "models": [
+            {
+              "name": "Claude",
+              "role": "свести",
+              "maxWords": 1000,
+              "discipline": {
+                "lines": [
+                  "В конце — таблица: компонент, выбор, причина."
+                ]
+              }
+            }
+          ],
+          "inputs": [
+            "s3.Доработки"
+          ],
+          "artifacts": [
+            "Решение"
+          ],
+          "why": "Одно решение вместо трёх."
+        }
       ]
     }
   };
@@ -1392,7 +1929,7 @@
     // Каталог шаблонов (для проверок): состояние, восстановление по handle, перерисовка списка.
     catalog: { state: catalog, restore, draw: drawCatalog, save: saveTemplate, parse: parseCatalog, text: catalogText }
   };
-  const start = () => { bindFlow(); bindCatalog(); };
+  const start = () => { bindFlow(); bindCatalog(); bindTooltips(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })(window);

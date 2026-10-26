@@ -277,6 +277,7 @@ importScripts(
   'cleanup-manager.js',
   'lifecycle-runtime.js',
   'pipeline-message-handlers.js',
+  'message-delivery-store.js',
   'message-router.js'
 );
 

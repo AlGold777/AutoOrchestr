@@ -96,8 +96,8 @@
 
 .sidebar-toggle-icon-branch-v3 {
     display: block;
-    width: 28.6px;
-    height: 30.42px;
+    width: 26.6px;
+    height: 28.29px;
     color: currentColor;
     flex: 0 0 auto;
 }
@@ -196,9 +196,12 @@
     flex: 0 0 auto;
 }
 
+/* Смещения измерены в Chrome: центр иконки Pipeline совпадает с центром иконок моделей, полоска Telemetry — с подписями моделей. */
 .right-sidebar-toggle-btn {
     margin-bottom: 0;
     color: rgb(133 137 142);
+    position: relative;
+    top: -9.5px;
 }
 
 .telemetry-toggle-btn {
@@ -215,6 +218,8 @@
     width: 100%;
     height: 4px;
     margin-top: 2px;
+    position: relative;
+    top: -2.5px;
     border-radius: 2px;
     background: #30609445;
 }
@@ -376,6 +381,19 @@ body.left-sidebar-open .mode-pill .pill-dot {
 .floating-tooltip.is-visible {
     opacity: 1;
     transform: translateY(0);
+}
+
+.floating-tooltip-name {
+    display: block;
+    font-weight: 600;
+}
+
+.floating-tooltip-desc {
+    display: block;
+    margin-top: 4px;
+    font-weight: 400;
+    max-width: 320px;
+    white-space: pre-wrap;
 }
 
 .visually-hidden {

@@ -1094,6 +1094,34 @@ function participantRunError(code, message, meta = {}) {
   return { ok: false, type: code, errorCode: code, message, recoverable: false, meta };
 }
 
+function emitParticipantChatResolved({ llmName, participant, visit, action, reason, tabId }) {
+  const eventId = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const transportRequestId = participant?.transportRequestId || participant?.requestId || visit?.transportRequestId || visit?.requestId || null;
+  const attemptKey = participant?.attemptKey || visit?.attemptKey || null;
+  const payload = {
+    type: 'participant_chat_resolved',
+    sourceEventId: eventId,
+    eventId,
+    attemptKey,
+    transportRequestId,
+    tabId: Number.isInteger(tabId) ? tabId : null,
+    action,
+    reason: String(reason || ''),
+    modelName: llmName,
+    participantId: participant?.participantId || visit?.participantId || null,
+    runId: participant?.runId || visit?.runId || null
+  };
+  if (typeof sendMessageToResultsTab === 'function') {
+    sendMessageToResultsTab(payload);
+  }
+  try {
+    chrome.runtime.sendMessage(payload, () => {
+      if (chrome.runtime.lastError) { /* ignore */ }
+    });
+  } catch (_) {}
+  return payload;
+}
+
 // One participant request (T07, R01). The chat of a participant is bound per run ID and participant ID:
 //  - a new visit (newChat, another stageAttemptId) opens a chat once; a repeat of the same visit goes to that chat;
 //  - a continue goes only to the chat bound to the participant of this run; when that chat is lost the request stops
@@ -1107,7 +1135,9 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
     runId,
     participantId,
     requestId: participant.requestId || null,
-    stageAttemptId: participant.stageAttemptId || null
+    stageAttemptId: participant.stageAttemptId || null,
+    attemptKey: participant.attemptKey || null,
+    transportRequestId: participant.transportRequestId || participant.requestId || options.transportRequestId || null
   };
   const bindingOf = (meta = {}) => ({ participantId, runId, modelName: llmName, ...meta });
   // The chat saved by the page (snapshot of a resumed run) is used only when the background has no binding of this run
@@ -1121,6 +1151,7 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
   // A resumed participant that already sent in this run but has no chat on record (V01): its chat is lost, not "not yet opened".
   // It never takes another tab of the provider and never opens a new chat: the request stops before the send.
   if (!bound && participant.strict === true && !participant.newChat) {
+    emitParticipantChatResolved({ llmName, participant, visit, action: 'refused', reason: 'binding_missing', tabId: null });
     return {
       ok: false,
       error: participantRunError('participant_chat_lost', `Чат участника ${participantId} не найден в записи прогона (запрос уже отправлялся). Запрос не отправлен, чужой чат не выбран.`, { participantId, runId, reason: 'binding_missing' })
@@ -1128,11 +1159,24 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
   }
 
   if (bound && (!participant.newChat || sameVisit)) {
-    return continueParticipantChat(llmName, visit, bound, prompt, attachments, options);
+    const continueResult = await continueParticipantChat(llmName, visit, bound, prompt, attachments, options);
+    if (continueResult.ok) {
+      emitParticipantChatResolved({ llmName, participant, visit, action: 'continued', reason: sameVisit ? 'same_visit' : 'bound_continued', tabId: continueResult.tabId });
+    } else {
+      emitParticipantChatResolved({ llmName, participant, visit, action: 'refused', reason: continueResult.error?.meta?.reason || 'continue_failed', tabId: bound.tabId });
+    }
+    return continueResult;
   }
   if (!participant.newChat) {
     const attached = await attachUnboundParticipantChat(llmName, visit, prompt, attachments, options);
-    if (attached) return attached;
+    if (attached && attached.ok) {
+      emitParticipantChatResolved({ llmName, participant, visit, action: 'attached_unbound', reason: 'unbound_attached', tabId: attached.tabId });
+      return attached;
+    }
+    if (attached && !attached.ok) {
+      emitParticipantChatResolved({ llmName, participant, visit, action: 'refused', reason: attached.error?.meta?.reason || 'attach_failed', tabId: null });
+      return attached;
+    }
   }
   let bindError = null;
   const created = await createNewLlmTab(llmName, prompt, attachments, {
@@ -1148,13 +1192,18 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
     }
   });
   if (bindError) {
+    emitParticipantChatResolved({ llmName, participant, visit, action: 'refused', reason: bindError?.message || 'binding_failed', tabId: null });
     return { ok: false, error: participantRunError('participant_binding_failed', 'Не удалось сохранить привязку чата участника; запрос не отправлен.', bindingOf({ reason: bindError?.message || 'binding_failed' })) };
   }
   if (!created) {
+    emitParticipantChatResolved({ llmName, participant, visit, action: 'refused', reason: 'create_tab_failed', tabId: null });
     // createNewLlmTab has already reported the failure (or the run was replaced); nothing is sent.
     return { ok: false, error: null };
   }
-  return { ok: true, tabId: TabMapManager.get(llmName) };
+  const createdTabId = TabMapManager.get(llmName);
+  const createdReason = participant.newChat ? 'new_chat_requested' : 'first_unbound_create';
+  emitParticipantChatResolved({ llmName, participant, visit, action: 'created', reason: createdReason, tabId: createdTabId });
+  return { ok: true, tabId: createdTabId };
 }
 
 async function continueParticipantChat(llmName, visit, bound, prompt, attachments, options) {

@@ -13,13 +13,15 @@
 
   // Registers one version. The same line and source give the entry registered before (idempotent): a repeated
   // acceptance never makes a second version. Returns { entry, created }.
-  function register(registry, { id, name, lineage, source, answerRef, pointer, valid = true, inputs = [] }) {
+  function register(registry, { id, name, lineage, source, answerRef, pointer, valid = true, inputs = [], description = '' }) {
     const key = versionKey(lineage, source);
     const existing = registry.entries.find((entry) => versionKey(entry.lineage, entry.source) === key);
     if (existing) return { entry: existing, created: false };
     const entry = {
       id, name, lineage: { ...lineage }, source: { ...source }, content: { answerRef, pointer }, valid: valid !== false, inputs: inputs.slice()
     };
+    // The description (output.artifacts[].description) is kept only when the author gave one.
+    if (description) entry.description = String(description);
     registry.entries.push(entry);
     return { entry, created: true };
   }
@@ -44,20 +46,7 @@
       && entry.source.step === address.step && entry.source.participant === address.participant && entry.source.visit === address.visit) || null;
   }
 
-  // Marks the versions that the predicate names as not current (valid false). The history stays: the entries are kept.
-  // Returns how many versions changed.
-  function markInvalid(registry, isStale) {
-    let changed = 0;
-    registry.entries.forEach((entry) => {
-      if (entry.valid && isStale(entry)) {
-        entry.valid = false;
-        changed += 1;
-      }
-    });
-    return changed;
-  }
-
-  const api = Object.freeze({ createRegistry, register, latest, version, lineKey, markInvalid });
+  const api = Object.freeze({ createRegistry, register, latest, version, lineKey });
   root.BasicArtifacts = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

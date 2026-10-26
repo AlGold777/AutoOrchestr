@@ -9,12 +9,12 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8')
 describe('stage markers', () => {
   test('ASK and VERDICT are read from lines of their own, with light decoration', () => {
     const text = [
-      'Анализ.', '', '- [[ASK: Какой бюджет?]]', '**[[ASK: Кто владелец данных?]]**',
+      'Анализ.', '', '- [[ASK: Какой бюджет?]]', '**[[ASK: Кто User данных?]]**',
       '[[verdict: ISSUES_FOUND]]', '[[AO-abc123]]'
     ].join('\n');
     expect(Markers.parse(text)).toEqual({
-      verdict: 'issues_found', asks: ['Какой бюджет?', 'Кто владелец данных?'],
-      askItems: [{ question: 'Какой бюджет?', options: [], multi: false }, { question: 'Кто владелец данных?', options: [], multi: false }], invalid: []
+      verdict: 'issues_found', asks: ['Какой бюджет?', 'Кто User данных?'],
+      askItems: [{ question: 'Какой бюджет?', options: [], multi: false }, { question: 'Кто User данных?', options: [], multi: false }], invalid: []
     });
   });
 
@@ -64,7 +64,7 @@ describe('stage markers', () => {
 });
 
 describe('owner ask dialog helpers', () => {
-  const asks = [{ participantId: 'GPT', question: 'Какой бюджет?' }, { participantId: 'Claude', question: 'Кто владелец?' }];
+  const asks = [{ participantId: 'GPT', question: 'Какой бюджет?' }, { participantId: 'Claude', question: 'Кто User?' }];
 
   test('render writes text only; collect keeps answered questions; instruction names question and answer', () => {
     const container = document.createElement('div');
@@ -77,8 +77,8 @@ describe('owner ask dialog helpers', () => {
     expect(container.querySelectorAll('input[type=checkbox]')).toHaveLength(2);
     container.querySelector('input[data-ask-index="1"]').checked = true;
     const answers = OwnerAsk.collect(container, asks);
-    expect(answers).toEqual([{ question: 'Кто владелец?', answer: OwnerAsk.DELEGATE_LABEL, selected: [OwnerAsk.DELEGATE_LABEL], comment: '', participantId: 'Claude' }]);
-    expect(OwnerAsk.toInstruction(answers)).toBe(`Ответ владельца на вопрос «Кто владелец?»: ${OwnerAsk.DELEGATE_LABEL}`);
+    expect(answers).toEqual([{ question: 'Кто User?', answer: OwnerAsk.DELEGATE_LABEL, selected: [OwnerAsk.DELEGATE_LABEL], comment: '', participantId: 'Claude' }]);
+    expect(OwnerAsk.toInstruction(answers)).toBe(`Ответ User на вопрос «Кто User?»: ${OwnerAsk.DELEGATE_LABEL}`);
   });
 
   test('options: radio for one choice, checkboxes for several, optional comment; nothing picked means not answered', () => {
@@ -101,7 +101,7 @@ describe('owner ask dialog helpers', () => {
       { question: 'Период?', answer: '2025', selected: ['2025'], comment: '', participantId: 'GPT' },
       { question: 'Регионы?', answer: 'ЕС; Азия. Комментарий: особенно ЕС', selected: ['ЕС', 'Азия'], comment: 'особенно ЕС', participantId: 'Claude' }
     ]);
-    expect(OwnerAsk.toInstruction(answers)).toBe('Ответ владельца на вопрос «Период?»: 2025\nОтвет владельца на вопрос «Регионы?»: ЕС; Азия. Комментарий: особенно ЕС');
+    expect(OwnerAsk.toInstruction(answers)).toBe('Ответ User на вопрос «Период?»: 2025\nОтвет User на вопрос «Регионы?»: ЕС; Азия. Комментарий: особенно ЕС');
   });
 
   test('a comment alone counts as an answer', () => {

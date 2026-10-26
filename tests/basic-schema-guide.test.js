@@ -48,7 +48,7 @@ describe('Basic schema guide stays true to the code', () => {
   });
 
   test('the defaults of the guide are the defaults of Basic', () => {
-    [Schema.DEFAULTS.roundTask, Schema.DEFAULTS.synthesisTask, Schema.DEFAULTS.discipline.limit, Schema.DEFAULTS.discipline.content,
+    [Schema.DEFAULTS.roundTask, Schema.DEFAULTS.discipline.limit, Schema.DEFAULTS.discipline.content,
       Schema.DEFAULTS.discipline.delivery, Schema.DEFAULTS.discipline.correction].forEach((text) => expect(section('4')).toContain(text));
     expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.policy}\``);
     expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.maxWords}\``);
@@ -81,10 +81,12 @@ describe('Basic schema guide stays true to the code', () => {
 
   test('the step names the guide teaches are the ones the code checks', () => {
     const bad = (steps) => Schema.toCanvas({ schemaVersion: 1, origin: 'user', steps }, { models: runtimeModels }).errors.length;
-    const round = (ref) => ({ ref, kind: 'round', models: [{ name: 'GPT' }] });
-    const synth = (ref) => ({ ref, kind: 'synthesis', models: [{ name: 'GPT' }] });
-    expect(bad([round('r1'), synth('synth:mid'), round('r2'), synth('final')])).toBe(0);
-    expect(bad([round('r1'), synth('synth:проверка'), round('r2')])).toBeGreaterThan(0);
+    const round = (ref, models = [{ name: 'GPT' }]) => ({ ref, kind: 'round', models });
+    // A synthesis is a round of one model with a role: its ref is the number of the round, as any round.
+    expect(bad([round('r1'), round('r2', [{ name: 'Claude', role: 'interaction_meta_synthesis' }])])).toBe(0);
+    expect(bad([round('r1'), round('final', [{ name: 'Claude', role: 'interaction_meta_synthesis' }])])).toBeGreaterThan(0);
     expect(bad([round('r2')])).toBeGreaterThan(0);
+    expect(Schema.validate({ schemaVersion: 1, origin: 'user', steps: [round('r1'), { ref: 'final', kind: 'synthesis', models: [{ name: 'GPT' }] }] }))
+      .toEqual([{ path: 'steps[1].kind', message: 'тип шага: допустимо round, owner; синтез — роль: раунд из одной модели с role' }]);
   });
 });

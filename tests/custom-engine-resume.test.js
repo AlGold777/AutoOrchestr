@@ -140,7 +140,7 @@ describe('Custom engine resume (8.3, T15, T16, T13)', () => {
       decide: async () => { controller.abort(); return new Promise(() => {}); }
     });
     expect(run1.stopReason).toBe('cancelled');
-    expect(first.last().pendingOwner).toEqual({ kind: 'decision', stepRef: 'S1', visit: 1 });
+    expect(first.last().pendingOwner).toEqual(expect.objectContaining({ kind: 'decision', stepRef: 'S1', visit: 1 }));
     const asked = [];
     const log2 = [];
     const run2 = await Engine.run({
@@ -153,52 +153,53 @@ describe('Custom engine resume (8.3, T15, T16, T13)', () => {
     expect(run2.stopReason).toBe('steps_done');
   });
 
-  test('a loop counter is not reset by a reload: the third transition is refused after the reload too (T13)', async () => {
-    const steps = [
-      { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 1 } }
-    ];
-    const controller = new AbortController();
+  test('a state saved before gate and route were removed (routes, a route, an applied transition) is read: the extra fields are ignored', async () => {
     const texts = textStore();
     const first = keeper();
-    const run1 = await Engine.run({
-      task: 'T', steps, signal: controller.signal, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText,
-      send: transport({ A: ['a1', 'a2'], B: [FAIL] }, [], { abortWhen: (models, meta) => models[0] === 'A' && meta.visit === 2, controller })
-    });
-    expect(run1.stopReason).toBe('cancelled');
-    expect(first.last().loopCounters).toEqual({ 'G1:onFail': 1 });
-    const log2 = [];
-    const run2 = await Engine.run({
-      task: 'T', steps, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(first.last()),
-      send: transport({ A: ['a2b'], B: [FAIL] }, log2), resolveUnknown: async () => 'resend'
-    });
-    expect(run2.stopReason).toBe('loop_limit');
-    expect(log2.map((call) => call.models[0])).toEqual(['A', 'B']);
-    expect(run2.state.loopCounters).toEqual({ 'G1:onFail': 1 });
+    await Engine.run({ task: 'T', steps: TWO_ROUNDS, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText, send: transport({ A: ['a1'], B: ['b1'] }, []) });
+    const full = clone(first.saved.find((state) => state.pc === 'S2' && state.current.phase === 'send'));
+    ['routes'].forEach((field) => expect(full).not.toHaveProperty(field));
+    ['route', 'applied'].forEach((field) => expect(full.current).not.toHaveProperty(field));
+    const old = { ...full, routes: [{ stepRef: 'route:x', visit: 1, id: 'a', by: 'rule', reason: 'rule' }],
+      results: full.results.map((item) => ({ ...item, route: { id: 'a', by: 'rule', reason: 'rule' } })),
+      current: { ...full.current, route: { id: 'a', by: 'owner', reason: 'owner' }, applied: { target: 'S2' } } };
+    const log = [];
+    const resumed = await Engine.run({ task: 'T', steps: TWO_ROUNDS, putText: texts.putText, getText: texts.getText, resume: old, send: transport({ B: ['b1'] }, log), resolveUnknown: async () => 'resend' });
+    expect(resumed.stopReason).toBe('steps_done');
+    expect(log.map((call) => call.models[0])).toEqual(['B']);
+    expect(resumed.state).not.toHaveProperty('routes');
+    expect(resumed.steps.every((item) => !('route' in item))).toBe(true);
   });
 
-  test('a transition the reload found applied is not applied a second time: its counter stays at one', async () => {
-    const steps = [
-      { ref: 'S10', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S10', maxLoops: 2 } }
-    ];
+  test('a state saved before the synthesis was removed (afterRound, the kind and label of a synthesis) is read: the extra fields are ignored', async () => {
     const texts = textStore();
-    // The checkpoint after the transition is the last one that is saved: the next checkpoints fail (a crash right after it).
-    const first = keeper({ failAfter: (state) => Boolean(state.current && state.current.applied) });
-    const error = await Engine.run({
-      task: 'T', steps, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText,
-      send: transport({ A: ['a1', 'a2'], B: [FAIL, PASS] }, [])
-    }).catch((item) => item);
-    expect(error.code).toBe('checkpoint_failed');
-    expect(first.last().current).toMatchObject({ active: true, stepRef: 'G1', phase: 'transition', applied: { target: 'S10' } });
-    const log2 = [];
-    const run2 = await Engine.run({
-      task: 'T', steps, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(first.last()),
-      send: transport({ A: ['a2'], B: [PASS] }, log2)
-    });
-    expect(run2.stopReason).toBe('steps_done');
-    expect(log2.map((call) => call.models[0])).toEqual(['A', 'B']);
-    expect(run2.state.loopCounters).toEqual({ 'G1:onFail': 1 });
+    const first = keeper();
+    await Engine.run({ task: 'T', steps: TWO_ROUNDS, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText, send: transport({ A: ['a1'], B: ['b1'] }, []) });
+    const full = clone(first.saved.find((state) => state.pc === 'S2' && state.current.phase === 'send'));
+    const old = { ...full, synthesizer: 'Claude',
+      results: full.results.map((item) => ({ ...item, kind: 'synthesis', afterRound: 1, label: 'Синтез после раунда 1' })),
+      current: { ...full.current, afterRound: 1, label: 'Синтез после раунда 1' } };
+    const log = [];
+    const resumed = await Engine.run({ task: 'T', steps: TWO_ROUNDS, putText: texts.putText, getText: texts.getText, resume: old, send: transport({ B: ['b1'] }, log), resolveUnknown: async () => 'resend' });
+    expect(resumed.stopReason).toBe('steps_done');
+    expect(log.map((call) => call.models[0])).toEqual(['B']);
+    expect(resumed.state).not.toHaveProperty('synthesizer');
+    expect(resumed.steps.map((item) => item.label)).toEqual(['Раунд 1', 'Раунд 2']);
+  });
+
+  test('a state saved by an older version, with counters, a stack, feedback and dependencies, is read without a fall: the extra fields are ignored', async () => {
+    const texts = textStore();
+    const first = keeper();
+    await Engine.run({ task: 'T', steps: TWO_ROUNDS, checkpoint: first.checkpoint, putText: texts.putText, getText: texts.getText, send: transport({ A: ['a1'], B: ['b1'] }, []) });
+    const full = clone(first.saved.find((state) => state.pc === 'S2' && state.current.phase === 'send'));
+    ['loopCounters', 'continuationStack', 'feedback', 'dependencies'].forEach((field) => expect(full).not.toHaveProperty(field));
+    const old = { ...full, loopCounters: { 'G1:onFail': 1 }, continuationStack: [{ resumeAt: 'S2', from: 'G1' }], feedback: { S2: [{ label: 'x', textRef: 'gone', pointer: '' }] },
+      dependencies: { '1@1': ['0@1'] }, current: { ...full.current, feedback: [{ label: 'x', textRef: 'gone', pointer: '' }] } };
+    const log = [];
+    const resumed = await Engine.run({ task: 'T', steps: TWO_ROUNDS, putText: texts.putText, getText: texts.getText, resume: old, send: transport({ B: ['b1'] }, log), resolveUnknown: async () => 'resend' });
+    expect(resumed.stopReason).toBe('steps_done');
+    expect(log.map((call) => call.models[0])).toEqual(['B']);
+    ['loopCounters', 'continuationStack', 'feedback', 'dependencies'].forEach((field) => expect(resumed.state).not.toHaveProperty(field));
   });
 
   test('the resumed run uses the steps it is given (the saved schema); a step of the saved state missing from them is refused', async () => {
@@ -304,6 +305,21 @@ describe('N04: the owner can check the chat of an unknown request instead of sen
     expect(log2).toEqual([]);
     expect(run2.stopReason).toBe('steps_done');
     expect(run2.steps.find((step) => step.ref === 'S2').outcome.B).toMatchObject({ ok: true, text: 'b-from-chat' });
+  });
+
+  test('an answer found by the check that fails the output is not corrected by a request: nothing is sent', async () => {
+    const steps = [TWO_ROUNDS[0], { ...TWO_ROUNDS[1], output: { format: 'json', requiredFields: ['/x'] } }];
+    const { saved, texts } = await stopInFlight(steps);
+    const log2 = [];
+    const choices = ['check', 'skip'];
+    const run2 = await Engine.run({
+      task: 'T', steps, checkpoint: keeper().checkpoint, putText: texts.putText, getText: texts.getText, resume: clone(saved),
+      send: transport({ B: ['{"x":1}'] }, log2), decide: async () => 'skip',
+      resolveUnknown: async () => choices.shift(),
+      checkUnknown: async () => ({ ok: true, status: 'found', text: '{"y":1}' })
+    });
+    expect(log2).toEqual([]);
+    expect(run2.steps.find((step) => step.ref === 'S2').outcome.B.ok).toBe(false);
   });
 
   test('without checkUnknown the choices are the old two', async () => {

@@ -67,3 +67,93 @@ describe('Basic output: the acceptance order and the reasons (5.1)', () => {
     expect(Output.checkAnswer('{"correctedMap": 1}', output)).toMatchObject({ ok: false, reason: 'missing_artifact', detail: '«findings» (/auditFindings)' });
   });
 });
+
+describe('Basic output: этап 1 — опросник (document: form) и документ для чтения', () => {
+  const form = { format: 'json', document: 'form' };
+  const good = JSON.stringify({ items: [
+    { id: 'budget', type: 'one', question: 'Бюджет', options: ['до 10k', 'больше'], required: true },
+    { id: 'notes', type: 'text', question: 'Что ещё' }
+  ] });
+
+  test('этап 1: верный опросник проходит, в том числе в ограждении ```json', () => {
+    expect(Output.checkAnswer(good, form)).toMatchObject({ ok: true });
+    expect(Output.checkAnswer(`\`\`\`json\n${good}\n\`\`\``, form)).toMatchObject({ ok: true });
+  });
+
+  test.each([
+    ['нет items', {}],
+    ['items пустой массив', { items: [] }],
+    ['пункт без id', { items: [{ type: 'text', question: 'Q' }] }],
+    ['повтор id', { items: [{ id: 'a', type: 'text', question: 'Q' }, { id: 'a', type: 'text', question: 'Q2' }] }],
+    ['type не из списка', { items: [{ id: 'a', type: 'select', question: 'Q' }] }],
+    ['one без options', { items: [{ id: 'a', type: 'one', question: 'Q' }] }],
+    ['many с пустым options', { items: [{ id: 'a', type: 'many', question: 'Q', options: [] }] }],
+    ['text с options', { items: [{ id: 'a', type: 'text', question: 'Q', options: ['x'] }] }],
+    ['пустой question', { items: [{ id: 'a', type: 'text', question: '' }] }],
+    ['required не boolean', { items: [{ id: 'a', type: 'text', question: 'Q', required: 'yes' }] }],
+    ['options с пустой строкой', { items: [{ id: 'a', type: 'one', question: 'Q', options: ['x', ''] }] }],
+    ['options с повтором', { items: [{ id: 'a', type: 'one', question: 'Q', options: ['x', 'x'] }] }]
+  ])('этап 1: дефект опросника (%s) → invalid_form с непустым detail', (_name, value) => {
+    const result = Output.checkAnswer(JSON.stringify(value), form);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('invalid_form');
+    expect(typeof result.detail).toBe('string');
+    expect(result.detail.length).toBeGreaterThan(0);
+  });
+
+  test('этап 1: документ для чтения не накладывает ограничений на ответ', () => {
+    const spec = [{ id: 'spec', name: 'ТЗ', pointer: '' }];
+    expect(Output.checkAnswer('{"any": 1}', { format: 'json', document: 'read', artifacts: spec })).toMatchObject({ ok: true });
+    expect(Output.checkAnswer('обычный текст\n[[DOC: spec]]\nтекст\n[[/DOC]]', { document: 'read', artifacts: spec })).toMatchObject({ ok: true });
+  });
+});
+
+describe('Basic output: этап 2 — документ для чтения между метками [[DOC: id]] … [[/DOC]]', () => {
+  const readText = { document: 'read', artifacts: [{ id: 'spec', name: 'ТЗ', pointer: '' }] };
+
+  test('этап 2: extractDocument берёт текст между метками, обрезает пробелы и переводы строк по краям', () => {
+    expect(Output.extractDocument('вступление\n[[DOC: spec]]\n# ТЗ\nтекст\n[[/DOC]]\nхвост', 'spec')).toBe('# ТЗ\nтекст');
+    expect(Output.extractDocument('[[DOC:  spec ]]\nтекст\n[[/DOC]]', 'spec')).toBe('текст');
+    expect(Output.extractDocument('[[DOC: spec]]a[[/DOC]] [[DOC: spec]]b[[/DOC]]', 'spec')).toBe('a');
+  });
+
+  test('этап 2: extractDocument — null без открывающей метки, без закрывающей, при пустом тексте, чужом id и другом регистре', () => {
+    expect(Output.extractDocument('текст\n[[/DOC]]', 'spec')).toBeNull();
+    expect(Output.extractDocument('[[DOC: spec]]\nтекст', 'spec')).toBeNull();
+    expect(Output.extractDocument('[[DOC: spec]]  \n \n[[/DOC]]', 'spec')).toBeNull();
+    expect(Output.extractDocument('[[DOC: other]]\nтекст\n[[/DOC]]', 'spec')).toBeNull();
+    expect(Output.extractDocument('[[DOC: Spec]]\nтекст\n[[/DOC]]', 'spec')).toBeNull();
+  });
+
+  test('этап 2: ответ с метками проходит, документ попадает в documents по id', () => {
+    const result = Output.checkAnswer('Вот:\n[[DOC: spec]]\n# ТЗ\nтекст\n[[/DOC]]', readText);
+    expect(result.ok).toBe(true);
+    expect(result.documents).toEqual({ spec: '# ТЗ\nтекст' });
+  });
+
+  test('этап 2: ответ без меток (обычный текст целиком) — missing_artifact, без подстановки ответа', () => {
+    const result = Output.checkAnswer('Обычный текст без меток', readText);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('missing_artifact');
+    expect(result.detail).toContain('spec');
+    expect(result.detail).toContain('[[DOC: spec]]');
+    expect(result.documents).toBeUndefined();
+  });
+
+  test('этап 2: ответ только с открывающей меткой — missing_artifact', () => {
+    const result = Output.checkAnswer('[[DOC: spec]]\nтекст без закрытия', readText);
+    expect(result).toMatchObject({ ok: false, reason: 'missing_artifact' });
+    expect(result.detail).toContain('[[DOC: spec]]');
+  });
+
+  test('этап 2: json с документом для чтения и указателем — прежнее поведение: поле есть — ok, нет — missing_artifact', () => {
+    const jsonRead = { format: 'json', document: 'read', artifacts: [{ id: 'doc', name: 'Д', pointer: '/body' }] };
+    expect(Output.checkAnswer('{"body": "текст"}', jsonRead)).toEqual({ ok: true, value: { body: 'текст' } });
+    expect(Output.checkAnswer('{"other": 1}', jsonRead)).toMatchObject({ ok: false, reason: 'missing_artifact', detail: '«doc» (/body)' });
+  });
+
+  test('этап 2: опросник (document: form) и текст с артефактом без document — как раньше', () => {
+    expect(Output.checkAnswer(JSON.stringify({ items: [] }), { format: 'json', document: 'form' })).toMatchObject({ ok: false, reason: 'invalid_form' });
+    expect(Output.checkAnswer('обычный текст', { artifacts: [{ id: 'a', name: 'A', pointer: '' }] })).toEqual({ ok: true });
+  });
+});

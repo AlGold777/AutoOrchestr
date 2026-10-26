@@ -263,17 +263,6 @@ body.is-resizing {
     min-width: max-content;
 }
 
-.pipeline-flow #connectorToSynthesis {
-    align-self: center;
-}
-
-/* The column stays on the top line with the round badges; only its stack is centred against the models. */
-.pipeline-flow #synthesisColumn .model-stack {
-    transform: translateY(var(--pipeline-terminal-offset, 0px));
-}
-
-.synthesis-capable[hidden],
-.synthesizer-capable[hidden],
 .registry-capable[hidden] {
     display: none !important;
 }
@@ -357,49 +346,6 @@ body.is-resizing {
     }
 }
 
-.pipeline-synthesis-block {
-    width: 220px;
-}
-
-.pipeline-synthesis-block .model-header {
-    gap: 6px;
-}
-
-.synthesis-flow-select {
-    width: calc(100% - 8px);
-    margin: 6px 4px 4px;
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    border-radius: 6px;
-    background: #ffffff;
-    color: var(--pipeline-text);
-    font-size: 12px;
-    padding: 4px 6px;
-}
-
-/* Final badge: blue when the final synthesis is on, gray when off (the block is hidden). */
-#synthesisColumn .round-badge {
-    cursor: pointer;
-    background: var(--pipeline-blue);
-    color: #fff;
-}
-
-#synthesisColumn.pipeline-final-off .round-badge {
-    background: #e2e8f0;
-    color: #64748b;
-}
-
-/* No final synthesizer: the block stays in place, inactive (same look as .model-block.inactive). */
-#synthesisColumn.pipeline-final-off .pipeline-synthesis-block {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    box-shadow: none;
-    opacity: 0.72;
-}
-
-#synthesisColumn.pipeline-final-off .pipeline-synthesis-block .model-name {
-    color: #94a3b8;
-}
-
 .stage-column {
     display: flex;
     flex-direction: column;
@@ -428,8 +374,7 @@ body.is-resizing {
     right: 0;
 }
 
-.entry-column > .stage-label,
-.stage-column[data-stage="synthesis"] > .stage-label {
+.entry-column > .stage-label {
     display: flex;
     height: 28px;
     margin-bottom: 10px;
@@ -451,101 +396,6 @@ body.is-resizing {
 .stage-header-row .stage-label {
     flex: 1 1 auto;
     min-width: 0;
-}
-
-.pipeline-stage-insert {
-    position: absolute;
-    right: -27px;
-    top: 14px; /* centre of the 28px round badge */
-    transform: translate(50%, -50%);
-    z-index: 3;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border-radius: 50%;
-    border: 1.5px solid currentColor;
-    color: #5980c8;
-    background: #fff;
-    font-size: 0;
-    line-height: 0;
-    opacity: .85;
-    cursor: pointer;
-    display: inline-block;
-    box-sizing: border-box;
-}
-
-.pipeline-stage-insert[hidden] {
-    display: none;
-}
-
-.pipeline-stage-insert::before,
-.pipeline-stage-insert::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    background: currentColor;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-}
-
-.pipeline-stage-insert::before {
-    width: 11px;
-    height: 2px;
-}
-
-.pipeline-stage-insert::after {
-    width: 2px;
-    height: 11px;
-}
-
-.pipeline-stage-insert:hover,
-.pipeline-stage-insert:focus-visible {
-    opacity: 1;
-    color: #fff;
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    outline: none;
-}
-
-.pipeline-stage-insert.has-intermediate-synthesis {
-    opacity: 1;
-    color: #fff;
-    background: var(--pipeline-blue);
-    border-color: var(--pipeline-blue);
-    box-shadow: none;
-}
-
-.pipeline-stage-insert.has-intermediate-synthesis::after {
-    display: none;
-}
-
-/* Same height as a round header row, so the card's stack lines up with the round stacks. */
-.pipeline-intermediate-synth-header {
-    position: relative;
-    width: 100%;
-    height: 28px;
-    margin-bottom: 10px;
-}
-
-/* While the card exists, round K's insert button sits here, on the card's center line. */
-.pipeline-intermediate-synth-header .pipeline-stage-insert {
-    right: auto;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-
-/* Centred against the round stacks, like the final synthesis column; the header stays on the top line. */
-.pipeline-flow .stage-column.pipeline-intermediate-synth .model-stack {
-    transform: translateY(var(--pipeline-terminal-offset, 0px));
-}
-
-.pipeline-stage-insert:disabled {
-    opacity: .68;
-    color: #64748b78;
-    background: none;
-    border-color: var(--pipeline-border);
-    cursor: not-allowed;
 }
 
 .round-filter-chip {
@@ -632,7 +482,7 @@ body.is-resizing {
 }
 
 .model-block {
-    width: 139px;
+    width: var(--pipeline-block-width);
     height: var(--pipeline-block-height);
     padding: 8px 10px;
     background: #ffffff;
@@ -700,10 +550,6 @@ body.is-resizing {
     cursor: not-allowed;
 }
 
-.model-send-checkbox {
-    accent-color: var(--pipeline-orange);
-}
-
 .model-name {
     min-width: 0;
     flex: 1 1 auto;
@@ -746,6 +592,15 @@ body.is-resizing {
     width: 50px;
     height: 240px;
     overflow: visible;
+    transition: opacity 0.3s ease;
+}
+
+.pipeline-canvas.arrows-hidden .connector-svg {
+    opacity: 0;
+}
+
+#pipeline-arrows-toggle[aria-pressed="false"] {
+    opacity: 0.45;
 }
 
 .connector-line {
@@ -814,16 +669,6 @@ body.is-resizing {
     border-radius: 50%;
     background: #cbd5e1;
     flex-shrink: 0;
-}
-
-.pipeline-synthesis-block.inactive:not(.selected-synthesizer) {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    opacity: 0.72;
-}
-
-.pipeline-synthesis-block.inactive:not(.selected-synthesizer) .model-name {
-    color: #94a3b8;
 }
 
 .round-buttons {
@@ -940,7 +785,7 @@ body.is-resizing {
 .stage-card-role { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .stage-card-role-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
 .stage-card-setting { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
-.stage-card-order-select, .stage-card-input-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
+.stage-card-input-select { min-width: 0; flex: 1; padding: 3px 6px; font: inherit; font-size: 12px; }
 .stage-card-task-label { flex-direction: column; align-items: stretch; }
 .stage-card-task { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; font-size: 12px; }
 .stage-card-role-prompt { width: 100%; box-sizing: border-box; margin: 0 0 10px; padding: 6px 8px; font: inherit; font-size: 12px; }
@@ -968,6 +813,7 @@ body.is-resizing {
     .pipeline-stage-dialog { border-color: #384252; background: #202733; color: #e7ebf3; }
     .stage-card-badge, .stage-card-instruction { background: #2b3445; color: #e7ebf3; }
     .stage-card-copy { border-color: #384252; background: #202733; color: #e7ebf3; }
+    .pipeline-control-step[data-control-kind="owner"] .pipeline-control-card { border-color: #22c55e; background: #14301f; color: #dcfce7; }
 }
 
 .pipeline-list.is-collapsed .pipeline-list-header {
@@ -1121,6 +967,12 @@ body.is-resizing {
 .custom-card-field textarea:focus-visible, .custom-card-length input:focus-visible { outline: 2px solid #86b9aa; outline-offset: 2px; }
 /* The inherited value shown in an emptied field is a hint, not text: lighter than typed text (#202936) so a deleted value is visible at once. */
 .custom-card-field textarea::placeholder, .custom-card-discipline textarea::placeholder, .custom-card-length input::placeholder { color: #a7b3ad; opacity: 1; }
+.custom-desc { margin-bottom: 10px; }
+.custom-desc-head { display: flex; justify-content: space-between; align-items: center; }
+.custom-desc-toggle { border: 0; background: none; cursor: pointer; font-size: 16px; color: var(--pipeline-muted); }
+.custom-desc-text { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--pipeline-text); }
+.custom-desc.is-full { position: fixed; inset: 0; z-index: 10000; background: #fff; padding: 16px 24px; overflow: auto; margin: 0; }
+.custom-desc.is-full .custom-desc-text { display: block; overflow: visible; }
 .custom-card-note { margin-top: 7px; color: var(--pipeline-muted); font-size: 12px; line-height: 1.5; }
 .custom-card-note button { padding: 0; border: 0; background: none; color: #237565; font: inherit; cursor: pointer; }
 .custom-card-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; flex-shrink: 0; padding-top: 12px;  color: var(--pipeline-muted); font-size: 12px; line-height: 1.55; }
@@ -1457,7 +1309,8 @@ body.is-resizing {
 
 .pipeline-control-card {
     display: block;
-    width: 100%;
+    width: var(--pipeline-block-width);
+    box-sizing: border-box;
     padding: 8px 10px;
     border: 1px dashed currentColor;
     border-radius: 8px;
@@ -1468,3 +1321,17 @@ body.is-resizing {
     text-align: left;
     cursor: pointer;
 }
+
+/* The owner card: a green frame (higher specificity than the dashed rule above). */
+.pipeline-control-step[data-control-kind="owner"] .pipeline-control-card {
+    border: 3px solid #16a34a;
+    background: #f0fdf4;
+    color: #14532d;
+}
+
+/* Document frames on the canvas (Basic, stage 2): one per round with a document for reading. */
+.pipeline-doc-frame { display: block; margin: 6px auto 0; padding: 4px 8px; border: 1px solid #888; border-radius: 6px; background: transparent; font-size: 12px; cursor: pointer; }
+.pipeline-doc-frame.is-pending { border-style: dashed; opacity: .6; cursor: default; }
+.pipeline-doc-frame.is-approved { border-color: #2e8b57; }
+
+.step-error-badge { margin-left: 6px; width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%; background: #dc2626; color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; cursor: pointer; }

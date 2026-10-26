@@ -1,5 +1,354 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: независимая классификация runSelection/attemptCorrelation и честность сводки шагов (Пакет 8: C03, R01), версия 2.81.897
+
+- В `shared/basic-telemetry.js`: `classifyEntry` теперь определяет `runSelection` и `attemptCorrelation` как две независимые ортогональные оси:
+  - Собственный прогон с неизвестным ID запроса сохраняет признак `runSelection: 'selected'` и `attemptCorrelation: 'unassigned'` без потери оригинального ID и без назначения на не того участника.
+  - Конфликт запроса на известном прогоне классифицируется как `selected` + `conflict`.
+  - Конфликт нескольких `runId` в событии остаётся `unassigned` с доказательной базой `runConflictEvidence`.
+  - Другой доказанный прогон исключается как `otherRun`.
+  - Счётчики выборки строго сходятся: `selected + unassigned + otherRun + invalid === totalScanned`.
+- В `buildRoundsSummary`:
+  - Участник, отклонённый на первой попытке и принятый на второй, больше не учитывается одновременно в `failed`.
+  - `expectedParticipants` сохраняет индивидуальные ID участников (`models[].id`), предотвращая слияние участников одной модели (например Claude C1 и C2).
+  - `sentCount` считает только подтверждённые внешние отправки и не учитывает записи `not_sent` и `cancelled_before_dispatch`.
+  - Незакрытое ожидание User (`endedAt == null`) возвращает `userWaitDurationMs: null` с указанием причины `unclosed_wait` вместо фиктивной нулевой длительности.
+- Добавлены тесты независимой классификации и честности агрегаций сводки шагов в `tests/f-unassigned-telemetry.test.js`.
+
+### 2026-10-26 — Basic: долговечность и атомарность сохранения истории ожиданий User (Пакет 7: C05), версия 2.81.896
+
+- В `disput/custom-engine.js`: `ownerWait` сохраняет событие начала ожидания `custom_wait_start` и выполняет обязательный чекпоинт `checkpointNow` с привязкой `pendingOwner: { kind, stepRef, visit, waitId }` до открытия интерактивного окна/диалога.
+- Ошибка сохранения чекпоинта гарантированно останавливает выполнение с `checkpoint_failed`, предотвращая неконтролируемое открытие диалога без персистентной записи.
+- В `results.js`: `onEvent` ожидает `writeRecord()` при получении `custom_wait_start` и `custom_wait_end`, обеспечивая сохранение интервала ожидания на диск до следующего внешнего действия.
+- При аварийном завершении/исчезновении страницы интервал остаётся сохранённым со значением `endedAt: null`. При продолжении (`resume`) движок связывает новое ожидание со старым через атрибут `resumedFrom`, не фальсифицируя время окончания прерванного интервала.
+- При остановке (`Stop`) открытое ожидание закрывается с реальным исходом `stopped` / `cancelled`.
+- Добавлены тесты долговечности ожиданий со сквозным сохранением в хранилище для `decision`, `owner`, `asks`, `unknown` и восстановления связки `resumedFrom` в `tests/g-waits-and-retries.test.js`.
+
+### 2026-10-26 — Basic: дедупликация событий по sourceEventId и защита от воскрешения вытесненных записей (Пакет 6: C04), версия 2.81.895
+
+- В `shared/message-delivery.js`: метод `observeRuntime` передаёт сквозной `sourceEventId` во все порождаемые записи событий (`dispatch`, `navigation`, `completion_terminal`, `provider_stop`, `status`, `focus`, `tab`).
+- Метод `record` вычисляет `eventId` детерминированно из `${sourceEventId}:${kind}:${ordinal}`, что гарантирует совпадение ID одного и того же runtime-события на нескольких вкладках независимо от локального счетчика `producerSeq`.
+- Метод `snapshot` сравнивает фоновый снимок исключительно со списком локально неподтверждённых записей `unconfirmedQueue`, предотвращая ложное воскрешение старых подтверждённых событий, вытесненных из фонового хранилища по FIFO-лимиту.
+- Очистка журнала (`clearJournal` / `reset`) теперь инвалидирует эпоху отправки (`appendEpoch`), исключая возвращение очищенных записей после завершения in-flight аппенда.
+- Добавлены тесты дедупликации одного `sourceEventId` на разных страницах, корректности снимка после вытеснения из хранилища и атомарности `clearJournal` в `tests/e-journal-store.test.js`.
+
+### 2026-10-26 — Basic: устранение скрытого fallback на последнюю модель и сохранение идентичности STOP (Пакет 5: C02), версия 2.81.894
+
+- В `shared/message-delivery.js` в методе `resolveObservedEntry` полностью удалён скрытый fallback на `latestByModel.get(message.llmName)`: события без доказанного `transportRequestId` связываются с попыткой исключительно по доказанному `tabId` самого события или отправителя, а при его отсутствии остаются со статусом `attemptCorrelation: 'unassigned'` (`missing_request_id`).
+- При обнаружении более одной активной попытки на одной вкладке фиксируется явный конфликт `attemptCorrelation: 'conflict'` (`ambiguous_tab_binding`).
+- В `content-scripts/content-utils.js` обработчик команды `STOP_AND_CLEANUP` синхронно захватывает `transportRequestId`, `runSessionId` и `dispatchId` команды, исключая подстановку нового запроса при асинхронном завершении `PROVIDER_STOP_RESULT`.
+- В `background/job-orchestrator.js` команда `STOP_AND_CLEANUP` передаёт точный `transportRequestId` целевого участника.
+- Добавлены тесты разрешения наблюдаемых записей и изоляции отложенной остановки в `tests/d-chat-routing-and-events.test.js`.
+
+### 2026-10-26 — Basic: подтверждение ACK только после успешной сессионной записи (Пакет 4: C04), версия 2.81.893
+
+- В `background/message-delivery-store.js` метод `callStorage` теперь возвращает явный отказ при rejected Promise, синхронном выбросе исключений, установке `chrome.runtime.lastError` или недоступности хранилища.
+- Метод `append` фиксирует мутации во внутренней памяти только после подтверждённой записи в `chrome.storage.session`; при ошибке возвращается `ok: false`, а память остаётся в исходном консистентном состоянии.
+- Неподтверждённые события остаются в локальной очереди клиента (`unconfirmedQueue`) и сохраняются для экспорта в качестве локального хвоста с признаком неполноты.
+- В `background/message-router.js` ответ на `DELIVERY_JOURNAL_APPEND` корректно транслирует статус `ok: false` и причину ошибки клиенту.
+- Добавлены тесты отказов хранилища и идемпотентности повторов в `tests/e-journal-store.test.js`.
+
+### 2026-10-26 — Basic: разделение имени события kind и вида шага/ожидания stepKind/waitKind (Пакет 3: R01, C05), версия 2.81.892
+
+- В `shared/message-delivery.js` метод `batchEvent(kind, fields)` защищён от перезаписи имени события `kind` полями `fields`: семантический вид шага или ожидания сохраняется в `stepKind` / `waitKind`.
+- В `disput/custom-engine.js` события `custom_step_start/resumed/end/interrupted` явно передают `stepKind`, а `custom_wait_start/end` передают `waitKind`, сохраняя `kind` для обратной совместимости.
+- В `results.js` обработчик `onEvent` изолирует `stepKind` и `waitKind`, исключая коллизии при вызове `batchEvent`.
+- В `shared/basic-telemetry.js` и `shared/report-digest.js` добавлена поддержка как нового формата с `stepKind`/`waitKind`, так и ретроспективного чтения старых журналов.
+- Добавлен сквозной интеграционный тест связки Engine.run → onEvent → MessageDelivery.batchEvent → BasicTelemetry.buildReport в `tests/h-step-boundaries.test.js`.
+
+### 2026-10-26 — Basic: точная фиксация отправки волн и проброс ошибок чекпоинта (B02), версия 2.81.891
+
+- В `disput/custom-engine.js` добавлен явный учёт отправки волн через callback `meta.onWaveDispatched` / `meta.onWaveStart`.
+- В `handleCancelled` участники, чья волна не запускалась, помечаются `not_sent/cancelled_before_dispatch` и при resume отправляются как `resume_unsent` без окна неизвестной отправки; участники отправленной волны без доказанного результата остаются `unknown/interrupted_in_flight` в `pending` для штатного разрешения (`resolveUnknown`).
+- В `results.js` вызов `meta.onWaveDispatched` интегрирован перед `sendWave`, с проверкой `signal.aborted` до старта каждой волны.
+- Ошибка обязательного чекпоинта `EngineError('checkpoint_failed')` больше не перехватывается как ошибка модели и немедленно прекращает исполнение с прерыванием раунда (`custom_step_interrupted`).
+- Добавлены сквозные тесты в `tests/b02-wave-results.test.js`.
+
+### 2026-10-26 — Basic: границы шага и сводка раундов (R01), версия 2.81.890
+
+- Добавлены события границ шага: `custom_step_start` (фактический вход до любого внешнего действия, включая owner) и `custom_step_resumed` (продолжение после остановки) в `disput/custom-engine.js`.
+- Завершение шага `custom_step_end` перенесено строго после решений User и вопросов ASK, с исходами `completed` или `skipped`.
+- Прерывание шага при Stop или ошибке фиксируется отдельным событием `custom_step_interrupted` (`stopped`, `cancelled`, `failed`), исключая ложное закрытие раунда.
+- Холст (`results.js`) переведён на новые границы: шаг остаётся в статусе `running` до фактического конца раунда (включая ASK и одобрение), owner-шаг отображает реальные running/done.
+- В экспорт Basic (`shared/basic-telemetry.js`) добавлена структурная сводка раундов `rounds` со всеми шагами и визитами, участниками, счётчиками попыток и отправок, границами, waitId и измеренным непересекающимся временем ожидания User (`userWaitDurationMs`).
+- `ReportDigest.customFlowReport` (`shared/report-digest.js`) использует доказанные границы шага с fallback на `legacy_check`.
+
+### 2026-10-26 — Basic: ожидания User и происхождение повторов (C05, C06), версия 2.81.889
+
+- Реализован сквозной жизненный цикл ожиданий User (`decision`, `owner`, `asks`, `unknown`) с событиями `custom_wait_start` и `custom_wait_end` (`waitId`, `kind`, `stepRef`, `visit`, `startedAt`, `endedAt`, `outcome`, `resumedFrom`).
+- В `CustomRunRecord` добавлен массив `waits` с сохранением `waitId`, времени и исходов ожиданий (`disput/custom-run-record.js`). При финализации незакрытые ожидания завершаются со статусом `stopped` / `cancelled` / `interrupted`.
+- Введена явная атрибуция происхождения попыток: `trigger` (`initial`, `automatic_retry`, `user_retry`, `user_resend`, `resume_unsent`), `triggerReason` (`empty_answer`, `rejected_by_judge`, `user_decision`, `resend_unknown`, `resumed_after_stop`) и `previousAttemptKey` (`disput/custom-engine.js`).
+- Действие «Проверить ответ» (`check`) при неизвестном ответе завершает исходную попытку найденным текстом с пометкой `recoveredBy: 'check'` без нового сетевого запроса, нового `onRequest` или смены идентичности попытки.
+- Документация событий Basic обновлена в `docs/Pipeline scenarios/basic-start-here.md`.
+
+### 2026-10-25 — Basic: непривязанные наблюдения и экспорт basic-telemetry/2 (C03), версия 2.81.888
+
+- Формат экспорта Basic телеметрии обновлён до `basic-telemetry/2` (`shared/basic-telemetry.js`).
+- Разделены две независимые оси: отбор прогона `runSelection` ('selected' | 'unassigned' | 'otherRun' | 'invalid') и корреляция попытки `attemptCorrelation` ('linked' | 'unassigned' | 'conflict').
+- События с доказанным `runId` прогона при неизвестном ID запроса сохраняются в `delivery.journal` и `telemetry.events`.
+- Добавлены массивы `delivery.unassigned` и `telemetry.unassigned` с фиксацией причины `selectionReason` (включая `conflicting_run_ids` при конфликте прогонов).
+- Счётчики `selection` в `delivery` и `telemetry` отражают полный баланс `selected + unassigned + otherRun + invalid = totalScanned`.
+
+### 2026-10-25 — Basic: единый фоновый журнал сообщений в storage.session (C04), версия 2.81.887
+
+- Создан фоновый модуль `background/message-delivery-store.js` — единственный писатель сохранённого журнала сообщений в `chrome.storage.session` (ключ `messageDelivery.journal.v2`).
+- Формат конверта `{ version: 2, events: [...], collection: { retained, totalAppended, overflowOmitted, bytesEstimate } }` с лимитом 3000 событий и 3 МиБ, вытеснением старых записей и регидратацией после suspension service worker.
+- Поддержаны сообщения `DELIVERY_JOURNAL_APPEND`, `DELIVERY_JOURNAL_SNAPSHOT`, `DELIVERY_JOURNAL_CLEAR` в `background/message-router.js`.
+- Клиент `shared/message-delivery.js`: генерация `eventId` для каждого события, асинхронная отправка append, чтение снимка snapshot со слиянием неподтверждённого локального хвоста, отмена очистки сессионного хранилища при загрузке страницы.
+- `shared/message-delivery-view.js` и `results.js`: чтение фонового снимка для отчётов и экспорта телеметрии Basic.
+
+### 2026-10-25 — Basic: намерение chatIntent, фактический маршрут chatRoute и корреляция событий (C01, C02), версия 2.81.886
+
+- Запись намерения страницы `chatIntent` (`newChat`, `reason`, `bindingTabId`, `attachmentNames`) для каждой попытки перед отправкой (`disput/custom-run-record.js`, `results.js`).
+- Фиксация фактического выбора чата фоном `chatRoute` (`action: created | attached_unbound | continued | refused`, `reason`, `tabId`, `transportRequestId`, `eventId`) через событие `participant_chat_resolved` (`background/tab-manager.js`, `background/job-orchestrator.js`).
+- Строгая корреляция runtime-событий в `shared/message-delivery.js` по `transportRequestId` и доказанной привязке вкладки без безусловного fallback на `latestByModel`; неизвестные ID изолируются со статусом `attemptCorrelation: 'unassigned'` и причиной `unknown_request_id`.
+- Генерация `sourceEventId` и сквозная передача `transportRequestId` из контекста запроса в content scripts (`content-bootstrap.js`, `content-utils.js`, `response-lifecycle-detector.js`).
+
+### 2026-10-25 — Basic: раздельные карточки участников одной модели в ленте (B03), версия 2.81.885
+
+- Идентичность карточки ленты расширена до `runId + stepRef + participantId + visit` (`results.js`). Два участника одного провайдера (например, C1 и C2 у Claude) отображаются как самостоятельные карточки.
+- Обновления, частичный вывод и ревизии ответов изолированы по участнику: исправление одного ответа не затирает и не схлопывает карточки соседей по раунду.
+
+### 2026-10-25 — Basic: результаты отдельных волн и инкрементная фиксация (B02), версия 2.81.884
+
+- Добавлен callback `meta.onWaveResult` в контракт `sendParticipants`. Ответы завершившейся волны принимаются и фиксируются в чекпоинте до отправки следующей волны.
+- При остановке/прерывании прогона результаты завершённых волн сохраняются; неотправленные участники помечаются `not_sent` (`cancelled_before_dispatch`) и при продолжении не вызывают ложный диалог разрешения неизвестных ответов.
+
+### 2026-10-25 — Иконка Pipeline меньше на 7 %, версия 2.81.883
+
+- Иконка «Pipeline panel» уменьшена пропорционально на 7 % (28.6 × 30.42 → 26.6 × 28.29 px). Толщина линий на экране прежняя: `stroke-width` в координатах viewBox пересчитан с 2.5 до 2.688 (`pipeline_panel.html`, `result_new.html`, `styles/app-controls.css`).
+
+### 2026-10-25 — Basic: сохранение чатов участников при остановке (B01), версия 2.81.882
+
+- Финальное сохранение прогона (`results.js`) использует единую сборку снимка `buildSnapshotPayload`, предотвращая потерю `chatBindings` страницы (`tabId`, `requestId`, `transportRequestId`, `stageAttemptId`).
+- `disput/custom-run-record.js`: `setSnapshot` сохраняет и накапливает привязки чатов участников через `mergeChatBindings` без затирания известного состояния при вызове с неполным результатом движка.
+- При возобновлении (`resume`) прогона с ошибкой статус `stopReason` записи гарантированно обновляется в `error`.
+
+### 2026-10-25 — Выравнивание верхней панели по центру, версия 2.81.881
+
+- Иконка «Pipeline panel» выровнена по центру относительно иконок моделей, полоска «Telemetry» — относительно подписей моделей. Смещения измерены в настоящем Chrome с загруженным расширением (`styles/app-controls.css`, `.right-sidebar-toggle-btn` и `.telemetry-toggle-bar`).
+
+### 2026-10-25 — Иконка Pipeline заменена на граф из трёх узлов, версия 2.81.880
+
+- Иконка кнопки «Pipeline panel» (`.sidebar-toggle-icon-branch-v3`, `pipeline_panel.html` и `result_new.html`) заменена на присланный SVG: два узла слева, один справа, две кривые сходятся в один узел. Размер и цвет по-прежнему задаёт CSS.
+
+### 2026-10-25 — Canvas: ширина рамки User берётся из той же переменной, что и раунды, версия 2.81.879
+
+- Ширина карточек раундов и рамки шага User задаётся одной переменной `--pipeline-block-width: 139px` (`styles/base.css`). Раунды (`.model-block`) и рамка User (`.pipeline-control-card`) читают её в `styles/pipeline.css`.
+
+### 2026-10-25 — Canvas: рамка шага User имеет фиксированную ширину, как карточки раундов, версия 2.81.878
+
+- Рамка шага User (`.pipeline-control-card`) задавала `width: 100%` без фиксированной ширины, и на холсте она растягивалась на весь экран. Теперь ширина `139px` с `box-sizing: border-box`, как у карточки раунда (`.model-block`).
+- Код: `styles/pipeline.css`.
+
+### 2026-10-25 — Телеметрия Basic: конец раунда и адрес артефакта, версия 2.81.877
+
+- Движок отправляет `custom_step_end` после решения User; Extract считает длительность этапа по нему (для старых журналов — по `custom_step`).
+- Запись попытки хранит `artifact`, `address`, `pointer` входных элементов: видно, какую версию артефакта получил участник.
+
+### 2026-10-25 — Экспорт телеметрии Basic, версия 2.81.874
+
+- Слева от Extract добавлена кнопка Basic: JSON с записью движка, журналом доставки и событиями моделей одного прогона. Во время работы запись берётся из памяти; фильтры диагностики не обрезают экспорт.
+- Зафиксированы границы наблюдаемости Basic: участники и волны, приёмка и повторы, ожидание User, продолжение и точность источников входа.
+
+### 2026-10-25 — Basic: основная линия (user_doc, 2.81.858–860) влита в сборку переноса, версия 2.81.873
+
+- Встроенный шаблон `user_doc` и его правки из основной линии объединены с пакетами 1.1–1.4, 2.1–2.4 переноса. Конфликты только в номерах версий и документах.
+
+### 2026-10-25 — Basic: слияние полос переноса (1.1–1.4, 2.1–2.3a), версия 2.81.873
+
+- Слиты подсказки, удаление Send, кнопка «Стрелки», окно ошибок схемы (полоса 1: 2.81.858–861) и каталог схем, вставка JSON схемы, копия документа на диск (полоса 2: 2.81.870–872). Конфликты только в номерах версий и документах.
+### 2026-10-25 — Basic: гид для моделей дополнен правилами авторов и шаблоном «Карта функций» (без изменения версии)
+
+- Гид `basic-schema-guide.md`, §6: описан блок «Формат ответа», который приложение добавляет в запрос; писать его в `task` не нужно. §4: строка «Попытки приёма ответа» (2 попытки: исходный запрос и одно исправление; код: `disput/custom-engine.js:47`).
+- Гид, §5.4–5.5: `chat` по умолчанию `continue` (один чат на схему); личное `task` модели заменяет общее `task` шага целиком (`disput/custom-engine.js:133`).
+- Гид, §5.7–5.8: повторная передача входа в том же чате не фильтруется, документ можно сослать по названию; правило меток добавляет приложение; раунд из нескольких моделей может объявлять артефакты, источник документа для User — только раунд с одной моделью (`disput/basic-schema.js:429`).
+- Гид, §5.9: ответ User идёт следующему раунду, шаг User должен стоять во входе позднего этапа; опросник (`form`) — формат JSON и причина `invalid_form`.
+- Гид, §9: шаблон F «Карта функций» (документ для User, проверка, доработка, повторная проверка); проверяется тестами `tests/basic-schema-guide.test.js`.
+
+### 2026-10-25 — Basic: копия документа в папку на диске (2.3a), версия 2.81.872
+
+- В окне ответа User с документом появилась строка «Папка документов»: кнопка выбирает папку (File System Access, `showDirectoryPicker`), рядом имя папки или «не выбрана». Одна папка на все pipelines; дескриптор хранится в IndexedDB расширения (база `AutoOrchestrDocumentsFolder`, хранилище `handles`, ключ `documents`), в схему не входит.
+- При OK/Send утверждённый текст записывается в `<папка>/<pipeline>/<дата-время прогона>/<имя>.md` (для опросника — `.json`). Имена очищаются, повторное OK/Send перезаписывает файл. Файл — копия для человека; главное хранилище — запись прогона.
+- Папка не выбрана — ничего не происходит. Нет доступа или ошибка записи — прогон продолжается, одно уведомление за прогон. Доступ после перезапуска Chrome запрашивается на ▶ и на «Продолжить прогон».
+- Схема и движок не менялись. Пакет 2.3b (перечитывание файла перед шагом и вопрос «взять правку / оставить») отложен решением менеджера.
+- Код: `results/documents-folder.js` (`DocumentsFolder`), `results/choice-dialog.js` (параметр `folder`), `results.js` (`saveDocumentCopy`, `requestDocumentsAccess`, `documentsFolderName`, `pickDocumentsFolder`, обёртка `provideOwnerResult`); тесты `tests/documents-folder.test.js`.
+- Документы: `basic-windows.md`, `basic-start-here.md`, `basic-developer.md`, `basic-user-documents-plan.md`, `basic-port-plan.md` (пакет 2.3a), `CHANGELOG.md`.
+
+### 2026-10-25 — Basic: вставка JSON схемы из буфера, версия 2.81.871
+
+- Кнопка `#pipeline-profile-btn` больше не заглушка: называется «Вставить схему» и открывает окно `openSchemaPasteWindow`. Решение 2.81.784 («кнопка — неактивная заглушка») изменено этим пакетом.
+- Окно принимает ответ модели целиком: текст читает `SchemaTextReader.read` (`disput/schema-text-reader.js`). Терпимо к ограде ```json, хвостовым запятым, комментариям `//` и `/* */`, ключам без кавычек и типографским кавычкам; первое JSON-значение; текст вне JSON показывается как «Комментарий модели». Алиасы полей не применяются.
+- Оборванный ответ не применяется: окно сообщает, до какого шага (`ref`) JSON цел. Ошибки проверки выводятся списком «путь: сообщение», текст сохраняется. Объект с `basicCatalog` импортируется как каталог; схема, прошедшая проверку, устанавливается по пути Import (спрашивается имя).
+- Код: `disput/schema-text-reader.js`, `openSchemaPasteWindow` и `importBasicSchemaFile` (возвращает `true` при установке) в `results.js`; тесты `tests/schema-text-reader.test.js`.
+- Документы: `basic-windows.md`, `basic-start-here.md`, `basic-developer.md`, `basic-schema-guide.md`, `basic-port-plan.md` (пакет 2.2), `CHANGELOG.md`, `docs/Architecture/debate-removal-registry.md`.
+
+### 2026-10-25 — Basic: экспорт и импорт всего каталога схем, версия 2.81.870
+
+- Кнопка «Export all schemas» (`#pipeline-export-all-btn`) в шапке списка pipelines выгружает все сохранённые схемы одним файлом `Каталог Basic.json` (формат `basicCatalog: 1`, массив `schemas`). Шаблоны, записи без схемы и записи, не прошедшие проверку, в файл не входят и перечисляются в уведомлении.
+- Import Schema распознаёт каталог по полю `basicCatalog`: валидные схемы добавляются под своими именами, конфликт имён решается вводом нового имени или подтверждением замены, ничего не затирается молча. Итог — «Добавлено схем: N, не добавлено: M» со списком ошибок; уведомление переносит строки и прокручивается.
+- Прежний общий экспорт (`importBasicBundle`) не менялся и по-прежнему принимается.
+- Код: `buildBasicCatalogExport`, `exportBasicCatalog`, `importBasicCatalog` (`results.js`), общее скачивание `downloadSchemaText`.
+- Документы: `basic-developer.md`, `basic-start-here.md`, `basic-schema-guide.md`, `basic-port-plan.md` (пакет 2.1), `CHANGELOG.md`.
+### 2026-10-25 — Basic: окно со списком ошибок схемы и значок «!» на шаге, версия 2.81.861
+
+- При установке схемы (Import), если `BasicSchema.validate` нашёл ошибки, кроме уведомления (первые 5) открывается окно «Схема не установлена» со всеми ошибками, по строке «путь: сообщение». Для файла прежнего формата, где часть схем не установилась, — окно «Не все схемы установлены» со строками «имя: путь: сообщение».
+- Сохранённая схема, которая не проходит проверку при открытии, на шаге с путём `steps[N]…` получает красный значок «!» (`.step-error-badge`) в метке раунда (`.stage-label`) или в карточке User. Подсказка — «Ошибки шага <ref>» и сообщения этого шага; клик открывает окно «Ошибки схемы». Ошибки без пути к шагу значка не имеют и остаются в уведомлении.
+- Код: `showSchemaErrors`, `schemaErrorsText` в `results.js` рядом с `describeSchemaErrors`; `syncStepErrorBadges` (вызывается рядом с `syncCanvasTooltips`), `basicSchemaLoadErrorList` (рядом с `basicSchemaLoadErrors`).
+- Тест: «step errors: …» в `tests/results-debate-favorites.test.js`. Версия 2.81.861 в `manifest.json` и `package.json`.
+
+### 2026-10-25 — Basic: кнопка «Стрелки» скрывает и показывает стрелки холста, версия 2.81.860
+
+- В панели pipelines добавлена кнопка «Стрелки» (перед «Export schema»): скрывает и показывает стрелки холста между колонками. Скрытие и показ плавные (0,3 с); когда стрелки скрыты, кнопка приглушена.
+- Состояние хранится в браузере (`localStorage`, ключ `pipelineArrowsHidden`) и восстанавливается при открытии страницы. На схему, Save и прогон не влияет.
+- Код: `applyCanvasArrows` и `ARROWS_HIDDEN_KEY` в `results.js`, стили в `styles/pipeline.css`. Тесты: `tests/pipeline-arrows-toggle.test.js`, тест «arrows toggle» в `tests/results-debate-favorites.test.js`.
+
+### 2026-10-25 — Basic: убрана галочка Send, участие модели в раунде — флажок Input, версия 2.81.859
+
+- С блока модели на холсте убрана галочка Send. Остаётся один флажок Input с подписью и подсказкой «Участие в раунде»: включённая модель входит в раунд, снятая — не входит (в схеме `enabled: false`, настройки модели сохраняются, на холсте блок приглушён).
+- Удалён `.model-send-checkbox` из `pipeline/pipeline-runtime.js` и `results.js`.
+- Состояние `{input, send}` в записи сохранено для совместимости, но `send` всегда равно `input`. Старая запись с «Input вкл, Send выкл» читается как модель вне раунда (`applyModelStackState` в `results.js`) — так же исполнялось и раньше: в движок уходили только модели с Send.
+- Клик по метке раунда переключает только Input всех моделей раунда; окно «Информация» о блоке показывает только Input. Тесты: `tests/pipeline-runtime-no-send.test.js`, `tests/results-debate-favorites.test.js`.
+
+### 2026-10-25 — Basic: подсказки с названием на элементах холста, версия 2.81.858
+
+- Подсказка показывает название элемента жирной строкой, описание — строкой ниже: бейдж In; ▶ («▶ Общие значения» и описание схемы; раньше было нативное `title`); бейдж раунда («R<n> · <title шага>» или «R<n>») и `goal` шага; блок модели (имя модели и её `task`); карточка User и её заголовок («User · <ref> · <title>» и `goal` либо `task`); рамка документа (имя артефакта и его описание); пункт списка pipelines (имя схемы).
+- Механизм: `setCanvasTooltip(el, name, desc)` и `syncCanvasTooltips()` в `results.js` задают `data-tooltip` и `data-tooltip-desc`; показывает `ResultsTooltips` (`results/tooltips.js`), текст выводится как текст. Стили `.floating-tooltip-name` и `.floating-tooltip-desc` — `styles/app-controls.css`. `syncCanvasTooltips` вызывается в конце `updatePipelineAll` и после смены активной схемы.
+- Нативные `title` на `.pipeline-canvas` и на кнопках `.pipeline-list-header-actions` перенесены в подсказку и сняты, чтобы не показывались две подсказки; у `.status-indicator` и `.role-selector` `title` остаётся.
+- Тесты: `tests/results-tooltips.test.js` (разметка подсказки), `tests/results-debate-favorites.test.js`, тест «canvas tooltips: …».
+### 2026-10-25 — Basic: user_doc обновляется при смене ревизии, версия 2.81.860
+
+- У встроенных схем появилась ревизия: `BUILTIN_SCHEMA_REVISIONS` в `disput/pipeline-presets.js` (`user_doc: 2`). Хранилище помнит ревизию каждой посеянной схемы (`pipelineStore.seededRev`).
+- Если схема уже посеяна старой ревизией и её pipeline ещё в списке, `seedBuiltinSchemas` заменяет копию новой. Правки User в ней теряются. Удалённая пользователем схема не возвращается.
+- Причина: `user_doc` уже был посеян двухшаговой версией, и без ревизии шаг r2 до пользователя не доходил.
+
+### 2026-10-25 — Basic: user_doc — третий шаг r2 (DeepSeek пересказывает ответы User), версия 2.81.859
+
+- В схему `user_doc` добавлен шаг `r2`: DeepSeek получает заполненный User опросник (`input: previous`) и перечисляет ответы по пунктам с коротким выводом о задаче.
+- Та же схема в `docs/Pipeline scenarios/questionnaire-deepseek.json` и в `BUILTIN_SCHEMAS.user_doc` (`disput/pipeline-presets.js`). Тест `tests/user-doc-seed.test.js` проверяет шаг r2 и совпадение файла с константой.
+- Уже посеянные схемы не перезаписываются (посев один раз, см. запись 2.81.858).
+
+### 2026-10-25 — Basic: встроенная схема user_doc при первом старте, версия 2.81.858
+
+- Новая встроенная схема `user_doc` (опросник: DeepSeek составляет опросник, User заполняет и жмёт «Отправить») ставится в список pipelines при первом старте страницы. Схема лежит в `disput/pipeline-presets.js` (`BUILTIN_SCHEMAS`), посев — `seedBuiltinSchemas` в `results.js`.
+- Посев один раз: имя записывается в `pipelineStore.seeded` (сохраняется в хранилище). Удалённый пользователем `user_doc` не возвращается. Если pipeline с таким именем уже есть, он не перезаписывается, только помечается посеянным.
+- Выбор активного pipeline при старте не меняется.
+- Код: `disput/pipeline-presets.js`, `results.js`. Тест: `tests/user-doc-seed.test.js`.
+
+### 2026-10-24 — Basic: этап 2 упрощён — документы берутся из записи прогона, версия 2.81.857
+
+- Убрано (дублировало запись прогона): отдельное хранилище документов (`disput/basic-documents.js`, `window.BasicDocuments`, ключ `llmComparatorDocuments`, тег script в `pipeline_panel.html`), поле `record.documents` и `CustomRunRecord.setDocumentRef`, разрешение `unlimitedStorage` в `manifest.json`.
+- Убрано: состояние «версия недоступна» (Повторить / Отмена) в окне и в движке. Если текста документа нет в записи прогона, прогон останавливается ошибкой движка `invalid_document` с текстом «текст документа не найден в записи прогона»; события `onDocument` и `getDocument`, журнальное событие `custom_document_error`; номер версии в заголовке окна и на рамке.
+- Осталось: извлечение по меткам `[[DOC: id]] … [[/DOC]]` и отказ `missing_artifact` с исправлением той же моделью; окно правки и утверждения (заголовок — имя документа; «Отправить» активна, пока текст не пуст); правка User — запись реестра артефактов с автором User, дальше уходит утверждённый текст (`previous` по умолчанию, `latest` — правленая версия); шаг User хранит `approved: { id }`; рамка на холсте («<имя>», после утверждения «<имя> · утверждено»; клик открывает документ только для чтения); рамки строятся из записи прогона и восстанавливаются после перезагрузки страницы из последней записи прогона этого pipeline (`customRunStore.latest(имя)`).
+- Записи прогонов по-прежнему вытесняются по пределу 4 МБ (общее правило); отдельного срока хранения документов нет.
+- Осиротевший ключ `llmComparatorDocuments` в профиле, где этап 2 уже запускался, код не читает. Удалить его можно вручную в DevTools: `chrome.storage.local.remove('llmComparatorDocuments')`.
+- `manifest.json`: разрешение `unlimitedStorage` убрано. После перезагрузки расширения Chrome может запросить подтверждение изменения разрешений; для документов это не нужно.
+- Документы: `docs/Pipeline scenarios/basic-user-documents-plan.md`, `basic-developer.md`, `basic-start-here.md`, `basic-windows.md`, `basic-schema-guide.md`.
+
+### 2026-10-24 — Basic: документ внутри приложения — метки, версии, рамка, отдельное хранение, версия 2.81.856
+
+- Документ для чтения (`output.document: "read"`) извлекается из ответа модели по меткам `[[DOC: id]] … [[/DOC]]`. Без меток или с пустым текстом ответ отклоняется (`missing_artifact`), модель исправляет ответ; целый ответ вместо документа не берётся. Схема: раунд объявляет ровно один артефакт в `output.artifacts`. Опросник и JSON-ответ не меняются.
+- Документ — артефакт с версиями: версия 1 — ответ модели; правка User в окне создаёт версию с автором User; «Отправить» утверждает версию, и утверждённый текст идёт дальше (следующий раунд получает его как `previous`). Если версия недоступна, окно предлагает «Повторить» или «Отмена», без подмены другой версией.
+- Рамка документа на холсте в колонке раунда-источника: пунктир до извлечения, затем «<имя> v<N>» и «· утверждено»; клик открывает документ только для чтения; рамки восстанавливаются после перезагрузки.
+- Документы хранятся отдельно от записей прогонов: ключ `llmComparatorDocuments` (`disput/basic-documents.js`), без вытеснения, удаляет User. Запись прогона ссылается на версию (`record.documents`). В `manifest.json` добавлено разрешение `unlimitedStorage`.
+- Продолжение после перезапуска: окно получает ту же утверждённую версию; при потере текста в записи он берётся из хранилища документов.
+- Карточка User: удалить можно только последний раунд; если он был источником документа, источник сбрасывается с уведомлением. Смена документа в списке не воспроизвелась; добавлен тест защиты.
+- Движок: новые необязательные параметры `onDocument` и `getDocument`; сбой колбэка пишется в журнал как `custom_document_error`. Код: `disput/basic-output.js`, `disput/basic-schema.js`, `disput/custom-engine.js`, `disput/basic-documents.js` (новый), `disput/custom-run-record.js`, `results/choice-dialog.js`, `results.js`, `styles/pipeline.css`, `manifest.json`.
+- Рамки документов восстанавливаются из хранилища при загрузке страницы и при выборе pipeline в списке (последний прогон этого pipeline); рамки другого pipeline на холсте не остаются.
+
+### 2026-10-24 — Basic: документ для User от одной модели (этап 1 плана), версия 2.81.855
+
+- Шаг User получил поле `document` (ref более раннего раунда с одной моделью); раунд объявляет вид документа в `output.document`: `read` (для чтения) или `form` (опросник, требует `format: "json"`). Схема проверяет ссылку и вид; схемы без новых полей не меняются.
+- Опросник: JSON `{ items: [...] }` с пунктами `one`, `many`, `text`, `yesno`. Нарушение формата отклоняется как `invalid_form`, модель получает исправление.
+- Движок передаёт документ в окно User. Неверная ссылка или ответ, не являющийся опросником, останавливают прогон ошибкой `invalid_document` до открытия окна. Окно: для чтения — комментарий, для опросника — форма с обязательными пунктами; ответ идёт дальше по схеме.
+- Карточка шага User: список «Документ для User» (раунды выше с одной моделью). Вид документа в окне раунда не выбирается: его пишет автор схемы.
+- Код: `disput/basic-schema.js`, `disput/basic-output.js`, `disput/custom-engine.js`, `results/owner-ask.js`, `results/choice-dialog.js`, `results/stage-card.js`, `results.js`, `styles/choice-dialog.css`. Не входит в этап 1: артефакты-файлы, папка, правка вне окна, стенд (`basic-user-documents-plan.md`).
+
+### 2026-10-24 — Basic: раунд после шага User по умолчанию получает его ответ, версия 2.81.854, стенд v52
+
+- Решение владельца (B-2): умолчание `input` раунда — `previous` после любого шага, в том числе шага User; `none` только у самого первого шага схемы. Раньше раунд, стоящий сразу после шага User в начале схемы, получал `none` и ответ User не видел. Явный `input` не меняется.
+- `disput/basic-schema.js` (`assemble`), `disput/basic-spec.js` (связи входа), `results.js` (окно раунда: R1 после шага User не «первый»), стенд: `basic-export.js` (Import читает умолчание так же).
+- Тесты: `tests/basic-schema.test.js`, `tests/custom-engine-owner.test.js`, `tests/basic-spec.test.js`, `tests/stand-basic-export.test.js`.
+
+### 2026-10-24 — Basic: приём ответа не отключается молча, превью инструкции ask совпадает с запросом, версия 2.81.853
+
+- `results.js`: если не загружены `DebateResponseAcceptance` или `DebateStageMarkers`, прогон не стартует с уведомлением «Basic: не загружены модули приёма ответов…» (раньше `accept` возвращал `{ ok: true }` и приём ответа отключался без сообщения).
+- `disput/custom-engine.js`: инструкция `discipline.ask` считается одной функцией `askOf` для запроса, частей запроса и превью.
+- `disput/basic-artifacts.js`: удалена неиспользуемая `markInvalid`; чтение `valid: false` из записей прежних прогонов сохранено.
+- Тесты: `tests/custom-engine.test.js`, `tests/basic-artifacts.test.js`, `tests/custom-run-resume-wiring.test.js`; `tests/results-debate-favorites.test.js` загружает настоящий `debate-response-acceptance`.
+
+### 2026-10-24 — Basic: проверка схемы не падает на имени вида шага, снимок без позиции не возобновляется, версия 2.81.852
+
+- `BasicSchema.validate`: имя вида шага из `Object.prototype` (`toString`, `constructor`…) даёт ошибку `steps[n].kind`, а не исключение (`disput/basic-schema.js`).
+- `CustomRunRecord.setSnapshot` не подставляет `pc: null`, если состояние пришло без `pc`: такая запись не возобновляется (`canResume` = false), а не «завершается без работы» (`disput/custom-run-record.js`).
+- Тесты: `tests/review-b1.test.js` (`.failing` снят), `tests/custom-run-record.test.js`.
+
+### 2026-10-24 — Basic: нечитаемая схема не перезаписывается, правки после ревью, версия 2.81.851
+
+- Pipeline со схемой, не прошедшей проверку (например, с удалённым `kind: "synthesis"`), при открытии показывает уведомление «Схема pipeline не прочитана: …; соберите схему заново», а Save такую схему не перезаписывает (`results.js`: `adoptBasicWorking`, `persistBasicSettings`).
+- Телеметрия: `purpose` шага custom — `custom:<input>` (поля `order` больше нет); заголовок диалога «Вопрос User» (`pipeline_panel.html`).
+
+### 2026-10-24 — Basic: поля require и order удалены, раунд ждёт всех своих моделей, версия 2.81.850
+
+- Поля шага `require` (сколько ответов нужно) и `order` (`parallel` / `sequential`) удалены. Раунд — один запрос всем его включённым моделям: они отвечают независимо, раунд ждёт ответов всех (как прежнее `require: "all"`); пока принят ответ не каждого участника, «Продолжить» не предлагается и в Auto. Эстафета записывается раундами по одной модели подряд: следующий раунд получает ответ предыдущего через вход.
+- Схема с `require` или `order` отклоняется проверкой с текстом «поле require не поддерживается: раунд ждёт ответов всех своих моделей» / «поле order не поддерживается: все модели раунда отвечают независимо; эстафета — раунды по одной модели подряд» (`disput/basic-schema.js`). Конвертера нет: сохранённых пользовательских схем с ними нет.
+- Движок (`disput/custom-engine.js`): убраны порог ответов (`neededOf`), проверка `require`, последовательное исполнение, блок «Ответы участников этого раунда до тебя», подстановка `{ответы до тебя}` и `PLACEHOLDER.earlier`; `order` не пишется в `custom_start` и предпросмотр. Старые планы и снимки с `order` / `require` читаются без ошибки, поля игнорируются. Описание pipeline (`disput/basic-spec.js`) без поля «Порядок».
+- Окно раунда: выбор «Порядок работы» и поле «Сколько ответов нужно» удалены (`results/stage-card.js`, `results.js`, `styles/pipeline.css`); старые сохранённые настройки карточки с `order` / `require` в схему не переносятся.
+- Стенд v45: поле `order` — удалённое поле (предупреждение «Поле «order» не поддерживается и не применяется: …»), флажки «Кому отправлять» в карточке артефакта и исходного артефакта удалены (`stand.artTo`); примеры и `showcase` переписаны: эстафеты (`sequential`) — раунды по одной модели подряд; в запросе для моделей описание `order` заменено правилом про раунды по одной модели.
+- Фикстуры S01–S30 и S01–S05: `order: "parallel"` и `require: 2` (у раундов из двух моделей) убраны; по смыслу сценарии не изменились, таблица соответствия — только примечания.
+- Тесты `require` / `order` / `sequential` удалены или переписаны; добавлены: отказ схемы с `require` и `order`, раунд отправляет запрос всем сразу и ждёт всех, эстафета раундами по одной модели, старый план с этими полями исполняется. Документы Basic, стенда и `agent-onboarding.md` обновлены.
+
+### 2026-10-23 — Basic: синтез — роль, а не вид шага; вид synthesis удалён, версия 2.81.849
+
+- Вида шага `synthesis` больше нет: синтез — раунд из одной модели с ролью (`interaction_meta_synthesis`), итоговый синтез — последний такой раунд; итог прогона — принятые ответы последнего шага. Схема с `kind: "synthesis"` отклоняется проверкой с текстом «тип шага: допустимо round, owner; синтез — роль: раунд из одной модели с role» (`disput/basic-schema.js`), движок отклоняет такой шаг до первого запроса (`unsupported_kind`). Конвертера нет: сохранённых пользовательских схем с синтезом нет.
+- Схема: убраны `defaults.synthesisTask` (`BasicSchema.DEFAULTS.synthesisTask`), ref `final` и `synth:<id>`, правила промежуточного синтеза и `final`, наследование запроса из `final`; `toCanvas` больше не отдаёт `synthesizer` и `inserts`. Движок: убраны `SYNTHESIS_TASK`, `afterRound`, подпись «Синтез после раунда N». Описание pipeline (`disput/basic-spec.js`): нет «Итоговый синтез».
+- Холст Basic: колонка Final, блок синтеза и его выбор модели, кнопки вставки синтеза между раундами, окно синтеза и `overrides.synthesizers` / `protocol.synthesizer` удалены (`results.js`, `results/stage-card.js`, `results/debate-ui.js`, `pipeline_panel.html`, `styles/pipeline.css`); `DebateDraftPlan.createCanvasPlan` строит план только из раундов, `insertSynthesis` и `setStageParticipants` удалены. Раунд из одной модели с ролью рисуется обычной колонкой раунда. Новый пустой pipeline синтез не добавляет; шаблон Default синтеза не содержал и не изменился.
+- Старые данные читаются без ошибки: план холста со стадиями синтеза, карточки `final` / `synth:…`, `synthesisTask` ▶, `protocol.synthesizer`, `overrides.synthesizers` — лишнее отбрасывается.
+- Фикстуры S01–S30 и S01–S05: пять синтезов — раунды из одной модели с ролью, раунды перенумерованы (r1…r42), таблица соответствия пересчитана.
+- Стенд v44: Export не переносит `defaults.synthesisTask` (предупреждение), импорт старого файла Basic по-прежнему превращает `synthesis` в раунд из одной модели; исходный холст прототипа без колонки Final и вставок синтеза.
+- Тесты синтеза удалены или переписаны; добавлены: отказ схемы с `synthesis`, схема из раундов (последний — одна модель с ролью) проходит проверку и встаёт на холст без `inserts`/`synthesizer`, линейный прогон с итогом из последнего раунда, чтение старых данных с лишними полями. Документы Basic, стенда и `agent-onboarding.md` обновлены.
+
+### 2026-10-23 — Basic: проверки (gate) и развилки (route) удалены, схема линейна, версия 2.81.848
+
+- Видов шага `gate` и `route` больше нет: схема с ними отклоняется проверкой с текстом «тип шага: допустимо round, synthesis, owner; проверка — обычный раунд: критерии в task; решение принимает User шагом owner» (`disput/basic-schema.js`); движок отклоняет их до первого запроса (`unsupported_kind`). Конвертера нет: сохранённых пользовательских схем с ними нет.
+- Удалена вся система переходов: `goto`, `stop`-действие, `onPass`, `onFail`, `select`, `criteria`, `pass`, проверка переходов в схеме и движке, события `custom_gate`, `custom_route`, `custom_transition`, причины остановки `gate_failed`, `route_not_found`, `route_ambiguous`, `invalid_route_input`, причины отказа `no_verdict`, `invalid_route`, фаза `transition`, поля снимка `routes`, `route`, `applied`. Модуль `disput/basic-control.js` удалён (страницы и сборка стенда его больше не грузят).
+- Интерфейс: окна проверки и маршрута, строки ленты о проверке, маршруте и переходе, окно выбора маршрута удалены (`results/stage-card.js`, `results.js`); «Шаг после этого этапа» добавляет только шаг User. Описание pipeline (`disput/basic-spec.js`) больше не пишет переходы.
+- Старые сохранённые состояния прогона с полями `routes`, `route`, `applied` читаются, лишнее игнорируется.
+- Фикстура S01–S30: проверки G1–G4 — раунды из одной модели с критериями в `task` (раунды перенумерованы, r1…r37), выборы User (CHG13, CHG17, CHG18, CHG25, исход S29) — шаги `owner`, синтетические правила возвратов (`route:s12`, `route:chg19`, `route:s26`, `route:s27`) убраны.
+- Тесты gate/route/переходов удалены (`custom-engine-gate`, `custom-engine-route`, `basic-control` и блоки в других), добавлены: отказ схемы с `gate` и с `route`, линейный прогон раундов и шага User, чтение старого снимка с полями маршрутов. Документы Basic, стенда и `agent-onboarding.md` обновлены.
+
+### 2026-10-23 — Basic: термин «User» вместо «владелец» в интерфейсе и документах, версия 2.81.847
+
+- Человек, который отвечает в схеме, везде называется «User»: подписи окон и карточек, сообщения об ошибках схемы, описание pipeline, вопросы и уведомления страницы, документы Basic. Слов «ожидание/ждёт ответа» в этих текстах нет.
+- Идентификаторы не менялись: `kind: "owner"`, ref `owner:<id>`, `owner: "approve"`, `by: "owner"`, `conflict: "owner"`, коды ошибок, имена событий (`owner_answer`, `custom_owner`) и ключи хранилища; сохранённые схемы работают как прежде.
+- Тесты и фикстуры обновлены под новые строки.
+
+### 2026-10-23 — Basic: возвраты назад убраны, схема исполняется только вперёд, версия 2.81.846
+
+- Убраны действие `return`, поля `maxLoops`, `feedback`, `invalidate`, `resumeAt`, лимит переходов, счётчики `loopCounters`, стек `continuationStack`, обратная связь для повторного захода, пересмотр результатов (зависимости визитов), проверка `unbounded_cycle`, `BasicSchema.graph`, стоп-причины `loop_limit` и `return_missing` (`disput/basic-schema.js`, `disput/custom-engine.js`, `disput/custom-run-record.js`, `disput/basic-spec.js`, `results/stage-card.js`).
+- Переход `goto` на текущий или более ранний шаг и любое из убранных полей — ошибка проверки схемы: «возврат назад не поддерживается: добавьте обычный шаг ниже по списку». Остались `goto` вперёд, `stop`, `ask`, `route` с `cases`/`otherwise`, `onPass`/`onFail`. Старые схемы с возвратами не переносятся.
+- Старые сохранённые состояния прогона с лишними полями (`loopCounters`, `continuationStack`, `feedback`, `dependencies`) читаются, лишнее игнорируется; новые снимки этих полей не пишут.
+- Окна проверки и маршрута: нет лимита переходов и «Вернуться»; лента: «Переход A → B».
+- Стенд: файл Basic с возвратом назад импортируется с замечанием «Возврат назад … не перенесён» (`basic-export.js`, стенд пересобран). Фикстура архитектуры S01–S30: бывшие возвраты и CHG-переходы заменены остановками.
+- Документы Basic и стенда обновлены; тесты возвратов и пересмотра результатов удалены (`custom-engine-chg`, `custom-engine-validity`, `custom-engine-lines`, T12 в `basic-architecture-fixture`), добавлены тесты нового поведения.
+
+### 2026-10-23 — Basic: этап владельца — зелёная рамка и «Назначение этапа», описание артефакта (output.artifacts[].description), карточка владельца «User», версия 2.81.845
+
+- Карточка владельца на холсте — зелёная рамка (`styles/pipeline.css`); её окно и заголовок окна вопроса называются «User».
+- Окно владельца: поле «Назначение этапа» (`goal`). В окне вопроса владельцу назначение идёт первым абзацем «Назначение: …» (`StageCard.ownerAskMessage`, `results/stage-card.js`); `provideOwnerResult` получает `goal` (`disput/custom-engine.js`).
+- Артефакт: необязательное `description` в `output.artifacts[]` (проверка типа в `disput/basic-schema.js`), сохраняется в записи реестра (`disput/basic-artifacts.js`) и показывается первой строкой в окне артефакта (`results.js`).
+- Тесты: `tests/basic-schema.test.js`, `tests/basic-artifacts.test.js`, `tests/stage-card-basic.test.js`.
+
+### 2026-10-23 — Basic: схемы по умолчанию в Загрузки/Схемы (экспорт — chrome.downloads, импорт — окно со стартом в Загрузках), версия 2.81.844
+
+- Экспорт схемы сохраняет файл в `Загрузки/Схемы` через `chrome.downloads`; при отказе API — прежний скачивание через ссылку (`results.js`, `exportBasicSchema`, `downloadSchemaViaDownloadsApi`).
+- Импорт схемы открывает окно выбора файла (`showOpenFilePicker`, id `basicSchemas`, старт в Загрузках); окно помнит последнюю папку. При ошибке окна — скрытый input, как раньше (`importPipelines`, `readPipelineImportFile`).
+
+### 2026-10-23 — Basic: описание схемы (`description`), версия 2.81.843
+
+- Поле корня схемы `description` — презентация pipeline для человека; проверяется как текст, сохраняется вместе со схемой, на прогон не влияет (`disput/basic-schema.js`, `results.js`).
+- В окне ▶ — блок Description (2 строки, ⤢ — на весь экран); подсказка на ▶ — то же описание (`styles/pipeline.css`, `.custom-desc*`).
+
 ### 2026-10-22 — Pipeline: цвет иконки, полоска Telemetry под ней, версия 2.81.842
 
 - Иконка «Pipeline panel» окрашена в `rgb(133 137 142)` (`.right-sidebar-toggle-btn`).

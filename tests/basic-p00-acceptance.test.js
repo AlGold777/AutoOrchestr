@@ -5,7 +5,6 @@ const Schema = require('../disput/basic-schema');
 
 const base = (steps, extra = {}) => ({ schemaVersion: 1, origin: 'user', steps, ...extra });
 const round = (ref, models, extra = {}) => ({ ref, kind: 'round', models: models.map((name) => (typeof name === 'string' ? { name } : name)), ...extra });
-const synthesis = (ref, models, extra = {}) => ({ ref, kind: 'synthesis', models: models.map((name) => (typeof name === 'string' ? { name } : name)), ...extra });
 
 // Scripted transport: answers[model] is a list of replies, one per request to that model.
 function transport(answers) {
@@ -26,7 +25,7 @@ function transport(answers) {
 }
 
 describe('T00: explicit task of the first round with input none', () => {
-  const firstRound = (models, step = {}) => base([round('r1', models, { input: 'none', ...step }), synthesis('final', ['C'])]);
+  const firstRound = (models, step = {}) => base([round('r1', models, { input: 'none', ...step })]);
 
   test('the step task and the model task reach assemble, the preview and the request of the engine', async () => {
     const schema = firstRound([{ name: 'A', task: 'MODEL_TASK' }, 'B'], { task: 'STEP_TASK' });
@@ -47,7 +46,7 @@ describe('T00: explicit task of the first round with input none', () => {
 
   test('only the inherited task (▶ or Basic) is not sent with input none', async () => {
     const schema = firstRound(['A'], {});
-    const withPipeline = base([round('r1', ['A'], { input: 'none' }), synthesis('final', ['C'])], { defaults: { roundTask: 'PIPELINE_TASK' } });
+    const withPipeline = base([round('r1', ['A'], { input: 'none' })], { defaults: { roundTask: 'PIPELINE_TASK' } });
     for (const current of [schema, withPipeline]) {
       const steps = Schema.assemble(current);
       expect(JSON.stringify(steps)).not.toContain('PIPELINE_TASK');
@@ -72,7 +71,7 @@ describe('T01: participant order [B, A] through the canvas and back', () => {
   });
 
   test('the canvas stack and participantIds keep [B, A], and a schema round trip repeated twice keeps it', () => {
-    const schema = base([round('r1', ['B', 'A']), synthesis('final', ['A'])]);
+    const schema = base([round('r1', ['B', 'A'])]);
     expect(Schema.validate(schema)).toEqual([]);
 
     const first = toCanvas(schema);
@@ -91,13 +90,16 @@ describe('T01: participant order [B, A] through the canvas and back', () => {
     expect(back2).toEqual(back1);
   });
 
-  test('sequential send goes B then A, and A gets the answer of B', async () => {
-    const schema = base([round('r1', ['B', 'A'], { order: 'sequential', input: 'none', task: 'Добавь' }), synthesis('final', ['A'])]);
-    const { send, calls } = transport({ B: ['ответ B'], A: ['ответ A'], });
-    const result = await Engine.run({ task: 'T', steps: Schema.assemble(schema), send });
-    expect(calls.slice(0, 2).map((call) => call.models)).toEqual([['B'], ['A']]);
-    expect(calls[1].prompts.A).toContain('Ответы участников этого раунда до тебя:\n\nОтвет 1:\nответ B');
-    expect(calls[0].prompts.B).not.toContain('ответ A');
-    expect(result.steps[0].outcome.A.ok).toBe(true);
+  test('the request goes to B and A at once, in the order [B, A]; a relay B then A is two rounds of one model', async () => {
+    const together = transport({ B: ['ответ B'], A: ['ответ A'] });
+    await Engine.run({ task: 'T', steps: Schema.assemble(base([round('r1', ['B', 'A'], { input: 'none', task: 'Добавь' })])), send: together.send });
+    expect(together.calls.map((call) => call.models)).toEqual([['B', 'A']]);
+    expect(together.calls[0].prompts.A).not.toContain('ответ B');
+    const relay = transport({ B: ['ответ B'], A: ['ответ A'] });
+    const result = await Engine.run({ task: 'T', send: relay.send,
+      steps: Schema.assemble(base([round('r1', ['B'], { input: 'none', task: 'Добавь' }), round('r2', ['A'], { task: 'Добавь' })])) });
+    expect(relay.calls.map((call) => call.models)).toEqual([['B'], ['A']]);
+    expect(relay.calls[1].prompts.A).toContain('Ответы предыдущего шага:\n\nОтвет 1:\nответ B');
+    expect(result.steps[1].outcome.A.ok).toBe(true);
   });
 });

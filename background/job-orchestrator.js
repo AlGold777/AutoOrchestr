@@ -5434,11 +5434,14 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveR
     if (!isValidTabId(tabId)) return;
     const entry = jobState?.llms?.[llmName];
     const dispatchId = entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null;
+    const transportRequestId = entry?.lastDispatchMeta?.transportRequestId || entry?.transportRequestId || null;
+    const meta = { runSessionId: sessionId, sessionId, dispatchId };
+    if (transportRequestId) meta.transportRequestId = transportRequestId;
     try {
       chrome.tabs.sendMessage(tabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { runSessionId: sessionId, sessionId, dispatchId }
+        meta
       }).catch(() => {});
     } catch (_) {}
     closePingWindowForTab(tabId);
@@ -5633,7 +5636,8 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
       ...participant,
       runId: String(pipelineContext?.pipelineRunId || '') || null,
       stageAttemptId: String(pipelineContext?.stageAttemptId || '') || null,
-      requestId: String(pipelineContext?.transportRequestIds?.[modelName] || '') || null
+      requestId: String(pipelineContext?.transportRequestIds?.[modelName] || participant?.transportRequestId || participant?.requestId || '') || null,
+      transportRequestId: String(pipelineContext?.transportRequestIds?.[modelName] || participant?.transportRequestId || participant?.requestId || '') || null
     }]))
     : {};
   if (self.PipelineFSM?.startRun) {
@@ -6024,7 +6028,13 @@ async function runParticipantThroughTabs(llmName, prompt, attachments = [], opti
     requestId: participant.requestId,
     stageAttemptId: participant.stageAttemptId,
     // The chat the page saved for this participant (R01): used only when the run has no binding of its own.
-    binding: participant.binding || null
+    binding: participant.binding || null,
+    stepRef: participant.stepRef || null,
+    visit: participant.visit || null,
+    attempt: participant.attempt || null,
+    phase: participant.phase || null,
+    attemptKey: participant.attemptKey || null,
+    transportRequestId: participant.transportRequestId || participant.requestId || options.transportRequestId || null
   }, prompt, attachments, options).catch((err) => ({
     ok: false,
     error: {

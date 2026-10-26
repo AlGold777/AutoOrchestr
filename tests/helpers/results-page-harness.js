@@ -193,7 +193,7 @@ function renderDebateDom() {
         <span id="currentPipelineName" class="pipeline-name">Universal</span><div class="entry-point" id="entryPoint">▶</div>
         <button type="button" id="pipeline-add-round-btn">+</button>
         <button type="button" id="removeRoundBtn">−</button>
-        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button>
+        <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button><button type="button" id="pipeline-export-all-btn">Export all</button><button type="button" id="pipeline-profile-btn">Paste</button>
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
             <div class="model-block">
@@ -215,12 +215,6 @@ function renderDebateDom() {
           <div class="model-stack" id="r2-models"></div>
         </div>
         <div id="insertionPoint"></div>
-        <div class="connector-group synthesis-capable" id="connectorToSynthesis" hidden aria-hidden="true">
-          <svg class="connector-svg" id="svg-r-last-synthesis"></svg>
-        </div>
-        <div class="stage-column synthesis-capable" id="synthesisColumn" data-stage="synthesis" hidden aria-hidden="true">
-          <div class="model-stack synthesis-stack" id="synthesis-stack" data-render="pipeline-synthesis-stack"></div>
-        </div>
         <div class="pipeline-items" id="pipelineItems">
           <div class="pipeline-item active" data-name="Research & Analysis">
             <input type="radio" name="pipeline" class="pipeline-radio" checked>
@@ -275,7 +269,7 @@ function renderDebateDom() {
       <input id="file-input" type="file">
       <div id="file-name-display"></div>
       <dialog class="pipeline-stage-dialog owner-ask-dialog" id="owner-ask-dialog" aria-labelledby="owner-ask-title">
-        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос владельцу</h2></header>
+        <header class="pipeline-stage-dialog-header"><h2 id="owner-ask-title">Вопрос User</h2></header>
         <p class="owner-ask-hint" id="owner-ask-hint"></p>
         <div class="pipeline-stage-card" id="owner-ask-list"></div>
         <div class="owner-ask-actions">
@@ -320,7 +314,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', 'debate-prompt-catalog.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', 'pipeline-presets.js'), 'utf8'));
   // The same order as pipeline_panel.html: the modules the engine uses come before it.
-  ['stage-markers', 'basic-output', 'basic-artifacts', 'basic-control', 'custom-engine', 'basic-schema', 'custom-run-record'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', `${mod}.js`), 'utf8')); });
+  ['stage-markers', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'schema-text-reader', 'custom-run-record'].filter((mod) => fs.existsSync(path.join(__dirname, '..', '..', 'disput', `${mod}.js`))).forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'code-blocks', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'utils', 'selection-block-format.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'results', 'owner-ask.js'), 'utf8'));

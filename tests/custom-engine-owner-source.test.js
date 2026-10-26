@@ -83,7 +83,7 @@ describe('Custom engine: the owner as a participant of its step (R08, ТЗ 3.3)'
   });
 });
 
-describe('Custom engine: the owner as a source of a revision and of feedback (R08, ТЗ 3.3)', () => {
+describe('Custom engine: the owner as a source of a revision (R08, ТЗ 3.3)', () => {
   test('a model revises an artifact of the owner step: the revision joins the owner line, the author is the model', async () => {
     const steps = [
       OWNER({ output: { artifacts: [{ id: 'evidence', name: 'Доказательство', pointer: '' }] } }),
@@ -128,23 +128,6 @@ describe('Custom engine: the owner as a source of a revision and of feedback (R0
     await expect(Engine.run({ task: 'T', steps, send, provideOwnerResult })).rejects.toMatchObject({ code: 'invalid_input', address: expect.stringContaining('шаг «owner:second»') });
     expect(calls).toEqual([]);
     expect(asked).toEqual([]);
-  });
-
-  test('the feedback of the owner goes to the next visit of the author only, as its text', async () => {
-    const steps = [
-      OWNER({ ref: 'owner:o' }),
-      { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'g', kind: 'gate', input: 'previous', criteria: ['check'], models: ['G'],
-        onFail: { goto: 'r1', maxLoops: 1, feedback: ['owner:o'] } }
-    ];
-    const { send, calls } = transport({ A: ['a1', 'a2'], G: ['НЕ ВЫПОЛНЕНО: check\nВЕРДИКТ: НЕ ПРОШЁЛ', 'ВЕРДИКТ: ПРОШЁЛ'] });
-    const { provideOwnerResult } = owner(['Замечание владельца']);
-    const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult, maxAttempts: 1 });
-    expect(result.stopReason).toBe('steps_done');
-    const author = calls.filter((call) => call.models.includes('A'));
-    expect(author[0].prompts.A).not.toContain('Замечание владельца');
-    expect(author[1].prompts.A).toContain('Замечание владельца');
-    expect(calls.some((call) => call.models.includes('owner'))).toBe(false);
   });
 });
 
@@ -193,44 +176,5 @@ describe('Custom engine: the input of the owner step (N07, ТЗ 3.3)', () => {
     expect(result.stopReason).toBe('steps_done');
     expect(asked[1].input).toEqual([expect.objectContaining({ step: 'owner:file', participant: 'owner', visit: 1, file: expect.objectContaining({ ref: 'file-1', name: 'scan.pdf' }) })]);
     expect(asked[1].input[0]).not.toHaveProperty('text');
-  });
-
-  test('a changed source invalidates the owner answer built on it: the owner is asked again with the new answer', async () => {
-    const gate = { ref: 'g', kind: 'gate', input: 'previous', criteria: ['check'], models: ['G'], onFail: { goto: 'r1', maxLoops: 1 } };
-    const steps = [R1, OWNER({ input: [{ step: 'r1', required: true }] }), gate];
-    const { send } = transport({
-      A: ['a1', 'a2'],
-      G: ['НЕ ВЫПОЛНЕНО: check\nВЕРДИКТ: НЕ ПРОШЁЛ', 'ВЕРДИКТ: ПРОШЁЛ']
-    });
-    const { provideOwnerResult, calls: asked } = owner(['Ответ 1', 'Ответ 2']);
-    const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult, maxAttempts: 1 });
-    expect(result.stopReason).toBe('steps_done');
-    expect(asked.map((request) => request.input[0].text)).toEqual(['a1', 'a2']);
-  });
-});
-
-describe('V05: an owner step that revises its own line starts again from the last valid version', () => {
-  test('the gate returns to the owner revision: the owner gets the valid base, the run finishes, the newer version is current', async () => {
-    const src = { artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest', required: true };
-    const out = { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] };
-    const rev = { artifacts: [{ id: 'map', name: 'Revised', pointer: '', revisionOf: src }] };
-    let verdicts = 0;
-    const ownerInputs = [];
-    const run = await Engine.run({
-      task: 'T', maxAttempts: 1,
-      steps: [
-        { ref: 'r1', kind: 'round', input: 'none', models: ['A'], output: out },
-        { ref: 'owner:revise', kind: 'owner', task: 'Revise', input: [src], output: rev, models: [] },
-        { ref: 'gate:g', kind: 'gate', input: 'previous', criteria: ['check'], models: ['C'], onFail: { goto: 'owner:revise', maxLoops: 1 } },
-        { ref: 'r2', kind: 'round', models: ['D'], input: [src] }
-      ],
-      send: async (models) => ({ byModel: Object.fromEntries(models.map((model) => [model, {
-        text: model === 'C' ? (++verdicts === 1 ? 'НЕ ВЫПОЛНЕНО: check\nВЕРДИКТ: НЕ ПРОШЁЛ' : 'ВЕРДИКТ: ПРОШЁЛ') : 'v1', status: 'SUCCESS' }])) }),
-      provideOwnerResult: async (arg) => { ownerInputs.push(arg.input); return `owner-v${ownerInputs.length}`; },
-      decide: async () => 'skip'
-    });
-    expect(run.stopReason).toBe('steps_done');
-    expect(ownerInputs).toHaveLength(2);
-    expect(ownerInputs[1].map((item) => item.text)).toEqual(['v1']);
   });
 });

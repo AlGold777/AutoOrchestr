@@ -14,8 +14,8 @@ const journal = [
   { at: iso(-5000), kind: 'batch_start', batchId: 'debate-run:r1:g0', stageId: 'stage-x', models: ['GPT'], requestIds: { GPT: 'q-old' } },
   { at: iso(-4000), kind: 'verified', model: 'GPT', requestId: 'q-old', chars: 10 },
   { at: iso(0), kind: 'custom_start', pipelineRunId: RUN, semiAuto: false,
-    steps: [{ step: 0, label: 'Раунд 1', order: 'parallel', input: 'none', models: ['A', 'B'] },
-      { step: 1, label: 'Раунд 2', order: 'parallel', input: 'previous', models: ['A'] }] },
+    steps: [{ step: 0, label: 'Раунд 1', input: 'none', models: ['A', 'B'] },
+      { step: 1, label: 'Раунд 2', input: 'previous', models: ['A'] }] },
   { at: iso(100), kind: 'batch_start', batchId: `${RUN}:r1:g0`, stageId: stage(0), models: ['A', 'B'], requestIds: { A: 'q1', B: 'q2' } },
   { at: iso(110), kind: 'prepared', model: 'A', requestId: 'q1', batchId: `${RUN}:r1:g0`, token: 'AO-a', chars: 50 },
   { at: iso(110), kind: 'prepared', model: 'B', requestId: 'q2', batchId: `${RUN}:r1:g0`, token: 'AO-b', chars: 50 },
@@ -49,6 +49,12 @@ test('a Custom run gives the same transport extract: steps as stages, its reques
   expect(md).toContain('stage-2');
   expect(md).not.toContain('q-old');
   expect(Buffer.byteLength(md)).toBeLessThan(Buffer.byteLength(JSON.stringify({ journal })) * 20);
+});
+
+test('the purpose of a step is custom:<input> without undefined', () => {
+  const own = Digest.customRunJournal(journal, RUN);
+  const report = Digest.customFlowReport({ runId: RUN, delivery: { journal: own, diagnosis: { sends: [], batches: [] } } });
+  expect(report.stageExecutions.map((s) => s.purpose)).toEqual(['custom:none', 'custom:previous']);
 });
 
 test('a journal without a Custom run has nothing to extract', () => {

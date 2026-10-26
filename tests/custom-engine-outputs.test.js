@@ -79,21 +79,6 @@ describe('Custom engine: an individual output of a participant (D4, ТЗ 3.2)', 
     expect(result.artifacts.map((entry) => [entry.lineage.participant, entry.id])).toEqual([['A', 'own'], ['B', 'shared']]);
   });
 
-  test('a checker with its own json output gets the verdict instruction of json and is judged by it', async () => {
-    const steps = [
-      { ref: 'r1', kind: 'round', input: 'none', models: ['A'] },
-      { ref: 'g', kind: 'gate', input: 'previous', criteria: ['check'], models: [
-        { name: 'G', id: 'G', output: { format: 'json', requiredFields: ['/verdict'] } }
-      ] }
-    ];
-    const { send, calls } = transport({ A: ['ответ'], G: ['{"verdict":"pass"}'] });
-    const result = await Engine.run({ task: 'T', steps, send, maxAttempts: 1 });
-    expect(result.stopReason).toBe('steps_done');
-    expect(result.steps[1].outcome.G).toMatchObject({ ok: true, verdict: 'pass' });
-    expect(calls[1].prompts.G).toContain('Поле verdict — "pass" или "fail"');
-    expect(calls[1].prompts.G).not.toContain('НЕ ПРОШЁЛ');
-  });
-
   test('the individual output is checked by its own fields: a participant without them is rejected with the path of the field', async () => {
     const steps = [{ ref: 'r1', kind: 'round', input: 'none', output: { format: 'json', requiredFields: ['/map'] }, models: [
       { name: 'A', id: 'A', output: { format: 'json', requiredFields: ['/title'] } },

@@ -17,7 +17,7 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
   });
 
   test('writes of the record go one after another, debounced ones too', () => {
-    expect(results).toMatch(/const writeRecord = \(\) => \{\s*const next = recordWrites\.then\(\(\) => customRunStore\.save\(record\)\);/);
+    expect(results).toMatch(/const writeRecord = \(\) => \{\s*const next = recordWrites\.then\(\(\) => (?:\{\s*runCardHistory\?\.flush\(\);\s*return\s+)?customRunStore\.save\(record\)/);
     expect(results).toContain("const write = () => writeRecord().catch((error) => console.warn('[RESULTS] Custom run record not saved', error));");
   });
 
@@ -67,11 +67,33 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить шаг'/);
   });
 
-  test('the owner answer, the route choice and the unknown request are asked in windows (A06), no guessed answer is passed', () => {
-    expect(results).toContain('provideOwnerResult: ({ stepRef, task, input, output, reason, detail }) => askChoiceDialog({');
-    expect(results).toContain('window.StageCard.ownerAskMessage({ task, input, output, reason, detail,');
-    expect(results).toContain("chooseRoute: ({ stepRef, choices, reason }) => {");
+  test('B-8: без модулей приёма ответов страница не принимает всё молча (нет заглушки { ok: true })', () => {
+    expect(results).not.toContain('|| { ok: true }');
+    expect(results).toContain('не загружены модули приёма ответов');
+    expect(results).not.toContain('DebateResponseAcceptance?.evaluate?.(');
+  });
+
+  test('the owner answer and the unknown request are asked in windows (A06), no guessed answer is passed; there is no route choice', () => {
+    expect(results).toContain('provideOwnerResult: async (request) => {');
+    expect(results).toContain('const { stepRef, task, goal, input, output, document, reason, detail } = request;');
+    expect(results).toContain('window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail,');
+    expect(results).not.toContain('chooseRoute');
     expect(results).toContain("resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({");
     expect(results).toContain("const askChoiceDialog = (options) => {");
+  });
+});
+
+describe('Этап 1: документ для User в запуске', () => {
+  test('этап 1: карточка шага передаёт источники документа, окно User принимает документ и не требует текст при документе', () => {
+    expect(results).toContain('documentSources: documentSourcesFor(step.ref)');
+    expect(results).toContain("textInput: document ? null : { label: 'Ответ User', required: true }");
+    expect(results).toContain("answerFormat: output?.format === 'json' ? 'json' : 'text'");
+  });
+});
+
+describe('Этап 2: документы в запуске', () => {
+  test('страница не хранит документы отдельно: рамки и окно строятся из записи прогона', () => {
+    expect(results).not.toContain('BasicDocuments');
+    expect(results).not.toContain('llmComparatorDocuments');
   });
 });

@@ -45,7 +45,7 @@ describe('Custom run record', () => {
     const second = Record.exportRun(record).attempts.find((item) => item.step === 1);
     expect(second.instructions).toMatchObject({ task: 'Задача T', stepTask: 'Улучши', extra: 'Будь критиком.' });
     expect(second.input.mode).toBe('previous');
-    expect(second.input.items).toEqual([
+    expect(second.input.items).toMatchObject([
       { label: '', source: { step: 0, visit: 1, label: 'Раунд 1', model: 'A', attempt: 1 }, text: 'a1' },
       { label: '', source: { step: 0, visit: 1, label: 'Раунд 1', model: 'B', attempt: 1 }, text: 'b1' }
     ]);
@@ -138,11 +138,11 @@ describe('Custom request preview', () => {
   test('before a run the template marks the data that does not exist yet and lists transport lines apart', () => {
     const preview = Engine.previewPrompt({
       task: 'T',
-      steps: [{ task: 'x', input: 'none', models: ['A'] }, { order: 'sequential', task: 'y', input: 'previous', models: ['A', { name: 'B', extra: 'Кратко.' }] }],
+      steps: [{ task: 'x', input: 'none', models: ['A'] }, { task: 'y', input: 'previous', models: ['A', { name: 'B', extra: 'Кратко.' }] }],
       stepIndex: 1, modelName: 'B'
     });
     expect(preview.prompt).toContain(Engine.PLACEHOLDER.previous);
-    expect(preview.prompt).toContain(Engine.PLACEHOLDER.earlier);
+    expect(Engine.PLACEHOLDER).not.toHaveProperty('earlier');
     expect(preview.prompt).toContain('Дополнительно для тебя:\nКратко.');
     expect(preview.prompt).not.toContain('[[AO-');
     expect(preview.transportLines.join('\n')).toContain('Метка доставки');
@@ -157,9 +157,37 @@ test('the Disput Flow JSON export carries the latest Custom run record, redacted
   expect(handler.slice(0, 1500)).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
 });
 
+test('card history text references survive serialize, revive, and export without mutating the record', () => {
+  const record = Record.createRun({ runId: 'run-cards', pipelineName: 'Mine', task: 'Task' });
+  const textRef = record.put('card answer');
+  const titleRef = record.put('Model A');
+  record.cardHistory = {
+    version: 1, coverage: 'dom_observer_batches',
+    events: [{ seq: 1, type: 'created', cardId: 'run-cards:card:1', snapshot: { textRef, titleRef } }]
+  };
+  const serialized = JSON.parse(JSON.stringify(Record.serialize(record)));
+  const revived = Record.revive(serialized);
+  const beforeExport = JSON.stringify(revived.cardHistory);
+  const exported = JSON.parse(JSON.stringify(Record.exportRun(revived)));
+
+  expect(serialized.texts).toMatchObject({ [textRef]: 'card answer', [titleRef]: 'Model A' });
+  expect(exported.cardHistory.events[0].snapshot).toEqual({ textRef, titleRef });
+  expect(exported.texts).toMatchObject({ [textRef]: 'card answer', [titleRef]: 'Model A' });
+  expect(revived.cardHistory.events[0].snapshot.textRef).toBe(textRef);
+  expect(JSON.stringify(revived.cardHistory)).toBe(beforeExport);
+});
+
+test('the Basic export flushes card history before cloning the exported run', () => {
+  const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
+  const handlerStart = source.indexOf("const button = event.target.closest('#disput-basic');");
+  const handler = source.slice(handlerStart, source.indexOf("const disputBtn = event.target.closest('#disput-export-json');", handlerStart));
+  expect(handler).toContain('basicCardHistory?.flush()');
+  expect(handler.indexOf('basicCardHistory?.flush()')).toBeLessThan(handler.indexOf('JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))'));
+});
+
 
 // Version 2 (ТЗ 8.2): the registry and the snapshot keep their texts by reference; the texts are the record's own.
-function recordedOwnerRun({ runId = 'run-owner', text = 'Тезис владельца' } = {}) {
+function recordedOwnerRun({ runId = 'run-owner', text = 'Тезис User' } = {}) {
   const record = Record.createRun({ runId, pipelineName: 'Mine', task: 'Задача T', steps: [{ ref: 'owner:evidence', kind: 'owner' }] });
   const steps = [{ ref: 'owner:evidence', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } }];
   return Engine.run({
@@ -179,8 +207,8 @@ describe('Custom run record, version 2 (8.2)', () => {
     expect(result.artifacts[0].content.answerRef).toBeTruthy();
     await store.save(record);
     const back = await store.load('run-owner');
-    expect(Record.textOf(back, back.artifacts[0].content.answerRef)).toBe(JSON.stringify({ thesis: 'Тезис владельца' }));
-    expect(Record.exportRun(back).artifacts[0]).toMatchObject({ id: 'thesis', name: 'Тезис', text: JSON.stringify({ thesis: 'Тезис владельца' }), source: { step: 'owner:evidence', participant: 'owner', visit: 1 } });
+    expect(Record.textOf(back, back.artifacts[0].content.answerRef)).toBe(JSON.stringify({ thesis: 'Тезис User' }));
+    expect(Record.exportRun(back).artifacts[0]).toMatchObject({ id: 'thesis', name: 'Тезис', text: JSON.stringify({ thesis: 'Тезис User' }), source: { step: 'owner:evidence', participant: 'owner', visit: 1 } });
   });
 
   test('a new record is version 2; an attempt key is the step, participant, visit, attempt and phase', () => {
@@ -189,7 +217,7 @@ describe('Custom run record, version 2 (8.2)', () => {
     const base = { ref: 'r1', participant: 'A', model: 'A', attempt: 1, phase: 'answer', prompt: 'p', parts: {} };
     Record.recordAttempt(record, { ...base, step: 0, visit: 1, state: 'sent' });
     Record.recordAttempt(record, { ...base, step: 0, visit: 2, state: 'sent' });
-    Record.recordAttempt(record, { ...base, step: 0, visit: 2, phase: 'route', state: 'sent' });
+    Record.recordAttempt(record, { ...base, step: 0, visit: 2, phase: 'owner', state: 'sent' });
     expect(record.attempts).toHaveLength(3);
     Record.recordAttempt(record, { ...base, step: 0, visit: 2, state: 'done', answer: 'a', accepted: true });
     expect(record.attempts[1]).toMatchObject({ state: 'done', accepted: true });
@@ -208,25 +236,25 @@ describe('Custom run record, version 2 (8.2)', () => {
   test('the snapshot has the fields of 8.2 and keeps every text by reference; it is plain JSON', async () => {
     const { record, result } = await recordedOwnerRun();
     Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: { semiAuto: false, maxAttempts: 2 }, state: result.state,
-      routes: [], ownerAnswers: result.ownerAnswers });
+      ownerAnswers: result.ownerAnswers });
     const snapshot = record.snapshot;
     // The registry is record.artifacts (5.3), not a second copy in the snapshot.
-    expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'continuationStack', 'current', 'decisions', 'dependencies', 'feedback', 'loopCounters', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'routes', 'runSettings', 'schema', 'taskRef', 'visits']);
+    expect(Object.keys(snapshot).sort()).toEqual(['chatBindings', 'current', 'decisions', 'ownerAnswers', 'pc', 'pendingOwner', 'results', 'runSettings', 'schema', 'taskRef', 'visits']);
     expect(snapshot.chatBindings).toEqual({});
     expect(snapshot.current).toMatchObject({ stepRef: null, phase: 'done' });
     expect(Record.canResume(record)).toBe(true);
     expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
   });
 
-  test('serialize keeps the texts of the snapshot feedback; export resolves them with their sources', async () => {
+  test('a snapshot of an older version, with counters, a stack, feedback and dependencies, is still complete and exportable: the extra fields are ignored', async () => {
     const { record, result } = await recordedOwnerRun();
-    const feedbackText = 'Замечание по тезису';
-    const ref = record.put(feedbackText);
-    Record.setSnapshot(record, { schema: [], runSettings: {}, state: { pc: 'owner:evidence', visits: { 'owner:evidence': 1 }, feedback: { 'owner:evidence': [{ label: 'Владелец', source: { step: 0, visit: 1 }, textRef: ref, pointer: '' }] } }, routes: [], ownerAnswers: result.ownerAnswers });
-    const stored = JSON.parse(JSON.stringify(Record.serialize(record)));
-    const back = Record.revive(stored);
-    expect(Record.textOf(back, back.snapshot.feedback['owner:evidence'][0].textRef)).toBe(feedbackText);
-    expect(Record.exportRun(back).snapshot.feedback['owner:evidence'][0]).toMatchObject({ text: feedbackText, source: { step: 0, visit: 1 }, label: 'Владелец' });
+    Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: {}, state: result.state, ownerAnswers: result.ownerAnswers });
+    const ref = record.put('Замечание по тезису');
+    Object.assign(record.snapshot, { loopCounters: { 'G1:onFail': 1 }, continuationStack: [], dependencies: {}, feedback: { 'owner:evidence': [{ label: 'User', textRef: ref, pointer: '' }] } });
+    const back = Record.revive(JSON.parse(JSON.stringify(Record.serialize(record))));
+    expect(Record.canResume(back)).toBe(true);
+    expect(Record.textOf(back, ref)).toBe('Замечание по тезису');
+    expect(Record.exportRun(back).resumable).toBe(true);
   });
 });
 
@@ -267,7 +295,7 @@ function chromeArea({ failGet = '', failSet = '', failRemove = '', throwOn = '',
 function pageCheckpoint(record, store, steps) {
   return (state) => {
     Record.setArtifacts(record, state.artifacts);
-    Record.setSnapshot(record, { schema: steps, runSettings: {}, state, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+    Record.setSnapshot(record, { schema: steps, runSettings: {}, state, current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
     return store.save(record);
   };
 }
@@ -345,7 +373,7 @@ describe('Custom run record storage: the chrome.storage adapter rejects every fa
 });
 
 describe('Custom run record export is self-contained (R04)', () => {
-  // A run with a binary owner file, an owner answer that declares an artifact, the feedback of a gate that waits for the next
+  // A run with a binary owner file, an owner answer that declares an artifact, a check round before the next
   // round (the transport refuses its request, so the run stops there), and an attempt that was sent and never answered.
   async function fullRun() {
     const storage = memoryStorage();
@@ -357,12 +385,12 @@ describe('Custom run record export is self-contained (R04)', () => {
       { ref: 'O0', kind: 'owner', task: 'Приложи файл' },
       { ref: 'O1', kind: 'owner', task: 'Дай тезис', output: { format: 'json', requiredFields: ['/thesis'], artifacts: [{ id: 'thesis', name: 'Тезис', pointer: '/thesis' }] } },
       { ref: 'S1', kind: 'round', task: 'Тезис', input: 'none', models: ['A'] },
-      { ref: 'G1', kind: 'gate', criteria: ['c'], models: ['B'], onFail: { goto: 'S2', maxLoops: 1, feedback: [{ step: 'G1', participant: 'B' }] } },
+      { ref: 'G1', kind: 'round', task: 'Проверь по критерию c', input: 'previous', models: ['B'] },
       { ref: 'S2', kind: 'round', task: 'Доработай', input: 'previous', models: ['C'] }
     ];
     const FAIL = 'Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ';
     const send = async (models, prompts) => { if (models.includes('C')) throw Object.assign(new Error('too long'), { code: 'context_full' }); return { byModel: Object.fromEntries(models.map((model) => [model, { text: model === 'A' ? 'a1' : FAIL, status: 'SUCCESS', attribution: 'verified', transportRequestId: model + '-1', sentPrompt: prompts[model] }])) }; };
-    const provideOwnerResult = async ({ stepRef }) => (stepRef === 'O0' ? { file: { name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef } } : JSON.stringify({ thesis: 'Тезис владельца' }));
+    const provideOwnerResult = async ({ stepRef }) => (stepRef === 'O0' ? { file: { name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef } } : JSON.stringify({ thesis: 'Тезис User' }));
     const result = await Engine.run({
       task: 'Задача T', steps, send, runId: 'run-full', provideOwnerResult,
       putText: (value) => record.put(value), getText: (ref) => (ref && record.texts[ref] !== undefined ? record.texts[ref] : undefined),
@@ -400,19 +428,17 @@ describe('Custom run record export is self-contained (R04)', () => {
     }
   });
 
-  test('the export has the owner answer, the feedback still waiting for an owner step, the registry, the owner file and the unfinished attempt', async () => {
+  test('the export has the owner answer, the registry, the owner file and the unfinished attempt', async () => {
     const { fileContent, fileRef, back } = await fullRun();
     const exported = JSON.parse(JSON.stringify(Record.exportRun(back)));
     expect(exported).toMatchObject({ version: 2, resumable: true, task: 'Задача T', stopReason: 'context_full' });
-    expect(exported.artifacts).toEqual([expect.objectContaining({ id: 'thesis', text: JSON.stringify({ thesis: 'Тезис владельца' }), source: expect.objectContaining({ step: 'O1', participant: 'owner' }) })]);
+    expect(exported.artifacts).toEqual([expect.objectContaining({ id: 'thesis', text: JSON.stringify({ thesis: 'Тезис User' }), source: expect.objectContaining({ step: 'O1', participant: 'owner' }) })]);
     const owner = exported.snapshot.results.find((item) => item.stepRef === 'O0');
     expect(owner.owner.file).toEqual({ name: 'brief.pdf', mime: 'application/pdf', size: fileContent.length, ref: fileRef });
     expect(exported.texts[fileRef]).toBe(fileContent);
-    const feedbackRef = exported.snapshot.current.feedback[0].textRef;
-    expect(exported.texts[feedbackRef]).toBe('Разбор.\nНЕ ВЫПОЛНЕНО: x\nВЕРДИКТ: НЕ ПРОШЁЛ');
     const unfinished = exported.attempts.find((item) => item.label === 'Незавершённый');
     expect(unfinished).toMatchObject({ state: 'unknown', ref: 'S9', participant: 'C', visit: 1, attempt: 1, phase: 'answer', prompt: 'Незавершённый запрос' });
-    expect(exported.snapshot).toEqual(expect.objectContaining({ chatBindings: expect.any(Object), dependencies: expect.any(Object) }));
+    expect(exported.snapshot).toEqual(expect.objectContaining({ chatBindings: expect.any(Object) }));
   });
 
   test('a version 1 record is still exported, and it is not resumable', () => {
@@ -434,6 +460,16 @@ describe('V01: the chats of the participants go into the snapshot at once', () =
   });
 });
 
+describe('the page keeps the whole schema object in the snapshot', () => {
+  test('a snapshot whose schema is { schemaVersion, steps } with the whole state is resumable', () => {
+    const record = Record.createRun({ runId: 'run-obj', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: { schemaVersion: 1, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'A' }] }] }, state: { pc: 'r1', visits: { r1: 1 }, decisions: {}, results: [] }, current: { active: false } });
+    expect(Record.canResume(record)).toBe(true);
+    record.snapshot.schema = { schemaVersion: 1, steps: [] };
+    expect(Record.canResume(record)).toBe(false);
+  });
+});
+
 describe('V07: a record is resumable only with the whole state of the checkpoint', () => {
   test('canResume and the export say no for a snapshot without pc or without a state field', () => {
     const record = Record.createRun({ runId: 'run-v07', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
@@ -444,8 +480,27 @@ describe('V07: a record is resumable only with the whole state of the checkpoint
     expect(Record.canResume(record)).toBe(false);
     expect(Record.exportRun(record).resumable).toBe(false);
     record.snapshot.pc = 'r1';
-    delete record.snapshot.loopCounters;
+    delete record.snapshot.decisions;
     expect(Record.canResume(record)).toBe(false);
+  });
+
+  test('B-7: снимок без pc не дает возобновить запись', () => {
+    const record = Record.createRun({ runId: 'run-b7a', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { visits: { r1: 1 } } });
+    expect(Record.canResume(record)).toBe(false);
+  });
+
+  test('B-7: снимок с pc null сохраняет ключ pc со значением null', () => {
+    const record = Record.createRun({ runId: 'run-b7b', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { pc: null, visits: {} } });
+    expect('pc' in record.snapshot).toBe(true);
+    expect(record.snapshot.pc).toBeNull();
+  });
+
+  test('B-7: снимок с pc и visits по-прежнему возобновляем', () => {
+    const record = Record.createRun({ runId: 'run-b7c', pipelineName: 'Mine', task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: [{ ref: 'r1' }], state: { pc: 'r1', visits: { r1: 1 } } });
+    expect(Record.canResume(record)).toBe(true);
   });
 });
 
@@ -524,5 +579,18 @@ describe('V09: a run record is saved even when the extension storage is nearly f
     const store = Record.createStore({ storage, maxBytes: 1e9 });
     await expect(store.save(runWith('big', 1, 1500))).rejects.toThrow(/quota.*занимает \d+ байт/);
     expect(storage.data.has('customRunRecord.big')).toBe(false);
+  });
+});
+
+describe('an old record with the removed documents field', () => {
+  test('a record with the old documents field is read without error, the field is not carried over, canResume does not change', async () => {
+    const { record, result } = await recordedOwnerRun();
+    Record.setSnapshot(record, { schema: [{ ref: 'owner:evidence', kind: 'owner' }], runSettings: {}, state: result.state, ownerAnswers: result.ownerAnswers });
+    const before = Record.canResume(Record.revive(JSON.parse(JSON.stringify(Record.serialize(record)))));
+    const old = { ...JSON.parse(JSON.stringify(Record.serialize(record))), documents: [{ key: 'docs-1:d1', id: 'd1', version: 1, approved: false }] };
+    const back = Record.revive(old);
+    expect(back.documents).toBeUndefined();
+    expect(Record.canResume(back)).toBe(before);
+    expect(before).toBe(true);
   });
 });

@@ -2716,6 +2716,8 @@ document.addEventListener('click', (event) => {
     // Same for a Custom run (runCustomFromPage).
     let customAbortController = null;
     let activePipelineRunContext = null;
+    let latestBasicRunRecord = null;
+    let basicCardHistory = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateTraceStore = window.DebateTraceStore?.createStore?.({
         storage: chrome?.storage?.local // Only used to delete legacy persisted run history.
@@ -3024,15 +3026,29 @@ document.addEventListener('click', (event) => {
             ? messageOrName
             : { llmName: messageOrName, answer };
         const metadata = message.metadata || message.meta || {};
+        const participantId = message.participantId || metadata.participantId || null;
+        const stepRef = message.stepRef || metadata.stepRef || null;
+        const rawVisit = (message.visit !== undefined && message.visit !== null && message.visit !== '')
+            ? message.visit
+            : ((metadata.visit !== undefined && metadata.visit !== null && metadata.visit !== '') ? metadata.visit : null);
+        const visit = rawVisit !== null ? (Number.isFinite(Number(rawVisit)) ? Number(rawVisit) : rawVisit) : null;
         return {
             ...message,
             answer: message.answer ?? answer,
-            metadata,
+            metadata: {
+                ...metadata,
+                ...(participantId ? { participantId } : {}),
+                ...(stepRef ? { stepRef } : {}),
+                ...(visit !== null ? { visit } : {})
+            },
             transportRequestId: message.transportRequestId || metadata.transportRequestId || null,
             pipelineRunId: message.pipelineRunId || metadata.pipelineRunId || null,
             pipelineRoundId: message.pipelineRoundId || metadata.pipelineRoundId || metadata.roundId || null,
             pipelineBatchId: message.pipelineBatchId || metadata.pipelineBatchId || metadata.batchId || null,
             dispatchId: message.dispatchId || metadata.dispatchId || null,
+            participantId,
+            stepRef,
+            visit,
             status: message.status || metadata.status || metadata.finalStatus || metadata.modelFinalStatus || null
         };
     };
@@ -3158,6 +3174,9 @@ document.addEventListener('click', (event) => {
             pipelineRunId: envelope.pipelineRunId,
             pipelineRoundId: envelope.pipelineRoundId,
             dispatchId: envelope.dispatchId,
+            participantId: envelope.participantId || null,
+            stepRef: envelope.stepRef || null,
+            visit: envelope.visit ?? null,
             answerEndMarkerSeen: envelope.metadata.answerEndMarkerSeen === true
                 || message?.answerEndMarkerSeen === true,
             requestId: envelope.transportRequestId || message.requestId || envelope.metadata.requestId || '',
@@ -3236,11 +3255,19 @@ document.addEventListener('click', (event) => {
                 reject: rejectBatch
             };
             this.batches.set(batchId, batch);
-            normalized.forEach((name) => this.responseContexts.set(ids[name], {
-                pipelineRunId: context?.pipelineRunId || '',
-                pipelineRoundId: context?.pipelineRoundId || '',
-                sessionId: context?.sessionId || '1'
-            }));
+            normalized.forEach((name) => {
+                const participant = Array.isArray(context?.participants)
+                    ? context.participants.find((p) => (p?.modelName || p?.model || p?.name || p?.id) === name)
+                    : (context?.participants?.[name] || null);
+                this.responseContexts.set(ids[name], {
+                    pipelineRunId: context?.pipelineRunId || '',
+                    pipelineRoundId: context?.pipelineRoundId || '',
+                    sessionId: context?.sessionId || '1',
+                    participantId: participant?.participantId || participant?.id || context?.participantId || null,
+                    stepRef: participant?.stepRef || context?.stepRef || null,
+                    visit: participant?.visit ?? context?.visit ?? null
+                });
+            });
             this.startStallWatch();
             normalized.forEach((name) => this.requests.set(ids[name], { batchId, llmName: name }));
             batch.timeoutId = setTimeout(() => this.finalizeBatch(batch, true), timeoutMs);
@@ -3566,6 +3593,8 @@ document.addEventListener('click', (event) => {
         const pipelineSaveBtn = document.getElementById('pipeline-save-btn');
         const pipelineDeleteBtn = document.getElementById('pipeline-delete-btn');
         const pipelineExportBtn = document.getElementById('pipeline-export-btn');
+        const pipelineExportAllBtn = document.getElementById('pipeline-export-all-btn');
+        const pipelineProfileBtn = document.getElementById('pipeline-profile-btn');
         const pipelineImportBtn = document.getElementById('pipeline-import-btn');
         const debateRunToggleBtn = document.getElementById('debate-run-toggle-btn');
         const pipelineCloseBtn = document.getElementById('pipeline-close-btn');
@@ -3581,11 +3610,14 @@ document.addEventListener('click', (event) => {
             version: PIPELINE_STORE_VERSION,
             pipelines: {},
             order: [],
+            // Built-in schemas already seeded into the list (BUILTIN_SCHEMAS); a deleted one is not seeded again.
+            seeded: [],
+            // Revision of each seeded built-in schema (name → integer), see BUILTIN_SCHEMA_REVISIONS.
+            seededRev: {},
             lastSaved: '',
             active: '',
             overrides: {
                 longRoundLimits: {},
-                synthesizers: {},
                 profiles: {}
             },
             draftPlans: {}
@@ -3625,7 +3657,7 @@ document.addEventListener('click', (event) => {
             const from = Number(value.version) || 0;
             if (from >= 9) return value;
             const next = JSON.parse(JSON.stringify(value));
-            const nameMaps = () => [next.pipelines, next.draftPlans, next.overrides?.longRoundLimits, next.overrides?.synthesizers, next.overrides?.profiles]
+            const nameMaps = () => [next.pipelines, next.draftPlans, next.overrides?.longRoundLimits, next.overrides?.profiles]
                 .filter((map) => map && typeof map === 'object');
             const taken = (name) => nameMaps().some((map) => name in map) || (Array.isArray(next.order) && next.order.includes(name));
             const renameEverywhere = (fromName, toName) => {
@@ -3657,11 +3689,12 @@ document.addEventListener('click', (event) => {
                 version: PIPELINE_STORE_VERSION,
                 pipelines: {},
                 order: [],
+                seeded: [],
+                seededRev: {},
                 lastSaved: '',
                 active: '',
                 overrides: {
                     longRoundLimits: {},
-                    synthesizers: {},
                     profiles: {}
                 },
                 draftPlans: {}
@@ -3675,9 +3708,6 @@ document.addEventListener('click', (event) => {
             const storedLongRoundLimits = value.overrides?.longRoundLimits && typeof value.overrides.longRoundLimits === 'object'
                 ? value.overrides.longRoundLimits
                 : {};
-            const storedSynthesizers = value.overrides?.synthesizers && typeof value.overrides.synthesizers === 'object'
-                ? value.overrides.synthesizers
-                : {};
             const storedProfiles = value.overrides?.profiles && typeof value.overrides.profiles === 'object'
                 ? value.overrides.profiles
                 : {};
@@ -3690,15 +3720,17 @@ document.addEventListener('click', (event) => {
                 version: Number(value.version) || 0,
                 pipelines,
                 order,
+                seeded: Array.isArray(value.seeded) ? value.seeded.filter((name) => typeof name === 'string' && name.trim()) : [],
+                seededRev: value.seededRev && typeof value.seededRev === 'object'
+                    ? Object.fromEntries(Object.entries(value.seededRev)
+                        .filter(([name, rev]) => typeof name === 'string' && name.trim() && Number.isInteger(rev)))
+                    : {},
                 lastSaved: typeof value.lastSaved === 'string' ? value.lastSaved : '',
                 active: typeof value.active === 'string' ? value.active : '',
                 overrides: {
                     longRoundLimits: Object.fromEntries(Object.entries(storedLongRoundLimits)
                         .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
                         .filter(([key, value]) => key && (value === 'infinite' || Number.isFinite(Number(value))))),
-                    synthesizers: Object.fromEntries(Object.entries(storedSynthesizers)
-                        .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
-                        .filter(([key]) => key)),
                     profiles: Object.fromEntries(Object.entries(storedProfiles)
                         .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
                         .filter(([key, value]) => key && value))
@@ -3726,6 +3758,8 @@ document.addEventListener('click', (event) => {
             const normalized = normalizePipelineStore(storedValue);
             pipelineStore.pipelines = normalized.pipelines;
             pipelineStore.order = normalized.order;
+            pipelineStore.seeded = normalized.seeded;
+            pipelineStore.seededRev = normalized.seededRev;
             pipelineStore.lastSaved = normalized.lastSaved;
             pipelineStore.active = normalized.active;
             pipelineStore.overrides = normalized.overrides;
@@ -3737,6 +3771,8 @@ document.addEventListener('click', (event) => {
                 version: PIPELINE_STORE_VERSION,
                 pipelines: pipelineStore.pipelines,
                 order: pipelineStore.order,
+                seeded: pipelineStore.seeded,
+                seededRev: pipelineStore.seededRev,
                 lastSaved: pipelineStore.lastSaved,
                 active: pipelineStore.active,
                 overrides: pipelineStore.overrides,
@@ -3891,21 +3927,7 @@ document.addEventListener('click', (event) => {
             return indices;
         };
 
-        const getModelSendIndices = (stackId) => {
-            const stack = document.getElementById(stackId);
-            if (!stack) return [];
-            const indices = [];
-            Array.from(stack.children).forEach((item, i) => {
-                const cb = item.querySelector('.model-send-checkbox');
-                if (cb && cb.checked && !cb.disabled) indices.push(i);
-            });
-            return indices;
-        };
-
-        const normalizeExplicitSynthesizer = (value) => {
-            const normalized = String(value || '').trim();
-            return normalized.toLowerCase() === 'auto' ? '' : normalized;
-        };
+        const getModelSendIndices = (stackId) => getModelInputIndices(stackId);
 
         const getPipelineProtocolConfig = () => {
             const lengthSelect = document.getElementById('debate-length-select');
@@ -3929,10 +3951,6 @@ document.addEventListener('click', (event) => {
                 length: String(lengthSelect?.value || '300'),
                 roundLimit: String(debateRoundLimitSelect?.value || '3'),
                 maxTurns: String(debateMaxTurnsInput?.value || ''),
-                // The persisted DraftPlan owns the terminal stage assignment.
-                // protocol.synthesizer is retained only as a compatibility mirror.
-                synthesizer: getDraftPlanSynthesizer(getActiveDraftPlan())
-                    || normalizeExplicitSynthesizer(activeProtocol.synthesizer),
                 serviceRoles: {},
                 reasoningBudget: Object.assign({}, window.PipelinePresets?.getPipelinePreset?.(presetId)?.reasoningBudget || {
                     class: 'standard',
@@ -3969,12 +3987,8 @@ document.addEventListener('click', (event) => {
             const presetMeta = window.PipelinePresets?.getPipelinePreset?.(protocol.presetId || '') || null;
             const showRounds = presetMeta?.duration === 'open_ended';
             const roundLabel = showRounds && rounds ? `${rounds} stage limit` : '';
-            const synthValue = window.ResultsDebateUi?.getProtocolSynthesizer
-                ? window.ResultsDebateUi.getProtocolSynthesizer(protocol)
-                : protocol.synthesizer;
-            const synth = synthValue ? `Synthesizer: ${synthValue}` : '';
             const budget = protocol.reasoningBudget?.class ? `Budget: ${protocol.reasoningBudget.class}` : '';
-            return [llmLabel, policy, budget, roundLabel, synth].filter(Boolean).join(' · ');
+            return [llmLabel, policy, budget, roundLabel].filter(Boolean).join(' · ');
         };
 
         const formatReasoningBudgetLabel = (budget = {}) => {
@@ -3993,8 +4007,7 @@ document.addEventListener('click', (event) => {
                 ? protocol.selectedModels.join(', ')
                 : 'selected models';
             const rounds = String(protocol.roundLimit || pipelineConfig.roundCounter || '').trim();
-            const ending = protocol.synthesizer ? ` Synthesis: ${protocol.synthesizer}.` : ' Completion is rule-driven.';
-            return `Universal pipeline with planner-selected sequential or parallel stages${rounds ? `, limit ${rounds}` : ''}.${ending} Participants: ${models}.`;
+            return `Universal pipeline with planner-selected sequential or parallel stages${rounds ? `, limit ${rounds}` : ''}. Completion is rule-driven. Participants: ${models}.`;
         };
 
         const updateActivePipelineDescription = (name = '') => {
@@ -4034,58 +4047,6 @@ document.addEventListener('click', (event) => {
                 delete indicator.dataset.statusFinal;
             });
         };
-
-        const syncSynthesizerBlocks = () => {
-            if (!pipelinePanel) return;
-            const synthesizer = getDraftPlanSynthesizer(draftPlanForCanvas(getActiveDraftPlan()));
-            const flowSelect = getSynthesizerFlowSelect();
-            if (flowSelect && flowSelect.value !== synthesizer) flowSelect.value = synthesizer;
-            // The final synthesizer is its own «Synthesis» block (renderSynthesisStage). Round model blocks keep their design.
-        };
-
-        const hasSelectedPipelineModels = () => getSelectedLLMs().length > 0;
-
-        const setSynthesisModelFromName = (modelName = '') => {
-            const trimmed = normalizeExplicitSynthesizer(modelName);
-            if (!hasSelectedPipelineModels()) return false;
-            const flowSelect = getSynthesizerFlowSelect();
-            if (!flowSelect) renderSynthesisStage();
-            const resolvedFlowSelect = getSynthesizerFlowSelect();
-            if (trimmed && !Array.from(resolvedFlowSelect?.options || []).some((option) => option.value === trimmed)) return false;
-            if (resolvedFlowSelect) resolvedFlowSelect.value = trimmed;
-            let draftPlan = draftPlanForCanvas(getActiveDraftPlan());
-            const finalStage = draftPlan.plannedStages?.find((stage) => stage.plannedStageId === 'planned-final-synthesis');
-            if (finalStage) {
-                const updated = window.DebateDraftPlan?.setStageParticipants?.(draftPlan, finalStage.plannedStageId, trimmed ? [trimmed] : []);
-                // An empty final assignment intentionally removes the final stage;
-                // explicit intermediate stages remain valid persisted data but + is gated.
-                if (updated?.ok) draftPlan = updated.plan;
-                else if (!trimmed) {
-                    draftPlan.plannedStages = draftPlan.plannedStages.filter((stage) => stage.plannedStageId !== 'planned-final-synthesis');
-                }
-            }
-            persistActiveDraftPlan(draftPlan);
-            // An explicit choice (including OFF) replaces the seed of a new pipeline, which would otherwise win over ''.
-            delete window.__pendingPipelineSynthesizer;
-            const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
-            const activeConfig = activeName ? getPipelineConfigByName(activeName) : null;
-            if (activeConfig?.protocol) {
-                if (!isDefaultPipelineName(activeName)) {
-                    const storedConfig = pipelineStore.pipelines[activeName];
-                    if (storedConfig?.protocol) storedConfig.protocol.synthesizer = trimmed;
-                }
-                persistPipelineStore();
-                renderPipelineList(pipelineStore.order, activeName, pipelineStore.lastSaved);
-            }
-            syncSynthesizerBlocks();
-            syncSynthesizerFlowStage();
-            renderDraftPlanCanvas?.();
-            updatePipelineAll();
-            return true;
-        };
-        window.setSynthesisModelFromName = setSynthesisModelFromName;
-
-
 
         const setHeaderSelectedLLMsFromNames = (modelNames = []) => {
             if (!Array.isArray(modelNames)) return false;
@@ -4174,42 +4135,6 @@ document.addEventListener('click', (event) => {
             if (entryWrapper) {
                 entryWrapper.style.height = `${height}px`;
             }
-
-            // Flexbox centers the whole terminal column, including its stage
-            // title. A model column is much taller, so align the visible
-            // synthesis stack body against the last model stack instead.
-            const terminalColumns = [
-                { column: synthesisColumn, stack: synthesisStack },
-                ...Array.from(pipelinePanel.querySelectorAll('.stage-column.pipeline-intermediate-synth'))
-                    .map((column) => ({ column, stack: column.querySelector('.model-stack') }))
-            ];
-            const modelStacks = stacks.filter((stack) => (
-                stack.classList.contains('model-stack') && stack !== synthesisStack && !stack.closest('.pipeline-intermediate-synth') && !stack.closest('.pipeline-control-step')
-            ));
-            const referenceStack = modelStacks[modelStacks.length - 1] || null;
-            if (!referenceStack) return { aligned: false, reason: 'no-reference-stack' };
-            const referenceRect = referenceStack.getBoundingClientRect();
-            if (!referenceRect.height) return { aligned: false, reason: 'zero-reference-height', referenceId: referenceStack.id };
-            const referenceCenter = referenceRect.top + (referenceRect.height / 2);
-            const appliedOffsets = {};
-            terminalColumns.forEach(({ column, stack }) => {
-                if (!column || !stack || isHiddenFromPipelineLayout(column) || isHiddenFromPipelineLayout(stack)) return;
-                const stackRect = stack.getBoundingClientRect();
-                if (!stackRect.height) return;
-                const currentOffset = Number.parseFloat(column.style.getPropertyValue('--pipeline-terminal-offset')) || 0;
-                const naturalStackCenter = (stackRect.top + (stackRect.height / 2)) - currentOffset;
-                const offset = Math.round((referenceCenter - naturalStackCenter) * 100) / 100;
-                if (Math.abs(offset - currentOffset) > 0.1) {
-                    column.style.setProperty('--pipeline-terminal-offset', `${offset}px`);
-                }
-                appliedOffsets[column.id || stack.id] = offset;
-            });
-            return {
-                aligned: Object.keys(appliedOffsets).length > 0,
-                referenceId: referenceStack.id,
-                referenceCenter,
-                offsets: appliedOffsets
-            };
         };
 
         const captureModelStackState = (stackId) => {
@@ -4230,34 +4155,17 @@ document.addEventListener('click', (event) => {
                     participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.name, promptId: item.role || null }))
                 });
             }
-            const selectedFromExisting = (existingPlan?.plannedStages || [])
-                .find((stage) => stage.plannedStageId === 'planned-final-synthesis')?.participantIds?.[0] || '';
-            const selectedFromFlow = normalizeExplicitSynthesizer(
-                getSynthesizerFlowSelect?.()?.value || window.__pendingPipelineSynthesizer
-            );
-            // Only a pipeline without any stored synthesizer decision (no plan, no persisted choice) starts with the default.
-            const hasSynthesizerDecision = !!existingPlan || window.__pendingPipelineSynthesizer !== undefined;
-            const defaultSynthesizer = hasSynthesizerDecision ? '' : (window.__getDefaultSynthesizerName?.() || '');
-            let plan = window.DebateDraftPlan?.createCanvasPlan?.({
+            // The plan is the rounds of the canvas only: a synthesis is a round of one model with a role.
+            return window.DebateDraftPlan?.createCanvasPlan?.({
                 planId: `canvas-${String(pipelineStore.active || 'unsaved').replace(/[^a-z0-9_-]+/gi, '-')}`,
                 revision: Number(existingPlan?.revision || 0),
-                rounds,
-                synthesizer: selectedFromExisting || selectedFromFlow || defaultSynthesizer
+                rounds
             }) || { plannedStages: [] };
-            // Reapply explicitly authored intermediate stages after rebuilding
-            // Canvas-owned stages, preserving their IDs and assignments.
-            (existingPlan?.plannedStages || []).filter((stage) => stage.outputIntent === 'working_synthesis').forEach((stage) => {
-                const inserted = window.DebateDraftPlan?.insertSynthesis?.(plan, {
-                    afterPlannedStageId: stage.upstream?.[0], participantIds: stage.participantIds, plannedStageId: stage.plannedStageId
-                });
-                if (inserted?.ok) plan = inserted.plan;
-            });
-            return plan;
         };
 
         // The visible header becomes the task on Run; it is not a stable pipeline identity.
         // The unsaved pipeline has one key whether or not its header shows «Unsaved Pipeline», so its
-        // draft (including an explicit Final OFF) is found again after a reload, when the header is empty.
+        // draft is found again after a reload, when the header is empty.
         const draftPlanStorageKey = () => {
             const headerName = pipelineName?.dataset.fullName === 'Unsaved Pipeline' ? '' : (pipelineName?.dataset.fullName || '');
             return String(pipelineStore.active || headerName || 'unsaved').trim() || 'unsaved';
@@ -4279,7 +4187,6 @@ document.addEventListener('click', (event) => {
             const storedConfig = pipelineStore.pipelines?.[key];
             if (storedConfig) {
                 storedConfig.draftPlan = normalized;
-                if (storedConfig.protocol) storedConfig.protocol.synthesizer = getDraftPlanSynthesizer(normalized);
                 // A saved Basic pipeline is rebuilt from the canvas through its schema, so the plan and the schema agree.
                 // Not while a pipeline is being applied (the plan restored after an apply is the canvas, not an edit), and only when
                 // the cards of this pipeline are loaded.
@@ -4290,20 +4197,10 @@ document.addEventListener('click', (event) => {
             return true;
         };
 
-        const getDraftPlanSynthesizer = (plan = null) => normalizeExplicitSynthesizer(
-            (plan?.plannedStages || []).find((stage) => stage.plannedStageId === 'planned-final-synthesis')?.participantIds?.[0]
-        );
-        // Default synthesizer for a fresh pipeline and for new intermediate syntheses: Claude, else the first model.
-        const getDefaultSynthesizerName = () => {
-            const names = (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : []).map((model) => model?.name).filter(Boolean);
-            return names.includes('Claude') ? 'Claude' : (names[0] || '');
-        };
-        window.__getDefaultSynthesizerName = getDefaultSynthesizerName;
         window.__pipelineDraftPlanForCanvas = draftPlanForCanvas;
         window.__updatePipelineAll = () => updatePipelineAll();
         window.__getActivePipelineDraftPlan = getActiveDraftPlan;
         window.__persistActivePipelineDraftPlan = persistActiveDraftPlan;
-        window.__getDraftPlanSynthesizer = getDraftPlanSynthesizer;
 
         // Saved copies keep their card settings; built-in templates keep edits only in this page.
         const customPipelineDefaults = new Map();
@@ -4350,13 +4247,13 @@ document.addEventListener('click', (event) => {
                 await persistPipelineStore();
             }
         };
-        // The control steps (gate, route, owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
-        // before it on the canvas (a round, an intermediate synthesis or another control). The step is kept whole, as the
+        // The control steps (owner) of a Basic pipeline: [{ after, step }], where `after` is the ref of the step
+        // before it on the canvas (a round or another control). The step is kept whole, as the
         // schema has it; a window edits some of its fields (StageCard). Placed after `after` by placeControls.
         const customControls = new Map();
         const getCustomControls = () => customControls.get(draftPlanStorageKey()) || [];
-        const CONTROL_KINDS_CANVAS = ['gate', 'route', 'owner'];
-        const CONTROL_TITLE = { gate: 'Проверка', route: 'Маршрут', owner: 'Владелец' };
+        const CONTROL_KINDS_CANVAS = ['owner'];
+        const CONTROL_TITLE = { owner: 'User' };
         const controlStackId = (ref) => `ctl-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}-stack`;
         const controlLinkId = (ref) => `svg-in-${String(ref).replace(/[^A-Za-z0-9_-]+/g, '-')}`;
         // Saves the list for the pipeline; a saved pipeline keeps it at once (as the round card does), a draft only in memory.
@@ -4368,7 +4265,7 @@ document.addEventListener('click', (event) => {
                 await persistPipelineStore();
             }
         };
-        // The refs a window may name as a target: the steps of the schema in their order, the final synthesis included.
+        // The refs a window may name as a target: the steps of the schema in their order.
         const schemaRefsForWindows = () => (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []).map((step) => step.ref);
         // The next free ref of a kind: kind:1, kind:2, … (ids are digits, so the schema accepts them).
         const freshControlRef = (kind) => {
@@ -4378,8 +4275,6 @@ document.addEventListener('click', (event) => {
             return `${kind}:${n}`;
         };
         const controlAfterEdit = (step, edit) => {
-            if (step.kind === 'gate') return window.StageCard.gateAfterEdit(step, edit);
-            if (step.kind === 'route') return window.StageCard.routeAfterEdit(step, edit);
             if (step.kind === 'owner') return window.StageCard.ownerAfterEdit(step, edit);
             return step;
         };
@@ -4393,15 +4288,10 @@ document.addEventListener('click', (event) => {
         // after the new one, so the chain stays a line. A new control is a draft (not persisted) until its window is filled.
         const insertControlAfter = async (anchor, kind) => {
             if (pipelineRunActive || !CONTROL_KINDS_CANVAS.includes(kind)) return false;
-            if (intermediateAfterRound(anchor)) {
-                showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
-                return false;
-            }
             const ref = freshControlRef(kind);
             const list = getCustomControls().map((item) => (item.after === anchor ? { ...item, after: ref } : item));
-            // A new control is empty: what the owner has not set is not written (a missing kind or a missing condition is an error).
-            const kindDefault = kind === 'gate' ? { models: [] } : kind === 'route' ? { models: [], select: {} } : { models: [] };
-            list.push({ after: anchor, step: { ref, kind, ...kindDefault } });
+            // A new control is empty: what the owner has not set is not written (a missing task is an error).
+            list.push({ after: anchor, step: { ref, kind, models: [] } });
             await setCustomControls(list, { persist: false });
             updatePipelineAll();
             return true;
@@ -4415,38 +4305,29 @@ document.addEventListener('click', (event) => {
             await setCustomControls(next);
             updatePipelineAll();
         };
-        // The canvas has an intermediate synthesis right after this round: a control there is refused (the schema
-        // needs the synthesis to stand directly after the round and before the next one).
-        const intermediateAfterRound = (anchor) => (draftPlanForCanvas(getActiveDraftPlan()).plannedStages || []).some((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(`canvas-${anchor}`));
-        const INTERMEDIATE_CONTROL_NOTE = 'Между раундом и его промежуточным синтезом проверку или маршрут не ставят: синтез стоит сразу после раунда и перед следующим раундом. Уберите синтез или шаг управления.';
-        // The card of a round or a synthesis keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
-        // «выбранные этапы» before a step is picked, «число» before a number is typed. A draft shows until the owner makes the value.
+        // The card of a round keeps the choices the schema does not hold yet as drafts, by pipeline and ref:
+        // «выбранные этапы» before a step is picked. A draft shows until the owner makes the value.
         const stepDrafts = new Map();
         const stepDraftsOf = (ref) => stepDrafts.get(`${draftPlanStorageKey()}\n${ref}`) || {};
         const stepLabel = (ref) => {
             const round = /^r(\d+)$/.exec(ref);
-            if (round) return `Раунд ${round[1]}`;
-            const after = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
-            if (after) return `Синтез после раунда ${after[1]}`;
-            return ref.startsWith('synth:') ? `Синтез (${ref.slice('synth:'.length)})` : ref;
+            return round ? `Раунд ${round[1]}` : ref;
         };
-        // The rounds and syntheses before a step, in the schema's order; a switched-off one is marked by enabled.
-        // A planned intermediate synthesis that is not on the canvas stands after its round.
+        // The rounds before a step, in the schema's order; a switched-off one is marked by enabled.
         const stepsBefore = (ref) => {
             const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [])
-                .filter((step) => step.kind === 'round' || step.kind === 'synthesis');
-            const planned = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
+                .filter((step) => step.kind === 'round');
             let end = steps.findIndex((step) => step.ref === ref);
-            if (end < 0) end = planned ? steps.findIndex((step) => step.ref === `r${planned[1]}`) + 1 : steps.length;
-            return steps.slice(0, Math.max(0, end)).filter((step) => step.ref !== 'final').map((step) => ({
+            if (end < 0) end = steps.length;
+            return steps.slice(0, Math.max(0, end)).map((step) => ({
                 ref: step.ref,
                 label: stepLabel(step.ref),
                 enabled: (step.models || []).some((model) => model.enabled !== false)
             }));
         };
-        // A change of a field in the card of a step (the round card, the synthesis window). The value goes to the schema's field
-        // (saved at once, like the round card); a choice without a value yet is a draft. max: the number of enabled models.
-        const commitStepField = async (ref, field, value, max = 0) => {
+        // A change of a field in the card of a round. The value goes to the schema's field
+        // (saved at once, like the round card); a choice without a value yet is a draft.
+        const commitStepField = async (ref, field, value) => {
             const current = getCustomRoundSettings()[ref] || {};
             const drafts = { ...stepDraftsOf(ref) };
             let key = field;
@@ -4457,15 +4338,6 @@ document.addEventListener('click', (event) => {
             }
             delete drafts[key];
             if (key === 'input' && (stored === 'steps' || (Array.isArray(stored) && !stored.length))) { drafts.input = 'steps'; stored = ''; }
-            if (key === 'require') {
-                if (stored === 'count') {
-                    stored = typeof current.require === 'number' ? current.require : '';
-                    if (stored === '') drafts.require = 'count';
-                } else if (typeof stored === 'number' && (!Number.isSafeInteger(stored) || stored < 1 || stored > max)) {
-                    showNotification(`Число ответов: от 1 до ${max}.`, 'warn');
-                    return;
-                }
-            }
             if (key === 'output') stored = window.StageCard.outputAfterEdit(current.output, value);
             stepDrafts.set(`${draftPlanStorageKey()}\n${ref}`, drafts);
             await setCustomRoundSetting(ref, key, stored);
@@ -4481,7 +4353,7 @@ document.addEventListener('click', (event) => {
             const draftPlan = draftPlanForCanvas(getActiveDraftPlan());
             const config = {
                 version: 3,
-                protocol: { ...getPipelineProtocolConfig(), synthesizer: getDraftPlanSynthesizer(draftPlan) },
+                protocol: getPipelineProtocolConfig(),
                 draftPlan,
                 roundCounter,
                 modelStacks
@@ -4537,7 +4409,6 @@ document.addEventListener('click', (event) => {
             length = '700',
             roundLimit = '3',
             selectedModels = [],
-            synthesizer = '',
             reasoningBudget = window.PipelinePresets?.REASONING_BUDGETS?.VERDICT_STANDARD || {},
             roundPlan = [],
             roles = ['critical', 'meta'],
@@ -4567,7 +4438,6 @@ document.addEventListener('click', (event) => {
                     length,
                     roundLimit: String(roundLimit),
                     maxTurns: '',
-                    synthesizer,
                     reasoningBudget: normalizeReasoningBudget(reasoningBudget),
                     contextPolicy,
                     stageRoles,
@@ -4579,7 +4449,6 @@ document.addEventListener('click', (event) => {
                     roles: roles.slice(),
                     // A fixed preset's round plan is deliberately explicit: each
                     // wave emits these artifacts and hands them to the next wave.
-                    // Final Synthesis is a separate terminal stage, never Rn.
                     roundPlan: roundPlan.map((outputs, index) => ({
                         round: index + 1,
                         outputs: Array.isArray(outputs) ? outputs.slice() : []
@@ -4605,7 +4474,6 @@ document.addEventListener('click', (event) => {
                     roundLimit: definition.roundLimit,
                     selectedModels,
                     models: selectedModels,
-                    synthesizer: definition.synthesizer || '',
                     reasoningBudget: definition.reasoningBudget,
                     roundPlan: definition.roundPlan || [],
                     roles: definition.roles || ['critical', 'meta'],
@@ -4640,11 +4508,6 @@ document.addEventListener('click', (event) => {
             const value = pipelineStore.overrides?.longRoundLimits?.[key];
             return value ? normalizeRoundLimitValue(value, '') : '';
         };
-        const getSynthesizerOverride = (name) => {
-            const key = String(name || '').trim();
-            if (isDefaultPipelineName(key)) return '';
-            return normalizeExplicitSynthesizer(pipelineStore.overrides?.synthesizers?.[key]);
-        };
         const getProfileOverride = (name) => {
             const key = String(name || '').trim();
             if (isDefaultPipelineName(key)) return '';
@@ -4665,8 +4528,6 @@ document.addEventListener('click', (event) => {
             const config = clonePipelineConfig(defaults[key] || null);
             if (!config?.protocol) return config;
             applyRoundLimitToPipelineConfig(config, getLongRoundLimitOverride(key) || config.protocol.roundLimit || '3');
-            const synthesizer = getSynthesizerOverride(key);
-            config.protocol.synthesizer = synthesizer;
             const profileId = getProfileOverride(key);
             if (profileId) {
                 const profile = window.DebateProfileSchema?.BUILTIN_PROFILES?.[profileId];
@@ -4713,7 +4574,7 @@ document.addEventListener('click', (event) => {
                 pipelineStore.order = defaultNames.slice();
             pipelineStore.active = '';
             pipelineStore.lastSaved = '';
-                pipelineStore.overrides = { longRoundLimits: {}, synthesizers: {}, profiles: {} };
+                pipelineStore.overrides = { longRoundLimits: {}, profiles: {} };
                 pipelineStore.version = PIPELINE_STORE_VERSION;
                 return true;
             }
@@ -4766,15 +4627,11 @@ document.addEventListener('click', (event) => {
                 changed = true;
             }
             if (!pipelineStore.overrides || typeof pipelineStore.overrides !== 'object') {
-                pipelineStore.overrides = { longRoundLimits: {}, synthesizers: {}, profiles: {} };
+                pipelineStore.overrides = { longRoundLimits: {}, profiles: {} };
                 changed = true;
             }
             if (!pipelineStore.overrides.longRoundLimits || typeof pipelineStore.overrides.longRoundLimits !== 'object') {
                 pipelineStore.overrides.longRoundLimits = {};
-                changed = true;
-            }
-            if (!pipelineStore.overrides.synthesizers || typeof pipelineStore.overrides.synthesizers !== 'object') {
-                pipelineStore.overrides.synthesizers = {};
                 changed = true;
             }
             if (!pipelineStore.overrides.profiles || typeof pipelineStore.overrides.profiles !== 'object') {
@@ -4787,7 +4644,7 @@ document.addEventListener('click', (event) => {
                     changed = true;
                 }
                 delete pipelineSessionDraftPlans[name];
-                ['longRoundLimits', 'synthesizers', 'profiles'].forEach((key) => {
+                ['longRoundLimits', 'profiles'].forEach((key) => {
                     if (Object.prototype.hasOwnProperty.call(pipelineStore.overrides[key], name)) {
                         delete pipelineStore.overrides[key][name];
                         changed = true;
@@ -4837,17 +4694,14 @@ document.addEventListener('click', (event) => {
                 // A legacy send mark was saved by the position of the block on the canvas.
                 const position = blocks.indexOf(block);
                 const inputCb = block.querySelector('.model-input-checkbox');
-                const sendCb = block.querySelector('.model-send-checkbox');
                 const inputValue = typeof item.input === 'boolean'
                     ? item.input
                     : (typeof item.checked === 'boolean' ? item.checked : undefined);
-                if (inputCb && typeof inputValue === 'boolean') {
-                    inputCb.checked = inputValue;
-                }
                 const sendFallback = Array.isArray(sendOverrides?.[stackId]) ? sendOverrides[stackId][position] : undefined;
                 const sendValue = typeof item.send === 'boolean' ? item.send : sendFallback;
-                if (sendCb && typeof sendValue === 'boolean') {
-                    sendCb.checked = sendValue;
+                // Only Input decides participation: a legacy block with Input on and Send off is not in the round.
+                if (inputCb && (typeof inputValue === 'boolean' || typeof sendValue === 'boolean')) {
+                    inputCb.checked = inputValue !== false && sendValue !== false;
                 }
                 const role = block.querySelector('.role-selector');
                 if (role && item.role) {
@@ -4965,16 +4819,9 @@ document.addEventListener('click', (event) => {
                 if (mode === 'input') return getModelInputIndices(stackId);
                 if (mode === 'send') return getModelSendIndices(stackId);
                 if (mode === 'all') {
-                    // Single-card stacks (intermediate synthesis): every child is an endpoint.
+                    // Single-card stacks (an owner step): every child is an endpoint.
                     const stack = document.getElementById(stackId);
                     return stack ? Array.from(stack.children).map((_, index) => index) : [];
-                }
-                if (mode === 'synthesis') {
-                    const stack = document.getElementById(stackId);
-                    if (!stack || !hasSelectedPipelineModels()) return [];
-                    return Array.from(stack.children)
-                        .map((block, index) => block.classList.contains('selected-synthesizer') ? index : -1)
-                        .filter((index) => index >= 0);
                 }
                 return [];
             };
@@ -4990,10 +4837,10 @@ document.addEventListener('click', (event) => {
                     .map((block) => Array.from(stack.children).indexOf(block))
                     .filter((index) => index >= 0 && !activeSet.has(index));
             };
-            const inactiveSourceIndices = (sourceMode === 'send' || sourceMode === 'input' || sourceMode === 'synthesis')
+            const inactiveSourceIndices = (sourceMode === 'send' || sourceMode === 'input')
                 ? inactiveIndicesFor(sourceStack, sourceIndices, '.model-block')
                 : [];
-            const inactiveTargetIndices = (targetMode === 'input' || targetMode === 'synthesis')
+            const inactiveTargetIndices = targetMode === 'input'
                 ? inactiveIndicesFor(targetStack, targetIndices, '.model-block')
                 : [];
 
@@ -5070,20 +4917,14 @@ document.addEventListener('click', (event) => {
                     label.appendChild(chip);
                 }
                 chip.textContent = '⏳ filter';
-                chip.title = `After R${round} the synthesizer runs a filter pass producing: ${outputs.join(', ')}`;
+                chip.title = `After R${round} a filter pass produces: ${outputs.join(', ')}`;
             });
-            const synthesisLabel = synthesisColumn?.querySelector('.stage-label');
-            if (synthesisLabel) {
-                synthesisLabel.title = 'After the last wave, Final Synthesis runs only when a synthesizer is selected.';
-            }
         };
 
         // The control steps on the canvas (customControls): a card column placed right after its anchor (a round or the control
         // before it), with the link that leads into it. Rebuilt from the list on each update, so the canvas shows the list.
         // The outgoing link of a chain (the group that followed the anchor) now leads from the last control to the next step.
         const controlledAfter = (ref) => getCustomControls().some((item) => item.after === ref);
-        // The bridge for the synthesis toggle (outside this block): a control after the round refuses an intermediate synthesis.
-        window.__controlledAfter = controlledAfter;
         const buildControlColumn = (step, editable) => {
             const column = document.createElement('div');
             column.className = 'stage-column pipeline-control-step';
@@ -5129,7 +4970,7 @@ document.addEventListener('click', (event) => {
             const drawn = [];
             for (let round = 1; round <= roundCounter; round += 1) {
                 let anchor = `r${round}`;
-                let column = pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth):not(.pipeline-control-step)`);
+                let column = pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-control-step)`);
                 let item = byAfter.get(anchor);
                 let last = null;
                 while (item && column && !placed.has(item.step.ref)) {
@@ -5148,8 +4989,7 @@ document.addEventListener('click', (event) => {
                 if (last) last.round = round;
                 if (last) drawn.push({ outgoing: true, column: last.column, round });
             }
-            // Links: into each control from its anchor; out of the last control of a chain to the next round or the synthesis.
-            const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
+            // Links: into each control from its anchor; out of the last control of a chain to the next round.
             drawn.forEach((link) => {
                 if (!link.outgoing) {
                     const source = /^r\d+$/.test(link.from) ? `${link.from}-models` : controlStackId(link.from);
@@ -5164,95 +5004,132 @@ document.addEventListener('click', (event) => {
                 const source = controlStackId(link.column.dataset.controlRef);
                 if (link.round < roundCounter) {
                     drawMergeSplitConnector(outgoing.id, source, `r${link.round + 1}-models`, 'brain-flow', { sourceMode: 'all', targetMode: 'input' });
-                } else if (hasSynthesisFlow) {
-                    drawMergeSplitConnector(outgoing.id, source, 'synthesis-stack', 'brain-flow', { sourceMode: 'all', targetMode: 'synthesis' });
                 }
             });
-        };
-
-        // Intermediate synthesis (working_synthesis stage upstream of canvas-rK)
-        // is a single card column between round K and round K+1. The original
-        // K->K+1 connector keeps its id (svg-rK-rK+1) and now ends at the card;
-        // a second connector (svg-synth-rK-rK+1) leaves it toward round K+1.
-        // Returns the set of rounds K that currently have a card.
-        const syncIntermediateSynthColumns = () => {
-            const synthRounds = new Set();
-            if (!pipelinePanel) return synthRounds;
-            const plan = window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
-            // Each round K maps to its intermediate stage; the stage's own model is shown and edited in its card.
-            const wanted = new Map();
-            (plan.plannedStages || []).forEach((stage) => {
-                if (stage?.outputIntent !== 'working_synthesis') return;
-                const match = (stage.upstream || []).map((id) => /^canvas-r(\d+)$/.exec(String(id))).find(Boolean);
-                const round = match ? Number(match[1]) : 0;
-                if (round >= 1 && round < roundCounter) wanted.set(round, stage);
-            });
-            // While the card exists, round K's insert button sits in the card header (its center line); it goes back when the card is removed.
-            const moveInsertButton = (round, host) => {
-                const button = pipelinePanel.querySelector(`.pipeline-stage-insert[data-after-stage-id="canvas-r${round}"]`);
-                if (button && host && button.parentElement !== host) host.appendChild(button);
-            };
-            const roundHostFor = (round) => pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth) > .stage-header-row`)
-                || pipelinePanel.querySelector(`.stage-column[data-round="${round}"]:not(.pipeline-intermediate-synth)`);
-            pipelinePanel.querySelectorAll('.pipeline-intermediate-synth').forEach((el) => {
-                const round = Number(el.dataset.synthAfterRound || 0);
-                if (wanted.has(round)) return;
-                moveInsertButton(round, roundHostFor(round));
-                el.remove();
-            });
-            const editable = true;
-            wanted.forEach((stage, round) => {
-                let column = pipelinePanel.querySelector(`.stage-column.pipeline-intermediate-synth[data-synth-after-round="${round}"]`);
-                if (!column) {
-                    const leftGroup = document.getElementById(`svg-r${round}-r${round + 1}`)?.closest('.connector-group');
-                    if (!leftGroup) return;
-                    leftGroup.insertAdjacentHTML('afterend', `
-                        <div class="stage-column pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
-                            <div class="pipeline-intermediate-synth-header"></div>
-                            <div class="model-stack" id="synth-r${round}-stack">
-                                <div class="model-block inactive pipeline-synthesis-block selected-synthesizer">
-                                    <div class="model-header">
-                                        <span class="status-indicator" aria-hidden="true"></span>
-                                        <span class="model-name">Synthesis</span>
-                                    </div>
-                                    <select class="synthesis-flow-select" aria-label="Intermediate synthesis model"></select>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="connector-group pipeline-intermediate-synth" data-round="${round + 1}" data-synth-after-round="${round}">
-                            <svg class="connector-svg" id="svg-synth-r${round}-r${round + 1}"></svg>
-                        </div>
-                    `);
-                    column = leftGroup.nextElementSibling;
-                    const select = column.querySelector('select.synthesis-flow-select');
-                    const modelNames = (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : []).map((model) => model?.name).filter(Boolean);
-                    select.append(...modelNames.map((name) => new Option(name, name)));
-                    select.addEventListener('change', () => window.__setIntermediateSynthesisModel?.(`canvas-r${round}`, select.value));
-                }
-                // The label stays «Synthesis»; the chosen model is only the select's value.
-                const modelName = stage.participantIds?.[0] || '';
-                const select = column.querySelector('select.synthesis-flow-select');
-                if (select) {
-                    if (select.value !== modelName) select.value = modelName;
-                    select.disabled = !editable;
-                }
-                moveInsertButton(round, column.querySelector('.pipeline-intermediate-synth-header'));
-                synthRounds.add(round);
-            });
-            return synthRounds;
         };
 
         let deferredPipelineLayoutFrame = 0;
+        // The frames of the documents on the canvas (stage 2): one in the column of each round whose output is a document for
+        // reading. Their state is read from the record of the run (frameRecord): pending without a version, ready with one,
+        // approved when the owner approved its line.
+        let frameRecord = null;
+        // The name of the artifact and whether the owner approved it, from the record; null when the record has no version of it.
+        const documentFrameOf = (record, artifactId) => {
+            const entries = (record?.artifacts || []).filter((entry) => entry.id === artifactId);
+            if (!entries.length) return null;
+            const approved = (record.snapshot?.results || []).some((item) => item?.owner?.approved?.id === artifactId);
+            return { name: entries[entries.length - 1].name, approved };
+        };
+        const syncDocumentFrames = () => {
+            if (!pipelinePanel) return;
+            // The frames are drawn again from the canvas: a frame of a pipeline that no longer has its document goes.
+            pipelinePanel.querySelectorAll('.pipeline-doc-frame').forEach((node) => node.remove());
+            let steps = [];
+            try { steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []; } catch (_) { steps = []; }
+            steps.forEach((step) => {
+                const round = /^r(\d+)$/.exec(step.ref || '');
+                if (!round || step.kind !== 'round') return;
+                // The output of a model is its own declaration; the output of the step is the one of the rest.
+                const output = (step.models || []).map((model) => model.output).find(Boolean) || step.output;
+                if (output?.document !== 'read' || !Array.isArray(output.artifacts) || output.artifacts.length !== 1) return;
+                const artifact = output.artifacts[0];
+                const column = pipelinePanel.querySelector(`.stage-column[data-round="${round[1]}"]:not(.pipeline-control-step)`);
+                if (!column) return;
+                const frameState = documentFrameOf(frameRecord, artifact.id);
+                const state = !frameState ? 'pending' : (frameState.approved ? 'approved' : 'ready');
+                const frame = document.createElement('button');
+                frame.type = 'button';
+                frame.className = `pipeline-doc-frame is-${state}`;
+                frame.dataset.docRef = step.ref;
+                frame.dataset.docId = artifact.id;
+                frame.textContent = !frameState ? (artifact.name || artifact.id) : `${frameState.name}${state === 'approved' ? ' · утверждено' : ''}`;
+                if (frameState) frame.addEventListener('click', () => { void openDocumentFrame(artifact.id); });
+                column.append(frame);
+            });
+        };
+
+        // Tooltips of the canvas: a name for each element and, where the schema has one, a description (ResultsTooltips shows both).
+        // The elements are drawn again on each update, so each one is set and registered here (registration is idempotent).
+        const setCanvasTooltip = (el, name, desc = '') => {
+            const text = String(name || '').trim();
+            if (!el || !text) return;
+            el.dataset.tooltip = text;
+            const note = String(desc || '').trim();
+            if (note) el.dataset.tooltipDesc = note;
+            else delete el.dataset.tooltipDesc;
+            tooltipController.registerTooltipTarget(el);
+        };
+        const syncStepErrorBadges = () => {
+            if (!pipelinePanel) return;
+            pipelinePanel.querySelectorAll('.step-error-badge').forEach((badge) => badge.remove());
+            const errors = basicSchemaLoadErrorList.get(draftPlanStorageKey()) || [];
+            if (!errors.length) return;
+            const steps = pipelineStore.pipelines?.[pipelineStore.active]?.schema?.steps || [];
+            const byStep = new Map();
+            errors.forEach((error) => { const at = /^steps\[(\d+)\]/.exec(error.path || ''); if (!at) return; const ref = steps[Number(at[1])]?.ref; if (!ref) return; if (!byStep.has(ref)) byStep.set(ref, []); byStep.get(ref).push(error); });
+            byStep.forEach((list, ref) => {
+                const round = /^r(\d+)$/.exec(ref);
+                const host = round ? pipelinePanel.querySelector(`.stage-column[data-round="${round[1]}"] .stage-label`) : pipelinePanel.querySelector(`.pipeline-control-card[data-control-card="${ref}"]`);
+                if (!host) return;
+                const badge = document.createElement('button');
+                badge.type = 'button';
+                badge.className = 'step-error-badge';
+                badge.textContent = '!';
+                badge.setAttribute('aria-label', `Ошибки шага ${ref}`);
+                setCanvasTooltip(badge, `Ошибки шага ${ref}`, list.map((error) => error.message).join('\n'));
+                badge.addEventListener('click', (event) => { event.stopPropagation(); showSchemaErrors('Ошибки схемы', errors); });
+                host.appendChild(badge);
+            });
+        };
+        const syncCanvasTooltips = () => {
+            if (!pipelinePanel) return;
+            let steps = [];
+            try { steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []; } catch (_) { steps = []; }
+            const stepOf = (ref) => steps.find((step) => step.ref === ref) || null;
+            pipelinePanel.querySelectorAll('.entry-badge').forEach((badge) => setCanvasTooltip(badge, 'In'));
+            setCanvasTooltip(pipelinePanel.querySelector('#entryPoint'), '▶ Общие значения', basicDescription());
+            pipelinePanel.querySelectorAll('.stage-column[data-round] .round-badge').forEach((badge) => {
+                const round = badge.closest('.stage-column')?.dataset.round;
+                const step = stepOf(`r${round}`);
+                setCanvasTooltip(badge, step?.title ? `R${round} · ${step.title}` : `R${round}`, step?.goal);
+            });
+            pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
+                const name = String(block.dataset.model || block.querySelector('.model-name')?.textContent || '').trim();
+                const round = block.closest('.stage-column')?.dataset.round;
+                const model = (stepOf(`r${round}`)?.models || []).find((item) => item.name === name);
+                setCanvasTooltip(block, name, model?.task);
+            });
+            pipelinePanel.querySelectorAll('.model-input-checkbox').forEach((box) => setCanvasTooltip(box, 'Участие в раунде', 'Флажок включает модель в раунд; снятый — модель в раунд не входит (в схеме enabled: false).'));
+            pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
+                const step = getCustomControls().map((item) => item.step).find((item) => item?.ref === card.dataset.controlCard) || {};
+                const name = `User · ${card.dataset.controlCard}${step.title ? ` · ${step.title}` : ''}`;
+                const note = step.goal || step.task;
+                setCanvasTooltip(card, name, note);
+                setCanvasTooltip(card.closest('.stage-column')?.querySelector('.pipeline-control-title'), name, note);
+            });
+            pipelinePanel.querySelectorAll('.pipeline-doc-frame').forEach((frame) => {
+                const step = stepOf(frame.dataset.docRef);
+                const output = (step?.models || []).map((model) => model.output).find(Boolean) || step?.output;
+                const artifact = (output?.artifacts || []).find((item) => item.id === frame.dataset.docId);
+                setCanvasTooltip(frame, artifact?.name || frame.dataset.docId, artifact?.description);
+            });
+            pipelineItems?.querySelectorAll('.pipeline-item').forEach((item) => setCanvasTooltip(item, item.dataset.name));
+            // Native titles of the canvas and of the list header move to ResultsTooltips (the native one is removed, so two do not show).
+            // The status indicator and the role selector keep theirs: the tooltip of their model block covers them.
+            document.querySelectorAll('.pipeline-canvas [title], .pipeline-list-header-actions [title]').forEach((el) => {
+                if (el.matches('.status-indicator, .role-selector')) return;
+                setCanvasTooltip(el, el.getAttribute('title'));
+                el.removeAttribute('title');
+            });
+        };
+
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             syncControlColumns();
-            const synthRounds = syncIntermediateSynthColumns();
+            syncDocumentFrames();
             updatePipelineLayout();
             syncCustomRoleOption();
-            // Round add/remove changes which insert gaps exist (the one after the last round is hidden).
-            window.__syncStageInsertControls?.();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 const inputCb = block.querySelector('.model-input-checkbox');
-                const sendCb = block.querySelector('.model-send-checkbox');
                 const sel = block.querySelector('.role-selector');
                 const indicator = block.querySelector('.status-indicator');
                 if (!inputCb) return;
@@ -5260,17 +5137,10 @@ document.addEventListener('click', (event) => {
                     block.classList.remove('inactive');
                     block.classList.add('active');
                     if (sel) sel.disabled = false;
-                    if (sendCb) {
-                        sendCb.disabled = false;
-                    }
                 } else {
                     block.classList.remove('active');
                     block.classList.add('inactive');
                     if (sel) sel.disabled = true;
-                    if (sendCb) {
-                        sendCb.checked = false;
-                        sendCb.disabled = true;
-                    }
                     if (indicator) {
                         indicator.className = 'status-indicator';
                         indicator.title = '';
@@ -5278,54 +5148,22 @@ document.addEventListener('click', (event) => {
                 }
             });
 
-            const hasActivePipelineModel = hasSelectedPipelineModels();
             pipelineCanvas?.classList.remove('pipeline-canvas-empty');
 
             drawInputSplitConnector('svg-in-models', 'r1-models', 'active');
 
-            const hasSynthesisFlow = !!synthesisStack && synthesisColumn?.hidden !== true;
-
-            if (roundCounter === 1) {
-                if (hasSynthesisFlow && !controlledAfter('r1')) {
-                    drawMergeSplitConnector('svg-r-last-synthesis', 'r1-models', 'synthesis-stack', 'brain-flow', {
-                        sourceMode: 'send',
-                        targetMode: 'synthesis'
-                    });
-                }
-            } else {
-                for (let r = 1; r < roundCounter; r++) {
-                    if (controlledAfter(`r${r}`)) continue;
-                    if (synthRounds.has(r)) {
-                        drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `synth-r${r}-stack`, 'brain-flow', {
-                            sourceMode: 'send',
-                            targetMode: 'all'
-                        });
-                        drawMergeSplitConnector(`svg-synth-r${r}-r${r + 1}`, `synth-r${r}-stack`, `r${r + 1}-models`, 'brain-flow', {
-                            sourceMode: 'all',
-                            targetMode: 'input'
-                        });
-                    } else {
-                        drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `r${r + 1}-models`, 'brain-flow', {
-                            sourceMode: 'send',
-                            targetMode: 'input'
-                        });
-                    }
-                }
-                if (hasSynthesisFlow && !controlledAfter(`r${roundCounter}`)) {
-                    drawMergeSplitConnector('svg-r-last-synthesis', `r${roundCounter}-models`, 'synthesis-stack', 'brain-flow', {
-                        sourceMode: 'send',
-                        targetMode: 'synthesis'
-                    });
-                }
+            for (let r = 1; r < roundCounter; r++) {
+                if (controlledAfter(`r${r}`)) continue;
+                drawMergeSplitConnector(`svg-r${r}-r${r + 1}`, `r${r}-models`, `r${r + 1}-models`, 'brain-flow', {
+                    sourceMode: 'send',
+                    targetMode: 'input'
+                });
             }
-            syncSynthesizerBlocks();
-            pipelinePanel.querySelectorAll('.pipeline-synthesis-block').forEach((block) => {
-                const isActive = hasActivePipelineModel && block.classList.contains('selected-synthesizer');
-                block.classList.toggle('inactive', !isActive);
-            });
             syncRoundFilterChips();
             syncPipelineFlowVisualState();
             syncPipelineRunStateVisuals();
+            syncCanvasTooltips();
+            syncStepErrorBadges();
             pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
@@ -5384,11 +5222,7 @@ document.addEventListener('click', (event) => {
             if (customRunProgress) return customRunProgress;
             return null;
         };
-        const pipelinePlannedStageIdFor = (column) => {
-            if (column.classList.contains('pipeline-intermediate-synth')) return `planned-working-synthesis-after-canvas-r${column.dataset.synthAfterRound}`;
-            if (column.id === 'synthesisColumn') return 'planned-final-synthesis';
-            return column.dataset.plannedStageId || (column.dataset.round ? `canvas-r${column.dataset.round}` : '');
-        };
+        const pipelinePlannedStageIdFor = (column) => column.dataset.plannedStageId || (column.dataset.round ? `canvas-r${column.dataset.round}` : '');
         const syncPipelineRunStateVisuals = (engineState = readPipelineEngineState()) => {
             if (!pipelinePanel) return;
             const lifecycle = String(engineState?.lifecycle || 'IDLE').toUpperCase();
@@ -5415,8 +5249,7 @@ document.addEventListener('click', (event) => {
                 const state = stateOfColumn(column);
                 column.querySelectorAll('.model-block').forEach((block) => {
                     Object.keys(PIPELINE_RUN_STATE_RANK).forEach((name) => block.classList.remove(`pipeline-run-${name}`));
-                    // A synthesis block's inactive class only means "not selected now": it still shows the stage state.
-                    const inRun = !block.classList.contains('inactive') || block.classList.contains('pipeline-synthesis-block');
+                    const inRun = !block.classList.contains('inactive');
                     if (state && inRun) block.classList.add(`pipeline-run-${state}`);
                 });
             });
@@ -5632,7 +5465,6 @@ document.addEventListener('click', (event) => {
             const roundLimit = getDebateRoundLimit();
             if (isDefaultPipelineName(activeName)) {
                 delete pipelineStore.overrides?.longRoundLimits?.[activeName];
-                delete pipelineStore.overrides?.synthesizers?.[activeName];
                 renderPipelineList(pipelineStore.order, activeName, pipelineStore.lastSaved);
                 return true;
             }
@@ -5784,7 +5616,7 @@ document.addEventListener('click', (event) => {
             if (!ownerAskDialog || !window.OwnerAsk) return;
             pendingOwnerAsks = info;
             const hint = document.getElementById('owner-ask-hint');
-            if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа владельца. Выберите вариант, при желании добавьте комментарий. Ответ получат следующие этапы.`;
+            if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа User. Выберите вариант, при желании добавьте комментарий. Ответ получат следующие этапы.`;
             window.OwnerAsk.render(document.getElementById('owner-ask-list'), info.asks || []);
             if (!ownerAskDialog.open) ownerAskDialog.showModal();
         };
@@ -5910,7 +5742,7 @@ document.addEventListener('click', (event) => {
             if (!pipelinePanel) return;
             const disabled = !enabled;
                 pipelinePanel
-                .querySelectorAll('.model-input-checkbox, .model-send-checkbox, .role-selector, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
+                .querySelectorAll('.model-input-checkbox, .role-selector, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
                 .forEach((el) => {
                     el.disabled = disabled;
                 });
@@ -5955,7 +5787,7 @@ document.addEventListener('click', (event) => {
                     if (name && roleSelect) roleByName.set(name, roleSelect.value || '');
                     // So must the Input / Send marks of a model that stays (a loaded pipeline stores them).
                     if (name && !block.classList.contains('pipeline-empty-slot')) {
-                        marksByName.set(name, { input: block.querySelector('.model-input-checkbox')?.checked, send: block.querySelector('.model-send-checkbox')?.checked });
+                        marksByName.set(name, { input: block.querySelector('.model-input-checkbox')?.checked });
                     }
                 });
                 const emptySlots = Math.max(0, getDebateModelSlotCount() - selectedIndices.length);
@@ -5970,9 +5802,7 @@ document.addEventListener('click', (event) => {
                     const marks = name ? marksByName.get(name) : undefined;
                     if (marks) {
                         const inputCb = block.querySelector('.model-input-checkbox');
-                        const sendCb = block.querySelector('.model-send-checkbox');
                         if (inputCb && typeof marks.input === 'boolean') inputCb.checked = marks.input;
-                        if (sendCb && typeof marks.send === 'boolean') sendCb.checked = marks.send;
                     }
                     const role = block.querySelector('.role-selector');
                     const previousRole = name ? roleByName.get(name) : undefined;
@@ -6565,9 +6395,8 @@ document.addEventListener('click', (event) => {
             return topic;
         };
         // Custom (disput/custom-engine.js): the shared pipeline engine. The canvas gives the steps
-        // in plan order: round cards (their models) and synthesis stages (an intermediate insert
-        // keeps its own model; the final synthesis follows the last round). Rounds are parallel and
-        // pass on the accepted answers of the previous step; the round card's own order, task and
+        // in plan order: round cards (their models) and owner steps; a synthesis is a round of one model
+        // with a role. A round sends one request to all its models (they answer independently) and passes on the accepted answers of the previous step; the round card's own task and
         // input come with the card editor. Semi-automatic (run policy not Auto) asks the owner after
         // every step; a step without accepted answers asks in both modes.
         // The page state as a Basic schema (disput/basic-schema.js): the canvas gives the steps, the cards
@@ -6578,7 +6407,7 @@ document.addEventListener('click', (event) => {
         const legacyValue = (value) => (value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? undefined : value);
         // An empty text the owner chose on purpose (the task, the length instruction, the content requirements) is a value:
         // «send nothing here», not «inherit». The delivery mark and the correction request are never empty (the transport needs them).
-        const EMPTYABLE_KEYS = new Set(['task', 'roundTask', 'synthesisTask', 'limit', 'content']);
+        const EMPTYABLE_KEYS = new Set(['task', 'roundTask', 'limit', 'content']);
         const keepEmpty = (value, key) => (value === '' && EMPTYABLE_KEYS.has(key) ? '' : legacyValue(value));
         const RETIRED_DISCIPLINE_KEYS = ['ask'];
         // `keepEmptyValues`: a record with a schema (and its working copy) holds an empty text as a value; the earlier settings
@@ -6601,15 +6430,33 @@ document.addEventListener('click', (event) => {
         };
         // `forSave` builds the stored form: origin, basedOn, switched-off models and steps with their settings,
         // and a `run` that holds only explicit values (see basicRunExplicit). The run path builds the same
-        // schema with the run taken from the header as it stands and the legacy fallback of the final request applied.
-        // The fields of a round or a synthesis are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
+        // schema with the run taken from the header as it stands.
+        // The fields of a round are the page's own, by ref (customRoundSettings, see stepFieldsOf): nothing is
         // copied for them from basicSourceSchema, so a field the owner cleared stays cleared. The control steps (gate, route,
         // owner) are the page's list (customControls): each stands right after its `after` step, and a chain of controls
         // keeps its order. A control whose anchor is not on the canvas goes first (after '') or last.
         const withControls = (list) => {
             const entries = getCustomControls();
             if (!entries.length) return list;
-            const byAfter = new Map(entries.map((item) => [item.after, item]));
+            // A control stands after a round that this schema does not hold (nobody sends in it, so the run leaves it out): it
+            // moves back to the nearest round before that one and does not fall behind the rounds that follow.
+            const present = new Set(list.map((step) => step.ref));
+            const anchorOf = (after) => {
+                const number = /^r(\d+)$/.exec(after || '');
+                if (!number || present.has(after) || Number(number[1]) > roundCounter) return after;
+                for (let at = Number(number[1]) - 1; at >= 1; at -= 1) if (present.has(`r${at}`)) return `r${at}`;
+                return '';
+            };
+            const byAfter = new Map();
+            entries.filter((item) => anchorOf(item.after) === item.after).forEach((item) => byAfter.set(item.after, item));
+            entries.filter((item) => anchorOf(item.after) !== item.after).forEach((item) => {
+                const key = anchorOf(item.after);
+                if (!byAfter.has(key)) { byAfter.set(key, item); return; }
+                // Another control already stands there: this one follows the end of that chain, as it did on the canvas.
+                let tail = byAfter.get(key);
+                while (byAfter.has(tail.step.ref)) tail = byAfter.get(tail.step.ref);
+                byAfter.set(tail.step.ref, item);
+            });
             const out = [];
             const seen = new Set();
             const chain = (ref) => {
@@ -6620,7 +6467,7 @@ document.addEventListener('click', (event) => {
                     item = byAfter.get(item.step.ref);
                 }
             };
-            entries.filter((item) => item.after === '').forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); chain(item.step.ref); } });
+            entries.filter((item) => anchorOf(item.after) === '').forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); chain(item.step.ref); } });
             list.forEach((step) => { out.push(step); chain(step.ref); });
             entries.forEach((item) => { if (!seen.has(item.step.ref)) { seen.add(item.step.ref); out.push(JSON.parse(JSON.stringify(item.step))); } });
             return out;
@@ -6632,13 +6479,13 @@ document.addEventListener('click', (event) => {
             const cards = getCustomCardSettings();
             const roundSettings = getCustomRoundSettings();
             const put = (target, key, value) => { if (value !== undefined) target[key] = value; };
-            // The fields the owner set in the card of a round or a synthesis (by ref, customRoundSettings), as the schema's step
+            // The fields the owner set in the card of a round (by ref, customRoundSettings), as the schema's step
             // fields. An empty value (nothing, an empty list, an empty object) is not written.
-            const ROUND_STEP_KEYS = ['order', 'input', 'task', 'require', 'owner', 'chat', 'output'];
-            const SYNTHESIS_STEP_KEYS = ['input', 'task', 'require', 'owner', 'chat', 'output'];
-            const stepFieldsOf = (ref, kind) => {
+            // The removed fields (order, require) of an older saved card are not carried over.
+            const ROUND_STEP_KEYS = ['input', 'task', 'owner', 'chat', 'output'];
+            const stepFieldsOf = (ref) => {
                 const own = {};
-                (kind === 'round' ? ROUND_STEP_KEYS : SYNTHESIS_STEP_KEYS).forEach((key) => {
+                ROUND_STEP_KEYS.forEach((key) => {
                     const value = keepEmpty(roundSettings[ref]?.[key], key);
                     if (value === undefined || (Array.isArray(value) && !value.length) || (value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) return;
                     own[key] = JSON.parse(JSON.stringify(value));
@@ -6655,7 +6502,8 @@ document.addEventListener('click', (event) => {
                 return { ref: step.ref, kind: step.kind, ...text, ...step };
             };
             const defaults = {};
-            ['roundTask', 'synthesisTask'].forEach((key) => put(defaults, key, keepEmpty(general[key], key)));
+            // A ▶ synthesisTask saved before the synthesis was removed is not written: Basic has no synthesis.
+            put(defaults, 'roundTask', keepEmpty(general.roundTask, 'roundTask'));
             ['modelNotes', 'roundPrompts'].forEach((key) => put(defaults, key, legacyMap(general[key])));
             put(defaults, 'discipline', legacyDiscipline(general.discipline, { keepEmptyValues: true }));
             // The canvas names a participant by its name (its id is not on the canvas): the id, the model name and the input
@@ -6675,28 +6523,20 @@ document.addEventListener('click', (event) => {
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
                 put(model, 'task', keepEmpty(settings?.task, 'task'));
                 put(model, 'discipline', legacyDiscipline(settings?.discipline, { keepEmptyValues: true }));
+                if (settings && 'output' in settings) model.output = JSON.parse(JSON.stringify(settings.output));
                 return model;
             };
             let round = 0;
             const steps = (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
                 const roles = Object.fromEntries((stage.participantBindings || []).map((item) => [item.participantId, item.promptId || null]));
-                let ref = null;
-                let kind = null;
                 // The round number is the one the stage id keeps: a round nobody sends in has no stage in the plan.
-                if (/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) { round = Number(String(stage.plannedStageId).slice('canvas-r'.length)); ref = `r${round}`; kind = 'round'; }
-                else if (stage.outputIntent === 'working_synthesis') { ref = `synth:${stage.plannedStageId}`; kind = 'synthesis'; }
-                else if (stage.outputIntent === 'candidate_final') { ref = 'final'; kind = 'synthesis'; }
-                else return null;
+                if (!/^canvas-r\d+$/.test(String(stage.plannedStageId || ''))) return null;
+                round = Number(String(stage.plannedStageId).slice('canvas-r'.length));
+                const ref = `r${round}`;
                 // A model can be configured before its Send checkbox is enabled.
                 if (ref === previewModel?.ref && !models.includes(previewModel.name)) models.push(previewModel.name);
-                const entries = models.map((name) => {
-                    const model = modelEntry(ref, name, roles[name] ? { role: roles[name] } : {});
-                    // Before the schema an intermediate synthesis without its own request ran the saved request of
-                    // the same model of the final synthesis, also when the final synthesis is switched off.
-                    if (!forSave && model.request === undefined && ref.startsWith('synth:')) put(model, 'request', legacyValue(cards.final?.[name]?.promptTemplate));
-                    return model;
-                });
+                const entries = models.map((name) => modelEntry(ref, name, roles[name] ? { role: roles[name] } : {}));
                 // A switched-off model keeps its settings in the saved schema.
                 if (forSave) {
                     // A card of a participant on the canvas is not a switched-off model, whatever key it has (its id or its name).
@@ -6706,7 +6546,7 @@ document.addEventListener('click', (event) => {
                         if (hasOwnFields(model)) entries.push(model);
                     });
                 }
-                return { ref, kind, ...stepFieldsOf(ref, kind), models: entries };
+                return { ref, kind: 'round', ...stepFieldsOf(ref), models: entries };
             }).filter(Boolean);
             if (forSave) {
                 // The canvas keeps every round, also one nobody sends in; the schema holds them all in order (r1…rN), or
@@ -6719,19 +6559,15 @@ document.addEventListener('click', (event) => {
                     for (; nextRound <= upTo; nextRound += 1) {
                         const ref = `r${nextRound}`;
                         if (have.has(ref)) continue;
-                        complete.push({ ref, kind: 'round', ...stepFieldsOf(ref, 'round'),
+                        complete.push({ ref, kind: 'round', ...stepFieldsOf(ref),
                             models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model)) });
                         have.add(ref);
                     }
                 };
                 steps.forEach((step) => {
-                    if (step.kind === 'round') {
-                        const number = Number(step.ref.slice(1));
-                        addEmptyRounds(number - 1);
-                        nextRound = Math.max(nextRound, number + 1);
-                    } else if (step.ref === 'final') {
-                        addEmptyRounds(total);
-                    }
+                    const number = Number(step.ref.slice(1));
+                    addEmptyRounds(number - 1);
+                    nextRound = Math.max(nextRound, number + 1);
                     complete.push(step);
                 });
                 addEmptyRounds(total);
@@ -6751,31 +6587,10 @@ document.addEventListener('click', (event) => {
                     });
                 });
             }
-            if (forSave) {
-                // The card of an intermediate synthesis can be set before the synthesis is on the canvas; the id of such a
-                // synthesis says the round it stands after, so its settings are kept there as a step without active models.
-                const present = new Set(steps.map((step) => step.ref));
-                Object.keys(cards).filter((ref) => ref.startsWith('synth:') && !present.has(ref)).forEach((ref) => {
-                    const match = /^synth:planned-working-synthesis-after-canvas-r(\d+)$/.exec(ref);
-                    const after = match ? Number(match[1]) : 0;
-                    const at = steps.findIndex((step) => step.ref === `r${after}`);
-                    // Between two rounds only: not after the last round, not next to another synthesis.
-                    if (!match || after >= Math.max(1, Number(roundCounter) || 1) || at < 0 || steps[at + 1]?.kind === 'synthesis') return;
-                    const models = Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.splice(at + 1, 0, { ref, kind: 'synthesis', ...stepFieldsOf(ref, 'synthesis'), models });
-                });
-            }
-            if (forSave) {
-                // A final synthesis that is switched off keeps its settings as a step without active models. Settings of a
-                // removed round or of an intermediate synthesis with no place between two rounds are dropped.
-                if (!steps.some((step) => step.ref === 'final')) {
-                    const models = Object.keys(cards.final || {}).map((name) => modelEntry('final', name, { enabled: false })).filter((model) => hasOwnFields(model));
-                    if (models.length) steps.push({ ref: 'final', kind: 'synthesis', ...stepFieldsOf('final', 'synthesis'), models });
-                }
-            }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
             return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(sourceSchema && 'spec' in sourceSchema ? { spec: JSON.parse(JSON.stringify(sourceSchema.spec)) } : {}),
+                ...(sourceSchema && typeof sourceSchema.description === 'string' ? { description: sourceSchema.description } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
                 ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps.map(withSpecText)) };
         };
@@ -6790,7 +6605,8 @@ document.addEventListener('click', (event) => {
             basicRunExplicit.set(key, { ...(basicRunExplicit.get(key) || {}), [field]: true });
         };
         const basicSchemaLoadErrors = new Map();
-        // The schema the working copies were read from. The fields the canvas does not edit (output, require, owner, chat,
+        const basicSchemaLoadErrorList = new Map();
+        // The schema the working copies were read from. The fields the canvas does not edit (output, owner, chat,
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
@@ -6828,7 +6644,7 @@ document.addEventListener('click', (event) => {
                 // An empty text of an earlier record meant «not set»; from here on an empty text is a value, so it goes now.
                 const dropEmpty = (map) => {
                     if (!map || typeof map !== 'object') return map;
-                    ['task', 'roundTask', 'synthesisTask'].forEach((key) => { if (map[key] === '') delete map[key]; });
+                    ['task', 'roundTask'].forEach((key) => { if (map[key] === '') delete map[key]; });
                     if (map.discipline && typeof map.discipline === 'object') Object.keys(map.discipline).forEach((key) => { if (map.discipline[key] === '') delete map.discipline[key]; });
                     return map;
                 };
@@ -6838,9 +6654,9 @@ document.addEventListener('click', (event) => {
                 return { cards, rounds: {}, defaults: dropEmpty(own(copy(config?.customDefaults))), runExplicit: {}, schema: null, error: '', controls: [] };
             }
             const errors = window.BasicSchema.validate(config.schema);
-            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), controls: [] };
+            if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), errorList: errors, controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
-            // The fields of rounds and syntheses are one store by ref (see stepFieldsOf).
+            // The fields of rounds and owner steps are one store by ref (see stepFieldsOf).
             return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
                 runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) }, controls: controlsOf(config.schema) };
         };
@@ -6851,13 +6667,23 @@ document.addEventListener('click', (event) => {
             customRoundSettings.set(key, working.rounds || {});
             customControls.set(key, working.controls || []);
             basicRunExplicit.set(key, working.runExplicit);
-            if (working.error) basicSchemaLoadErrors.set(key, working.error); else basicSchemaLoadErrors.delete(key);
+            if (working.error) {
+                basicSchemaLoadErrors.set(key, working.error);
+                basicSchemaLoadErrorList.set(key, working.errorList || []);
+                showNotification(unreadableSchemaMessage(working.error), 'error');
+            } else { basicSchemaLoadErrors.delete(key); basicSchemaLoadErrorList.delete(key); }
         };
+        const unreadableSchemaMessage = (reason) => `Схема pipeline не прочитана: ${reason}. Она использует то, чего в Basic больше нет; соберите схему заново.`;
         // Writes the settings of a saved pipeline: a Basic pipeline stores its schema (and drops the earlier
         // members), any other keeps the earlier members.
         const persistBasicSettings = (name) => {
             const record = pipelineStore.pipelines[name];
             if (!record) return false;
+            // An unreadable saved schema is never overwritten by a schema rebuilt from the page.
+            if (basicSchemaLoadErrors.has(name)) {
+                showNotification(unreadableSchemaMessage(basicSchemaLoadErrors.get(name)), 'error');
+                return false;
+            }
             if (getPresetMetaForConfig(record)?.runner !== 'custom') {
                 record.customModelSettings = JSON.parse(JSON.stringify(getCustomCardSettings()));
                 record.customDefaults = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
@@ -6930,7 +6756,7 @@ document.addEventListener('click', (event) => {
             return window.BasicSchema.resolveFields(
                 { task: keepEmpty(settings?.task, 'task'), discipline: legacyDiscipline(settings?.discipline, { keepEmptyValues: true }) }, kind,
                 { task: keepEmpty(round.task, 'task'), discipline: legacyDiscipline(round.discipline, { keepEmptyValues: true }) },
-                { roundTask: keepEmpty(general.roundTask, 'roundTask'), synthesisTask: keepEmpty(general.synthesisTask, 'synthesisTask'), discipline: legacyDiscipline(general.discipline, { keepEmptyValues: true }) });
+                { roundTask: keepEmpty(general.roundTask, 'roundTask'), discipline: legacyDiscipline(general.discipline, { keepEmptyValues: true }) });
         };
         const customLengthInstruction = (template, words) => template.replace(/\{от\}|\{слов\}/g,
             (key) => String(key === '{от}' ? Math.max(1, words - 50) : words));
@@ -6978,6 +6804,44 @@ document.addEventListener('click', (event) => {
             // The windows of a run close on its Stop (R07): the signal of the run goes with them.
             return window.ChoiceDialog.ask({ signal: customAbortController?.signal, ...options });
         };
+        // The copy of an approved document goes to the documents folder (results/documents-folder.js); the record of the run stays the main store.
+        let documentsAccessNoticed = false;
+        const documentsFolderName = async () => {
+            try { return (await window.DocumentsFolder?.instance?.folderName?.()) || ''; } catch (_) { return ''; }
+        };
+        const pickDocumentsFolder = async () => {
+            try { return (await window.DocumentsFolder.instance.pick()) || null; } catch (error) {
+                showNotification(`Папка документов не выбрана: ${error?.message || error}`, 'warn');
+                return null;
+            }
+        };
+        // Called from a click of the User only: asks for access to the folder when it is still a prompt.
+        const requestDocumentsAccess = () => {
+            documentsAccessNoticed = false;
+            const folder = window.DocumentsFolder?.instance;
+            if (!folder) return;
+            void folder.ensureAccess({ request: true }).then((state) => {
+                if (state === 'denied') {
+                    documentsAccessNoticed = true;
+                    showNotification('Папка документов недоступна: файлы документов записываться не будут. Прогон продолжается.', 'warn');
+                }
+            }).catch(() => {});
+        };
+        // Writes the answer of a document into the folder; it never throws. One notice per run for a failure.
+        const saveDocumentCopy = async ({ stepRef, document, answer, startedAt, pipeline }, state) => {
+            const folder = window.DocumentsFolder?.instance;
+            if (!folder || typeof answer !== 'string' || !document) return;
+            let result;
+            try {
+                result = await folder.write({ pipeline, startedAt, name: document.name || stepRef, kind: document.kind, text: answer });
+            } catch (error) {
+                result = { ok: false, reason: 'error', message: String(error?.message || error) };
+            }
+            if (!result.ok && result.reason !== 'none' && !state.warned) {
+                state.warned = true;
+                showNotification(`Документ «${document.name || stepRef}» не записан в папку: ${result.reason === 'denied' ? 'нет доступа к папке (подтвердите при следующем запуске ▶)' : (result.message || 'ошибка записи')}. Прогон продолжается.`, 'warn');
+            }
+        };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
             openOwnerAsk({ label, asks, resolve });
@@ -6987,6 +6851,30 @@ document.addEventListener('click', (event) => {
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Default').trim();
+        // A click on a frame: the last version of its line is read from the record of the run, in a window for reading.
+        const openDocumentFrame = async (artifactId) => {
+            const entries = (frameRecord?.artifacts || []).filter((entry) => entry.id === artifactId);
+            const entry = entries[entries.length - 1];
+            const name = entry?.name || artifactId;
+            const text = entry ? window.CustomRunRecord.textOf(frameRecord, entry.content?.answerRef) : '';
+            if (!text) { showNotification(`Текст документа «${name}» не найден в записи прогона`, 'warn'); return; }
+            try {
+                await askChoiceDialog({ title: `Документ: ${name}`, document: { kind: 'read', readOnly: true, name, text }, choices: [], cancelText: 'Закрыть' });
+            } catch (error) {
+                showNotification(`Basic: документ «${name}» не открыт: ${error?.message || String(error)}`, 'error');
+            }
+        };
+        // The frames follow the pipeline chosen in the list: the latest record of this pipeline gives them (also after a reload).
+        const restoreDocumentFrames = async () => {
+            try {
+                if (!customRunStore) throw new Error('customRunStore is not available');
+                frameRecord = await customRunStore.latest(customPipelineName());
+            } catch (error) {
+                console.warn('[RESULTS] Document frames not restored', error);
+                frameRecord = null;
+            }
+            syncDocumentFrames();
+        };
         // The text of the notification at the end of a Basic run.
         // The detail of the stop (the address of a missing input, the counter of a loop) goes in brackets after the reason.
         const basicRunNotice = (stopText, acceptedCount, stopDetail = '') => `Basic: ${stopText}${stopDetail ? ` (${stopDetail})` : ''}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
@@ -7001,6 +6889,7 @@ document.addEventListener('click', (event) => {
         };
         // «Продолжить прогон»: the latest run of this pipeline goes on from its saved state. A run without one is only history.
         const resumeCustomFromPage = async () => {
+            requestDocumentsAccess();
             if (!customRunStore || !window.CustomRunRecord) { showNotification('Basic: записи прогонов недоступны.', 'warn'); return false; }
             if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
             const latest = await customRunStore.latest(customPipelineName());
@@ -7025,6 +6914,7 @@ document.addEventListener('click', (event) => {
             const hh = String(now.getHours()).padStart(2, '0');
             const mm = String(now.getMinutes()).padStart(2, '0');
             card.className = 'debate-model-card debate-moderator-card basic-run-line';
+            if (activePipelineRunContext?.pipelineRunId) card.dataset.pipelineRunId = activePipelineRunContext.pipelineRunId;
             card.dataset.sessionId = session.id;
             card.dataset.llmName = 'Basic';
             card.dataset.entryKind = 'response';
@@ -7088,7 +6978,8 @@ document.addEventListener('click', (event) => {
                 const item = artifacts[index];
                 await askChoiceDialog({
                     title: item.name,
-                    message: window.StageCard.feed.artifactText(textOf(item.content.answerRef), item.content.pointer, window.BasicOutput.readPointer),
+                    // The description of the artifact (output.artifacts[].description) goes first, as a line of its own.
+                    message: [item.description, window.StageCard.feed.artifactText(textOf(item.content.answerRef), item.content.pointer, window.BasicOutput.readPointer)].filter(Boolean).join('\n\n'),
                     cancelText: 'Закрыть'
                 });
             }
@@ -7112,6 +7003,10 @@ document.addEventListener('click', (event) => {
                 showNotification('Basic: выберите модели хотя бы в одном раунде.', 'warn');
                 return false;
             }
+            if (!window.DebateResponseAcceptance?.evaluate || !window.DebateStageMarkers?.parse) {
+                showNotification('Basic: не загружены модули приёма ответов (DebateResponseAcceptance, DebateStageMarkers). Перезагрузите страницу.', 'error');
+                return false;
+            }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             const semiAuto = built.run.policy !== 'auto';
             pipelineRunActive = true;
@@ -7126,15 +7021,25 @@ document.addEventListener('click', (event) => {
                 newPagesDispatched: false
             };
             const runContext = activePipelineRunContext;
+            const documentCopyState = { warned: documentsAccessNoticed };
             const signal = customAbortController.signal;
             // The text of the composer before the run took it: it comes back if the run produces nothing.
             let composerBackup = '';
             const record = resumeRecord || window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
+            if (record) {
+                record.finishedAt = null;
+                record.stopReason = '';
+            }
+            latestBasicRunRecord = record;
             let saveTimer = null;
+            let runCardHistory = null;
             // The writes of the record go one after another: an older write never lands after a newer one.
             let recordWrites = Promise.resolve();
             const writeRecord = () => {
-                const next = recordWrites.then(() => customRunStore.save(record));
+                const next = recordWrites.then(() => {
+                    runCardHistory?.flush();
+                    return customRunStore.save(record);
+                });
                 recordWrites = next.catch(() => {});
                 return next;
             };
@@ -7145,15 +7050,56 @@ document.addEventListener('click', (event) => {
                 if (now) { await write(); return; }
                 saveTimer = setTimeout(write, 600);
             };
+            // Observe the feed from before the first User/Basic line. Keep observing after
+            // completion so late revisions and card deletions remain part of this run.
+            basicCardHistory?.disconnect();
+            runCardHistory = record && window.BasicCardHistory && debateModelCards
+                ? window.BasicCardHistory.create({
+                    container: debateModelCards, record, sessionId: runContext.sessionId,
+                    isActive: () => Boolean(customAbortController && activePipelineRunContext?.pipelineRunId === record.runId),
+                    onChange: () => { void saveRecord(); }
+                })
+                : null;
+            basicCardHistory = runCardHistory;
             // A checkpoint (8.2) takes the state of the engine into the record and waits for its write: a failed write is
             // not swallowed here, the engine stops on it (checkpoint_failed).
             // The chats of the participants of this run (T07): participantId → { modelName, stepRef, visit, transportRequestId,
             // tabId, requestId, stageAttemptId }. The background keeps the tab of each participant; this record is what a resume
             // reads. A resumed run starts from the saved chats (R01): the background takes them back only for its own run ID.
             const chatBindings = resumeRecord ? { ...(resumeRecord.snapshot?.chatBindings || {}) } : {};
+            const buildSnapshotPayload = (state = {}, options = {}) => {
+                const prev = record?.snapshot || {};
+                const prevCurrent = prev.current || null;
+                const candCurrent = options.current !== undefined ? options.current : (state.current || prevCurrent);
+                let current = candCurrent ? { ...candCurrent } : null;
+                if (current && prevCurrent && current.stepRef === prevCurrent.stepRef) {
+                    if ((!current.accepted || !current.accepted.length) && prevCurrent.accepted?.length) {
+                        current.accepted = prevCurrent.accepted;
+                    }
+                    if ((!current.pending || !current.pending.length) && prevCurrent.pending?.length) {
+                        current.pending = prevCurrent.pending;
+                    }
+                }
+                const pendingOwner = options.pendingOwner !== undefined
+                    ? options.pendingOwner
+                    : (state.pendingOwner !== undefined ? state.pendingOwner : (prev.pendingOwner ?? null));
+                const ownerAnswers = options.ownerAnswers !== undefined
+                    ? options.ownerAnswers
+                    : (state.ownerAnswers || prev.ownerAnswers || []);
+
+                return {
+                    schema: built.schema,
+                    runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
+                    state: { ...state, chatBindings: { ...chatBindings } },
+                    current,
+                    ownerAnswers,
+                    pendingOwner
+                };
+            };
             const checkpointRecord = (state) => {
                 window.CustomRunRecord.setArtifacts(record, state.artifacts);
-                window.CustomRunRecord.setSnapshot(record, { schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null }, state: { ...state, chatBindings: { ...chatBindings } }, current: state.current, routes: state.routes, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner });
+                window.CustomRunRecord.setSnapshot(record, buildSnapshotPayload(state, { current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner }));
+                syncDocumentFrames();
                 return writeRecord();
             };
             const recordAttempt = (entry) => {
@@ -7165,11 +7111,14 @@ document.addEventListener('click', (event) => {
             if (!resumeRecord) {
                 composerBackup = getModeratorDispatchText();
                 clearModeratorComposer();
-                appendModeratorFeedEntry(task);
+                appendModeratorFeedEntry(task, { pipelineRunId: runContext.pipelineRunId });
+                // A new run takes its frames from its own record: its versions fill them in.
+                frameRecord = record;
+                syncDocumentFrames();
             }
-            // Canvas progress from the engine's own events: a round is canvas-rN, a synthesis its planned stage id,
-            // the final one planned-final-synthesis. The step index is the position in `steps`.
-            const plannedIdOfRef = (ref) => (/^r\d+$/.test(ref) ? `canvas-${ref}` : ref === 'final' ? 'planned-final-synthesis' : ref.replace(/^synth:/, ''));
+            // Canvas progress from the engine's own events: a round is canvas-rN, an owner step its ref.
+            // The step index is the position in `steps`.
+            const plannedIdOfRef = (ref) => (/^r\d+$/.test(ref) ? `canvas-${ref}` : ref);
             customRunProgress = { lifecycle: 'RUNNING', stages: steps.map((step) => ({ plannedStageId: plannedIdOfRef(step.ref), status: 'pending' })) };
             const setCustomStepStatus = (index, status) => {
                 const stage = customRunProgress?.stages?.[index];
@@ -7197,6 +7146,23 @@ document.addEventListener('click', (event) => {
                 }
                 const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
                     || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
+                const requestIntent = (request) => {
+                    const newChat = Boolean(isNewChat(request));
+                    let reason = 'continue';
+                    if (request.attempt === 1 && request.chat === 'new') {
+                        reason = 'step_new';
+                    } else if (request.attempt === 1 && !resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]) {
+                        reason = 'new_pages_first_request';
+                    }
+                    const saved = chatBindings[request.participantId];
+                    const bindingTabId = (!newChat && saved?.modelName === request.modelName && Number.isInteger(saved.tabId))
+                        ? saved.tabId
+                        : null;
+                    const attachmentNames = filesNeeded(request)
+                        ? attachments.map((file) => String(file.name || ''))
+                        : [];
+                    return { newChat, reason, bindingTabId, attachmentNames };
+                };
                 // The files go with the first message of each chat only (R05). A chat is confirmed to hold them when its answer
                 // came back: the visit that opened the chat (chatVisit) and the visit whose chat got the files (attachedChatVisit).
                 // A new chat always needs them; a retry or a later visit in a chat with confirmed files does not repeat them.
@@ -7225,10 +7191,40 @@ document.addEventListener('click', (event) => {
                         // A resumed participant that already sent in this run and has no chat on record has lost it (V01): strict.
                         const strict = Boolean(resumeRecord) && !isNewChat(request) && !binding
                             && (record.attempts || []).some((item) => item.participant === request.participantId);
+                        const attKey = window.CustomRunRecord?.attemptKey ? window.CustomRunRecord.attemptKey({
+                            ref: request.stepRef,
+                            participant: request.participantId,
+                            visit: request.visit,
+                            attempt: meta.attempt,
+                            phase: request.phase || 'answer'
+                        }) : JSON.stringify([request.stepRef ?? `#${meta.step}`, request.participantId ?? request.modelName, request.visit ?? 1, meta.attempt, request.phase ?? 'answer']);
                         return [request.modelName, {
-                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {})
+                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {}),
+                            stepRef: request.stepRef, visit: request.visit, attempt: meta.attempt, phase: request.phase || 'answer', attemptKey: attKey
                         }];
                     }));
+                    // Record chatIntent for each attempt before dispatching externally
+                    wave.forEach((request) => {
+                        const attKey = window.CustomRunRecord?.attemptKey ? window.CustomRunRecord.attemptKey({
+                            ref: request.stepRef,
+                            participant: request.participantId,
+                            visit: request.visit,
+                            attempt: meta.attempt,
+                            phase: request.phase || 'answer'
+                        }) : JSON.stringify([request.stepRef ?? `#${meta.step}`, request.participantId ?? request.modelName, request.visit ?? 1, meta.attempt, request.phase ?? 'answer']);
+                        const intent = requestIntent(request);
+                        recordAttempt({
+                            step: meta.step,
+                            ref: request.stepRef,
+                            participant: request.participantId,
+                            model: request.modelName,
+                            visit: request.visit,
+                            attempt: meta.attempt,
+                            phase: request.phase || 'answer',
+                            attemptKey: attKey,
+                            chatIntent: intent
+                        });
+                    });
                     // Reuse the existing limit contract, on first attempts and corrections alike.
                     const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
                         built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
@@ -7281,6 +7277,9 @@ document.addEventListener('click', (event) => {
                                 role: window.StageCard?.feed?.role({ label, modelName: model, participantId: request?.participantId, visit: request?.visit }) || `Basic · ${label}`,
                                 pipelineRunId: runContext.pipelineRunId,
                                 pipelineRoundId: `s${step + 1}${request?.visit > 1 ? `v${request.visit}` : ''}`,
+                                participantId: request?.participantId,
+                                stepRef: request?.stepRef,
+                                visit: request?.visit,
                                 transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
                             });
                         }
@@ -7354,28 +7353,29 @@ document.addEventListener('click', (event) => {
                     runMaxWords: built.run.maxWords,
                     // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
                     runStrictLength: built.run.strictLength,
-                    accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
-                    parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
+                    accept: ({ text, completion }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion } }),
+                    parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
-                    // The route choice: the owner picks a case by its label from the schema (a cancel is null, the run stops).
-                    chooseRoute: ({ stepRef, choices, reason }) => {
-                        const cases = steps.find((item) => item.ref === stepRef)?.select?.cases || [];
-                        const label = (id) => String(cases.find((item) => item.id === id)?.label || id);
-                        return askChoiceDialog({
-                            title: 'Выбор маршрута',
-                            message: `${stepRef}: ${reason === 'conflict_owner' ? 'подошло несколько вариантов, выберите один' : 'выберите вариант'}.`,
-                            choices: choices.map((id) => ({ value: id, label: label(id) }))
-                        });
-                    },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
-                    provideOwnerResult: ({ stepRef, task, input, output, reason, detail }) => askChoiceDialog({
-                        title: `Ответ владельца: ${stepRef}`,
-                        message: window.StageCard.ownerAskMessage({ task, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
-                        textInput: { label: 'Ответ владельца' },
-                        choices: [{ value: 'send', label: 'Отправить' }]
-                    }),
+                    provideOwnerResult: async (request) => {
+                        const { stepRef, task, goal, input, output, document, reason, detail } = request;
+                        const folderName = document ? await documentsFolderName() : '';
+                        const answer = await askChoiceDialog({
+                            title: `Ответ User: ${stepRef}`,
+                            message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
+                            textInput: document ? null : { label: 'Ответ User', required: true },
+                            // A document for reading is edited in the window.
+                            choices: [{ value: 'send', label: 'Отправить' }],
+                            ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {}),
+                            ...(document ? { folder: { name: folderName, onPick: pickDocumentsFolder } } : {})
+                        });
+                        if (typeof answer === 'string' && document) {
+                            void saveDocumentCopy({ stepRef, document, answer, startedAt: runContext.startedAt, pipeline: customPipelineName() }, documentCopyState);
+                        }
+                        return answer;
+                    },
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
@@ -7405,7 +7405,7 @@ document.addEventListener('click', (event) => {
                         });
                         const byParticipant = {};
                         let closedByOwner = false;
-                        for (const [waveNo, wave] of waves.entries()) {
+                        wavesLoop: for (const [waveNo, wave] of waves.entries()) {
                             // A wave with a participant that takes the files and one that does not is split (R05): the files go to
                             // the new chat only, nobody gets files again because of a neighbour.
                             const withFiles = wave.filter(filesNeeded);
@@ -7414,25 +7414,40 @@ document.addEventListener('click', (event) => {
                                 ? [[`${waveNo}f`, withFiles], [`${waveNo}p`, without]]
                                 : [[waveNo, wave]];
                             for (const [key, group] of groups) {
+                                if (signal?.aborted) {
+                                    break wavesLoop;
+                                }
+                                if (typeof meta?.onWaveDispatched === 'function') {
+                                    meta.onWaveDispatched(group.map((r) => r.participantId));
+                                } else if (typeof meta?.onWaveStart === 'function') {
+                                    meta.onWaveStart(group.map((r) => r.participantId));
+                                }
                                 // eslint-disable-next-line no-await-in-loop
                                 const reply = await sendWave(group, meta, key);
                                 Object.assign(byParticipant, reply.byParticipant);
                                 closedByOwner = closedByOwner || reply.closedByOwner;
+                                if (typeof meta?.onWaveResult === 'function') {
+                                    await meta.onWaveResult(reply.byParticipant || reply);
+                                }
+                                if (signal?.aborted) {
+                                    break wavesLoop;
+                                }
                             }
                         }
                         return { byParticipant, closedByOwner };
                     },
-                    onEvent: (kind, fields) => {
-                        // A step with accepted answers, or one the owner skipped, is done; otherwise it stays running until a decision.
-                        if (kind === 'custom_step' && fields.accepted > 0) setCustomStepStatus(fields.step, 'completed');
-                        if (kind === 'custom_decision' && fields.action === 'skip') setCustomStepStatus(fields.step, 'completed');
-                        // The control events of the run go to the feed as short lines (not as answers of models).
-                        if (kind === 'custom_gate') appendBasicRunLine(window.StageCard?.feed?.gate(fields));
-                        if (kind === 'custom_route') {
-                            const cases = steps.find((item) => item.ref === fields.ref)?.select?.cases || [];
-                            appendBasicRunLine(window.StageCard?.feed?.route({ ref: fields.ref, caseLabel: String(cases.find((item) => item.id === fields.case)?.label ?? fields.case), reason: fields.reason }));
+                    onEvent: async (kind, fields) => {
+                        if (kind === 'custom_step_start' || kind === 'custom_step_resumed') setCustomStepStatus(fields.step, 'running');
+                        if (kind === 'custom_step_end') setCustomStepStatus(fields.step, 'completed');
+                        if (kind === 'custom_step_interrupted') setCustomStepStatus(fields.step, fields.outcome === 'stopped' ? 'stopped' : 'failed');
+                        if (kind === 'custom_wait_start' && record) {
+                            window.CustomRunRecord?.recordWaitStart(record, fields);
+                            await writeRecord();
                         }
-                        if (kind === 'custom_transition') appendBasicRunLine(window.StageCard?.feed?.transition(fields, (reason) => engine.STOP_TEXT[reason] || reason));
+                        if (kind === 'custom_wait_end' && record) {
+                            window.CustomRunRecord?.recordWaitEnd(record, fields);
+                            await writeRecord();
+                        }
                         window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
                 });
@@ -7442,13 +7457,13 @@ document.addEventListener('click', (event) => {
                     // The registry and the state of the run at its end: what a later resume needs (8.2).
                     const CustomRecord = window.CustomRunRecord;
                     CustomRecord.setArtifacts(record, result.artifacts);
-                    CustomRecord.setSnapshot(record, {
-                        schema: built.schema, runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
-                        state: result.state, ownerAnswers: result.ownerAnswers,
-                        routes: result.steps.filter((item) => item.route).map((item) => ({ stepRef: item.ref, visit: item.visit, ...item.route }))
-                    });
+                    CustomRecord.setSnapshot(record, buildSnapshotPayload(result.state, {
+                        ownerAnswers: result.ownerAnswers,
+                        chatBindings
+                    }));
                     CustomRecord.finishRun(record, { stopReason: result.stopReason });
                     await saveRecord(true);
+                    syncDocumentFrames();
                 }
                 markStaleBasicCards(result.steps);
                 const artifacts = result.artifacts || [];
@@ -7469,7 +7484,7 @@ document.addEventListener('click', (event) => {
                 // The engine reports its own end; a thrown error ends the run without it.
                 window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
-                if (record && !record.finishedAt) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
+                if (record) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
                 offerResumeLine(record);
                 return false;
             } finally {
@@ -7579,9 +7594,8 @@ document.addEventListener('click', (event) => {
                     pipelineStore.active = typeof nextStore.active === 'string' ? nextStore.active : '';
                     pipelineStore.overrides = nextStore.overrides && typeof nextStore.overrides === 'object'
                         ? JSON.parse(JSON.stringify(nextStore.overrides))
-                        : { longRoundLimits: {}, synthesizers: {}, profiles: {} };
+                        : { longRoundLimits: {}, profiles: {} };
                     if (!pipelineStore.overrides.longRoundLimits) pipelineStore.overrides.longRoundLimits = {};
-                    if (!pipelineStore.overrides.synthesizers) pipelineStore.overrides.synthesizers = {};
                     if (!pipelineStore.overrides.profiles) pipelineStore.overrides.profiles = {};
                 },
                 getDebateTranscriptStore: () => debateTranscriptStore,
@@ -7594,6 +7608,10 @@ document.addEventListener('click', (event) => {
                 resolveCustomFields,
                 getCustomPipelineDefaults,
                 buildBasicExport: () => buildBasicExport(),
+                buildBasicCatalogExport: () => buildBasicCatalogExport(),
+                saveDocumentCopy: (...args) => saveDocumentCopy(...args),
+                syncDocumentFrames,
+                restoreDocumentFrames,
                 normalizePipelineStore,
                 clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); customRoundSettings.clear(); },
                 capturePipelineConfig,
@@ -7601,6 +7619,7 @@ document.addEventListener('click', (event) => {
                 basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
                 describeSchemaErrors: (...args) => describeSchemaErrors(...args),
+                showSchemaErrors: (...args) => showSchemaErrors(...args),
                 basicSchemaFromPage: (...args) => basicSchemaFromPage(...args),
                 applyPipelineConfig: (...args) => applyPipelineConfig(...args),
                 runCustomFromPage,
@@ -7620,6 +7639,7 @@ document.addEventListener('click', (event) => {
             const now = Date.now();
             if (now - lastPipelineTriggerAt < 500) return;
             lastPipelineTriggerAt = now;
+            requestDocumentsAccess();
             const runFn = typeof window.runPipeline === 'function'
                 ? window.runPipeline
                 : startDebateFromPage;
@@ -7642,8 +7662,6 @@ document.addEventListener('click', (event) => {
         const prunePipelineRoundsAfter = (targetRounds = roundCounter) => {
             const maxRound = Math.max(1, Number(targetRounds) || 1);
             pipelinePanel.querySelectorAll('[data-round]').forEach((el) => {
-                if (el.id === 'connectorToSynthesis') return;
-                if (el.dataset.stage === 'synthesis') return;
                 const round = Number(el.dataset.round || 0) || 0;
                 if (round > maxRound) el.remove();
             });
@@ -7678,7 +7696,7 @@ document.addEventListener('click', (event) => {
                         <svg class="connector-svg" id="svg-r${currentLastJudge}-r${roundCounter}"></svg>
                     </div>
                     <div class="stage-column" id="round${roundCounter}" data-round="${roundCounter}" data-planned-stage-id="canvas-r${roundCounter}">
-                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${roundCounter}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden>×</button></div><button type="button" class="pipeline-stage-insert" data-after-stage-id="canvas-r${roundCounter}" aria-label="Add stage after R${roundCounter}" title="Add stage" disabled></button></div>
+                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R${roundCounter}</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden>×</button></div></div>
                         <div class="model-stack" id="r${roundCounter}-models">
                             ${judgeBlocksHtml}
                         </div>
@@ -7709,7 +7727,16 @@ document.addEventListener('click', (event) => {
             customRoundSettings.set(draftPlanStorageKey(), remaining);
             stepDrafts.delete(`${draftPlanStorageKey()}\n${removedRef}`);
             // The controls after the removed round stand after the round before it.
-            customControls.set(draftPlanStorageKey(), getCustomControls().map((item) => (item.after === removedRef ? { ...item, after: `r${roundCounter - 1}` } : item)));
+            // A User step that read the removed round loses its document: the owner chooses it again, and the page says so.
+            const sourceLost = [];
+            customControls.set(draftPlanStorageKey(), getCustomControls().map((item) => {
+                const moved = item.after === removedRef ? { ...item, after: `r${roundCounter - 1}` } : item;
+                if (item.step?.document !== removedRef) return moved;
+                const { document: _lost, ...step } = moved.step;
+                sourceLost.push(item.step.ref);
+                return { ...moved, step };
+            }));
+            sourceLost.forEach((ref) => showNotification(`Документ шага User «${ref}»: раунд ${removedRef} удалён, источник сброшен. Выберите документ заново.`, 'warn'));
             roundCounter--;
             if (roundCounter <= 1 && pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'none';
@@ -7772,15 +7799,6 @@ document.addEventListener('click', (event) => {
                 if (isPipelinePage && Array.isArray(protocol.selectedModels) && protocol.selectedModels.length) {
                     setHeaderSelectedLLMsFromNames(protocol.selectedModels);
                 }
-                const hasPersistedSynthesizer = typeof protocol.synthesizer === 'string'
-                    || (typeof protocol.serviceRoles?.extractor === 'string' && protocol.serviceRoles.extractor !== 'same_as_synthesizer');
-                const persistedSynthesizerRaw = typeof protocol.synthesizer === 'string'
-                    ? protocol.synthesizer
-                    : (typeof protocol.serviceRoles?.extractor === 'string' && protocol.serviceRoles.extractor !== 'same_as_synthesizer'
-                        ? protocol.serviceRoles.extractor
-                        : '');
-                const persistedSynthesizer = normalizeExplicitSynthesizer(persistedSynthesizerRaw);
-                if (hasPersistedSynthesizer) window.__pendingPipelineSynthesizer = persistedSynthesizer;
                 if (protocol.serviceRoles?.auditor) {
                     console.warn('[Disput migration] Loaded pipeline config contains serviceRoles.auditor — ignored (auditor selector removed).');
                 }
@@ -7816,16 +7834,7 @@ document.addEventListener('click', (event) => {
             syncPipelineRoundModelsFromSelectedLLMs({ force: true });
             Object.entries(modelStacks).forEach(([stackId, state]) => orderModelStackBlocks(stackId, state));
             syncPipelineRoundsToDebateLimit();
-            if (window.__pendingPipelineSynthesizer !== undefined) {
-                const restoredPlan = draftPlanForCanvas(getActiveDraftPlan());
-                persistActiveDraftPlan(restoredPlan, { applied: true });
-                delete window.__pendingPipelineSynthesizer;
-            }
             window.syncDebateSchemeUi?.();
-            if (protocol?.scheme === 'free') {
-                if (synthesisColumn) { synthesisColumn.hidden = false; synthesisColumn.setAttribute('aria-hidden', 'false'); }
-                if (connectorToSynthesis) { connectorToSynthesis.hidden = false; connectorToSynthesis.setAttribute('aria-hidden', 'false'); }
-            }
             syncDebateRoundStepperUi();
             syncDebateAutoPauseButton();
             syncDebateAutoToggleButton();
@@ -7912,7 +7921,6 @@ document.addEventListener('click', (event) => {
                             <div class="pipeline-info-model-head">
                                 <strong>${escapeHtml(item.name || 'Model')}</strong>
                                 <span>Input: ${escapeHtml(formatPipelineBoolean(!!item.input))}</span>
-                                <span>Send: ${escapeHtml(formatPipelineBoolean(!!item.send))}</span>
                             </div>
                             <div class="pipeline-info-prompt-name">${escapeHtml(promptName)}</div>
                             <pre>${escapeHtml(promptText)}</pre>
@@ -7926,17 +7934,6 @@ document.addEventListener('click', (event) => {
                     </section>
                 `;
             }).join('');
-        };
-
-        const buildPipelineInfoSynthesizerHtml = (config = {}) => {
-            const synth = String(config?.protocol?.synthesizer || '').trim();
-            return `
-                <section class="pipeline-info-section">
-                    <h4>Synthesis stage</h4>
-                    <p class="pipeline-info-muted">The planner creates this stage when the StateMap requires consolidation. A subsequent audit must validate the current synthesis artifact.</p>
-                    <pre class="pipeline-info-json">${escapeHtml(synth ? `Selected synthesizer: ${synth}` : 'The planner will assign an available synthesizer at runtime.')}</pre>
-                </section>
-            `;
         };
 
         const showPipelineInfoDocument = (name) => {
@@ -7974,7 +7971,6 @@ document.addEventListener('click', (event) => {
             const summary = formatPipelineProtocolSummary(config);
             const description = describePipelineProtocol(fullName, config);
             const models = Array.isArray(protocol.selectedModels) ? protocol.selectedModels : [];
-            const selectedSynthesizer = String(protocol.synthesizer || '').trim();
             const doc = modal.querySelector('#pipeline-info-document');
             if (doc) {
                 doc.innerHTML = `
@@ -7990,11 +7986,9 @@ document.addEventListener('click', (event) => {
                             <dt>Reasoning budget</dt><dd>${escapeHtml(formatReasoningBudgetLabel(protocol.reasoningBudget))}</dd>
                             <dt>Stage limit</dt><dd>${escapeHtml(String(protocol.roundLimit || config.roundCounter || ''))}</dd>
                             <dt>Length</dt><dd>${escapeHtml(String(protocol.length || 'default'))}</dd>
-                            <dt>Synthesizer</dt><dd>${escapeHtml(selectedSynthesizer || 'None — complete without synthesis')}</dd>
                             <dt>Models</dt><dd>${escapeHtml(models.join(', ') || 'not selected')}</dd>
                         </dl>
                     </section>
-                    ${buildPipelineInfoSynthesizerHtml(config)}
                     ${buildPipelineInfoRoundsHtml(config)}
                     <section class="pipeline-info-section">
                         <h4>Saved Config</h4>
@@ -8078,6 +8072,21 @@ document.addEventListener('click', (event) => {
         const alignPipelineDeleteColumn = () => {
             pipelineItems?.style.removeProperty('--pipeline-item-main-width');
         };
+
+        const ARROWS_HIDDEN_KEY = 'pipelineArrowsHidden';
+        const applyCanvasArrows = (hidden) => {
+            pipelinePanel?.querySelector('.pipeline-canvas')?.classList.toggle('arrows-hidden', hidden);
+            document.getElementById('pipeline-arrows-toggle')?.setAttribute('aria-pressed', String(!hidden));
+        };
+        let arrowsHidden = false;
+        try { arrowsHidden = localStorage.getItem(ARROWS_HIDDEN_KEY) === '1'; } catch (_) {}
+        applyCanvasArrows(arrowsHidden);
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest?.('#pipeline-arrows-toggle')) return;
+            arrowsHidden = !arrowsHidden;
+            applyCanvasArrows(arrowsHidden);
+            try { localStorage.setItem(ARROWS_HIDDEN_KEY, arrowsHidden ? '1' : '0'); } catch (_) {}
+        });
 
         const syncPipelineChromeControls = () => {
             const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
@@ -8164,7 +8173,7 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
-            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
+            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSchemaLoadErrorList, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
@@ -8266,6 +8275,8 @@ document.addEventListener('click', (event) => {
             setPipelineHeaderName(activeName);
             updateActivePipelineDescription(activeName);
             syncPipelineChromeControls();
+            syncCanvasTooltips();
+            syncStepErrorBadges();
         };
 
         const getPipelineNamesFromDom = () => {
@@ -8328,6 +8339,8 @@ document.addEventListener('click', (event) => {
             }
             resetPipelineStatusIndicators();
             syncPipelineChromeControls();
+            // The frames follow the pipeline chosen in the list: its approved documents come back from the store.
+            void restoreDocumentFrames();
         };
 
         window.addEventListener('disput:profile-apply', (event) => {
@@ -8374,10 +8387,6 @@ document.addEventListener('click', (event) => {
             customCardSettings.delete('unsaved');
             customRoundSettings.delete('unsaved');
             customPipelineDefaults.delete('unsaved');
-            const defaultSynthesizer = window.__getDefaultSynthesizerName?.() || '';
-            window.__pendingPipelineSynthesizer = defaultSynthesizer;
-            const emptyFlowSelect = getSynthesizerFlowSelect();
-            if (emptyFlowSelect) emptyFlowSelect.value = defaultSynthesizer;
             pipelineItems?.querySelectorAll('.pipeline-item').forEach((el) => el.classList.remove('active'));
             pipelineItems?.querySelectorAll('.pipeline-radio').forEach((radio) => {
                 radio.checked = false;
@@ -8398,6 +8407,12 @@ document.addEventListener('click', (event) => {
 
         const savePipeline = async () => {
             const currentName = getPipelineHeaderName();
+            // Saving would rebuild the schema from the page and lose what the unreadable one holds.
+            const loadedError = basicSchemaLoadErrors.get(draftPlanStorageKey());
+            if (loadedError) {
+                showNotification(unreadableSchemaMessage(loadedError), 'error');
+                return;
+            }
             const isDraft = pipelinePanel?.dataset.pipelineDraft === 'true' || currentName === 'Unsaved Pipeline';
             // A template is never overwritten: its changed variant is saved only under a new name.
             const isTemplate = isDefaultPipelineName(currentName);
@@ -8461,31 +8476,109 @@ document.addEventListener('click', (event) => {
             if (!checked.ok) return checked;
             return { ok: true, errors: [], name, schema, fileName: schemaFileName(name), text: `${JSON.stringify(schema, null, 2)}\n` };
         };
-        const exportBasicSchema = () => {
+        // Schemas go to Downloads/Схемы like saved sessions go to Downloads/Saved sessions:
+        // chrome.downloads is the only way to pick a subfolder; without it the anchor download is used.
+        const BASIC_SCHEMAS_FOLDER = 'Схемы';
+        const downloadSchemaViaDownloadsApi = (url, filename) => new Promise((resolve) => {
+            if (!chrome?.downloads?.download) {
+                resolve(false);
+                return;
+            }
+            try {
+                chrome.downloads.download({
+                    url,
+                    filename: `${BASIC_SCHEMAS_FOLDER}/${filename}`,
+                    conflictAction: 'uniquify',
+                    saveAs: false
+                }, (downloadId) => {
+                    const failure = chrome.runtime?.lastError;
+                    if (failure || !downloadId) {
+                        if (failure) console.warn('[results] downloads API rejected schema export', failure.message || failure);
+                        resolve(false);
+                        return;
+                    }
+                    resolve(true);
+                });
+            } catch (error) {
+                console.warn('[results] downloads API unavailable for schema export', error);
+                resolve(false);
+            }
+        });
+
+        // savedMessage is shown when the file is saved into Downloads/Схемы; the link fallback shows it only with notifyAlways.
+        const downloadSchemaText = async (text, fileName, savedMessage, notifyAlways = false) => {
+            const blob = new Blob([text], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            // The download reads the blob asynchronously, so the URL is revoked only after a delay.
+            const revokeLater = () => setTimeout(() => URL.revokeObjectURL(url), 60000);
+            const savedToFolder = await downloadSchemaViaDownloadsApi(url, fileName);
+            if (savedToFolder) {
+                showNotification(savedMessage);
+                revokeLater();
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            revokeLater();
+            if (notifyAlways) showNotification(savedMessage);
+        };
+        const exportBasicSchema = async () => {
             const built = buildBasicExport();
             if (!built.ok) {
                 showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
                 return;
             }
-            const blob = new Blob([built.text], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = built.fileName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 0);
+            await downloadSchemaText(built.text, built.fileName, `Схема сохранена в Загрузки/Схемы: ${built.fileName}`);
+        };
+        // The whole catalog of saved Basic schemas in one file. Templates are not in it. A record without a schema, or one the
+        // canvas cannot show, is listed in skipped with its reasons. Unsaved canvas edits are not in it.
+        const buildBasicCatalogExport = () => {
+            const items = [];
+            const skipped = [];
+            for (const name of pipelineStore.order) {
+                if (isDefaultPipelineName(name)) continue;
+                const record = pipelineStore.pipelines[name];
+                if (!record || typeof record !== 'object' || !record.schema) {
+                    skipped.push({ name, errors: [{ path: '', message: 'нет схемы Basic (запись прежнего формата)' }] });
+                    continue;
+                }
+                const checked = recordFromSchema(name, record.schema);
+                if (!checked.ok) {
+                    skipped.push({ name, errors: checked.errors });
+                    continue;
+                }
+                items.push({ name, schema: JSON.parse(JSON.stringify(record.schema)) });
+            }
+            if (!items.length) return { ok: false, errors: [{ path: '', message: 'В списке нет схем Basic для выгрузки.' }], skipped };
+            return { ok: true, errors: [], count: items.length, skipped, fileName: 'Каталог Basic.json', text: `${JSON.stringify({ basicCatalog: 1, schemas: items }, null, 2)}\n` };
+        };
+        const exportBasicCatalog = async () => {
+            const built = buildBasicCatalogExport();
+            if (!built.ok) {
+                showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
+                return;
+            }
+            const tail = built.skipped.length
+                ? `\n${built.skipped.map((entry) => `«${entry.name}»: ${entry.errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ')}`).join('\n')}`
+                : '';
+            await downloadSchemaText(built.text, built.fileName,
+                `Каталог сохранён в Загрузки/Схемы: ${built.fileName} (схем: ${built.count}${built.skipped.length ? `, не выгружено: ${built.skipped.length}` : ''}).${tail}`, true);
         };
 
         // The errors of a schema in one line: the place and the reason of each, at most five.
-        // The places of a validation error, with a note for the one a control between a round and its synthesis gives.
-        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => {
-            const text = error.path ? `${error.path}: ${error.message}` : error.message;
-            return /промежуточный синтез стоит (сразу после раунда|между двумя раундами)/.test(error.message) ? `${text}. ${INTERMEDIATE_CONTROL_NOTE}` : text;
-        }).join('; ');
+        const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
+        const schemaErrorsText = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('\n');
+        const showSchemaErrors = (title, errors) => {
+            try {
+                askChoiceDialog({ title, message: `Ошибок: ${errors.length}`, document: { kind: 'read', readOnly: true, name: '', text: schemaErrorsText(errors) }, choices: [], cancelText: 'Закрыть' });
+            } catch (_) { /* the list is a convenience: a failure to show it changes nothing */ }
+        };
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
-        // members (rounds, models, roles, synthesizer, intermediate syntheses) are derived from it here. Nothing is written
+        // members (rounds, models, roles) are derived from it here. Nothing is written
         // to the store. Returns { ok, errors, record }; a schema the canvas cannot show gives errors with the place.
         const recordFromSchema = (name, schema) => {
             const errors = window.BasicSchema.validate(schema);
@@ -8511,24 +8604,19 @@ document.addEventListener('click', (event) => {
             delete base.disabled;
             delete base.disabledReason;
             const lengthSelect = document.getElementById('debate-length-select');
-            let plan = window.DebateDraftPlan.createCanvasPlan({
-                planId: `canvas-${String(name).replace(/[^a-z0-9_-]+/gi, '-')}`, revision: 0, synthesizer: canvas.synthesizer,
+            const plan = window.DebateDraftPlan.createCanvasPlan({
+                planId: `canvas-${String(name).replace(/[^a-z0-9_-]+/gi, '-')}`, revision: 0,
                 rounds: canvas.rounds.map((round, index) => ({
                     plannedStageId: `canvas-${round.ref}`, label: index === 0 ? 'R1 Models' : `R${index + 1}`, purpose: index === 0 ? 'position' : 'response',
                     participantIds: round.participantIds,
                     participantBindings: round.participantIds.map((participantId) => ({ participantId, promptId: round.roles[participantId] }))
                 }))
             });
-            for (const insert of canvas.inserts) {
-                const inserted = window.DebateDraftPlan.insertSynthesis(plan, { afterPlannedStageId: `canvas-r${insert.afterRound}`, participantIds: insert.participantIds, plannedStageId: insert.plannedStageId });
-                if (!inserted.ok) return { ok: false, errors: [{ path: `synth:${insert.plannedStageId}`, message: `промежуточный синтез не встал на холст (${inserted.reasonCode})` }] };
-                plan = inserted.plan;
-            }
             const record = {
                 ...base,
                 version: 3,
                 // The page grows or cuts the rounds to the round limit after loading: it is the number of the schema's rounds.
-                protocol: { ...base.protocol, runPolicy: run.policy, synthesizer: canvas.synthesizer, selectedModels: canvas.selectedModels, roundLimit: String(canvas.roundCounter),
+                protocol: { ...base.protocol, runPolicy: run.policy, selectedModels: canvas.selectedModels, roundLimit: String(canvas.roundCounter),
                     ...(lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords)) ? { length: String(run.maxWords) } : {}) },
                 draftPlan: plan,
                 roundCounter: canvas.roundCounter,
@@ -8575,40 +8663,173 @@ document.addEventListener('click', (event) => {
             const result = await installBasicSchema(name, schema);
             if (!result.ok) {
                 showNotification(`Схема не установлена. ${describeSchemaErrors(result.errors)}`, 'error');
+                showSchemaErrors('Схема не установлена', result.errors);
                 return;
             }
             const item = findPipelineItemByName(name);
             if (item) selectPipeline(item, { applyConfig: true, persist: true });
             showNotification(`Схема установлена как pipeline «${name}».`, 'success');
+            return true;
         };
         const importBasicBundle = async (parsed) => {
             let added = 0;
             let skipped = 0;
             let last = '';
+            const failedErrors = [];
             for (const [name, record] of Object.entries(parsed.pipelines)) {
                 if (isDefaultPipelineName(name) || !record || typeof record !== 'object' || !record.schema) { skipped += 1; continue; }
                 const target = uniquePipelineName(name);
                 const result = await installBasicSchema(target, record.schema);
-                if (result.ok) { added += 1; last = target; } else skipped += 1;
+                if (result.ok) { added += 1; last = target; } else {
+                    skipped += 1;
+                    failedErrors.push(...(result.errors || []).map((error) => ({ path: `${name}${error.path ? `: ${error.path}` : ''}`, message: error.message })));
+                }
             }
             showNotification(added
                 ? `Добавлено схем: ${added}${skipped ? `, пропущено: ${skipped}` : ''}.`
                 : `Ничего не добавлено${skipped ? ` (пропущено: ${skipped}, схемы в записи нет или она не подходит)` : ''}.`, added ? 'success' : 'warn');
+            if (failedErrors.length) showSchemaErrors('Не все схемы установлены', failedErrors);
             if (last) {
                 const item = findPipelineItemByName(last);
                 if (item) selectPipeline(item, { applyConfig: true, persist: true });
             }
         };
+        // A catalog file: each entry is checked first, then the valid ones are added in order. A taken name is asked again;
+        // an entry whose check or name fails is not added and its reason is listed.
+        const importBasicCatalog = async (parsed, readerNotes = []) => {
+            if (parsed.basicCatalog !== 1) { showNotification(`Версия каталога ${parsed.basicCatalog} не поддерживается.`, 'error'); return; }
+            if (!Array.isArray(parsed.schemas)) { showNotification('Файл каталога повреждён: нет списка schemas.', 'error'); return; }
+            const problems = [];
+            const valid = [];
+            let notAdded = 0;
+            const errorLines = (name, index, errors) => errors.map((error) => `«${name}»: schemas[${index}].schema${error.path ? `.${error.path}` : ''}: ${error.message}`);
+            parsed.schemas.forEach((entry, index) => {
+                const name = entry && typeof entry === 'object' && typeof entry.name === 'string' ? entry.name.trim() : '';
+                if (!name || !entry.schema || typeof entry.schema !== 'object') {
+                    problems.push(`schemas[${index}]: нужны name (строка) и schema (объект)`);
+                    notAdded += 1;
+                    return;
+                }
+                const checked = recordFromSchema(name, entry.schema);
+                if (!checked.ok) {
+                    problems.push(...errorLines(name, index, checked.errors));
+                    notAdded += 1;
+                    return;
+                }
+                valid.push({ name, schema: entry.schema, index });
+            });
+            let added = 0;
+            let last = '';
+            for (const { name: wanted, schema, index } of valid) {
+                let final = wanted;
+                if (isDefaultPipelineName(wanted) || pipelineStore.order.includes(wanted)) {
+                    const typed = String((await showPrompt(isDefaultPipelineName(wanted)
+                        ? `«${wanted}» — имя шаблона. Имя для этой схемы из файла:`
+                        : `Pipeline «${wanted}» уже есть. Имя для схемы из файла (то же имя заменит существующий):`, uniquePipelineName(wanted)) || '')).trim();
+                    if (!typed) { problems.push(`«${wanted}»: не добавлена (имя не выбрано).`); notAdded += 1; continue; }
+                    final = typed;
+                }
+                if (isDefaultPipelineName(final)) { problems.push(`«${final}»: имя шаблона занять нельзя, схема не добавлена.`); notAdded += 1; continue; }
+                if (pipelineStore.order.includes(final) && !(await showConfirm(`Pipeline "${final}" already exists. Replace it?`))) {
+                    problems.push(`«${final}»: замена не подтверждена, схема не добавлена.`); notAdded += 1; continue;
+                }
+                const result = await installBasicSchema(final, schema);
+                if (result.ok) { added += 1; last = final; continue; }
+                problems.push(...errorLines(final, index, result.errors));
+                notAdded += 1;
+            }
+            showNotification(`${readerNotes.length ? `${readerNotes.join('\n')}\n` : ''}Добавлено схем: ${added}, не добавлено: ${notAdded}.${problems.length ? `\n${problems.join('\n')}` : ''}`,
+                problems.length ? (added ? 'warn' : 'error') : 'success');
+            if (last) {
+                const item = findPipelineItemByName(last);
+                if (item) selectPipeline(item, { applyConfig: true, persist: true });
+            }
+        };
+        // Paste window: the reply of a model with a schema is read by window.SchemaTextReader. A catalog file goes to the
+        // catalog import; a single schema is checked, then named and installed as a pipeline. Errors keep the window open.
+        const openSchemaPasteWindow = () => {
+            if (document.getElementById('schema-paste-window')) return;
+            const win = document.createElement('div');
+            win.id = 'schema-paste-window';
+            win.className = 'schema-paste-window';
+            win.setAttribute('role', 'dialog');
+            win.setAttribute('aria-label', 'Вставить схему');
+            const card = document.createElement('div');
+            card.className = 'schema-paste-card';
+            const heading = document.createElement('h3');
+            heading.textContent = 'Вставить схему';
+            const text = document.createElement('textarea');
+            text.id = 'schema-paste-text';
+            text.placeholder = 'Вставьте ответ модели со схемой Basic (JSON)';
+            const comment = document.createElement('details');
+            comment.id = 'schema-paste-comment';
+            comment.hidden = true;
+            const commentTitle = document.createElement('summary');
+            commentTitle.textContent = 'Комментарий модели';
+            const commentText = document.createElement('pre');
+            comment.append(commentTitle, commentText);
+            const problems = document.createElement('div');
+            problems.id = 'schema-paste-problems';
+            problems.setAttribute('role', 'alert');
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.id = 'schema-paste-cancel';
+            cancel.textContent = 'Отмена';
+            const apply = document.createElement('button');
+            apply.type = 'button';
+            apply.id = 'schema-paste-apply';
+            apply.textContent = 'Применить';
+            const actions = document.createElement('div');
+            actions.className = 'schema-paste-actions';
+            actions.append(cancel, apply);
+            card.append(heading, text, comment, problems, actions);
+            win.append(card);
+            document.body.appendChild(win);
+            const close = () => win.remove();
+            cancel.addEventListener('click', close);
+            win.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+            const showProblems = (lines) => { problems.textContent = lines.join('\n'); };
+            apply.addEventListener('click', async () => {
+                const read = window.SchemaTextReader.read(text.value);
+                problems.textContent = '';
+                commentText.textContent = read.comment;
+                comment.hidden = !read.comment;
+                if (!read.ok) { showProblems([...read.notes, ...read.errors]); return; }
+                const value = read.value;
+                if ('basicCatalog' in value) {
+                    close();
+                    await importBasicCatalog(value, read.notes);
+                    return;
+                }
+                const built = recordFromSchema('schema', value);
+                if (!built.ok) {
+                    showProblems([...read.notes, ...built.errors.map((error) => `${error.path ? `${error.path}: ` : ''}${error.message}`)]);
+                    return;
+                }
+                win.style.display = 'none';
+                const done = await importBasicSchemaFile(value, '');
+                if (done && read.notes.length) showNotification(read.notes.join('\n'));
+                if (done) close();
+                else win.style.display = '';
+            });
+            text.focus();
+        };
         const handlePipelineImportFile = async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
+            readPipelineImportFile(file);
+        };
+
+        const readPipelineImportFile = (file) => {
             const reader = new FileReader();
             reader.onload = async () => {
                 let parsed;
                 try { parsed = JSON.parse(String(reader.result || '')); }
                 catch (_) { showNotification('Файл не JSON.', 'error'); return; }
                 const isObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
-                if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
+                if (isObject && 'basicCatalog' in parsed) {
+                    await importBasicCatalog(parsed);
+                } else if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
                     await importBasicSchemaFile(parsed, String(file.name || '').replace(/\.json$/i, '').trim());
                 } else if (isObject && parsed.pipelines && typeof parsed.pipelines === 'object') {
                     await importBasicBundle(parsed);
@@ -8619,7 +8840,7 @@ document.addEventListener('click', (event) => {
             reader.readAsText(file);
         };
 
-        const importPipelines = () => {
+        const openPipelineImportInput = () => {
             if (!pipelineImportInput) {
                 pipelineImportInput = document.createElement('input');
                 pipelineImportInput.type = 'file';
@@ -8632,9 +8853,72 @@ document.addEventListener('click', (event) => {
             pipelineImportInput.click();
         };
 
+        // The picker is opened before any await: it needs the click's transient activation.
+        // The id makes the browser reopen it in the folder of the last pick (Downloads/Схемы after the first one).
+        const importPipelines = () => {
+            if (typeof window.showOpenFilePicker !== 'function') {
+                openPipelineImportInput();
+                return;
+            }
+            window.showOpenFilePicker({
+                id: 'basicSchemas',
+                startIn: 'downloads',
+                multiple: false,
+                types: [{ description: 'Basic schema', accept: { 'application/json': ['.json'] } }]
+            }).then(async ([fileHandle]) => {
+                const file = await fileHandle.getFile();
+                readPipelineImportFile(file);
+            }).catch((error) => {
+                if (error?.name === 'AbortError') return;
+                console.warn('[results] schema file picker failed', error?.name, error?.message);
+                openPipelineImportInput();
+            });
+        };
+
+        // Seeds the built-in Basic schemas (BUILTIN_SCHEMAS) once: a name already in pipelineStore.seeded is not seeded again,
+        // so a schema the user deleted stays deleted. A pipeline of that name already in the list is only marked seeded.
+        // A seeded schema whose revision (BUILTIN_SCHEMA_REVISIONS, default 1) is higher than the stored one replaces the
+        // stored copy while it is still in the list; the user's edits in it are lost.
+        const seedBuiltinSchemas = async () => {
+            const schemas = window.PipelinePresets?.BUILTIN_SCHEMAS || {};
+            const revisions = window.PipelinePresets?.BUILTIN_SCHEMA_REVISIONS || {};
+            const { active, lastSaved } = pipelineStore;
+            let changed = false;
+            for (const [name, schema] of Object.entries(schemas)) {
+                const rev = revisions[name] || 1;
+                if (pipelineStore.seeded.includes(name)) {
+                    const storedRev = pipelineStore.seededRev[name] || 1;
+                    if (!pipelineStore.order.includes(name) || storedRev >= rev) continue;
+                    const result = await installBasicSchema(name, schema);
+                    if (result.ok) {
+                        pipelineStore.seededRev[name] = rev;
+                        changed = true;
+                    }
+                    continue;
+                }
+                if (pipelineStore.order.includes(name)) {
+                    pipelineStore.seeded.push(name);
+                    pipelineStore.seededRev[name] = rev;
+                    changed = true;
+                    continue;
+                }
+                const result = await installBasicSchema(name, schema);
+                if (result.ok) {
+                    pipelineStore.seeded.push(name);
+                    pipelineStore.seededRev[name] = rev;
+                    changed = true;
+                }
+            }
+            // installBasicSchema makes the seeded pipeline the last saved one; the start keeps the previous selection.
+            pipelineStore.active = active;
+            pipelineStore.lastSaved = lastSaved;
+            if (changed) await persistPipelineStore();
+        };
+
         const initPipelineList = async () => {
             await readPipelineStore();
             ensureDefaultPipelinePresets();
+            await seedBuiltinSchemas();
             // A preset is an explicit execution choice. Starting the Disput page
             // in manual mode must not silently opt the moderator into Universal.
             pipelineStore.active = '';
@@ -8663,27 +8947,14 @@ document.addEventListener('click', (event) => {
         };
 
         const getPipelineBlockPromptDetails = (block) => {
-            const protocol = getPipelineProtocolConfig();
-            const isSynthesisStage = !!block?.closest?.('#synthesisColumn') || !!block?.dataset?.synthesisStage;
             const roleSelector = block?.querySelector?.('.role-selector') || null;
             const selectedPromptId = roleSelector?.value || '';
             const selectedPrompt = selectedPromptId ? getJudgePromptById(selectedPromptId) : null;
             const details = [];
-            if (isSynthesisStage) {
-                details.push({
-                    title: 'Synthesis stage',
-                    text: 'The synthesizer receives canonical artifacts from the StateMap, preserves dissent and provenance, and emits a versioned synthesis artifact for mandatory audit.'
-                });
-                details.push({
-                    title: 'Synthesizer assignment',
-                    text: protocol.synthesizer ? `Selected synthesizer: ${protocol.synthesizer}` : 'The planner assigns an available synthesizer at runtime.'
-                });
-            } else {
-                details.push({
-                    title: 'Universal stage prompt',
-                    text: 'The PromptPack compiles the operation, role, task contract, context slice, output contract and StateMap version immediately before dispatch.'
-                });
-            }
+            details.push({
+                title: 'Universal stage prompt',
+                text: 'The PromptPack compiles the operation, role, task contract, context slice, output contract and StateMap version immediately before dispatch.'
+            });
             if (selectedPrompt) details.push({ title: selectedPrompt.label || selectedPrompt.id, text: selectedPrompt.text || '' });
             else if (selectedPromptId) details.push({ title: selectedPromptId, text: 'The saved prompt template is resolved by PromptPack at runtime.' });
             return details;
@@ -8691,60 +8962,36 @@ document.addEventListener('click', (event) => {
 
         // Compact Custom editor. Changes apply to the next run, scoped to a step and model;
         // the immutable request/response record remains separate.
-        // An intermediate synthesis has no model block: its insert (between two rounds) is its entry.
-        const intermediateStageId = (afterStageId) => `planned-working-synthesis-after-${afterStageId}`;
-        const intermediateStageAfter = (afterStageId, plan = draftPlanForCanvas(getActiveDraftPlan())) => (plan.plannedStages || [])
-            .find((stage) => stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterStageId)) || null;
-        // The card of an absent intermediate synthesis is built from a never-persisted copy of the plan.
-        const intermediateCardPlan = (afterStageId) => {
-            const plan = draftPlanForCanvas(getActiveDraftPlan());
-            if (intermediateStageAfter(afterStageId, plan)) return plan;
-            const result = window.DebateDraftPlan.insertSynthesis(JSON.parse(JSON.stringify(plan)), {
-                afterPlannedStageId: afterStageId,
-                participantIds: [window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.()],
-                plannedStageId: intermediateStageId(afterStageId)
-            });
-            return result.ok ? result.plan : plan;
-        };
-        const cardPlanFor = (block) => (block.classList.contains('pipeline-stage-insert')
-            ? intermediateCardPlan(block.dataset.afterStageId)
-            : draftPlanForCanvas(getActiveDraftPlan()));
         const customBlockRef = (block) => {
-            if (block.classList.contains('pipeline-stage-insert')) return `synth:${intermediateStageId(block.dataset.afterStageId)}`;
-            const stackId = block.closest('.model-stack')?.id || '';
-            if (stackId === 'synthesis-stack') return 'final';
-            const match = /^r(\d+)-models$/.exec(stackId);
+            const match = /^r(\d+)-models$/.exec(block.closest('.model-stack')?.id || '');
             return match ? `r${match[1]}` : '';
         };
-        // Synthesizer blocks are labelled «Synthesis», so their model comes from the plan, never from the label.
-        const customBlockModel = (block) => {
-            if (block.classList.contains('pipeline-stage-insert')) return intermediateStageAfter(block.dataset.afterStageId, cardPlanFor(block))?.participantIds?.[0] || '';
-            if (block.closest?.('#synthesis-stack')) return window.__getDraftPlanSynthesizer?.(cardPlanFor(block)) || '';
-            return block.querySelector('.model-name')?.textContent?.trim() || '';
-        };
+        const customBlockModel = (block) => block.querySelector('.model-name')?.textContent?.trim() || '';
+        // The presentation of the pipeline (schema.description): shown in the ▶ card, collapsed to two lines; the engine never reads it.
+        const basicDescription = () => String(basicSourceSchema.get(draftPlanStorageKey())?.description || '').trim();
+        const basicDescriptionBlock = () => `<div class="custom-desc"><div class="custom-desc-head"><strong>Description</strong><button type="button" class="custom-desc-toggle" aria-expanded="false" title="Развернуть на весь экран">⤢</button></div>
+            <div class="custom-desc-text">${basicDescription() ? escapeHtml(basicDescription()) : '<em>Описание не задано.</em>'}</div></div>`;
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
-            const steps = pipelineDefaults ? [] : customStepsFromPlan(cardPlanFor(block), { ref, name: modelName });
+            const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
             const stepIndex = steps.findIndex((step) => step.ref === ref);
             if (!pipelineDefaults && stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
             const step = steps[stepIndex];
             const automaticSteps = steps.map((item) => ({ ...item, models: item.models.map((model) => ({ ...model, promptTemplate: null })) }));
             const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
             const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[modelName] || {};
-            // An intermediate synthesis without its own text follows the final synthesizer's text.
-            const finalSaved = ref.startsWith('synth:') ? getCustomCardSettings().final?.[modelName] || {} : {};
-            const baseTemplate = finalSaved.promptTemplate || preview?.template;
+            const baseTemplate = preview?.template;
             const inherited = resolveCustomFields({}, step?.kind);
             const resolved = resolveCustomFields(saved, step?.kind);
             const general = getDebateMaxWords();
             const defaults = customDisciplineDefaults();
             const disciplineRows = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Повторный запрос']];
             const rows = pipelineDefaults
-                ? [['roundTask', 'Задание раундов со входом (R2+)'], ['synthesisTask', 'Задание синтеза'], ...disciplineRows]
-                : [...(step.input !== 'none' ? [['task', step.kind === 'synthesis' ? 'Задание синтеза' : 'Задание раунда']] : []), ...disciplineRows];
-            const isTask = (key) => ['task', 'roundTask', 'synthesisTask'].includes(key);
-            const fallbackFor = (key) => key === 'roundTask' ? CUSTOM_ROUND_TASK : key === 'synthesisTask' ? window.CustomEngine.SYNTHESIS_TASK : defaults[key];
+                ? [['roundTask', 'Задание раундов со входом (R2+)'], ...disciplineRows]
+                : [...(step.input !== 'none' ? [['task', 'Задание раунда']] : []), ...disciplineRows];
+            const isTask = (key) => ['task', 'roundTask'].includes(key);
+            const fallbackFor = (key) => key === 'roundTask' ? CUSTOM_ROUND_TASK : defaults[key];
             const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
             const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
             const effectiveValue = (key) => pipelineDefaults
@@ -8753,8 +9000,7 @@ document.addEventListener('click', (event) => {
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.
             const modelNotes = getCustomPipelineDefaults().modelNotes || {};
-            // Synthesizer blocks are labelled «Synthesis»; only the round models are canvas models.
-            const canvasModels = pipelineDefaults ? [...new Set(Array.from(pipelinePanel.querySelectorAll('.model-block:not(.pipeline-synthesis-block) .model-name'), (node) => node.textContent.trim())
+            const canvasModels = pipelineDefaults ? [...new Set(Array.from(pipelinePanel.querySelectorAll('.model-block .model-name'), (node) => node.textContent.trim())
                 .filter(Boolean))] : [];
             const content = modal.querySelector('.modal-content');
             modal.classList.add('custom-model-card');
@@ -8769,7 +9015,7 @@ document.addEventListener('click', (event) => {
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
-                    ${!pipelineDefaults && step?.kind === 'synthesis' ? '<div class="custom-card-steps" id="custom-card-step-fields"></div>' : ''}
+                    ${pipelineDefaults ? basicDescriptionBlock() : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -8798,25 +9044,17 @@ document.addEventListener('click', (event) => {
                             <div class="custom-card-discipline-head"><span>${escapeHtml(name)}</span></div>
                             <textarea data-model-note="${escapeHtml(name)}" aria-label="Особенность: ${escapeHtml(name)}" rows="2" spellcheck="false"${pipelineRunActive ? ' readonly' : ''}>${escapeHtml(modelNotes[name] || '')}</textarea>
                         </div>`).join('') || '<div class="custom-card-note">На холсте нет моделей.</div>'}
-                        <div class="custom-card-note">Добавляется к каждому запросу модели после запроса и ответов владельца, перед лимитом. Пустое поле — ничего не добавлять.</div>
+                        <div class="custom-card-note">Добавляется к каждому запросу модели после запроса и ответов User, перед лимитом. Пустое поле — ничего не добавлять.</div>
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
-            // The input, the number of answers, the owner and the output of a synthesis: saved at once, as the round card does.
-            const stepFieldsBox = content.querySelector('#custom-card-step-fields');
-            if (stepFieldsBox) {
-                const drawStepFields = () => {
-                    const fields = window.StageCard.stepFieldsModel({ kind: 'synthesis', settings: getCustomRoundSettings()[ref] || {}, earlier: stepsBefore(ref),
-                        enabledCount: step.models.length, drafts: stepDraftsOf(ref), disabled: pipelineRunActive });
-                    stepFieldsBox.replaceChildren();
-                    window.StageCard.renderStepFields(stepFieldsBox, fields, async (field, value) => {
-                        if (pipelineRunActive) return;
-                        await commitStepField(ref, field, value, step.models.length);
-                        drawStepFields();
-                    });
-                };
-                drawStepFields();
-            }
+            content.querySelector('.custom-desc-toggle')?.addEventListener('click', (event) => {
+                const box = event.currentTarget.closest('.custom-desc');
+                const full = box.classList.toggle('is-full');
+                event.currentTarget.setAttribute('aria-expanded', String(full));
+                event.currentTarget.textContent = full ? '✕' : '⤢';
+                event.currentTarget.title = full ? 'Свернуть' : 'Развернуть на весь экран';
+            });
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const reset = content.querySelector('#custom-card-reset');
@@ -9054,9 +9292,7 @@ document.addEventListener('click', (event) => {
                 ['Run policy', protocol.runPolicy === 'auto' ? 'Auto' : 'Manual'],
                 ['Reasoning budget', formatReasoningBudgetLabel(protocol.reasoningBudget)],
                 ['Input', block.querySelector('.model-input-checkbox')?.checked ? 'on' : 'off'],
-                ['Send', block.querySelector('.model-send-checkbox')?.checked ? 'on' : 'off'],
-                ['Prompt template', selectedRole],
-                ['Synthesizer', protocol.synthesizer || 'not selected']
+                ['Prompt template', selectedRole]
             ];
             const title = modal.querySelector('#pipeline-block-info-title');
             const grid = modal.querySelector('#pipeline-block-info-grid');
@@ -9084,61 +9320,16 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
-        // A double click on the final synthesis block or its column label opens the final synthesizer's card
-        // (the same gesture as on a model block). It runs before the generic dblclick listener, which would
-        // otherwise open the empty "Final" stage card from the round badge. The synthesizer select keeps its own clicks.
         const BLOCK_CONTROL_SELECTOR = 'input, select, textarea, button, label, a, [contenteditable="true"], .role-selector, .status-indicator';
-        const openFinalSynthesizerCard = () => {
-            const block = document.querySelector('#synthesis-stack .pipeline-synthesis-block');
-            if (!block) return;
-            const synthesizer = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-                window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-            ));
-            if (!synthesizer) {
-                showNotification('Включите финальный синтез кликом по Final.', 'warn');
-                return;
-            }
-            document.getElementById('pipeline-stage-dialog')?.close?.();
-            showPipelineBlockInfo(block);
-        };
-        // A single click on the Final badge toggles the final synthesis after a short wait (cancelled by a double click).
-        // Off remembers the chosen synthesizer; on restores it, or the first selected model.
-        let lastFinalSynthesizer = '';
-        let finalSynthesisTimer = null;
-        const toggleFinalSynthesis = () => {
-            const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-                window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-            ));
-            if (current) {
-                lastFinalSynthesizer = current;
-                window.setSynthesisModelFromName?.('');
-                return;
-            }
-            const models = getSelectedLLMs();
-            const next = models.includes(lastFinalSynthesizer) ? lastFinalSynthesizer
-                : (models.includes('Claude') ? 'Claude' : models[0]);
-            if (!next || !window.setSynthesisModelFromName?.(next)) {
-                showNotification('Выберите модели, чтобы включить финальный синтез.', 'warn');
-            }
-        };
         pipelinePanel.addEventListener('dblclick', (event) => {
             const target = event.target;
-            if (!target?.closest || target.closest('#synthesis-flow-select') || target.closest('.pipeline-intermediate-synth')) return;
+            if (!target?.closest) return;
             // A double click on the empty body of a model block opens its card. Controls keep their own clicks.
             const modelBlock = target.closest('.model-block');
-            if (modelBlock && !modelBlock.classList.contains('pipeline-synthesis-block') && pipelinePanel.contains(modelBlock)
-                && !target.closest(BLOCK_CONTROL_SELECTOR)) {
+            if (modelBlock && pipelinePanel.contains(modelBlock) && !target.closest(BLOCK_CONTROL_SELECTOR)) {
                 event.preventDefault();
-                clearTimeout(finalSynthesisTimer);
                 showPipelineBlockInfo(modelBlock);
-                return;
             }
-            const finalTarget = target.closest('.pipeline-synthesis-block, #synthesisColumn .stage-label');
-            if (!finalTarget || !pipelinePanel.contains(finalTarget)) return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            clearTimeout(finalSynthesisTimer);
-            openFinalSynthesizerCard();
         });
 
         // The card's round role goes to each block's own mini-request selector, through its change
@@ -9162,25 +9353,27 @@ document.addEventListener('click', (event) => {
 
         // Stage card: the round badge opens the stage's card (template stage text,
         // who works, run status). Plain rounds show their participants.
-        // The answers a rule may read: the participants (enabled models) of the rounds and syntheses before the step.
-        const participantsBefore = (ref) => {
-            const steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [];
-            const at = steps.findIndex((step) => step.ref === ref);
-            return steps.slice(0, Math.max(0, at)).filter((step) => step.kind === 'round' || step.kind === 'synthesis').map((step) => ({
-                ref: step.ref,
-                label: stepLabel(step.ref),
-                participants: (step.models || []).filter((model) => model.enabled !== false).map((model) => ({ id: model.id ?? model.name, name: model.name }))
-            })).filter((item) => item.participants.length);
-        };
-        // The window of a control step: a gate, a route and an owner have their windows.
+        // The window of a control step: the owner has its window.
         // «Шаг после этапа» in the card of a round or a control: the new step stands after it, and the card closes to show it.
-        const addControlOptionsFor = (anchor, dialog) => {
-            const refused = intermediateAfterRound(anchor);
-            return {
-                disabled: pipelineRunActive || refused,
-                note: refused ? INTERMEDIATE_CONTROL_NOTE : '',
-                onAdd: async (kind) => { if (await insertControlAfter(anchor, kind)) dialog.close(); }
-            };
+        const addControlOptionsFor = (anchor, dialog) => ({
+            disabled: pipelineRunActive,
+            note: '',
+            onAdd: async (kind) => { if (await insertControlAfter(anchor, kind)) dialog.close(); }
+        });
+        // The round sources of the document for an owner: the rounds above it with exactly one enabled model.
+        const documentSourcesFor = (ownerRef) => {
+            const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+            const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []);
+            const index = steps.findIndex((step) => step.ref === ownerRef);
+            if (index < 0) return [];
+            return steps.slice(0, index).flatMap((step) => {
+                if (step.kind !== 'round') return [];
+                const enabled = (step.models || []).filter((model) => model.enabled !== false);
+                if (enabled.length !== 1) return [];
+                const model = enabled[0];
+                const declared = ['read', 'form'].includes((isObject(model.output) ? model.output : step.output)?.document);
+                return [{ ref: step.ref, label: `${step.ref} · ${model.name}${declared ? '' : ' (вид документа не объявлен)'}`, declared }];
+            });
         };
         const openControlCard = (ref) => {
             const dialog = document.getElementById('pipeline-stage-dialog');
@@ -9191,15 +9384,12 @@ document.addEventListener('click', (event) => {
             const { step } = entry;
             title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
             body.replaceChildren();
-            const options = { names: getAllPipelineModelNames(), refs: schemaRefsForWindows(), earlier: participantsBefore(ref), disabled: pipelineRunActive };
             const onEdit = async (edit) => {
                 if (pipelineRunActive) return;
                 await commitControl(ref, edit);
                 openControlCard(ref);
             };
-            if (step.kind === 'gate') window.StageCard.renderGateWindow(body, window.StageCard.gateWindowModel(step, options), onEdit);
-            if (step.kind === 'route') window.StageCard.renderRouteWindow(body, window.StageCard.routeWindowModel(step, options), onEdit);
-            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive }), onEdit);
+            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive, documentSources: documentSourcesFor(step.ref) }), onEdit);
             window.StageCard.renderAddControl(body, addControlOptionsFor(ref, dialog));
             if (!dialog.open) dialog.showModal();
         };
@@ -9211,7 +9401,7 @@ document.addEventListener('click', (event) => {
             const label = (roundBadge.textContent || '').trim();
             const match = /^R?(\d+)$/i.exec(label);
             if (!match || !window.StageCard) {
-                title.textContent = /^final$/i.test(label) ? 'Финальный синтез' : `Этап ${label}`;
+                title.textContent = `Этап ${label}`;
                 body.replaceChildren();
             } else {
                 const round = Number(match[1]);
@@ -9223,9 +9413,9 @@ document.addEventListener('click', (event) => {
                 const roleChoice = isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
-                        // The round card of Basic: the order, the input, the task, the number of answers, the owner and the output.
+                        // The round card of Basic: the input, the task, the owner and the output.
                         settings: getCustomRoundSettings()[`r${round}`] || {}, drafts: stepDraftsOf(`r${round}`), earlier: stepsBefore(`r${round}`),
-                        first: round === 1, inheritedTask: resolveCustomFields({}, 'round').task.value }
+                        first: round === 1 && !getCustomControls().some((item) => item.after === ''), inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
                 const model = window.StageCard.buildModel({
                     round,
@@ -9242,7 +9432,7 @@ document.addEventListener('click', (event) => {
                     onRoundPrompt: (text) => setCustomRoundPrompt(`r${round}`, text),
                     onSetting: async (field, value) => {
                         if (pipelineRunActive) return;
-                        await commitStepField(`r${round}`, field, value, (stack?.items || []).filter((item) => item.send).length);
+                        await commitStepField(`r${round}`, field, value);
                         openStageCard(roundBadge);
                     },
                     addControl: roleChoice ? addControlOptionsFor(`r${round}`, dialog) : null
@@ -9254,11 +9444,6 @@ document.addEventListener('click', (event) => {
             if (event.target.closest?.('[data-stage-close]')) event.currentTarget.close();
         });
 
-        // A single click on a stage insert toggles the intermediate synthesis after a short wait;
-        // a double click cancels that toggle and opens the synthesis card (Custom only).
-        let intermediateTimer = null;
-        // Function declarations are hoisted within this block; the bridge keeps the call explicit for tests and other scopes.
-        window.__toggleIntermediateSynthesis = toggleIntermediateSynthesis;
         pipelinePanel.addEventListener('click', (event) => {
             const controlCard = event.target?.closest?.('.pipeline-control-card');
             if (controlCard && pipelinePanel.contains(controlCard)) {
@@ -9271,20 +9456,9 @@ document.addEventListener('click', (event) => {
                 void deleteControl(controlDelete.dataset.controlDelete);
                 return;
             }
-            const insert = event.target?.closest?.('.pipeline-stage-insert');
-            if (insert) {
-                clearTimeout(intermediateTimer);
-                intermediateTimer = setTimeout(() => void window.__toggleIntermediateSynthesis?.(insert), 250);
-                return;
-            }
             const stageBadge = event.target?.closest?.('.round-badge');
             if (stageBadge && pipelinePanel.contains(stageBadge)) {
                 event.preventDefault();
-                if (stageBadge.closest('#synthesisColumn')) {
-                    clearTimeout(finalSynthesisTimer);
-                    finalSynthesisTimer = setTimeout(toggleFinalSynthesis, 250);
-                    return;
-                }
                 openStageCard(stageBadge);
                 return;
             }
@@ -9317,27 +9491,7 @@ document.addEventListener('click', (event) => {
             if (outside) stageDialog.close();
         });
 
-        // Opens the card without changing the stage; an absent stage shows its card from a virtual plan.
-        const openIntermediateCard = (insert) => {
-            showPipelineBlockInfo(insert);
-        };
-
         pipelinePanel.addEventListener('dblclick', (event) => {
-            const intermediateBlock = event.target.closest?.('.pipeline-intermediate-synth .pipeline-synthesis-block');
-            if (intermediateBlock && pipelinePanel.contains(intermediateBlock)) {
-                if (event.target.closest('select')) return;
-                event.preventDefault();
-                const headerInsert = intermediateBlock.closest('.stage-column')?.querySelector('.pipeline-stage-insert');
-                if (headerInsert && isCustomEnginePipeline()) openIntermediateCard(headerInsert);
-                return;
-            }
-            const insertBtn = event.target.closest?.('.pipeline-stage-insert');
-            if (insertBtn && pipelinePanel.contains(insertBtn)) {
-                event.preventDefault();
-                clearTimeout(intermediateTimer);
-                if (isCustomEnginePipeline()) openIntermediateCard(insertBtn);
-                return;
-            }
             const roundBadge = event.target.closest('.round-badge');
             if (roundBadge && pipelinePanel.contains(roundBadge)) {
                 event.preventDefault();
@@ -9372,8 +9526,7 @@ document.addEventListener('click', (event) => {
             let shouldCheck = true;
             if (modelStack) {
                 const allInputs = areAllChecked(modelStack, '.model-input-checkbox');
-                const allSends = areAllChecked(modelStack, '.model-send-checkbox');
-                shouldCheck = !(allInputs && allSends);
+                shouldCheck = !allInputs;
             } else {
                 return;
             }
@@ -9381,7 +9534,6 @@ document.addEventListener('click', (event) => {
             let changed = false;
             if (modelStack) {
                 changed = setCheckboxesState(modelStack, '.model-input-checkbox', shouldCheck) || changed;
-                changed = setCheckboxesState(modelStack, '.model-send-checkbox', shouldCheck) || changed;
             }
             if (changed) {
                 updatePipelineAll();
@@ -9405,16 +9557,9 @@ document.addEventListener('click', (event) => {
             if (
                 !pipelineApplyingConfig
                 && target.closest?.('#r1-models')
-                && target.matches('.model-input-checkbox, .model-send-checkbox')
+                && target.matches('.model-input-checkbox')
             ) {
                 pipelineR1ManualDirty = true;
-            }
-            if (target.matches('.model-input-checkbox')) {
-                const block = target.closest('.model-block');
-                const sendCb = block?.querySelector('.model-send-checkbox');
-                if (target.checked && sendCb) {
-                    sendCb.checked = true;
-                }
             }
             if (target.matches('input[type="checkbox"]') || target.matches('.role-selector')) {
                 updatePipelineAll();
@@ -9436,6 +9581,8 @@ document.addEventListener('click', (event) => {
         pipelineSaveBtn?.addEventListener('click', savePipeline);
         pipelineDeleteBtn?.addEventListener('click', deleteActivePipeline);
         pipelineExportBtn?.addEventListener('click', exportBasicSchema);
+        pipelineExportAllBtn?.addEventListener('click', exportBasicCatalog);
+        pipelineProfileBtn?.addEventListener('click', openSchemaPasteWindow);
         pipelineImportBtn?.addEventListener('click', importPipelines);
         // Pipeline Get it: double click on Run runs the main page's collection pass for the
         // running stage's models (or the selected models when no stage is waiting).
@@ -9507,7 +9654,7 @@ document.addEventListener('click', (event) => {
                 const closed = pipelineWaiter.closeAnsweredBatches('moderator_closed');
                 window.MessageDelivery?.batchEvent?.('moderator_stage_close', { answered: preview.answeredModels, adopted: preview.partialModels, skipped: closed.skipped, stillWaiting: closed.stillWaiting });
                 if (closed.stillWaiting) {
-                    showNotification(`Этап закрыт частично: ${closed.stillWaiting} ожидание(й) ещё без ответов.`, 'info');
+                    showNotification(`Этап закрыт частично: ${closed.stillWaiting} вопрос(ов) ещё без ответов.`, 'info');
                 }
                 return;
             }
@@ -16361,7 +16508,7 @@ document.addEventListener('click', (event) => {
         secondary.forEach(pushUnique);
         return merged;
     };
-    const getTelemetryEventsForExport = async (snapshotTs = Date.now()) => {
+    const getTelemetryEventsForExport = async (snapshotTs = Date.now(), { applyFilters = true } = {}) => {
         const bridge = getTelemetryBridge();
         let bridgeEvents = [];
         if (bridge && typeof bridge.getLatestEvents === 'function') {
@@ -16386,7 +16533,7 @@ document.addEventListener('click', (event) => {
         });
         // Уважаем активный фильтр окна телеметрии: при выбранной одной модели
         // экспорт не должен тянуть все платформы.
-        if (bridge && typeof bridge.applyActiveFilter === 'function') {
+        if (applyFilters && bridge && typeof bridge.applyActiveFilter === 'function') {
             try {
                 const filtered = bridge.applyActiveFilter(merged);
                 return typeof bridge.applyOnlyProblemsFilter === 'function'
@@ -16716,6 +16863,49 @@ document.addEventListener('click', (event) => {
             return null;
         }
     };
+
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('#disput-basic');
+        if (!button || button.disabled) return;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        try {
+            // Freeze the live record before awaiting storage: in-flight attempts stay in-flight,
+            // and the 600 ms persistence delay cannot hide a new run or its latest answers.
+            basicCardHistory?.flush();
+            const customRun = latestBasicRunRecord
+                ? JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))
+                : await readLatestCustomRun();
+            if (!customRun) {
+                showNotification('Basic: нет записи прогона для экспорта.', 'info');
+                flashButtonFeedback(button, 'warn');
+                return;
+            }
+            const snapshotTs = Date.now();
+            const executionActive = Boolean(customAbortController && activePipelineRunContext?.pipelineRunId === customRun.runId);
+            let deliverySnap = null;
+            if (window.MessageDelivery?.snapshot) {
+                try {
+                    deliverySnap = await window.MessageDelivery.snapshot();
+                } catch (_) {}
+            }
+            const delivery = JSON.parse(JSON.stringify({
+                journal: deliverySnap?.events || window.MessageDelivery?.journal?.() || [],
+                collection: deliverySnap?.collection || window.MessageDelivery?.collection?.() || {}
+            }));
+            const events = await getTelemetryEventsForExport(snapshotTs, { applyFilters: false });
+            const report = window.BasicTelemetry.buildReport({ customRun, delivery, events, executionActive,
+                exportedAt: new Date(snapshotTs).toISOString(), extensionVersion: chrome.runtime.getManifest().version });
+            downloadDiagnosticsJson('Basic', report, button);
+        } catch (error) {
+            console.error('[Basic telemetry] export failed', error);
+            showNotification(`Basic: экспорт не выполнен (${error.message || error}).`, 'error');
+            flashButtonFeedback(button, 'error');
+        } finally {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        }
+    });
 
     document.addEventListener('click', async (event) => {
         const disputBtn = event.target.closest('#disput-export-json');
@@ -18622,7 +18812,8 @@ document.addEventListener('click', (event) => {
         'SELECTOR_OVERRIDE_CLEARED',
         'SELECTOR_OVERRIDE_REFRESH_RESULT',
         'PICKER_RESULT',
-        'PICKER_CANCELLED'
+        'PICKER_CANCELLED',
+        'participant_chat_resolved'
     ]);
 
     // Only acknowledge messages owned by the results page. A catch-all response
@@ -18642,6 +18833,30 @@ document.addEventListener('click', (event) => {
         }
         try {
             switch (message.type) {
+                case 'participant_chat_resolved': {
+                    if (window.MessageDelivery?.batchEvent) {
+                        window.MessageDelivery.batchEvent('participant_chat_resolved', { ...message });
+                    }
+                    if (latestBasicRunRecord) {
+                        const route = {
+                            action: message.action,
+                            reason: message.reason,
+                            tabId: message.tabId,
+                            transportRequestId: message.transportRequestId,
+                            eventId: message.eventId || message.sourceEventId
+                        };
+                        const targetKey = message.attemptKey;
+                        if (targetKey) {
+                            window.CustomRunRecord?.updateAttemptRoute?.(latestBasicRunRecord, targetKey, route);
+                        } else if (message.transportRequestId) {
+                            const match = (latestBasicRunRecord.attempts || []).find((att) => att.transportRequestId === message.transportRequestId);
+                            if (match) {
+                                window.CustomRunRecord?.updateAttemptRoute?.(latestBasicRunRecord, match.key || match.attemptKey, route);
+                            }
+                        }
+                    }
+                    break;
+                }
                 case 'LLM_JOB_CREATED':
                     handleLLMJobCreated(message);
                     break;
@@ -21584,16 +21799,6 @@ function checkCompareButtonState() {
     const debateDirectionIcon = document.getElementById('direction-icon');
     var debateModMessageBody = document.getElementById('mod-message-body');
     const debateMiniPrompts = document.getElementById('mod-mini-prompts');
-    function normalizeExplicitSynthesizer(value) {
-        const normalized = String(value || '').trim();
-        return normalized.toLowerCase() === 'auto' ? '' : normalized;
-    }
-    var synthesisColumn = document.getElementById('synthesisColumn');
-    var connectorToSynthesis = document.getElementById('connectorToSynthesis');
-    var synthesisStack = document.getElementById('synthesis-stack');
-    function getSynthesizerFlowSelect() {
-        return synthesisStack?.querySelector('#synthesis-flow-select') || null;
-    }
     const debateLengthSelect = document.getElementById('debate-length-select');
     const debateSelToolbar = document.getElementById('debateSelTb');
     const DEBATE_SELECTORS_STORAGE_KEY = 'aoSelectors.v1';
@@ -21630,187 +21835,7 @@ function checkCompareButtonState() {
     const debateMessageStore = new Map();
     const debateDomIndex = new Map();
     const DebateEngineRuntime = window.DebateEngine || null;
-    function getAllModelNames() {
-        return (Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : [])
-            .map((model) => model?.name)
-            .filter(Boolean);
-    }
-    // The flow select is disabled while the final synthesis is off (no synthesizer) or a run is active.
-    function syncFlowSelectLock(flowSelect, current) {
-        if (!flowSelect) return;
-        const locked = !!pipelineRunActive;
-        flowSelect.disabled = locked || !current;
-    }
-    function renderSynthesisStage() {
-        if (!synthesisStack) return;
-        const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        const flowSelectId = 'synthesis-flow-select';
-        const flowSelectClass = 'synthesis-flow-select';
-        // No "None" option: the off state is the Final badge (no synthesizer selected leaves the select empty).
-        const options = getAllModelNames()
-            .map((modelName) => `<option value="${escapeHtml(modelName)}">${escapeHtml(modelName)}</option>`)
-            .join('');
-        synthesisColumn?.classList.toggle('pipeline-final-off', !current);
-        synthesisStack.innerHTML = `
-            <div class="model-block inactive pipeline-synthesis-block" data-synthesis-stage="true" data-synthesis-kind="universal">
-                <div class="model-header">
-                    <span class="status-indicator" aria-hidden="true"></span>
-                    <span class="model-name">Synthesis</span>
-                </div>
-                <select id="${flowSelectId}" class="${flowSelectClass}" aria-label="Synthesis model in flow">
-                    ${options}
-                </select>
-            </div>
-        `;
-        const flowSelect = getSynthesizerFlowSelect();
-        if (flowSelect) {
-            flowSelect.value = current;
-            syncFlowSelectLock(flowSelect, current);
-            flowSelect.addEventListener('change', (event) => {
-                window.setSynthesisModelFromName?.(event.target?.value || '');
-            });
-        }
-        const block = synthesisStack.querySelector('.pipeline-synthesis-block');
-        if (block) {
-            block.classList.toggle('selected-synthesizer', !!current);
-            block.title = current ? `Final synthesizer: ${current}` : 'Select a synthesizer model';
-        }
-        // The block is rebuilt from markup here: it gets the stage state again (no run classes come with the markup).
-        window.__syncPipelineRunStateVisuals?.();
-        renderDraftPlanCanvas();
-    }
-
-    function activeDraftPlanForCanvas() {
-        return window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.()) || { plannedStages: [] };
-    }
-    function syncStageInsertControls(plan = activeDraftPlanForCanvas()) {
-        const editable = true;
-        const roundStageIds = (plan.plannedStages || [])
-            .filter((stage) => /^canvas-r\d+$/.test(stage.plannedStageId || ''))
-            .map((stage) => stage.plannedStageId);
-        const workingStages = (plan.plannedStages || [])
-            .filter((stage) => stage.outputIntent === 'working_synthesis');
-        pipelinePanel?.querySelectorAll('.pipeline-stage-insert').forEach((button) => {
-            const afterStageId = button.dataset.afterStageId || '';
-            const activeStage = workingStages.find((stage) => stage.upstream?.includes(afterStageId));
-            const isBetweenRounds = roundStageIds.indexOf(afterStageId) >= 0
-                && roundStageIds.indexOf(afterStageId) < roundStageIds.length - 1;
-            const enabled = editable && isBetweenRounds;
-            // Only the gaps between two rounds exist: the insert after the last round is hidden, not disabled.
-            button.hidden = !isBetweenRounds;
-            button.disabled = !enabled;
-            button.classList.toggle('has-intermediate-synthesis', !!activeStage);
-            button.setAttribute('aria-pressed', String(!!activeStage));
-            button.title = !editable
-                ? 'Stages can be changed before a run or while it is paused'
-                : !isBetweenRounds
-                    ? 'Intermediate synthesis can be placed only between rounds'
-                    : activeStage
-                        ? 'Click to remove (double-click for its request)'
-                        : 'Click to add intermediate synthesis';
-        });
-    }
-    function renderDraftPlanCanvas() {
-        if (!pipelinePanel || !window.DebateDraftPlan) return;
-        const plan = activeDraftPlanForCanvas();
-        syncStageInsertControls(plan);
-    }
-    window.__syncStageInsertControls = () => syncStageInsertControls();
-    async function removeIntermediateSynthesis(plan, target) {
-        const next = JSON.parse(JSON.stringify(plan));
-        next.plannedStages.forEach((stage) => {
-            if ((stage.upstream || []).includes(target.plannedStageId)) {
-                stage.upstream = [...stage.upstream.filter((id) => id !== target.plannedStageId), ...(target.upstream || [])];
-            }
-        });
-        next.plannedStages = next.plannedStages.filter((stage) => stage.plannedStageId !== target.plannedStageId);
-        window.__persistActivePipelineDraftPlan?.(next);
-        renderDraftPlanCanvas();
-        window.__updatePipelineAll?.();
-        return true;
-    }
-    async function toggleIntermediateSynthesis(button) {
-        if (!button || button.disabled) return false;
-        const plan = activeDraftPlanForCanvas();
-        const afterPlannedStageId = button.dataset.afterStageId || '';
-        const existing = (plan.plannedStages || []).find((stage) =>
-            stage.outputIntent === 'working_synthesis' && stage.upstream?.includes(afterPlannedStageId));
-        if (existing) return removeIntermediateSynthesis(plan, existing);
-        if (window.__controlledAfter?.(afterPlannedStageId.replace(/^canvas-/, ''))) {
-            showNotification(INTERMEDIATE_CONTROL_NOTE, 'warn');
-            return false;
-        }
-        // Independent of the final synthesis: an intermediate one falls back to the default synthesizer.
-        const synthesizer = window.__getDraftPlanSynthesizer?.(plan) || window.__getDefaultSynthesizerName?.();
-        const result = window.DebateDraftPlan.insertSynthesis(plan, {
-            afterPlannedStageId,
-            participantIds: [synthesizer],
-            plannedStageId: `planned-working-synthesis-after-${afterPlannedStageId}`
-        });
-        if (!result.ok) {
-            showNotification(result.reasonCode || 'Cannot insert synthesis stage.', 'warn');
-            return false;
-        }
-        window.__persistActivePipelineDraftPlan?.(result.plan);
-        renderDraftPlanCanvas();
-        window.__updatePipelineAll?.();
-        return true;
-    }
-    // The intermediate card's select sets the model of its own stage (participantIds[0]).
-    window.__setIntermediateSynthesisModel = (afterPlannedStageId, modelName) => {
-        const plan = activeDraftPlanForCanvas();
-        const stage = (plan.plannedStages || []).find((item) =>
-            item.outputIntent === 'working_synthesis' && item.upstream?.includes(afterPlannedStageId));
-        if (!stage || !modelName) return false;
-        const next = JSON.parse(JSON.stringify(plan));
-        next.plannedStages.find((item) => item.plannedStageId === stage.plannedStageId).participantIds = [modelName];
-        window.__persistActivePipelineDraftPlan?.(next);
-        renderDraftPlanCanvas();
-        window.__updatePipelineAll?.();
-        return true;
-    };
-    pipelinePanel?.addEventListener('click', (event) => {
-        const insert = event.target.closest('.pipeline-stage-insert');
-        if (!insert) return;
-        event.preventDefault();
-    });
-    function syncSynthesizerFlowStage() {
-        if (!synthesisStack) return;
-        const current = normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        const flowSelect = getSynthesizerFlowSelect();
-        const block = synthesisStack.querySelector('.pipeline-synthesis-block');
-        synthesisColumn?.classList.toggle('pipeline-final-off', !current);
-        if (flowSelect && flowSelect.value !== current) flowSelect.value = current;
-        syncFlowSelectLock(flowSelect, current);
-        if (block) {
-            block.classList.toggle('selected-synthesizer', !!current);
-            block.title = current ? `Final synthesizer: ${current}` : 'Select a synthesizer model';
-        }
-    }
-    function populateSynthesizerSelect() {
-        // The Canvas select is recreated from the persisted DraftPlan, so it
-        // cannot retain a second, hidden source of state.
-        renderSynthesisStage();
-    }
     function syncDebateSchemeUi() {
-        const presetMeta = getSelectedPipelinePresetMeta();
-        const currentRoundLimit = String(debateRoundLimitSelect?.value || '').trim();
-        const usesSynthesisStage = window.ResultsDebateUi?.usesSynthesisStage
-            ? window.ResultsDebateUi.usesSynthesisStage({ presetMeta, roundLimit: currentRoundLimit })
-            : (presetMeta.duration !== 'open_ended' || currentRoundLimit !== 'infinite');
-        // A persisted explicit synthesizer is itself a user request for the
-        // terminal synthesis stage. This must win over the transient startup
-        // round-limit value, otherwise reload hides the restored block when
-        // the saved configuration uses an open-ended/infinite limit.
-        const hasExplicitSynthesizer = !!normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        const shouldRenderSynthesisStage = usesSynthesisStage || hasExplicitSynthesizer;
-        const runActive = !!pipelineRunActive;
         const roundLimitControl = debateRoundLimitSelect?.closest?.('.debate-select-wrap') || debateRoundLimitSelect || null;
         const showRoundLimitControl = shouldShowDebateRoundLimitControl();
         if (roundLimitControl) {
@@ -21821,31 +21846,7 @@ function checkCompareButtonState() {
             debateRoundLimitSelect.hidden = !showRoundLimitControl;
             debateRoundLimitSelect.disabled = !showRoundLimitControl;
         }
-        const flowSelect = getSynthesizerFlowSelect();
-        if (flowSelect) flowSelect.disabled = runActive || !shouldRenderSynthesisStage;
-        document.querySelectorAll('.synthesizer-capable').forEach((el) => {
-            el.hidden = !shouldRenderSynthesisStage;
-            el.setAttribute('aria-hidden', String(!shouldRenderSynthesisStage));
-        });
-        document.querySelectorAll('.synthesis-capable').forEach((el) => {
-            el.hidden = !shouldRenderSynthesisStage;
-            el.setAttribute('aria-hidden', String(!shouldRenderSynthesisStage));
-        });
-
         document.querySelectorAll('.registry-capable').forEach((el) => { el.hidden = false; el.setAttribute('aria-hidden', 'false'); });
-        renderSynthesisStage();
-        const currentFlowSelect = getSynthesizerFlowSelect();
-        const hasActivePipelineModels = getSelectedLLMs().length > 0;
-        const hasFinalSynthesizer = !!normalizeExplicitSynthesizer(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ));
-        if (currentFlowSelect) currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels || !hasFinalSynthesizer;
-        const activeSynthesisValue = String(window.__getDraftPlanSynthesizer?.(
-            window.__pipelineDraftPlanForCanvas?.(window.__getActivePipelineDraftPlan?.())
-        ) || '').trim();
-        if (currentFlowSelect && currentFlowSelect.value !== activeSynthesisValue) {
-            currentFlowSelect.value = activeSynthesisValue;
-        }
     }
     window.syncDebateSchemeUi = syncDebateSchemeUi;
     const setDebateSchemeValue = () => {
@@ -21853,7 +21854,6 @@ function checkCompareButtonState() {
         syncDebateSchemeUi();
     };
     window.setDebateSchemeValue = setDebateSchemeValue;
-    populateSynthesizerSelect();
     const debateTranscriptStore = DebateEngineRuntime?.createStore?.({
         session: {
             sessionId: '1',
@@ -22304,6 +22304,11 @@ function checkCompareButtonState() {
             sourceMessageId: card?.dataset?.sourceMessageId || '',
             sourceCardId: card?.dataset?.sourceCardId || '',
             responseId: card?.dataset?.responseId || '',
+            participantId: card?.dataset?.participantId || null,
+            stepRef: card?.dataset?.stepRef || null,
+            visit: (card?.dataset?.visit !== undefined && card?.dataset?.visit !== '')
+                ? (Number.isFinite(Number(card.dataset.visit)) ? Number(card.dataset.visit) : card.dataset.visit)
+                : null,
             model: String(card?.dataset?.llmName || card?.querySelector?.('.debate-model-card-name')?.textContent || (isModerator ? 'Moderator' : 'Model')).trim(),
             role: String(roleEl?.textContent || '').trim(),
             text: String(outputEl?.innerText || outputEl?.textContent || '').trim(),
@@ -22323,6 +22328,16 @@ function checkCompareButtonState() {
         if (message.responseId) card.dataset.responseId = message.responseId;
         if (message.sourceMessageId) card.dataset.sourceMessageId = message.sourceMessageId;
         if (message.sourceCardId) card.dataset.sourceCardId = message.sourceCardId;
+        if (message.participantId || message.delivery?.participantId || message.metadata?.participantId) {
+            card.dataset.participantId = message.participantId || message.delivery?.participantId || message.metadata?.participantId;
+        }
+        if (message.stepRef || message.delivery?.stepRef || message.metadata?.stepRef) {
+            card.dataset.stepRef = message.stepRef || message.delivery?.stepRef || message.metadata?.stepRef;
+        }
+        const messageVisit = message.visit ?? message.delivery?.visit ?? message.metadata?.visit;
+        if (messageVisit !== undefined && messageVisit !== null && messageVisit !== '') {
+            card.dataset.visit = String(messageVisit);
+        }
         if (message.status === 'approved' || message.kind === 'moderator') card.dataset.approved = 'true';
         if (message.status === 'printing') card.dataset.live = 'true';
         const favBtn = card.querySelector('.debate-fav');
@@ -22341,6 +22356,14 @@ function checkCompareButtonState() {
         const existingId = patch.id || card.dataset.entryId || card.dataset.messageId || '';
         const messageId = existingId || makeDebateEntryId(card.dataset.kind || snapshot.kind || 'entry');
         const prev = debateMessageStore.get(messageId) || null;
+        const participantId = card.dataset.participantId || patch.participantId || snapshot.participantId || prev?.participantId || prev?.delivery?.participantId || prev?.metadata?.participantId || null;
+        const stepRef = card.dataset.stepRef || patch.stepRef || snapshot.stepRef || prev?.stepRef || prev?.delivery?.stepRef || prev?.metadata?.stepRef || null;
+        const rawVisit = (card.dataset.visit !== undefined && card.dataset.visit !== '')
+            ? card.dataset.visit
+            : (patch.visit ?? snapshot.visit ?? prev?.visit ?? prev?.delivery?.visit ?? prev?.metadata?.visit ?? null);
+        const visit = (rawVisit !== null && rawVisit !== undefined && rawVisit !== '')
+            ? (Number.isFinite(Number(rawVisit)) ? Number(rawVisit) : rawVisit)
+            : null;
         const message = {
             id: messageId,
             turnId: String(snapshot.turnId ?? prev?.turnId ?? card.dataset.turnId ?? ''),
@@ -22364,6 +22387,26 @@ function checkCompareButtonState() {
             order: typeof prev?.order === 'number' ? prev.order : debateFeedState.nextId++,
             updatedAt: Date.now()
         };
+        if (participantId) {
+            message.participantId = participantId;
+            card.dataset.participantId = participantId;
+        }
+        if (stepRef) {
+            message.stepRef = stepRef;
+            card.dataset.stepRef = stepRef;
+        }
+        if (visit !== null) {
+            message.visit = visit;
+            card.dataset.visit = String(visit);
+        }
+        message.metadata = {
+            ...(prev?.metadata || {}),
+            ...(snapshot.metadata || {}),
+            ...(patch.metadata || {}),
+            ...(participantId ? { participantId } : {}),
+            ...(stepRef ? { stepRef } : {}),
+            ...(visit !== null ? { visit } : {})
+        };
         if (card.dataset.pipelineRoundId) {
             message.delivery = {
                 ...message.delivery,
@@ -22374,6 +22417,9 @@ function checkCompareButtonState() {
         }
         message.delivery = {
             ...message.delivery,
+            ...(participantId ? { participantId } : {}),
+            ...(stepRef ? { stepRef } : {}),
+            ...(visit !== null ? { visit } : {}),
             sourceUrl: card.dataset.sourceUrl || message.delivery?.sourceUrl || '',
             responseTimestamp: card.dataset.responseTimestamp || message.delivery?.responseTimestamp || ''
         };
@@ -22958,7 +23004,14 @@ function checkCompareButtonState() {
         card.dataset.approvalSelectable = status === 'pending' && !isDebateApprovalAutoMode() ? 'true' : 'false';
         card.dataset.live = status === 'printing' ? 'true' : 'false';
         card.dataset.turnClosed = status === 'printing' ? 'false' : 'true';
-        setDebateCardRound(card, { ...turn.delivery, completedAt: turn.completedAt, createdAt: turn.createdAt });
+        setDebateCardRound(card, {
+            ...turn.delivery,
+            participantId: turn.participantId || turn.delivery?.participantId || turn.metadata?.participantId,
+            stepRef: turn.stepRef || turn.delivery?.stepRef || turn.metadata?.stepRef,
+            visit: turn.visit ?? turn.delivery?.visit ?? turn.metadata?.visit,
+            completedAt: turn.completedAt,
+            createdAt: turn.createdAt
+        });
         const approvalHtml = status === 'pending' && kind !== 'moderator' ? buildApprovalCheckboxHtml(true) : '';
         card.innerHTML = `
             <div class="debate-model-card-header">
@@ -23186,7 +23239,7 @@ function checkCompareButtonState() {
         });
         applyDebateSessionFilter();
     }
-    function appendModeratorFeedEntry(text) {
+    function appendModeratorFeedEntry(text, { pipelineRunId = '' } = {}) {
         if (!debateModelCards) return;
         const normalizedText = cleanFeedText(text);
         if (!normalizedText) return;
@@ -23198,6 +23251,7 @@ function checkCompareButtonState() {
         card.className = 'debate-model-card debate-moderator-card';
         card.dataset.sessionId = session.id;
         card.dataset.llmName = 'Moderator';
+        if (pipelineRunId) card.dataset.pipelineRunId = pipelineRunId;
         card.dataset.entryKind = 'response';
         card.dataset.kind = 'moderator';
         card.dataset.starred = 'false';
@@ -23303,11 +23357,20 @@ function checkCompareButtonState() {
     function resolveDebateFeedMeta(meta = {}) {
         const requestId = String(meta.transportRequestId || meta.requestId || '').trim();
         const context = pipelineWaiter.responseContexts.get(requestId) || {};
+        const participantId = meta.participantId || context.participantId || null;
+        const stepRef = meta.stepRef || context.stepRef || null;
+        const rawVisit = (meta.visit !== undefined && meta.visit !== null && meta.visit !== '')
+            ? meta.visit
+            : ((context.visit !== undefined && context.visit !== null && context.visit !== '') ? context.visit : null);
+        const visit = rawVisit !== null ? (Number.isFinite(Number(rawVisit)) ? Number(rawVisit) : rawVisit) : null;
         return {
             ...meta,
             requestId,
             pipelineRunId: String(meta.pipelineRunId || context.pipelineRunId || '').trim(),
-            pipelineRoundId: String(meta.pipelineRoundId || meta.roundId || context.pipelineRoundId || '').trim().toLowerCase()
+            pipelineRoundId: String(meta.pipelineRoundId || meta.roundId || context.pipelineRoundId || '').trim().toLowerCase(),
+            participantId: participantId ? String(participantId) : null,
+            stepRef: stepRef ? String(stepRef) : null,
+            visit
         };
     }
     function syncDebateCardRound(card) {
@@ -23329,6 +23392,9 @@ function checkCompareButtonState() {
         if (meta.pipelineRoundId) card.dataset.pipelineRoundId = meta.pipelineRoundId;
         if (meta.pipelineRunId) card.dataset.pipelineRunId = meta.pipelineRunId;
         if (meta.requestId) card.dataset.requestId = meta.requestId;
+        if (meta.participantId) card.dataset.participantId = String(meta.participantId);
+        if (meta.stepRef) card.dataset.stepRef = String(meta.stepRef);
+        if (meta.visit !== undefined && meta.visit !== null && meta.visit !== '') card.dataset.visit = String(meta.visit);
         const timestamp = meta.completedAt || meta.responseTimestamp || meta.createdAt || meta.timestamp;
         if (timestamp && Number.isFinite(new Date(/^\d+$/.test(String(timestamp)) ? Number(timestamp) : timestamp).getTime())) card.dataset.responseTimestamp = String(timestamp);
         if (!card.dataset.responseTimestamp) card.dataset.responseTimestamp = String(Date.now());
@@ -23337,8 +23403,33 @@ function checkCompareButtonState() {
         syncDebateCardRound(card);
     }
     function matchesDebateCardRound(card, meta = {}) {
-        return card.dataset.pipelineRoundId === meta.pipelineRoundId
-            && String(card.dataset.pipelineRunId || '') === String(meta.pipelineRunId || '');
+        if (!card || !(card instanceof HTMLElement)) return false;
+        const cardRunId = String(card.dataset.pipelineRunId || '');
+        const metaRunId = String(meta.pipelineRunId || '');
+        if (cardRunId !== metaRunId) return false;
+
+        const cardParticipant = card.dataset.participantId || '';
+        const metaParticipant = meta.participantId ? String(meta.participantId) : '';
+        const hasParticipant = Boolean(cardParticipant || metaParticipant);
+
+        if (hasParticipant) {
+            if (cardParticipant !== metaParticipant) return false;
+
+            const cardVisit = (card.dataset.visit !== undefined && card.dataset.visit !== '') ? String(card.dataset.visit) : '';
+            const metaVisit = (meta.visit !== undefined && meta.visit !== null && meta.visit !== '') ? String(meta.visit) : '';
+            if ((cardVisit || metaVisit) && cardVisit !== metaVisit) return false;
+
+            const cardStepRef = card.dataset.stepRef || '';
+            const metaStepRef = meta.stepRef ? String(meta.stepRef) : '';
+            if (cardStepRef && metaStepRef && cardStepRef !== metaStepRef) return false;
+
+            if (card.dataset.pipelineRoundId || meta.pipelineRoundId) {
+                if (String(card.dataset.pipelineRoundId || '') !== String(meta.pipelineRoundId || '')) return false;
+            }
+            return true;
+        }
+
+        return card.dataset.pipelineRoundId === meta.pipelineRoundId;
     }
     // A model has at most ONE answer card per round, including completed cards.
     // Legacy responses without round identity reuse the open card of their request.
@@ -23350,20 +23441,29 @@ function checkCompareButtonState() {
         const meta = resolveDebateFeedMeta(options);
         const requestId = meta.requestId;
         const matches = Array.from(debateModelCards.querySelectorAll('.debate-model-card'))
-            .filter((card) => (
-                card.dataset.sessionId === session.id
-                && card.dataset.llmName === llmName
-                && card.dataset.kind !== 'moderator'
-                && card.dataset.kind !== 'fragment'
-                && (meta.pipelineRoundId
-                    ? (matchesDebateCardRound(card, meta)
+            .filter((card) => {
+                if (card.dataset.sessionId !== session.id) return false;
+                if (card.dataset.llmName !== llmName) return false;
+                if (card.dataset.kind === 'moderator' || card.dataset.kind === 'fragment') return false;
+
+                if (meta.participantId) {
+                    if (card.dataset.participantId !== meta.participantId) return false;
+                    if (meta.visit !== undefined && meta.visit !== null && meta.visit !== '') {
+                        const cardVisit = (card.dataset.visit !== undefined && card.dataset.visit !== '') ? String(card.dataset.visit) : '';
+                        if (cardVisit && cardVisit !== String(meta.visit)) return false;
+                    }
+                }
+
+                if (meta.pipelineRoundId) {
+                    return matchesDebateCardRound(card, meta)
                         || (!card.dataset.pipelineRoundId && requestId && card.dataset.requestId === requestId)
-                        || (card.dataset.entryKind === 'placeholder' && !card.dataset.pipelineRoundId))
-                    : (card.dataset.turnClosed !== 'true'
-                        && card.dataset.approved !== 'true'
-                        && card.dataset.starred !== 'true'
-                        && (!requestId || card.dataset.requestId === requestId || card.dataset.entryKind === 'placeholder')))
-            ));
+                        || (card.dataset.entryKind === 'placeholder' && !card.dataset.pipelineRoundId && !card.dataset.participantId);
+                }
+                return card.dataset.turnClosed !== 'true'
+                    && card.dataset.approved !== 'true'
+                    && card.dataset.starred !== 'true'
+                    && (!requestId || card.dataset.requestId === requestId || card.dataset.entryKind === 'placeholder');
+            });
         if (!matches.length) return null;
         const preferred = (meta.pipelineRoundId && matches.find((card) => (
             card.dataset.approved === 'true' || card.dataset.starred === 'true'
@@ -23375,7 +23475,7 @@ function checkCompareButtonState() {
             removeDebateCardMessage(card);
             card.remove();
         });
-        if (meta.pipelineRoundId && !matchesDebateCardRound(preferred, meta)) {
+        if ((meta.pipelineRoundId || meta.participantId) && !matchesDebateCardRound(preferred, meta)) {
             setDebateCardRound(preferred, meta);
             patchDebateCardMessage(preferred);
         }
@@ -23511,7 +23611,7 @@ function checkCompareButtonState() {
     function appendPostTerminalAnswerRevision(session, llmName, text, html = '', meta = {}) {
         if (!debateModelCards || !session || !llmName) return false;
         meta = resolveDebateFeedMeta(meta);
-        if (meta.pipelineRoundId) resolveSingleDebateAnswerCard(session, llmName, meta);
+        if (meta.pipelineRoundId || meta.participantId) resolveSingleDebateAnswerCard(session, llmName, meta);
         const requestId = String(meta.requestId || '').trim();
         // Same cleaning as the live path (delivery token, instruction echo, trailing
         // blanks): a re-emitted copy of the shown answer is not a revision.
@@ -23525,7 +23625,7 @@ function checkCompareButtonState() {
                 && card.dataset.kind !== 'moderator'
                 && card.dataset.kind !== 'fragment'
                 && card.dataset.kind !== 'revision'
-                && (!meta.pipelineRoundId || matchesDebateCardRound(card, meta))
+                && (!meta.pipelineRoundId && !meta.participantId ? true : matchesDebateCardRound(card, meta))
                 // Settled for the live path: closed, or taken by the moderator
                 // (approved — Next/Pause adopt a still-printing card), or starred.
                 && (card.dataset.turnClosed === 'true' || card.dataset.approved === 'true' || card.dataset.starred === 'true')
@@ -23652,7 +23752,7 @@ function checkCompareButtonState() {
         const isFinal = isFinalResponseMeta(meta);
         const attributionState = String(meta.attributionState || '');
         const contentHash = `${isFinal ? 'final' : 'printing'}|${attributionState}|${normalizedText.length}:${normalizedText.slice(0, 64)}|${normalizedHtml.length}:${normalizedHtml.slice(0, 64)}`;
-        const contentScopeKey = `${modelKey}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${requestId || 'unscoped'}`;
+        const contentScopeKey = `${modelKey}:${meta.participantId || ''}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${meta.visit || ''}:${requestId || 'unscoped'}`;
         if (debateFeedState.lastCommittedHashByModel[contentScopeKey] === contentHash) return;
         debateFeedState.lastCommittedHashByModel[contentScopeKey] = contentHash;
         const liveCard = resolveSingleDebateAnswerCard(session, llmName, meta);

@@ -35,7 +35,30 @@
     Object.freeze({ name: 'Default', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant'] }),
   ]);
 
-  const PRESET_BY_ID = Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));
+  // Basic schemas seeded into the list on the first start (results.js, initPipelineList). Not presets and not
+  // BUILTIN_PIPELINE_DEFINITIONS: each one is seeded once (pipelineStore.seeded); a deleted one is not restored.
+  const BUILTIN_SCHEMAS = Object.freeze({
+    user_doc: Object.freeze({
+      schemaVersion: 1, origin: 'user',
+      description: 'Опросник: DeepSeek составляет опросник по задаче из поля модератора, User заполняет его и нажимает «Отправить», ответы отправляются DeepSeek, он пересказывает их по пунктам.',
+      run: Object.freeze({ policy: 'auto' }),
+      steps: Object.freeze([
+        Object.freeze({ ref: 'r1', kind: 'round', models: Object.freeze([Object.freeze({ name: 'DeepSeek' })]),
+          task: 'Составь опросник из 5–7 пунктов, чтобы уточнить у пользователя его задачу. Используй разные типы пунктов; ключевые пометь обязательными.',
+          output: Object.freeze({ format: 'json', document: 'form' }) }),
+        Object.freeze({ ref: 'owner:fill', kind: 'owner', models: Object.freeze([]),
+          task: 'Заполните опросник и нажмите «Отправить».',
+          document: 'r1' }),
+        Object.freeze({ ref: 'r2', kind: 'round', models: Object.freeze([Object.freeze({ name: 'DeepSeek' })]), input: 'previous',
+          task: 'Тебе передан заполненный пользователем опросник (вопрос — ответ). Перечисли по пунктам, какие ответы ты получил, и в двух предложениях скажи, что понял о задаче пользователя.' })
+      ])
+    })
+  });
+
+  // Revision of each built-in schema. A higher revision replaces the copy already seeded into the list (results.js, seedBuiltinSchemas).
+  const BUILTIN_SCHEMA_REVISIONS = Object.freeze({ user_doc: 2 });
+
+  const PRESET_BY_ID =Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));
   function getPipelinePreset(presetId) { return PRESET_BY_ID[presetId] || PRESET_BY_ID[DEFAULT_PRESET_ID]; }
   function resolveFinalizationPolicy(value) {
     const policy = String(value || 'after_required_goals');
@@ -88,7 +111,7 @@
   }
 
   const api = Object.freeze({
-    PIPELINE_PRESETS, BUILTIN_PIPELINE_DEFINITIONS, REASONING_BUDGETS, DEFAULT_PRESET_ID,
+    PIPELINE_PRESETS, BUILTIN_PIPELINE_DEFINITIONS, BUILTIN_SCHEMAS, BUILTIN_SCHEMA_REVISIONS, REASONING_BUDGETS, DEFAULT_PRESET_ID,
     normalizePipelinePreset, resolveRuntimeRoundLimits, resolveFinalizationPolicy, getPipelinePreset,
     isLongPreset, isOpenEndedPreset, isPresetEnabled
   });

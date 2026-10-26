@@ -1,4 +1,4 @@
-﻿
+
 
 const API_MODE_STORAGE_KEY = 'llmComparatorApiModeEnabled';
 const AUTO_FOCUS_NEW_TABS_KEY = 'autofocus_llm_tabs_enabled';
@@ -1998,6 +1998,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     globalThis.LLMLog?.debug?.("[BACKGROUND] Received message:", message);
     if (message?.type === 'NOTES_CMD' || message?.type === 'NOTES_EVENT') {
         return false;
+    }
+    if (message?.type === 'DELIVERY_JOURNAL_APPEND') {
+        const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+        if (!store?.append) {
+            sendResponse({ ok: false, error: 'delivery_store_unavailable' });
+            return false;
+        }
+        store.append(message.events || []).then((res) => {
+            sendResponse(res && typeof res.ok === 'boolean' ? res : { ok: true, ...res });
+        }).catch((err) => {
+            sendResponse({ ok: false, error: String(err?.message || err) });
+        });
+        return true;
+    }
+    if (message?.type === 'DELIVERY_JOURNAL_SNAPSHOT') {
+        const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+        if (!store?.snapshot) {
+            sendResponse({ ok: false, error: 'delivery_store_unavailable' });
+            return false;
+        }
+        store.snapshot().then((snap) => {
+            sendResponse({ ok: true, snapshot: snap });
+        }).catch((err) => {
+            sendResponse({ ok: false, error: String(err?.message || err) });
+        });
+        return true;
+    }
+    if (message?.type === 'DELIVERY_JOURNAL_CLEAR') {
+        const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+        if (!store?.clear) {
+            sendResponse({ ok: false, error: 'delivery_store_unavailable' });
+            return false;
+        }
+        store.clear().then((res) => {
+            sendResponse({ ok: true, ...res });
+        }).catch((err) => {
+            sendResponse({ ok: false, error: String(err?.message || err) });
+        });
+        return true;
     }
     if (message?.type === 'RESPONSE_VIEWER_CLOSE') {
         const windowId = sender?.tab?.windowId;

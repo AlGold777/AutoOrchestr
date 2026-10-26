@@ -7,7 +7,7 @@
 (function initMessageDeliveryView(root) {
   'use strict';
 
-  const KEY = () => root.MessageDelivery?.JOURNAL_KEY || 'messageDelivery.journal';
+  const KEY = () => root.MessageDelivery?.JOURNAL_KEY || 'messageDelivery.journal.v2';
   const $ = (id) => document.getElementById(id);
   const RESULT = {
     delivered: 'доставлено ✓', partial: 'неполный', no_token: 'без метки', empty: 'пустой ответ', no_answer: 'нет ответа',
@@ -37,11 +37,19 @@
   const empty = (text) => el('p', { class: 'diag-empty' }, text);
 
   async function readJournal() {
+    if (root.MessageDelivery?.snapshot) {
+      try {
+        const snap = await root.MessageDelivery.snapshot();
+        if (snap && Array.isArray(snap.events)) return snap.events;
+      } catch (_) {}
+    }
     try {
       const data = await root.chrome.storage.session.get(KEY());
-      return Array.isArray(data?.[KEY()]) ? data[KEY()] : [];
+      const val = data?.[KEY()];
+      if (val && Array.isArray(val.events)) return val.events;
+      return Array.isArray(val) ? val : [];
     } catch (_) {
-      return root.MessageDelivery?.journal() || [];
+      return root.MessageDelivery?.journal ? root.MessageDelivery.journal() : [];
     }
   }
 
@@ -200,8 +208,22 @@
 
   // options.journal: a part of the journal (one run) instead of all of it.
   async function buildReport(options = {}) {
-    const journal = Array.isArray(options.journal) ? options.journal
-      : root.MessageDelivery?.journal ? root.MessageDelivery.journal() : await readJournal();
+    let journal = Array.isArray(options.journal) ? options.journal : null;
+    let col = root.MessageDelivery?.collection?.() || { originalSourceTotal: null };
+    if (!journal) {
+      if (root.MessageDelivery?.snapshot) {
+        try {
+          const snap = await root.MessageDelivery.snapshot();
+          if (snap && Array.isArray(snap.events)) {
+            journal = snap.events;
+            col = snap.collection || col;
+          }
+        } catch (_) {}
+      }
+      if (!journal) {
+        journal = await readJournal();
+      }
+    }
     const version = root.chrome?.runtime?.getManifest?.().version || null;
     return {
       report: 'message-delivery',
@@ -209,7 +231,7 @@
       extension_version: version,
       transport_contract_version: root.TransportContract?.VERSION || null,
       diagnosis: compactDiagnosis(root.MessageDeliveryDiagnosis.diagnose(journal, { version }), journal),
-      collection: root.MessageDelivery?.collection?.() || { originalSourceTotal: null },
+      collection: col,
       journal
     };
   }

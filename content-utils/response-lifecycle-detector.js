@@ -1043,6 +1043,8 @@
     return true;
   }
 
+  const generateSourceEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
   function createTracker({
     modelName,
     dispatchId = null,
@@ -1053,14 +1055,21 @@
     navigationEpoch = lifecycleNavigationEpoch,
     promptSubmittedAt = Date.now(),
     traceId = null,
-    baselineSnapshot = null
+    baselineSnapshot = null,
+    transportRequestId = null
   }) {
+    const resolvedTransportRequestId = transportRequestId
+      || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+      || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, modelName)?.transportRequestId : null)
+      || window.__CURRENT_TRANSPORT_REQUEST_ID__
+      || null;
     return {
       modelName,
       dispatchId,
       runSessionId,
       generationEpoch,
       candidateId,
+      transportRequestId: resolvedTransportRequestId,
       documentInstanceId,
       navigationEpoch,
       navigationUrl: window.location.href,
@@ -1147,10 +1156,20 @@
     });
     if (transition.type === 'TERMINAL_DECISION' && transition.terminalResult) {
       try {
+        const sourceEventId = generateSourceEventId();
+        const transportRequestId = tracker.transportRequestId
+          || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+          || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, tracker.modelName)?.transportRequestId : null)
+          || window.__CURRENT_TRANSPORT_REQUEST_ID__
+          || null;
         chrome.runtime.sendMessage({
           type: 'LLM_COMPLETION_TERMINAL',
           llmName: tracker.modelName,
+          sourceEventId,
+          transportRequestId,
           meta: {
+            sourceEventId,
+            transportRequestId,
             runSessionId: tracker.runSessionId,
             dispatchId: tracker.dispatchId,
             generationEpoch: tracker.generationEpoch,
@@ -1904,6 +1923,7 @@
     traceId = null,
     baselineText = null,
     turnAnchor = null,
+    transportRequestId = null,
     activateObservation = false
   }) {
     const activeTracker = trackers.get(modelName);
@@ -1955,7 +1975,8 @@
       navigationEpoch,
       promptSubmittedAt,
       traceId,
-      baselineSnapshot: suppliedBaseline
+      baselineSnapshot: suppliedBaseline,
+      transportRequestId: transportRequestId || storedIdentity.transportRequestId || null
     });
     tracker.turnAnchor = capturedTurnAnchor;
     trackers.set(modelName, tracker);
@@ -2203,6 +2224,26 @@
     const originalSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
     chrome.runtime.sendMessage = function patchedSendMessage(message, callback) {
       const cb = typeof callback === 'function' ? callback : null;
+      if (message && typeof message === 'object') {
+        if (!message.sourceEventId) {
+          message.sourceEventId = generateSourceEventId();
+        }
+        const trId = message.transportRequestId
+          || message.meta?.transportRequestId
+          || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+          || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, message.llmName)?.transportRequestId : null)
+          || window.__CURRENT_TRANSPORT_REQUEST_ID__
+          || null;
+        if (trId) {
+          if (!message.transportRequestId) message.transportRequestId = trId;
+          if (message.meta && typeof message.meta === 'object' && !message.meta.transportRequestId) {
+            message.meta.transportRequestId = trId;
+          }
+        }
+        if (message.meta && typeof message.meta === 'object' && !message.meta.sourceEventId) {
+          message.meta.sourceEventId = message.sourceEventId;
+        }
+      }
       if (message?.type === 'PROMPT_SUBMITTED' && message.llmName) {
         notePromptSendAttempt({ ...message.meta, modelName: message.llmName });
         const result = originalSendMessage(message, cb);
@@ -2216,6 +2257,7 @@
           navigationEpoch: message?.meta?.navigationEpoch ?? lifecycleNavigationEpoch,
           promptSubmittedAt: Date.now(),
           traceId: message?.meta?.traceId || message?.meta?.dispatchId || null,
+          transportRequestId: message?.meta?.transportRequestId || message?.transportRequestId || null,
           activateObservation: true
         })).catch(() => {});
         return result;

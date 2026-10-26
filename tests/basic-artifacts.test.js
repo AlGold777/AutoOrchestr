@@ -29,27 +29,20 @@ describe('Basic artifact registry (5.3)', () => {
     expect(Artifacts.latest(registry, { step: 'r8', participant: 'author-C', id: 'map' })).toBeNull();
   });
 
-  test('a stale version is not current any more, but stays in the history; an older valid one is never the latest (ТЗ 3.4)', () => {
-    const registry = Artifacts.createRegistry();
-    Artifacts.register(registry, { id: 'map', name: 'M', lineage, source, answerRef: 't1', pointer: '' });
-    Artifacts.register(registry, { id: 'map', name: 'M', lineage, source: { step: 'r8', participant: 'author-A', visit: 2 }, answerRef: 't2', pointer: '' });
-    expect(Artifacts.markInvalid(registry, (entry) => entry.source.visit === 2)).toBe(1);
-    // The line waits for a new version: its latest is none, the older valid version is not put in its place.
-    expect(Artifacts.latest(registry, lineage)).toBeNull();
-    expect(Artifacts.version(registry, lineage, { step: 'r8', participant: 'author-A', visit: 2 })).toMatchObject({ valid: false, content: { answerRef: 't2' } });
-    // The author of a revision starts from the last valid version of its line (its declared input), not from the stale one.
-    expect(Artifacts.latest(registry, lineage, { base: true }).content.answerRef).toBe('t1');
-    expect(Artifacts.markInvalid(registry, () => true)).toBe(1);
-    expect(Artifacts.latest(registry, lineage, { base: true })).toBeNull();
+  test('markInvalid удалён: в модуле нет функции пометки устаревших версий', () => {
+    expect(Artifacts.markInvalid).toBeUndefined();
   });
 
-  test('a new valid version after the stale one ends the wait: it is the latest', () => {
+  test('a version with valid false (a record of an older run) is not current; an older valid one is never the latest, but starts a revision (ТЗ 3.4)', () => {
     const registry = Artifacts.createRegistry();
     Artifacts.register(registry, { id: 'map', name: 'M', lineage, source, answerRef: 't1', pointer: '' });
     Artifacts.register(registry, { id: 'map', name: 'M', lineage, source: { step: 'r8', participant: 'author-A', visit: 2 }, answerRef: 't2', pointer: '' });
-    Artifacts.markInvalid(registry, (entry) => entry.source.visit === 2);
-    Artifacts.register(registry, { id: 'map', name: 'M', lineage, source: { step: 'r8', participant: 'author-A', visit: 3 }, answerRef: 't3', pointer: '' });
-    expect(Artifacts.latest(registry, lineage).content.answerRef).toBe('t3');
+    registry.entries[1].valid = false;
+    expect(Artifacts.latest(registry, lineage)).toBeNull();
+    expect(Artifacts.version(registry, lineage, { step: 'r8', participant: 'author-A', visit: 2 })).toMatchObject({ valid: false, content: { answerRef: 't2' } });
+    expect(Artifacts.latest(registry, lineage, { base: true }).content.answerRef).toBe('t1');
+    registry.entries[0].valid = false;
+    expect(Artifacts.latest(registry, lineage, { base: true })).toBeNull();
   });
 
   test('a specific version is found by its creator step, participant and visit; an unknown one is null', () => {
@@ -69,9 +62,20 @@ describe('the pages load the Basic modules', () => {
     const at = (name) => html.indexOf(`src="disput/${name}"`);
     expect(at('basic-artifacts.js')).toBeGreaterThan(-1);
     expect(at('basic-output.js')).toBeGreaterThan(-1);
-    expect(at('basic-control.js')).toBeGreaterThan(-1);
     expect(at('basic-artifacts.js')).toBeLessThan(at('custom-engine.js'));
     expect(at('basic-output.js')).toBeLessThan(at('custom-engine.js'));
-    expect(at('basic-control.js')).toBeLessThan(at('custom-engine.js'));
+  });
+});
+
+describe('Basic artifact registry: description of an artifact', () => {
+  const lineage = { step: 'r9', participant: 'author-B', id: 'map' };
+  const source = { step: 'r9', participant: 'author-B', visit: 1 };
+
+  test('a description is stored on the entry; without one the entry has no description field', () => {
+    const registry = Artifacts.createRegistry();
+    const { entry } = Artifacts.register(registry, { id: 'map', name: 'Map', lineage, source, answerRef: 't1', pointer: '', description: 'Для проверки' });
+    expect(entry.description).toBe('Для проверки');
+    const plain = Artifacts.register(Artifacts.createRegistry(), { id: 'map', name: 'Map', lineage, source, answerRef: 't1', pointer: '' });
+    expect(plain.entry).not.toHaveProperty('description');
   });
 });

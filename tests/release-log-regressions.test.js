@@ -265,7 +265,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('const targetRounds = Math.max(1, Math.min(50, Number(roundLimit) || 1));');
     expect(source).toContain('while (roundCounter < targetRounds) {\n                addRound();\n            }');
     expect(source).not.toContain('while (roundCounter <= targetRounds)');
-    expect(source).toContain('syncPipelineRoundModelsFromSelectedLLMs({ force: true });\n            Object.entries(modelStacks).forEach(([stackId, state]) => orderModelStackBlocks(stackId, state));\n            syncPipelineRoundsToDebateLimit();\n            if (window.__pendingPipelineSynthesizer !== undefined) {\n                const restoredPlan = draftPlanForCanvas(getActiveDraftPlan());\n                persistActiveDraftPlan(restoredPlan, { applied: true });\n                delete window.__pendingPipelineSynthesizer;\n            }\n            window.syncDebateSchemeUi?.();');
+    expect(source).toContain('syncPipelineRoundModelsFromSelectedLLMs({ force: true });\n            Object.entries(modelStacks).forEach(([stackId, state]) => orderModelStackBlocks(stackId, state));\n            syncPipelineRoundsToDebateLimit();\n            window.syncDebateSchemeUi?.();');
     expect(source).toContain('syncDebateRoundStepperUi();\n            syncDebateAutoPauseButton();\n            syncDebateAutoToggleButton();\n            if (typeof syncAutoToggleState === \'function\') syncAutoToggleState();\n            syncPipelineChromeControls();\n            updatePipelineAll();');
     expect(source).toContain('syncPipelineRoundsToDebateLimit();\n            updateDebateButtonsUi();');
     expect(source).toContain('syncDebateRoundStepperUi();\n            syncDebateApprovalControls();\n            syncPipelineRoundsToDebateLimit();\n            updateDebateButtonsUi();');
@@ -279,17 +279,13 @@ describe('release log regression guards', () => {
     expect(source).toContain('&& !models.some((model) => opened?.has?.(model));');
     expect(source).toContain('activePipelineRunContext.newPagesDispatched = true;');
     expect(source).toContain("pipelinePanel.addEventListener('dblclick', (event) => {");
-    expect(source).toContain('void window.__toggleIntermediateSynthesis?.(insert)');
-    expect(source).toContain('planned-working-synthesis-after-${afterPlannedStageId}');
-    expect(source).not.toContain('pipeline-stage-insert-menu');
-    expect(source).not.toContain('pipeline-stage-synthesis-select');
-    expect(css).toContain('.pipeline-stage-insert.has-intermediate-synthesis');
-    expect(css).toContain('background: var(--pipeline-blue);');
-    expect(css).toContain('box-shadow: none;');
-    expect(source).toContain('const hasSelectedPipelineModels = () => getSelectedLLMs().length > 0;');
-    expect(source).toContain('if (!hasSelectedPipelineModels()) return false;');
-    expect(source).toContain('currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels || !hasFinalSynthesizer;');
-    expect(source).toContain("targetMode: 'synthesis'");
+    // A synthesis is a round of one model with a role: no insert between rounds, no final synthesis column.
+    expect(source).not.toContain('__toggleIntermediateSynthesis');
+    expect(source).not.toContain('planned-working-synthesis-after-');
+    expect(source).not.toContain('pipeline-stage-insert');
+    expect(source).not.toContain("targetMode: 'synthesis'");
+    expect(css).not.toContain('.pipeline-stage-insert');
+    expect(css).not.toContain('#synthesisColumn');
     expect(source).toContain("class=\"connector-line ${activePath ? colorClass : 'inactive'}${activePath ? ' flow-anim' : ''}\"");
     expect(html).not.toContain('class="pipeline-item active" data-name="Universal"');
     expect(source).toContain('void startManualModeratorDispatch();');
@@ -303,7 +299,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('scheduleCrossViewUiStatePersist();');
     expect(source).toContain("const DISPUT_RESPONSE_LIMIT_MARKER = '[RESPONSE_LIMIT]';");
     expect(source).toContain('if (context?.pipelineRunId && !context.custom) {\n                prompt = ensureDisputResponseLimit(prompt);');
-    expect(source).toContain("const contentScopeKey = `${modelKey}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${requestId || 'unscoped'}`;");
+    expect(source).toContain("const contentScopeKey = `${modelKey}:${meta.participantId || ''}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${meta.visit || ''}:${requestId || 'unscoped'}`;");
     expect(source).toContain("card.dataset.turnClosed = isFinal ? 'true' : 'false';");
     expect(html).not.toContain('<option value="inf">∞</option>');
   });
@@ -324,7 +320,8 @@ describe('release log regression guards', () => {
     expect(html).toContain('id="pipeline-import-btn"');
     expect(html).toContain('title="Import schema"');
     expect(html).toContain('<i class="ti ti-upload" aria-hidden="true"></i>');
-    expect(html).toContain('aria-label="Add stage after R2"');
+    expect(html).not.toContain('pipeline-stage-insert');
+    expect(html).not.toContain('id="synthesisColumn"');
     expect(html).not.toContain('R2 Disput');
     expect(css).toContain('.pipeline-page .llm-controls {');
     expect(css).toContain('margin-top: 15px;');
@@ -332,8 +329,6 @@ describe('release log regression guards', () => {
     expect(css).toContain('.debate-select-wrap::after {');
     expect(css).toContain('.debate-select {');
     expect(css).toContain('.stage-header-row .stage-label {');
-    expect(css).toContain('.pipeline-stage-insert::before,');
-    expect(css).toContain('.pipeline-stage-insert::after {');
     expect(html).not.toContain('id="connectorToOutput"');
     expect(html).not.toContain('id="outputColumn"');
     expect(css).not.toContain('#connectorToOutput');
@@ -464,9 +459,8 @@ describe('release log regression guards', () => {
     expect(source).toContain('fullName.length > PIPELINE_HEADER_DISPLAY_LIMIT');
     expect(source).toContain('fullName.slice(0, PIPELINE_HEADER_DISPLAY_LIMIT - 1)}…');
     expect(source).toContain('delete pipelineStore.draftPlans[name];');
-    expect(source).toContain("window.__pendingPipelineSynthesizer = defaultSynthesizer;");
+    expect(source).not.toContain('__pendingPipelineSynthesizer');
     expect(source).toContain("if (isDefaultPipelineName(key)) return '';");
-    expect(source).toContain('block.classList.toggle(\'inactive\', !isActive);');
     expect(css).toContain('margin-left: auto;');
     expect(css).not.toContain('.output-column-hidden');
     expect(css).toContain('min-height: 0;');
