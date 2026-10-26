@@ -7414,6 +7414,14 @@ document.addEventListener('click', (event) => {
                                 ? [[`${waveNo}f`, withFiles], [`${waveNo}p`, without]]
                                 : [[waveNo, wave]];
                             for (const [key, group] of groups) {
+                                if (signal?.aborted) {
+                                    break wavesLoop;
+                                }
+                                if (typeof meta?.onWaveDispatched === 'function') {
+                                    meta.onWaveDispatched(group.map((r) => r.participantId));
+                                } else if (typeof meta?.onWaveStart === 'function') {
+                                    meta.onWaveStart(group.map((r) => r.participantId));
+                                }
                                 // eslint-disable-next-line no-await-in-loop
                                 const reply = await sendWave(group, meta, key);
                                 Object.assign(byParticipant, reply.byParticipant);

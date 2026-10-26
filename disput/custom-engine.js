@@ -716,6 +716,29 @@
           if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN') retry.push(model);
         };
 
+        const dispatched = new Set();
+        let waveDispatchedExplicit = false;
+
+        const onWaveDispatched = (payload) => {
+          waveDispatchedExplicit = true;
+          if (Array.isArray(payload)) {
+            payload.forEach((item) => {
+              if (typeof item === 'string') dispatched.add(item);
+              else if (item && typeof item.participantId === 'string') dispatched.add(item.participantId);
+            });
+          } else if (typeof payload === 'string') {
+            dispatched.add(payload);
+          } else if (payload && typeof payload === 'object') {
+            const list = payload.participantIds || payload.participants || payload.group;
+            if (Array.isArray(list)) {
+              list.forEach((item) => {
+                if (typeof item === 'string') dispatched.add(item);
+                else if (item && typeof item.participantId === 'string') dispatched.add(item.participantId);
+              });
+            }
+          }
+        };
+
         const onWaveResult = async (wavePayload) => {
           const map = (wavePayload && typeof wavePayload.byParticipant === 'object' && wavePayload.byParticipant !== null)
             ? wavePayload.byParticipant
@@ -723,6 +746,9 @@
           if (wavePayload?.closedByOwner) wasClosedByOwner = true;
           let newlyHandled = 0;
           for (const model of pending) {
+            if (model.id in map) {
+              dispatched.add(model.id);
+            }
             if (processed.has(model.id)) continue;
             if (model.id in map) {
               processed.add(model.id);
@@ -737,12 +763,21 @@
 
         const handleCancelled = async () => {
           const unsentIds = [];
+          const unknownPending = [];
           pending.forEach((model) => {
-            if (!processed.has(model.id)) {
+            if (processed.has(model.id)) return;
+            const wasDispatched = dispatched.has(model.id);
+            const entry = entries[model.id];
+            if (!wasDispatched) {
               unsentIds.push(model.id);
-              const entry = entries[model.id];
               if (entry) {
                 Object.assign(entry, { state: 'not_sent', reason: 'cancelled_before_dispatch', finishedAt: Date.now() });
+                if (typeof onResponse === 'function') onResponse(entry);
+              }
+            } else {
+              unknownPending.push({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit });
+              if (entry) {
+                Object.assign(entry, { state: 'unknown', reason: 'interrupted_in_flight', finishedAt: Date.now() });
                 if (typeof onResponse === 'function') onResponse(entry);
               }
             }
@@ -750,12 +785,17 @@
           if (unsentIds.length) {
             state.decisions[`unsent@${step.ref}@${activeVisit}`] = unsentIds;
           }
-          inFlight = [];
-          await checkpointNow('judge', { cancelled: unsentIds, pending: [] });
+          inFlight = unknownPending.slice();
+          await checkpointNow('judge', { cancelled: unsentIds, pending: unknownPending });
           throw new StopRun('cancelled');
         };
 
-        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit, onWaveResult };
+        const meta = {
+          step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit,
+          onWaveResult,
+          onWaveDispatched,
+          onWaveStart: onWaveDispatched
+        };
         const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
         try {
@@ -781,6 +821,7 @@
           }
         } catch (error) {
           if (error instanceof StopRun) throw error;
+          if (error instanceof EngineError || error?.code === 'checkpoint_failed') throw error;
           if (error?.code === 'context_full') {
             pending.forEach((model) => {
               if (!processed.has(model.id)) {

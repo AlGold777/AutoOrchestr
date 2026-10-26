@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: точная фиксация отправки волн и проброс ошибок чекпоинта (B02), версия 2.81.891
+
+- В `disput/custom-engine.js` добавлен явный учёт отправки волн через callback `meta.onWaveDispatched` / `meta.onWaveStart`.
+- В `handleCancelled` участники, чья волна не запускалась, помечаются `not_sent/cancelled_before_dispatch` и при resume отправляются как `resume_unsent` без окна неизвестной отправки; участники отправленной волны без доказанного результата остаются `unknown/interrupted_in_flight` в `pending` для штатного разрешения (`resolveUnknown`).
+- В `results.js` вызов `meta.onWaveDispatched` интегрирован перед `sendWave`, с проверкой `signal.aborted` до старта каждой волны.
+- Ошибка обязательного чекпоинта `EngineError('checkpoint_failed')` больше не перехватывается как ошибка модели и немедленно прекращает исполнение с прерыванием раунда (`custom_step_interrupted`).
+- Добавлены сквозные тесты в `tests/b02-wave-results.test.js`.
+
 ### 2026-10-26 — Basic: границы шага и сводка раундов (R01), версия 2.81.890
 
 - Добавлены события границ шага: `custom_step_start` (фактический вход до любого внешнего действия, включая owner) и `custom_step_resumed` (продолжение после остановки) в `disput/custom-engine.js`.
