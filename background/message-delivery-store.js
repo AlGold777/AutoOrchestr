@@ -28,24 +28,44 @@
 
   function callStorage(fnName, ...args) {
     const storage = getStorage();
-    if (!storage || typeof storage[fnName] !== 'function') return Promise.resolve(null);
-    return new Promise((resolve) => {
+    if (!storage || typeof storage[fnName] !== 'function') {
+      const err = new Error(`storage_unavailable: ${fnName}`);
+      err.code = 'storage_unavailable';
+      return Promise.reject(err);
+    }
+    return new Promise((resolve, reject) => {
       let settled = false;
       const done = (val) => {
         if (!settled) {
           settled = true;
-          resolve(val);
+          const lastErr = root.chrome?.runtime?.lastError || globalThis.chrome?.runtime?.lastError;
+          if (lastErr) {
+            reject(new Error(lastErr.message || String(lastErr)));
+          } else {
+            resolve(val);
+          }
+        }
+      };
+      const fail = (err) => {
+        if (!settled) {
+          settled = true;
+          reject(err instanceof Error ? err : new Error(String(err)));
         }
       };
       try {
         const res = storage[fnName](...args, (cbResult) => {
-          done(cbResult);
+          const lastErr = root.chrome?.runtime?.lastError || globalThis.chrome?.runtime?.lastError;
+          if (lastErr) {
+            fail(new Error(lastErr.message || String(lastErr)));
+          } else {
+            done(cbResult);
+          }
         });
         if (res && typeof res.then === 'function') {
-          res.then(done, () => done(null));
+          res.then(done, fail);
         }
       } catch (err) {
-        done(null);
+        fail(err);
       }
     });
   }
@@ -125,25 +145,25 @@
     });
   }
 
-  async function persist() {
-    collection.retained = events.length;
-    let envelope = { version: 2, events, collection };
+  async function persist(candidateEvents, candidateCollection) {
+    candidateCollection.retained = candidateEvents.length;
+    let envelope = { version: 2, events: candidateEvents, collection: candidateCollection };
     let bytes = estimateBytes(envelope);
 
     // Evict oldest events if bytes exceed MAX_BYTES
-    while (events.length > 0 && bytes > MAX_BYTES) {
-      const evicted = events.shift();
-      if (evicted?.eventId) eventIdSet.delete(evicted.eventId);
-      collection.overflowOmitted += 1;
-      collection.retained = events.length;
-      envelope = { version: 2, events, collection };
+    while (candidateEvents.length > 0 && bytes > MAX_BYTES) {
+      const evicted = candidateEvents.shift();
+      candidateCollection.overflowOmitted += 1;
+      candidateCollection.retained = candidateEvents.length;
+      envelope = { version: 2, events: candidateEvents, collection: candidateCollection };
       bytes = estimateBytes(envelope);
     }
 
-    collection.bytesEstimate = bytes;
-    envelope.collection = { ...collection };
+    candidateCollection.bytesEstimate = bytes;
+    envelope.collection = { ...candidateCollection };
 
     await callStorage('set', { [STORAGE_KEY]: envelope });
+    return { envelope, bytes };
   }
 
   function enqueue(task) {
@@ -160,6 +180,9 @@
   async function append(newEvents = []) {
     return enqueue(async () => {
       const list = Array.isArray(newEvents) ? newEvents : [newEvents];
+      const candidateEvents = events.slice();
+      const candidateEventIdSet = new Set(eventIdSet);
+      const candidateCollection = { ...collection };
       let added = 0;
 
       for (let i = 0; i < list.length; i++) {
@@ -167,26 +190,48 @@
         if (!evt || typeof evt !== 'object') continue;
 
         // Idempotency: skip if already retained in store
-        if (evt.eventId && eventIdSet.has(evt.eventId)) {
+        if (evt.eventId && candidateEventIdSet.has(evt.eventId)) {
           continue;
         }
 
         if (evt.eventId) {
-          eventIdSet.add(evt.eventId);
+          candidateEventIdSet.add(evt.eventId);
         }
-        events.push(evt);
-        collection.totalAppended += 1;
+        candidateEvents.push(evt);
+        candidateCollection.totalAppended += 1;
         added += 1;
 
         // FIFO eviction on exceeding MAX_EVENTS
-        if (events.length > MAX_EVENTS) {
-          const evicted = events.shift();
-          if (evicted?.eventId) eventIdSet.delete(evicted.eventId);
-          collection.overflowOmitted += 1;
+        if (candidateEvents.length > MAX_EVENTS) {
+          const evicted = candidateEvents.shift();
+          if (evicted?.eventId) candidateEventIdSet.delete(evicted.eventId);
+          candidateCollection.overflowOmitted += 1;
         }
       }
 
-      await persist();
+      candidateCollection.retained = candidateEvents.length;
+
+      try {
+        await persist(candidateEvents, candidateCollection);
+      } catch (err) {
+        // Storage write failed: do not commit candidate mutations to in-memory state
+        return {
+          ok: false,
+          error: String(err?.message || err),
+          added: 0,
+          retained: events.length,
+          totalAppended: collection.totalAppended,
+          overflowOmitted: collection.overflowOmitted
+        };
+      }
+
+      // Storage write succeeded: commit candidate state to in-memory store
+      events.length = 0;
+      candidateEvents.forEach((e) => events.push(e));
+      eventIdSet.clear();
+      events.forEach((e) => { if (e.eventId) eventIdSet.add(e.eventId); });
+      Object.assign(collection, candidateCollection);
+
       return {
         ok: true,
         added,

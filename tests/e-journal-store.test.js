@@ -167,6 +167,73 @@ describe('Package E: Unified Background Journal Store (C04 / ТЗ 5.E)', () => {
       expect(snap.events).toHaveLength(0);
       expect(snap.collection.retained).toBe(0);
     });
+
+    test('Package 4: storage failures (rejected Promise, sync throw, lastError, storage missing) return ok: false without corrupting memory', async () => {
+      // 1. Rejected Promise
+      let failStorage = true;
+      global.chrome.storage.session.set = jest.fn(async () => {
+        if (failStorage) throw new Error('QUOTA_BYTES exceeded');
+      });
+
+      const store = getStore();
+      await store.init?.();
+
+      const resFail = await store.append([{ eventId: 'evt-fail-1', kind: 'test' }]);
+      expect(resFail.ok).toBe(false);
+      expect(resFail.error).toContain('QUOTA_BYTES exceeded');
+
+      // Memory must not retain the failed event
+      const snapAfterFail = await store.snapshot();
+      expect(snapAfterFail.events.map((e) => e.eventId)).not.toContain('evt-fail-1');
+
+      // 2. Synchronous throw
+      global.chrome.storage.session.set = jest.fn(() => {
+        throw new Error('Sync storage failure');
+      });
+      const resSync = await store.append([{ eventId: 'evt-fail-sync', kind: 'test' }]);
+      expect(resSync.ok).toBe(false);
+      expect(resSync.error).toContain('Sync storage failure');
+
+      // 3. Callback runtime.lastError
+      global.chrome.storage.session.set = jest.fn((vals, cb) => {
+        global.chrome.runtime.lastError = { message: 'Storage connection broke' };
+        if (typeof cb === 'function') cb();
+        global.chrome.runtime.lastError = null;
+      });
+      const resLastError = await store.append([{ eventId: 'evt-fail-cb', kind: 'test' }]);
+      expect(resLastError.ok).toBe(false);
+      expect(resLastError.error).toContain('Storage connection broke');
+
+      // 4. Storage unavailable
+      const savedStorage = global.chrome.storage.session;
+      delete global.chrome.storage.session;
+      const resMissing = await store.append([{ eventId: 'evt-fail-missing', kind: 'test' }]);
+      expect(resMissing.ok).toBe(false);
+      expect(resMissing.error).toContain('storage_unavailable');
+      global.chrome.storage.session = savedStorage;
+
+      // 5. Success write followed by duplicate append (ACK lost simulation)
+      failStorage = false;
+      const storageState = {};
+      global.chrome.storage.session.set = jest.fn(async (vals) => {
+        Object.assign(storageState, vals);
+      });
+      global.chrome.storage.session.get = jest.fn(async (keys) => {
+        return Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map((k) => [k, storageState[k]]));
+      });
+
+      const resOk = await store.append([{ eventId: 'evt-ack-1', kind: 'test' }]);
+      expect(resOk.ok).toBe(true);
+      expect(resOk.added).toBe(1);
+
+      // Repeat with same eventId
+      const resDup = await store.append([{ eventId: 'evt-ack-1', kind: 'test' }]);
+      expect(resDup.ok).toBe(true);
+      expect(resDup.added).toBe(0); // Idempotent!
+
+      const finalSnap = await store.snapshot();
+      expect(finalSnap.events.filter((e) => e.eventId === 'evt-ack-1')).toHaveLength(1);
+    });
   });
 
   describe('shared/message-delivery.js page client contracts (C04)', () => {

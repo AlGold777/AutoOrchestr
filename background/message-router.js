@@ -2006,7 +2006,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return false;
         }
         store.append(message.events || []).then((res) => {
-            sendResponse({ ok: true, ...res });
+            sendResponse(res && typeof res.ok === 'boolean' ? res : { ok: true, ...res });
         }).catch((err) => {
             sendResponse({ ok: false, error: String(err?.message || err) });
         });
