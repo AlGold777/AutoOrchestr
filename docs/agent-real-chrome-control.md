@@ -67,10 +67,22 @@ function run(argv) {
 # usage: PAGE_URL=<полный адрес страницы> chrome-click.sh X Y OUT_PREFIX COUNT
 S=$(cd "$(dirname "$0")" && pwd)
 X=$1; Y=$2; P=$3; N=${4:-1}
-[ -n "$PAGE_URL" ] || { echo "ABORT: set PAGE_URL to the full page address"; exit 1; }
+GUARD=${GUARD:-applescript}   # applescript (default) | visual: the page address is checked by eye on the snapshot, AppleScript is not used
+if [ "$GUARD" = "applescript" ]; then
+  [ -n "$PAGE_URL" ] || { echo "ABORT: set PAGE_URL to the full page address"; exit 1; }
+fi
 SIZE=$(osascript -l JavaScript -e 'ObjC.import("AppKit"); var f=$.NSScreen.mainScreen.frame; f.size.width+","+f.size.height')
 
 guard() {
+  if [ "$GUARD" = "visual" ]; then
+    osascript -e 'tell application "System Events" to set frontmost of process "Google Chrome" to true' -e 'delay 1'
+    local f2 w2
+    f2=$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true')
+    w2=$(osascript -e 'tell application "System Events" to tell process "Google Chrome" to get {name, position, size} of window 1')
+    echo "guard(visual): front=$f2 window=[$w2]"
+    [ "$f2" = "Google Chrome" ] || { echo "ABORT front=$f2"; exit 1; }
+    return 0
+  fi
   osascript -e 'tell application "Google Chrome" to activate' -e 'delay 1'
   local f u
   f=$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true')
@@ -86,7 +98,7 @@ guard() {
 }
 shot() { screencapture -x -R0,0,$SIZE "$1"; }
 
-open -a "Google Chrome"
+if [ "$GUARD" = "applescript" ]; then open -a "Google Chrome"; fi
 osascript -e 'delay 1'
 if [ "$N" -eq 0 ]; then guard; shot "$P-b0.png"; echo "finished (no clicks)"; exit 0; fi
 i=1
@@ -102,6 +114,8 @@ while [ $i -le $N ]; do
 done
 echo finished
 ```
+
+**Режим `GUARD=visual`** (`GUARD=visual zsh chrome-click.sh X Y ПРЕФИКС ЧИСЛО`, `PAGE_URL` не нужен). Применяйте, когда AppleScript видит не то окно (отказ `ABORT window mismatch`, «front window» другого профиля, `Не удается получить window 1`): в этом режиме AppleScript вообще не вызывается, Chrome выводится вперёд через System Events (`set frontmost of process "Google Chrome" to true`), проверяется только, что передний процесс — `Google Chrome`, и печатается окно 1 из System Events (оно может оказаться плавающей плашкой расширения, а не основным окном: не полагайтесь на него). **Адрес страницы в этом режиме проверяете вы**: сначала запуск с `0` кликов, `Read` снимка `ПРЕФИКС-b0.png`, в адресной строке должен быть нужный адрес и нужная страница; только после этого запуск с кликом. `open -a` в этом режиме не вызывается (он создаёт лишние окна в другом профиле).
 
 На 26.10.2026 у User’а экран 1168×755 пунктов (снимок 2336×1510 пикселей); окно Chrome стоит в точке (0, 28) и занимает ≈1168×715. Окно и область снимка — разные величины: снимается весь экран, координаты клика считаются от его левого верхнего угла.
 
