@@ -163,23 +163,11 @@
         correlationReason: 'unknown_request_id'
       };
     }
-    let tabId = message?.tabId ?? message?.data?.tabId ?? message?.meta?.tabId ?? message?.metadata?.tabId ?? (message?.sender?.tab?.id != null ? message.sender.tab.id : null);
-    if (tabId == null && message?.llmName) {
-      const candidate = latestByModel.get(message.llmName);
-      if (candidate && candidate.tabId != null) {
-        tabId = candidate.tabId;
-      }
-    }
+    const tabId = message?.tabId ?? message?.data?.tabId ?? message?.meta?.tabId ?? message?.metadata?.tabId ?? (message?.sender?.tab?.id != null ? message.sender.tab.id : null);
     if (tabId != null) {
       const activeEntries = [];
       const seenEntries = new Set();
       expectedByRequest.forEach((ent) => {
-        if (!ent.final && !seenEntries.has(ent)) {
-          seenEntries.add(ent);
-          activeEntries.push(ent);
-        }
-      });
-      latestByModel.forEach((ent) => {
         if (!ent.final && !seenEntries.has(ent)) {
           seenEntries.add(ent);
           activeEntries.push(ent);
@@ -196,26 +184,22 @@
           correlationReason: 'tab_bound'
         };
       }
-    } else if (tabId == null && message?.llmName) {
-      const activeEntries = [];
-      const seenEntries = new Set();
-      expectedByRequest.forEach((ent) => {
-        if (!ent.final && !seenEntries.has(ent)) {
-          seenEntries.add(ent);
-          activeEntries.push(ent);
-        }
-      });
-      const modelEntries = activeEntries.filter((ent) => ent.model === message.llmName);
-      if (modelEntries.length === 1 && modelEntries[0].tabId == null) {
-        const entry = modelEntries[0];
+      if (matches.length > 1) {
         return {
-          entry,
-          requestId: entry.requestId || null,
+          entry: null,
+          requestId: null,
           sourceTransportRequestId: null,
-          attemptCorrelation: 'linked',
-          correlationReason: null
+          attemptCorrelation: 'conflict',
+          correlationReason: 'ambiguous_tab_binding'
         };
       }
+      return {
+        entry: null,
+        requestId: null,
+        sourceTransportRequestId: null,
+        attemptCorrelation: 'unassigned',
+        correlationReason: 'unbound_tab'
+      };
     }
     return {
       entry: null,

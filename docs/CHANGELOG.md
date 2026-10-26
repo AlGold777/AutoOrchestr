@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: устранение скрытого fallback на последнюю модель и сохранение идентичности STOP (Пакет 5: C02), версия 2.81.894
+
+- В `shared/message-delivery.js` в методе `resolveObservedEntry` полностью удалён скрытый fallback на `latestByModel.get(message.llmName)`: события без доказанного `transportRequestId` связываются с попыткой исключительно по доказанному `tabId` самого события или отправителя, а при его отсутствии остаются со статусом `attemptCorrelation: 'unassigned'` (`missing_request_id`).
+- При обнаружении более одной активной попытки на одной вкладке фиксируется явный конфликт `attemptCorrelation: 'conflict'` (`ambiguous_tab_binding`).
+- В `content-scripts/content-utils.js` обработчик команды `STOP_AND_CLEANUP` синхронно захватывает `transportRequestId`, `runSessionId` и `dispatchId` команды, исключая подстановку нового запроса при асинхронном завершении `PROVIDER_STOP_RESULT`.
+- В `background/job-orchestrator.js` команда `STOP_AND_CLEANUP` передаёт точный `transportRequestId` целевого участника.
+- Добавлены тесты разрешения наблюдаемых записей и изоляции отложенной остановки в `tests/d-chat-routing-and-events.test.js`.
+
 ### 2026-10-26 — Basic: подтверждение ACK только после успешной сессионной записи (Пакет 4: C04), версия 2.81.893
 
 - В `background/message-delivery-store.js` метод `callStorage` теперь возвращает явный отказ при rejected Promise, синхронном выбросе исключений, установке `chrome.runtime.lastError` или недоступности хранилища.

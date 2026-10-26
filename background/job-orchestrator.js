@@ -5434,11 +5434,12 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveR
     if (!isValidTabId(tabId)) return;
     const entry = jobState?.llms?.[llmName];
     const dispatchId = entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null;
+    const transportRequestId = entry?.lastDispatchMeta?.transportRequestId || entry?.transportRequestId || null;
     try {
       chrome.tabs.sendMessage(tabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { runSessionId: sessionId, sessionId, dispatchId }
+        meta: { runSessionId: sessionId, sessionId, dispatchId, transportRequestId }
       }).catch(() => {});
     } catch (_) {}
     closePingWindowForTab(tabId);

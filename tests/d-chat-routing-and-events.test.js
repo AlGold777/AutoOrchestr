@@ -125,6 +125,111 @@ describe('Package D: Chat Routing and Event Correlation (C01 + C02 / ТЗ 5.D)',
       );
       expect(termBlock).not.toContain('const entry = latestByModel.get(message.llmName);');
     });
+
+    test('Package 5: event without requestId and without tabId does NOT fall back to latestByModel tab and remains unassigned (missing_request_id)', () => {
+      // Req A with tab 10
+      Delivery.prepare({
+        prompt: 'Prompt A',
+        models: ['Claude'],
+        requestIds: { Claude: 'req-A' },
+        tabIds: { Claude: 10 }
+      });
+      // Req B with tab 20 (latestByModel)
+      Delivery.prepare({
+        prompt: 'Prompt B',
+        models: ['Claude'],
+        requestIds: { Claude: 'req-B' },
+        tabIds: { Claude: 20 }
+      });
+
+      // LLM_COMPLETION_TERMINAL without requestId and without tabId
+      Delivery.observeRuntime({
+        type: 'LLM_COMPLETION_TERMINAL',
+        llmName: 'Claude'
+      });
+
+      const journal = Delivery.journal();
+      const termEvt = journal.find((e) => e.kind === 'completion_terminal');
+      expect(termEvt).toBeDefined();
+      expect(termEvt.requestId).toBeNull();
+      expect(termEvt.attemptCorrelation).toBe('unassigned');
+      expect(termEvt.correlationReason).toBe('missing_request_id');
+    });
+
+    test('Package 5: proven tabId binds to request matching that tabId, multiple matches yield conflict', () => {
+      // Req A on tab 10
+      Delivery.prepare({
+        prompt: 'Prompt A',
+        models: ['Claude'],
+        requestIds: { Claude: 'req-A' }
+      });
+      Delivery.observeRuntime({
+        type: 'TRANSPORT_DISPATCH_PHASE',
+        llmName: 'Claude',
+        transportRequestId: 'req-A',
+        tabId: 10,
+        phase: 'dispatched'
+      });
+
+      // Req B on tab 20
+      Delivery.prepare({
+        prompt: 'Prompt B',
+        models: ['Claude'],
+        requestIds: { Claude: 'req-B' }
+      });
+      Delivery.observeRuntime({
+        type: 'TRANSPORT_DISPATCH_PHASE',
+        llmName: 'Claude',
+        transportRequestId: 'req-B',
+        tabId: 20,
+        phase: 'dispatched'
+      });
+
+      // SPA_NAVIGATION on proven tab 10 -> linked to req-A
+      Delivery.observeRuntime({
+        type: 'SPA_NAVIGATION',
+        llmName: 'Claude',
+        tabId: 10,
+        oldUrl: 'https://a',
+        newUrl: 'https://b'
+      });
+
+      const navEvt = Delivery.journal().find((e) => e.kind === 'navigation');
+      expect(navEvt).toBeDefined();
+      expect(navEvt.requestId).toBe('req-A');
+      expect(navEvt.attemptCorrelation).toBe('linked');
+      expect(navEvt.correlationReason).toBe('tab_bound');
+    });
+
+    test('Package 5: delayed STOP of request A retains request A identity after request B is prepared', () => {
+      // Req A prepared
+      Delivery.prepare({
+        prompt: 'Prompt A',
+        models: ['Claude'],
+        requestIds: { Claude: 'req-A' }
+      });
+
+      // Req B prepared (becomes latestByModel)
+      Delivery.prepare({
+        prompt: 'Prompt B',
+        models: ['Claude'],
+        requestIds: { Claude: 'req-B' }
+      });
+
+      // Provider stop from async stop of A arriving with captured transportRequestId 'req-A'
+      Delivery.observeRuntime({
+        type: 'PROVIDER_STOP_RESULT',
+        llmName: 'Claude',
+        transportRequestId: 'req-A',
+        stopped: true,
+        reason: 'stop_command'
+      });
+
+      const stopEvt = Delivery.journal().find((e) => e.kind === 'provider_stop');
+      expect(stopEvt).toBeDefined();
+      expect(stopEvt.requestId).toBe('req-A');
+      expect(stopEvt.attemptCorrelation).toBe('linked');
+    });
   });
 
   describe('C02: chatIntent and chatRoute in CustomRunRecord attempts', () => {
