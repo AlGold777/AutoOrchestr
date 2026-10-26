@@ -6,47 +6,79 @@
 
   function classifyEntry(entry, runId, requestIds) {
     if (!entry || typeof entry !== 'object') {
-      return { runSelection: 'invalid', selectionReason: 'invalid_entry', entry };
+      return { runSelection: 'invalid', selectionReason: 'invalid_entry', attemptCorrelation: 'unassigned', correlationReason: 'invalid_entry', entry };
     }
 
     const scopes = [entry, entry.meta, entry.correlation].filter(Boolean);
     const runKeys = ['pipelineRunId', 'debateRunId', 'runId'];
     const explicitRuns = Array.from(new Set(scopes.flatMap(s => runKeys.map(k => s[k]).filter(Boolean))));
 
-    // Conflicting run IDs inside the same event
+    let runSelection;
+    let selectionReason;
+
+    // 1. Determine runSelection
     if (explicitRuns.length > 1) {
-      return { runSelection: 'unassigned', selectionReason: 'conflicting_run_ids', entry };
-    }
-
-    // Proven other run
-    if (explicitRuns.length === 1 && explicitRuns[0] !== runId) {
-      return { runSelection: 'otherRun', selectionReason: 'other_run_identity', entry };
-    }
-
-    // Proven this run
-    if (explicitRuns.length === 1 && explicitRuns[0] === runId) {
-      return { runSelection: 'selected', selectionReason: 'explicit_run_id', entry };
-    }
-
-    // Scoped by stageId or batchId
-    const isRunScoped = scopes.some(s =>
+      runSelection = 'unassigned';
+      selectionReason = 'conflicting_run_ids';
+    } else if (explicitRuns.length === 1 && explicitRuns[0] !== runId) {
+      runSelection = 'otherRun';
+      selectionReason = 'other_run_identity';
+    } else if (explicitRuns.length === 1 && explicitRuns[0] === runId) {
+      runSelection = 'selected';
+      selectionReason = 'explicit_run_id';
+    } else if (scopes.some(s =>
       String(s.stageId || '').startsWith(`custom:${runId}:`)
       || String(s.batchId || s.pipelineBatchId || '').startsWith(`${runId}:`)
-    );
-    if (isRunScoped) {
-      return { runSelection: 'selected', selectionReason: 'run_scoped_stage_or_batch', entry };
-    }
-
-    // Associated with known attempt request IDs
-    const hasKnownRequestId = scopes.some(s =>
+    )) {
+      runSelection = 'selected';
+      selectionReason = 'run_scoped_stage_or_batch';
+    } else if (scopes.some(s =>
       [s.requestId, s.transportRequestId].some(id => id && requestIds.has(id))
-    );
-    if (hasKnownRequestId) {
-      return { runSelection: 'selected', selectionReason: 'known_attempt_request_id', entry };
+    )) {
+      runSelection = 'selected';
+      selectionReason = 'known_attempt_request_id';
+    } else {
+      runSelection = 'unassigned';
+      selectionReason = 'missing_run_identity';
     }
 
-    // Unassigned (missing run identity)
-    return { runSelection: 'unassigned', selectionReason: 'missing_run_identity', entry };
+    // 2. Determine attemptCorrelation independently
+    let attemptCorrelation = entry.attemptCorrelation || null;
+    let correlationReason = entry.correlationReason || null;
+
+    if (!attemptCorrelation) {
+      const explicitReqId = scopes.map((s) => s.transportRequestId || s.requestId).find(Boolean) || null;
+      if (explicitReqId && requestIds.has(explicitReqId)) {
+        attemptCorrelation = 'linked';
+      } else if (explicitReqId) {
+        attemptCorrelation = 'unassigned';
+        correlationReason = correlationReason || 'unknown_request_id';
+      } else {
+        attemptCorrelation = 'unassigned';
+        correlationReason = correlationReason || 'missing_request_id';
+      }
+    } else if (attemptCorrelation === 'conflict' && !correlationReason) {
+      correlationReason = 'attempt_conflict';
+    }
+
+    const enrichedEntry = {
+      ...entry,
+      runSelection,
+      attemptCorrelation,
+      ...(correlationReason ? { correlationReason } : {})
+    };
+
+    if (explicitRuns.length > 1) {
+      enrichedEntry.runConflictEvidence = explicitRuns;
+    }
+
+    return {
+      runSelection,
+      selectionReason,
+      attemptCorrelation,
+      correlationReason,
+      entry: enrichedEntry
+    };
   }
 
   function processSource(rawList, runId, requestIds) {
@@ -103,9 +135,12 @@
         || String(s.batchId || s.pipelineBatchId || '').startsWith(`${runId}:`)
         || [s.requestId, s.transportRequestId].some(id => id && requestIds.has(id))
       );
-      if (belongs) {
-        Object.values(entry.requestIds || {}).filter(Boolean).forEach(id => requestIds.add(id));
-        [entry.requestId, entry.transportRequestId].filter(Boolean).forEach(id => requestIds.add(id));
+      if (belongs && entry.requestIds && typeof entry.requestIds === 'object') {
+        Object.values(entry.requestIds).filter(Boolean).forEach((id) => requestIds.add(id));
+      }
+      if (belongs && entry.kind === 'prepared') {
+        if (entry.requestId) requestIds.add(entry.requestId);
+        if (entry.transportRequestId) requestIds.add(entry.transportRequestId);
       }
     });
 
@@ -218,8 +253,28 @@
         const outcome = endEvt ? (endEvt.outcome || 'completed') : (interruptedEvt ? (interruptedEvt.outcome || 'interrupted') : null);
         const durationMs = startedAt != null && endedAt != null && endedAt >= startedAt ? (endedAt - startedAt) : null;
 
-        const acceptedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted).map((a) => a.participant || a.model)));
-        const failedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted === false && a.state === 'done').map((a) => a.participant || a.model)));
+        const acceptedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted === true).map((a) => a.participant || a.model)));
+        const failedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted === false && a.state === 'done').map((a) => a.participant || a.model))).filter((p) => !acceptedParticipants.includes(p));
+
+        const isConfirmedSent = (a) => {
+          if (a.state === 'not_sent' || a.reason === 'cancelled_before_dispatch') return false;
+          if (a.state === 'done' || a.state === 'sent') return true;
+          if (a.state === 'unknown' && typeof a.sentAt === 'number') return true;
+          return false;
+        };
+        const sentCount = visitAttempts.filter(isConfirmedSent).length;
+
+        const hasOpenWait = visitWaits.some((w) => w.endedAt == null);
+        let userWaitDurationMs = null;
+        let userWaitDurationReason = null;
+        if (hasOpenWait) {
+          userWaitDurationMs = null;
+          userWaitDurationReason = 'unclosed_wait';
+        } else if (visitWaits.length > 0) {
+          userWaitDurationMs = computeNonOverlappingWaitDuration(visitWaits);
+        } else {
+          userWaitDurationMs = 0;
+        }
 
         rounds.push({
           stepRef,
@@ -227,19 +282,20 @@
           kind: step.kind || 'round',
           label: step.kind === 'owner' ? `Шаг User (${stepRef})` : `Раунд ${index + 1}`,
           visit,
-          expectedParticipants: step.models ? step.models.map((m) => (typeof m === 'string' ? m : m.name || m.id)) : (step.kind === 'owner' ? ['owner'] : []),
+          expectedParticipants: step.models ? step.models.map((m) => (typeof m === 'string' ? m : (m.id || m.name))) : (step.kind === 'owner' ? ['owner'] : []),
           participantResults: {
             accepted: acceptedParticipants,
             failed: failedParticipants
           },
           attemptCount: visitAttempts.length,
-          sentCount: visitAttempts.filter((a) => a.state === 'done' || (typeof a.sentAt === 'number' && a.state !== 'not_sent')).length,
+          sentCount,
           startedAt,
           endedAt,
           outcome,
           durationMs,
           waitIds: visitWaits.map((w) => w.waitId).filter(Boolean),
-          userWaitDurationMs: computeNonOverlappingWaitDuration(visitWaits)
+          userWaitDurationMs,
+          ...(userWaitDurationReason ? { userWaitDurationReason } : {})
         });
       });
     });

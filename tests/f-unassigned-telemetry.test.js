@@ -169,4 +169,164 @@ describe('Package F: Unassigned Observations and basic-telemetry/2 Export (C03 /
     expect(sel.totalScanned).toBe(6);
     expect(sel.selected + sel.unassigned + sel.otherRun + sel.invalid).toBe(sel.totalScanned);
   });
+
+  describe('Package 8: Classification Integrity and Rounds Summary Truthfulness (C03 / R01)', () => {
+    test('runSelection and attemptCorrelation are independent axes', () => {
+      const customRun = createMockRun();
+
+      const journal = [
+        // 1. Own run + unknown requestId -> selected + unassigned
+        { eventId: 'e-own-unknown', kind: 'completion_terminal', runId: 'run-f1', requestId: 'req-unseen', model: 'Claude' },
+        // 2. Known run + attempt conflict -> selected + conflict
+        { eventId: 'e-own-conflict', kind: 'completion_terminal', runId: 'run-f1', requestId: 'req-c1', attemptCorrelation: 'conflict' },
+        // 3. Known run + linked request -> selected + linked
+        { eventId: 'e-own-linked', kind: 'completion_terminal', runId: 'run-f1', requestId: 'req-c1' },
+        // 4. Conflicting run IDs -> unassigned + conflicting_run_ids
+        { eventId: 'e-run-conflict', kind: 'status', runId: 'run-f1', meta: { pipelineRunId: 'run-other' }, model: 'Claude' },
+        // 5. Other run -> otherRun
+        { eventId: 'e-other-run', kind: 'status', runId: 'run-other', model: 'Claude' }
+      ];
+
+      const report = BasicTelemetry.buildReport({
+        customRun,
+        delivery: { journal },
+        events: []
+      });
+
+      const selected = report.delivery.journal;
+      const unassigned = report.delivery.unassigned;
+
+      // 1. e-own-unknown is selected with attemptCorrelation: unassigned
+      const ownUnknown = selected.find((e) => e.eventId === 'e-own-unknown');
+      expect(ownUnknown).toBeDefined();
+      expect(ownUnknown.runSelection).toBe('selected');
+      expect(ownUnknown.attemptCorrelation).toBe('unassigned');
+      expect(ownUnknown.requestId).toBe('req-unseen');
+
+      // 2. e-own-conflict is selected with attemptCorrelation: conflict
+      const ownConflict = selected.find((e) => e.eventId === 'e-own-conflict');
+      expect(ownConflict).toBeDefined();
+      expect(ownConflict.runSelection).toBe('selected');
+      expect(ownConflict.attemptCorrelation).toBe('conflict');
+
+      // 3. e-own-linked is selected with attemptCorrelation: linked
+      const ownLinked = selected.find((e) => e.eventId === 'e-own-linked');
+      expect(ownLinked).toBeDefined();
+      expect(ownLinked.runSelection).toBe('selected');
+      expect(ownLinked.attemptCorrelation).toBe('linked');
+
+      // 4. e-run-conflict is unassigned with selectionReason conflicting_run_ids
+      const runConflict = unassigned.find((e) => e.eventId === 'e-run-conflict');
+      expect(runConflict).toBeDefined();
+      expect(runConflict.selectionReason).toBe('conflicting_run_ids');
+      expect(runConflict.runConflictEvidence).toEqual(expect.arrayContaining(['run-f1', 'run-other']));
+
+      // 5. Selection counters
+      expect(report.delivery.selection.selected).toBe(3);
+      expect(report.delivery.selection.unassigned).toBe(1);
+      expect(report.delivery.selection.otherRun).toBe(1);
+      expect(report.delivery.selection.totalScanned).toBe(5);
+    });
+
+    test('rounds summary: participant rejected in attempt 1 and accepted in attempt 2 is NOT in failed', () => {
+      const customRun = {
+        runId: 'run-retry-fix',
+        steps: [{ ref: 'r1', kind: 'round', models: [{ id: 'C1', name: 'Claude' }] }],
+        attempts: [
+          { ref: 'r1', visit: 1, participant: 'C1', attempt: 1, state: 'done', accepted: false, transportRequestId: 'req-fail' },
+          { ref: 'r1', visit: 1, participant: 'C1', attempt: 2, state: 'done', accepted: true, transportRequestId: 'req-ok' }
+        ],
+        waits: []
+      };
+
+      const report = BasicTelemetry.buildReport({
+        customRun,
+        delivery: { journal: [] },
+        events: []
+      });
+
+      const round = report.rounds[0];
+      expect(round).toBeDefined();
+      expect(round.participantResults.accepted).toEqual(['C1']);
+      expect(round.participantResults.failed).toEqual([]); // Must NOT be in failed!
+    });
+
+    test('rounds summary: expectedParticipants preserves distinct participant IDs for multiple instances of same provider', () => {
+      const customRun = {
+        runId: 'run-multi-claude',
+        steps: [
+          {
+            ref: 'r1',
+            kind: 'round',
+            models: [
+              { id: 'C1', name: 'Claude' },
+              { id: 'C2', name: 'Claude' }
+            ]
+          }
+        ],
+        attempts: [
+          { ref: 'r1', visit: 1, participant: 'C1', attempt: 1, state: 'done', accepted: true, transportRequestId: 'req-1' },
+          { ref: 'r1', visit: 1, participant: 'C2', attempt: 1, state: 'done', accepted: true, transportRequestId: 'req-2' }
+        ],
+        waits: []
+      };
+
+      const report = BasicTelemetry.buildReport({
+        customRun,
+        delivery: { journal: [] },
+        events: []
+      });
+
+      const round = report.rounds[0];
+      expect(round.expectedParticipants).toEqual(['C1', 'C2']); // Distinct participant IDs, not ['Claude', 'Claude']
+    });
+
+    test('rounds summary: sentCount counts only confirmed dispatches and excludes cancelled_before_dispatch', () => {
+      const customRun = {
+        runId: 'run-sent-count',
+        steps: [{ ref: 'r1', kind: 'round', models: [{ id: 'A', name: 'M' }, { id: 'B', name: 'M' }, { id: 'C', name: 'M' }] }],
+        attempts: [
+          // A: dispatched and completed -> counted
+          { ref: 'r1', visit: 1, participant: 'A', attempt: 1, state: 'done', accepted: true, sentAt: 1000, transportRequestId: 'req-a' },
+          // B: dispatched, in-flight/interrupted -> counted
+          { ref: 'r1', visit: 1, participant: 'B', attempt: 1, state: 'unknown', reason: 'interrupted_in_flight', sentAt: 1050, transportRequestId: 'req-b' },
+          // C: wave never dispatched -> NOT counted
+          { ref: 'r1', visit: 1, participant: 'C', attempt: 1, state: 'not_sent', reason: 'cancelled_before_dispatch', sentAt: null, transportRequestId: null }
+        ],
+        waits: []
+      };
+
+      const report = BasicTelemetry.buildReport({
+        customRun,
+        delivery: { journal: [] },
+        events: []
+      });
+
+      const round = report.rounds[0];
+      expect(round.attemptCount).toBe(3);
+      expect(round.sentCount).toBe(2); // Only A and B were actually sent!
+    });
+
+    test('rounds summary: unclosed wait returns null userWaitDurationMs with reason unclosed_wait instead of 0', () => {
+      const customRun = {
+        runId: 'run-open-wait',
+        steps: [{ ref: 'r1', kind: 'round', models: [{ id: 'C1', name: 'Claude' }] }],
+        attempts: [{ ref: 'r1', visit: 1, participant: 'C1', attempt: 1, state: 'done', accepted: true, transportRequestId: 'req-1' }],
+        waits: [
+          // Open wait (crash or in-progress)
+          { waitId: 'w-open', kind: 'decision', stepRef: 'r1', visit: 1, startedAt: 5000, endedAt: null, outcome: null }
+        ]
+      };
+
+      const report = BasicTelemetry.buildReport({
+        customRun,
+        delivery: { journal: [] },
+        events: []
+      });
+
+      const round = report.rounds[0];
+      expect(round.userWaitDurationMs).toBeNull(); // Must NOT be 0!
+      expect(round.userWaitDurationReason).toBe('unclosed_wait');
+    });
+  });
 });

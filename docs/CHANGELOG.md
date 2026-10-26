@@ -1,5 +1,20 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: независимая классификация runSelection/attemptCorrelation и честность сводки шагов (Пакет 8: C03, R01), версия 2.81.897
+
+- В `shared/basic-telemetry.js`: `classifyEntry` теперь определяет `runSelection` и `attemptCorrelation` как две независимые ортогональные оси:
+  - Собственный прогон с неизвестным ID запроса сохраняет признак `runSelection: 'selected'` и `attemptCorrelation: 'unassigned'` без потери оригинального ID и без назначения на не того участника.
+  - Конфликт запроса на известном прогоне классифицируется как `selected` + `conflict`.
+  - Конфликт нескольких `runId` в событии остаётся `unassigned` с доказательной базой `runConflictEvidence`.
+  - Другой доказанный прогон исключается как `otherRun`.
+  - Счётчики выборки строго сходятся: `selected + unassigned + otherRun + invalid === totalScanned`.
+- В `buildRoundsSummary`:
+  - Участник, отклонённый на первой попытке и принятый на второй, больше не учитывается одновременно в `failed`.
+  - `expectedParticipants` сохраняет индивидуальные ID участников (`models[].id`), предотвращая слияние участников одной модели (например Claude C1 и C2).
+  - `sentCount` считает только подтверждённые внешние отправки и не учитывает записи `not_sent` и `cancelled_before_dispatch`.
+  - Незакрытое ожидание User (`endedAt == null`) возвращает `userWaitDurationMs: null` с указанием причины `unclosed_wait` вместо фиктивной нулевой длительности.
+- Добавлены тесты независимой классификации и честности агрегаций сводки шагов в `tests/f-unassigned-telemetry.test.js`.
+
 ### 2026-10-26 — Basic: долговечность и атомарность сохранения истории ожиданий User (Пакет 7: C05), версия 2.81.896
 
 - В `disput/custom-engine.js`: `ownerWait` сохраняет событие начала ожидания `custom_wait_start` и выполняет обязательный чекпоинт `checkpointNow` с привязкой `pendingOwner: { kind, stepRef, visit, waitId }` до открытия интерактивного окна/диалога.
