@@ -29,9 +29,10 @@
   const journal = [];
   const producerId = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   let producerSeq = 0;
-  const unconfirmedQueue = [];
+  let unconfirmedQueue = [];
   let appendTimer = null;
   let appendFlight = false;
+  let appendEpoch = 0;
   let mirrorTimer = null;
   const collection = { recorded: 0, evicted: 0, focusDetailsOmitted: 0, limit: JOURNAL_LIMIT, focusDetailLimit: FOCUS_EVENTS_PER_REQUEST };
   const proof = root.AnswerProofNormalization || (typeof require === 'function' ? require('./answer-proof-normalization') : null);
@@ -101,28 +102,33 @@
     const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
     if (!runtime?.sendMessage) return;
     appendFlight = true;
+    const epochAtStart = appendEpoch;
     const batch = unconfirmedQueue.slice();
     try {
       await new Promise((resolve) => {
         runtime.sendMessage({ type: 'DELIVERY_JOURNAL_APPEND', events: batch, producerId }, (res) => {
-          if (!runtime.lastError && res?.ok) {
-            unconfirmedQueue.splice(0, batch.length);
+          if (appendEpoch === epochAtStart) {
+            if (!runtime.lastError && res?.ok) {
+              const batchIds = new Set(batch.map((e) => e.eventId));
+              unconfirmedQueue = unconfirmedQueue.filter((e) => !batchIds.has(e.eventId));
+            }
           }
           resolve();
         });
       });
     } catch (_) {
-      // Keep in queue on error
+      // Keep in queue on error if epoch matches
     } finally {
       appendFlight = false;
-      if (unconfirmedQueue.length > 0) scheduleAppend();
+      if (appendEpoch === epochAtStart && unconfirmedQueue.length > 0) scheduleAppend();
     }
   }
 
   function record(event) {
     if (!event.eventId) {
       if (event.sourceEventId) {
-        event.eventId = `${event.sourceEventId}_${event.kind || 'evt'}_${++producerSeq}`;
+        const ord = Number.isInteger(event.ordinal) ? event.ordinal : 0;
+        event.eventId = `${event.sourceEventId}:${event.kind || 'evt'}:${ord}`;
       } else {
         event.eventId = `${producerId}:${++producerSeq}`;
       }
@@ -344,6 +350,7 @@
   // dispatch phases (TRANSPORT_DISPATCH_PHASE) and provider stop results.
   function observeRuntime(message) {
     if (!message) return;
+    const sourceEventId = String(message.sourceEventId || message.meta?.sourceEventId || '') || null;
     if (message.type === 'TRANSPORT_DISPATCH_PHASE') {
       const entry = entryFor(message);
       if (entry && message.tabId != null) {
@@ -354,6 +361,7 @@
       if (entry) entry.lastPhaseKey = phaseKey;
       record({
         kind: 'dispatch', model: message.llmName, token: entry?.token || null, requestId: requestIdOf(message),
+        sourceEventId, ordinal: 0,
         phase: String(message.phase || ''), dispatchId: message.dispatchId || null, tabId: message.tabId ?? null,
         reason: message.reason || null, dispatchReason: message.dispatchReason || null, attempt: message.attempt ?? null,
         promptArtifact: message.phase === 'submitted' ? entry?.promptArtifact || null : undefined,
@@ -382,6 +390,7 @@
           record({
             kind: 'focus', model: message.llmName || entry.model || null, token: entry.token,
             requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+            sourceEventId, ordinal: entry.focusCount,
             attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
             source: message.source || null, tabId: message.tabId ?? entry.tabId ?? null, n: entry.focusCount, ms: Date.now() - entry.sentAt
           });
@@ -391,6 +400,7 @@
             record({
               kind: 'focus_count', model: message.llmName || entry.model || null, token: entry.token,
               requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+              sourceEventId, ordinal: entry.focusCount,
               attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
               n: entry.focusCount, ms: Date.now() - entry.sentAt
             });
@@ -400,6 +410,7 @@
         record({
           kind: 'focus', model: message.llmName || null, token: null,
           requestId: null, sourceTransportRequestId: explicitId || null,
+          sourceEventId, ordinal: 0,
           attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
           source: message.source || null, tabId: message.tabId ?? null
         });
@@ -419,6 +430,7 @@
       record({
         kind: 'completion_terminal', model: message.llmName || entry?.model || null, token: entry?.token || null,
         requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        sourceEventId, ordinal: 0,
         attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
         status: result.status || null, dispatchId: message.meta?.dispatchId || null,
         ms: entry ? Date.now() - entry.sentAt : null
@@ -438,6 +450,7 @@
       record({
         kind: 'navigation', model: message.llmName || entry?.model || null, token: entry?.token || null,
         requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        sourceEventId, ordinal: 0,
         attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
         from: path(message.oldUrl), to: path(message.newUrl),
         ms: entry ? Date.now() - entry.sentAt : null
@@ -456,6 +469,7 @@
       record({
         kind: 'provider_stop', model: message.llmName || entry?.model || null, token: entry?.token || null,
         requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+        sourceEventId, ordinal: 0,
         attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
         stopped: message.stopped === true
       });
@@ -471,9 +485,11 @@
       if (entry) {
         if (entry.final || !status || entry.lastStatus === status) return;
         entry.lastStatus = status;
+        entry.statusCount = (entry.statusCount || 0) + 1;
         record({
           kind: 'status', model: message.llmName || entry.model, token: entry.token,
           requestId: resolved.requestId, sourceTransportRequestId: explicitId || null,
+          sourceEventId, ordinal: entry.statusCount,
           attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
           status
         });
@@ -482,6 +498,7 @@
         record({
           kind: 'status', model: message.llmName || null, token: null,
           requestId: null, sourceTransportRequestId: explicitId || null,
+          sourceEventId, ordinal: 0,
           attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
           status
         });
@@ -489,11 +506,17 @@
       return;
     } else if (message.type === 'GLOBAL_STATE_BROADCAST') {
       const map = message.state?.tabs?.map || {};
+      let ord = 0;
       latestByModel.forEach((entry, model) => {
         if (Number.isInteger(map[model])) entry.tabId = map[model];
         if (entry.tabSeen || entry.final || !Number.isInteger(map[model])) return;
         entry.tabSeen = true;
-        record({ kind: 'tab', model, token: entry.token, requestId: entry.requestId, tabId: map[model], ms: Date.now() - entry.sentAt });
+        ord += 1;
+        record({
+          kind: 'tab', model, token: entry.token, requestId: entry.requestId,
+          sourceEventId, ordinal: ord,
+          tabId: map[model], ms: Date.now() - entry.sentAt
+        });
       });
     }
   }
@@ -540,7 +563,7 @@
         });
         if (resp && Array.isArray(resp.events)) {
           const seen = new Set(resp.events.map((e) => e.eventId));
-          const unconfirmed = journal.filter((e) => e.eventId && !seen.has(e.eventId));
+          const unconfirmed = unconfirmedQueue.filter((e) => e.eventId && !seen.has(e.eventId));
           const merged = resp.events.concat(unconfirmed);
           return {
             version: 2,
@@ -563,6 +586,11 @@
 
   // Clears only the journal; tokens of requests still in flight stay valid.
   function clearJournal() {
+    appendEpoch += 1;
+    if (appendTimer) {
+      clearTimeout(appendTimer);
+      appendTimer = null;
+    }
     journal.length = 0;
     unconfirmedQueue.length = 0;
     const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
@@ -576,6 +604,11 @@
   }
 
   function reset() {
+    appendEpoch += 1;
+    if (appendTimer) {
+      clearTimeout(appendTimer);
+      appendTimer = null;
+    }
     expectedByRequest.clear();
     latestByModel.clear();
     journal.length = 0;

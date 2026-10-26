@@ -264,5 +264,136 @@ describe('Package E: Unified Background Journal Store (C04 / ТЗ 5.E)', () => {
         expect(entry.eventId.length).toBeGreaterThan(3);
       });
     });
+
+    test('Package 6: single sourceEventId across two pages with different previous records yields identical eventId', () => {
+      const vm = require('vm');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'shared', 'message-delivery.js'), 'utf8');
+      function makeClient() {
+        const root = { setTimeout, clearTimeout, URL, Date, Math, Uint8Array, crypto: globalThis.crypto, chrome: { runtime: { sendMessage: jest.fn() } } };
+        const ctx = { window: root, globalThis: root, module: { exports: {} }, setTimeout, clearTimeout, Date, Math, Uint8Array, URL, console };
+        vm.runInNewContext(src, ctx);
+        return ctx.module.exports;
+      }
+
+      const clientA = makeClient();
+      const clientB = makeClient();
+
+      // Client A records 5 prior local events
+      for (let i = 0; i < 5; i++) {
+        clientA.record({ kind: 'local_step', n: i });
+      }
+      expect(clientA.journal()).toHaveLength(5);
+      expect(clientB.journal()).toHaveLength(0);
+
+      // Both receive the same runtime event with sourceEventId
+      const runtimeMsg = {
+        type: 'SPA_NAVIGATION',
+        sourceEventId: 'shared-source-xyz',
+        transportRequestId: 'req-common',
+        llmName: 'Claude',
+        oldUrl: 'https://site.test/old',
+        newUrl: 'https://site.test/new'
+      };
+
+      clientA.observeRuntime(runtimeMsg);
+      clientB.observeRuntime(runtimeMsg);
+
+      const evtA = clientA.journal().find((e) => e.sourceEventId === 'shared-source-xyz');
+      const evtB = clientB.journal().find((e) => e.sourceEventId === 'shared-source-xyz');
+
+      expect(evtA).toBeDefined();
+      expect(evtB).toBeDefined();
+      expect(evtA.eventId).toBe('shared-source-xyz:navigation:0');
+      expect(evtB.eventId).toBe('shared-source-xyz:navigation:0');
+      expect(evtA.eventId).toBe(evtB.eventId);
+    });
+
+    test('Package 6: eviction from background store does NOT resurrect evicted events as unconfirmed tail', async () => {
+      const vm = require('vm');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'shared', 'message-delivery.js'), 'utf8');
+      let storeEvents = [];
+
+      const root = {
+        setTimeout, clearTimeout, URL, Date, Math, Uint8Array, crypto: globalThis.crypto,
+        chrome: {
+          runtime: {
+            lastError: null,
+            sendMessage: jest.fn((msg, cb) => {
+              if (msg.type === 'DELIVERY_JOURNAL_APPEND') {
+                storeEvents.push(...msg.events);
+                if (typeof cb === 'function') cb({ ok: true });
+              } else if (msg.type === 'DELIVERY_JOURNAL_SNAPSHOT') {
+                if (typeof cb === 'function') cb({ ok: true, snapshot: { version: 2, events: storeEvents.slice(), collection: { retained: storeEvents.length } } });
+              } else {
+                if (typeof cb === 'function') cb({ ok: true });
+              }
+            })
+          }
+        }
+      };
+      const ctx = { window: root, globalThis: root, module: { exports: {} }, setTimeout, clearTimeout, Date, Math, Uint8Array, URL, console };
+      vm.runInNewContext(src, ctx);
+      const client = ctx.module.exports;
+
+      client.record({ kind: 'confirmed-event-1' });
+      // Wait for flushAppend to execute and receive ACK
+      await new Promise((r) => setTimeout(r, 60));
+
+      const firstSnap = await client.snapshot();
+      expect(firstSnap.events.map((e) => e.kind)).toContain('confirmed-event-1');
+      expect(firstSnap.collection.unconfirmedTail).toBe(0);
+
+      // Store evicts old event (FIFO limit or eviction)
+      storeEvents = [];
+
+      // Snapshot after eviction: should NOT resurrect confirmed-event-1 from local journal
+      const secondSnap = await client.snapshot();
+      expect(secondSnap.events.map((e) => e.kind)).not.toContain('confirmed-event-1');
+      expect(secondSnap.collection.unconfirmedTail).toBe(0);
+    });
+
+    test('Package 6: clearJournal during in-flight append does NOT resurrect cleared events', async () => {
+      const vm = require('vm');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'shared', 'message-delivery.js'), 'utf8');
+      let appendCallback = null;
+
+      const root = {
+        setTimeout, clearTimeout, URL, Date, Math, Uint8Array, crypto: globalThis.crypto,
+        chrome: {
+          runtime: {
+            lastError: null,
+            sendMessage: jest.fn((msg, cb) => {
+              if (msg.type === 'DELIVERY_JOURNAL_APPEND') {
+                appendCallback = cb;
+              } else if (msg.type === 'DELIVERY_JOURNAL_SNAPSHOT') {
+                if (typeof cb === 'function') cb({ ok: true, snapshot: { version: 2, events: [], collection: { retained: 0 } } });
+              } else {
+                if (typeof cb === 'function') cb({ ok: true });
+              }
+            })
+          }
+        }
+      };
+      const ctx = { window: root, globalThis: root, module: { exports: {} }, setTimeout, clearTimeout, Date, Math, Uint8Array, URL, console };
+      vm.runInNewContext(src, ctx);
+      const client = ctx.module.exports;
+
+      client.record({ kind: 'in-flight-evt' });
+      // Trigger append timer
+      await new Promise((r) => setTimeout(r, 50));
+      expect(typeof appendCallback).toBe('function');
+
+      // Clear journal while append is in flight
+      client.clearJournal();
+      expect(client.journal()).toHaveLength(0);
+
+      // Now append response returns ok: true
+      appendCallback({ ok: true });
+
+      // After append completes, journal must remain empty and snapshot must have 0 events
+      const snap = await client.snapshot();
+      expect(snap.events).toHaveLength(0);
+      expect(snap.collection.unconfirmedTail).toBe(0);
+    });
   });
 });

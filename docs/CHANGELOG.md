@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: дедупликация событий по sourceEventId и защита от воскрешения вытесненных записей (Пакет 6: C04), версия 2.81.895
+
+- В `shared/message-delivery.js`: метод `observeRuntime` передаёт сквозной `sourceEventId` во все порождаемые записи событий (`dispatch`, `navigation`, `completion_terminal`, `provider_stop`, `status`, `focus`, `tab`).
+- Метод `record` вычисляет `eventId` детерминированно из `${sourceEventId}:${kind}:${ordinal}`, что гарантирует совпадение ID одного и того же runtime-события на нескольких вкладках независимо от локального счетчика `producerSeq`.
+- Метод `snapshot` сравнивает фоновый снимок исключительно со списком локально неподтверждённых записей `unconfirmedQueue`, предотвращая ложное воскрешение старых подтверждённых событий, вытесненных из фонового хранилища по FIFO-лимиту.
+- Очистка журнала (`clearJournal` / `reset`) теперь инвалидирует эпоху отправки (`appendEpoch`), исключая возвращение очищенных записей после завершения in-flight аппенда.
+- Добавлены тесты дедупликации одного `sourceEventId` на разных страницах, корректности снимка после вытеснения из хранилища и атомарности `clearJournal` в `tests/e-journal-store.test.js`.
+
 ### 2026-10-26 — Basic: устранение скрытого fallback на последнюю модель и сохранение идентичности STOP (Пакет 5: C02), версия 2.81.894
 
 - В `shared/message-delivery.js` в методе `resolveObservedEntry` полностью удалён скрытый fallback на `latestByModel.get(message.llmName)`: события без доказанного `transportRequestId` связываются с попыткой исключительно по доказанному `tabId` самого события или отправителя, а при его отсутствии остаются со статусом `attemptCorrelation: 'unassigned'` (`missing_request_id`).
