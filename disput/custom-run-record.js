@@ -149,9 +149,12 @@
   function recordWaitStart(record, waitInfo = {}) {
     if (!record) return null;
     if (!Array.isArray(record.waits)) record.waits = [];
+    const waitId = String(waitInfo.waitId || `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+    const existing = record.waits.find((w) => w.waitId === waitId);
+    if (existing) return existing;
     const wait = {
-      waitId: String(waitInfo.waitId || `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
-      kind: String(waitInfo.kind || 'decision'),
+      waitId,
+      kind: String(waitInfo.kind || waitInfo.waitKind || 'decision'),
       stepRef: waitInfo.stepRef ?? null,
       visit: waitInfo.visit ?? 1,
       startedAt: waitInfo.startedAt || Date.now(),

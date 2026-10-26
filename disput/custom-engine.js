@@ -414,7 +414,7 @@
           'чат «new» нужен транспорту по участникам (callback sendParticipants)');
       }
     });
-    const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
+    const emit = async (kind, fields) => { if (typeof onEvent === 'function') await onEvent(kind, fields); };
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
     if (plan.some((step) => step.kind === 'owner') && typeof provideOwnerResult !== 'function') {
@@ -433,6 +433,7 @@
     let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
     let chatBindings = {}; // participantId → { modelName, stepRef, visit, transportRequestId }: the chat of each participant (kept on resume)
     let openOwner = null; // the owner interaction that is open now (a decision, an owner step, an ASK): kept on a stop
+    let resumePendingOwner = null;
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
@@ -488,7 +489,12 @@
       const stepRef = waitMeta.stepRef ?? (plan[pos]?.ref || null);
       const visit = waitMeta.visit ?? activeVisit;
       const startedAt = Date.now();
-      emit('custom_wait_start', { waitId, waitKind: kind, kind, stepRef, visit, startedAt, ...(waitMeta.resumedFrom ? { resumedFrom: waitMeta.resumedFrom } : {}) });
+      const resumedFrom = waitMeta.resumedFrom || (resumePendingOwner && resumePendingOwner.kind === kind && resumePendingOwner.stepRef === stepRef ? resumePendingOwner.waitId : null);
+      if (resumedFrom && resumePendingOwner?.waitId === resumedFrom) {
+        resumePendingOwner = null;
+      }
+      await emit('custom_wait_start', { waitId, waitKind: kind, kind, stepRef, visit, startedAt, ...(resumedFrom ? { resumedFrom } : {}) });
+      await checkpointNow(kind === 'asks' ? 'asks' : 'decision', { pendingOwner: { kind, stepRef, visit, waitId } });
       let onAbort = null;
       let outcome = null;
       const stopped = new Promise((resolve, reject) => {
@@ -498,6 +504,7 @@
       try {
         const result = await Promise.race([Promise.resolve().then(start), stopped]);
         outcome = typeof waitMeta.outcomeOf === 'function' ? waitMeta.outcomeOf(result) : (result === 'continue' ? 'approved' : typeof result === 'string' ? result : 'completed');
+        openOwner = null;
         return result;
       } catch (error) {
         if (error instanceof StopRun || error?.name === 'AbortError' || aborted()) {
@@ -509,7 +516,7 @@
       } finally {
         signal?.removeEventListener?.('abort', onAbort);
         const endedAt = Date.now();
-        emit('custom_wait_end', { waitId, waitKind: kind, kind, stepRef, visit, startedAt, endedAt, outcome: outcome || 'completed' });
+        await emit('custom_wait_end', { waitId, waitKind: kind, kind, stepRef, visit, startedAt, endedAt, outcome: outcome || 'completed' });
       }
     }
 
@@ -969,7 +976,6 @@
       let document = await documentFor(step);
       for (;;) {
         const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit, waitId } });
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output, ...(step.goal ? { goal: step.goal } : {}),
           ...(step.input !== 'none' ? { input } : {}), ...(document ? { document } : {}), ...(reason ? { reason, detail } : {}) }), { waitId, kind: 'owner', stepRef: step.ref, visit: entry.visit, outcomeOf: () => 'answered' });
         if (reply === null) throw new StopRun('stopped');
@@ -1060,6 +1066,9 @@
         if (item.owner) entry.owner = restoredOwner(item.owner);
         results.push(entry);
       });
+      if (saved.pendingOwner && typeof saved.pendingOwner === 'object') {
+        resumePendingOwner = { ...saved.pendingOwner };
+      }
       const at = saved.pc == null ? -1 : pointAt(saved.pc);
       if (saved.pc != null && at < 0) throw new EngineError('resume_mismatch', `шаг «${saved.pc}»`, 'шага сохранённого состояния нет в схеме продолжения');
       pos = at < 0 ? plan.length : at;
@@ -1089,7 +1098,6 @@
       };
       const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       markInFlight();
-      await checkpointNow('decision', { pendingOwner: { kind: 'unknown', stepRef: step.ref, visit: entry.visit, waitId } });
       // The answer a participant gave before: a read of its chat must not take it for the answer of the unknown request (V03).
       const previousAnswerOf = (participantId) => {
         for (let at = results.length - 1; at >= 0; at -= 1) {
@@ -1243,7 +1251,6 @@
             // Without every answer "continue" is not offered: the owner repeats, skips or stops the step.
             const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
             const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-            if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit, waitId } });
             const action = typeof decide === 'function'
               ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
                 reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }), { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res) })
@@ -1265,7 +1272,6 @@
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);
           if (asks.length) {
             const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-            await checkpointNow('asks', { pendingOwner: { kind: 'asks', stepRef: step.ref, visit: entry.visit, waitId } });
             ownerAnswers.push(...((await ownerWait(() => askOwner(asks, { step: step.index, label: stepLabel(step) }), { waitId, kind: 'asks', stepRef: step.ref, visit: entry.visit, outcomeOf: () => 'answered' })) || []));
             await checkpointNow('asks', { pendingOwner: null });
           }

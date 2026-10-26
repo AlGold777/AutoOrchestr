@@ -7436,15 +7436,17 @@ document.addEventListener('click', (event) => {
                         }
                         return { byParticipant, closedByOwner };
                     },
-                    onEvent: (kind, fields) => {
+                    onEvent: async (kind, fields) => {
                         if (kind === 'custom_step_start' || kind === 'custom_step_resumed') setCustomStepStatus(fields.step, 'running');
                         if (kind === 'custom_step_end') setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_step_interrupted') setCustomStepStatus(fields.step, fields.outcome === 'stopped' ? 'stopped' : 'failed');
                         if (kind === 'custom_wait_start' && record) {
                             window.CustomRunRecord?.recordWaitStart(record, fields);
+                            await writeRecord();
                         }
                         if (kind === 'custom_wait_end' && record) {
                             window.CustomRunRecord?.recordWaitEnd(record, fields);
+                            await writeRecord();
                         }
                         const payload = { pipelineRunId: runContext.pipelineRunId, ...fields };
                         if (kind.startsWith('custom_step') && (fields.kind || fields.stepKind)) {

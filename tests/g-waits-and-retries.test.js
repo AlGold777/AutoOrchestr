@@ -320,4 +320,291 @@ describe('Package G: User Waits and Retry Origins (C05 + C06 / ТЗ 5.G)', () =>
       expect(CustomRunRecord.textOf(record, attempt.answerRef)).toBe('Recovered answer from chat');
     });
   });
+
+  describe('Package 7: Durable User waits history with real store / snapshot (C05)', () => {
+    function makeMockStorage() {
+      const db = new Map();
+      return {
+        get: async (key) => (db.has(key) ? JSON.parse(JSON.stringify(db.get(key))) : null),
+        set: async (key, val) => db.set(key, JSON.parse(JSON.stringify(val))),
+        remove: async (key) => db.delete(key),
+        db
+      };
+    }
+
+    test('open wait for decision is durably saved in store before dialog returns with endedAt=null and matching pendingOwner', async () => {
+      const storage = makeMockStorage();
+      const store = CustomRunRecord.createStore({ maxBytes: 500000, storage });
+      const record = CustomRunRecord.createRun({
+        runId: 'run-p7-decision',
+        steps: [{ ref: 's1', kind: 'round', models: ['Claude'] }]
+      });
+
+      let loadedAtDialogOpen = null;
+      await Engine.run({
+        task: 'Task',
+        steps: [{ ref: 's1', kind: 'round', input: 'none', owner: 'approve', models: [{ id: 'C1', name: 'Claude' }] }],
+        checkpoint: async (state) => {
+          CustomRunRecord.setSnapshot(record, { schema: [{ ref: 's1', kind: 'round' }], state });
+          await store.save(record);
+        },
+        onEvent: async (kind, fields) => {
+          if (kind === 'custom_wait_start') {
+            CustomRunRecord.recordWaitStart(record, fields);
+            await store.save(record);
+          } else if (kind === 'custom_wait_end') {
+            CustomRunRecord.recordWaitEnd(record, fields);
+            await store.save(record);
+          }
+        },
+        sendParticipants: async () => ({ C1: { text: 'ok', status: 'SUCCESS' } }),
+        decide: async () => {
+          // While decision dialog is open, read what store holds (simulating process crash/freeze)
+          loadedAtDialogOpen = await store.load('run-p7-decision');
+          return 'continue';
+        }
+      });
+
+      expect(loadedAtDialogOpen).toBeDefined();
+      expect(loadedAtDialogOpen.waits).toHaveLength(1);
+      expect(loadedAtDialogOpen.waits[0].kind).toBe('decision');
+      expect(typeof loadedAtDialogOpen.waits[0].startedAt).toBe('number');
+      expect(loadedAtDialogOpen.waits[0].endedAt).toBeNull();
+      expect(loadedAtDialogOpen.snapshot.pendingOwner).toBeDefined();
+      expect(loadedAtDialogOpen.snapshot.pendingOwner.waitId).toBe(loadedAtDialogOpen.waits[0].waitId);
+    });
+
+    test('open wait for owner step is durably saved in store with endedAt=null and matching pendingOwner', async () => {
+      const storage = makeMockStorage();
+      const store = CustomRunRecord.createStore({ maxBytes: 500000, storage });
+      const record = CustomRunRecord.createRun({
+        runId: 'run-p7-owner',
+        steps: [{ ref: 'o1', kind: 'owner', task: 'Owner task' }]
+      });
+
+      let loadedAtOwnerOpen = null;
+      await Engine.run({
+        task: 'Task',
+        steps: [{ ref: 'o1', kind: 'owner', task: 'Owner task' }],
+        sendParticipants: async () => ({}),
+        checkpoint: async (state) => {
+          CustomRunRecord.setSnapshot(record, { schema: [{ ref: 'o1', kind: 'owner' }], state });
+          await store.save(record);
+        },
+        onEvent: async (kind, fields) => {
+          if (kind === 'custom_wait_start') {
+            CustomRunRecord.recordWaitStart(record, fields);
+            await store.save(record);
+          } else if (kind === 'custom_wait_end') {
+            CustomRunRecord.recordWaitEnd(record, fields);
+            await store.save(record);
+          }
+        },
+        provideOwnerResult: async () => {
+          loadedAtOwnerOpen = await store.load('run-p7-owner');
+          return 'User answered';
+        }
+      });
+
+      expect(loadedAtOwnerOpen).toBeDefined();
+      expect(loadedAtOwnerOpen.waits).toHaveLength(1);
+      expect(loadedAtOwnerOpen.waits[0].kind).toBe('owner');
+      expect(loadedAtOwnerOpen.waits[0].endedAt).toBeNull();
+      expect(loadedAtOwnerOpen.snapshot.pendingOwner.waitId).toBe(loadedAtOwnerOpen.waits[0].waitId);
+    });
+
+    test('open wait for asks is durably saved in store with endedAt=null and matching pendingOwner', async () => {
+      const storage = makeMockStorage();
+      const store = CustomRunRecord.createStore({ maxBytes: 500000, storage });
+      const record = CustomRunRecord.createRun({
+        runId: 'run-p7-asks',
+        steps: [{ ref: 's1', kind: 'round', models: ['Claude'] }]
+      });
+
+      let loadedAtAskOpen = null;
+      await Engine.run({
+        task: 'Task',
+        steps: [{ ref: 's1', kind: 'round', input: 'none', models: [{ id: 'C1', name: 'Claude' }] }],
+        checkpoint: async (state) => {
+          CustomRunRecord.setSnapshot(record, { schema: [{ ref: 's1', kind: 'round' }], state });
+          await store.save(record);
+        },
+        onEvent: async (kind, fields) => {
+          if (kind === 'custom_wait_start') {
+            CustomRunRecord.recordWaitStart(record, fields);
+            await store.save(record);
+          } else if (kind === 'custom_wait_end') {
+            CustomRunRecord.recordWaitEnd(record, fields);
+            await store.save(record);
+          }
+        },
+        sendParticipants: async () => ({ C1: { text: 'Question for user: [[ASK: what color?]]', status: 'SUCCESS' } }),
+        parseAsks: (text) => (text.includes('[[ASK') ? ['what color?'] : []),
+        askOwner: async () => {
+          loadedAtAskOpen = await store.load('run-p7-asks');
+          return ['blue'];
+        }
+      });
+
+      expect(loadedAtAskOpen).toBeDefined();
+      expect(loadedAtAskOpen.waits).toHaveLength(1);
+      expect(loadedAtAskOpen.waits[0].kind).toBe('asks');
+      expect(loadedAtAskOpen.waits[0].endedAt).toBeNull();
+      expect(loadedAtAskOpen.snapshot.pendingOwner.waitId).toBe(loadedAtAskOpen.waits[0].waitId);
+    });
+
+    test('open wait for unknown resolution is durably saved with endedAt=null and matching pendingOwner', async () => {
+      const storage = makeMockStorage();
+      const store = CustomRunRecord.createStore({ maxBytes: 500000, storage });
+      const record = CustomRunRecord.createRun({
+        runId: 'run-p7-unknown',
+        steps: [{ ref: 's1', kind: 'round', models: ['Claude'] }]
+      });
+
+      let loadedAtUnknownOpen = null;
+      await Engine.run({
+        task: 'Task',
+        steps: [{ ref: 's1', kind: 'round', input: 'none', models: [{ id: 'C1', name: 'Claude' }] }],
+        checkpoint: async (state) => {
+          CustomRunRecord.setSnapshot(record, { schema: [{ ref: 's1', kind: 'round' }], state });
+          await store.save(record);
+        },
+        onEvent: async (kind, fields) => {
+          if (kind === 'custom_wait_start') {
+            CustomRunRecord.recordWaitStart(record, fields);
+            await store.save(record);
+          } else if (kind === 'custom_wait_end') {
+            CustomRunRecord.recordWaitEnd(record, fields);
+            await store.save(record);
+          }
+        },
+        sendParticipants: async () => ({ C1: { text: '', status: 'UNCERTAIN' } }),
+        settleUnknown: async () => {
+          loadedAtUnknownOpen = await store.load('run-p7-unknown');
+          return { choice: 'check', checkedAnswers: { C1: 'Recovered' } };
+        }
+      });
+
+      expect(loadedAtUnknownOpen).toBeDefined();
+      expect(loadedAtUnknownOpen.waits).toHaveLength(1);
+      expect(loadedAtUnknownOpen.waits[0].kind).toBe('unknown');
+      expect(loadedAtUnknownOpen.waits[0].endedAt).toBeNull();
+      expect(loadedAtUnknownOpen.snapshot.pendingOwner.waitId).toBe(loadedAtUnknownOpen.waits[0].waitId);
+    });
+
+    test('resume from crash during open wait preserves old wait with endedAt=null and creates new wait with resumedFrom', async () => {
+      const storage = makeMockStorage();
+      const store = CustomRunRecord.createStore({ maxBytes: 500000, storage });
+      const record = CustomRunRecord.createRun({
+        runId: 'run-p7-crash-resume',
+        steps: [{ ref: 's1', kind: 'round', models: ['Claude'] }]
+      });
+
+      // 1. Run starts and stops while decision dialog is open (simulating process death:
+      // during dialog wait, store contains wait with endedAt=null, and tab vanishes before custom_wait_end)
+      let storedAtCrash = null;
+      let resolveDecide = null;
+      const decidePromise = new Promise((resolve) => { resolveDecide = resolve; });
+
+      const runPromise = Engine.run({
+        task: 'Task',
+        steps: [{ ref: 's1', kind: 'round', input: 'none', owner: 'approve', models: [{ id: 'C1', name: 'Claude' }] }],
+        putText: (v) => record.put(v),
+        getText: (r) => record.texts[r],
+        checkpoint: async (state) => {
+          CustomRunRecord.setSnapshot(record, { schema: [{ ref: 's1', kind: 'round' }], state });
+          await store.save(record);
+        },
+        onEvent: async (kind, fields) => {
+          if (kind === 'custom_wait_start') {
+            CustomRunRecord.recordWaitStart(record, fields);
+            await store.save(record);
+          } else if (kind === 'custom_wait_end') {
+            CustomRunRecord.recordWaitEnd(record, fields);
+            await store.save(record);
+          }
+        },
+        sendParticipants: async () => ({ C1: { text: 'ok', status: 'SUCCESS' } }),
+        decide: async () => {
+          // While decision dialog is open, snapshot the stored state
+          storedAtCrash = await store.load('run-p7-crash-resume');
+          return decidePromise;
+        }
+      });
+
+      // Wait a tick for decide to be invoked and storedAtCrash to be loaded
+      for (let i = 0; i < 20 && !storedAtCrash; i++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      // Verify the state that was persisted to disk before process death
+      expect(storedAtCrash).toBeDefined();
+      expect(storedAtCrash.waits).toHaveLength(1);
+      expect(storedAtCrash.waits[0].endedAt).toBeNull();
+      const oldWaitId = storedAtCrash.waits[0].waitId;
+
+      // Clean up the running engine promise
+      resolveDecide('continue');
+      await runPromise;
+
+      // 2. Revive the crash record from storage and resume in a brand new session
+      const revivedRecord = CustomRunRecord.revive(storedAtCrash);
+      expect(revivedRecord.waits[0].endedAt).toBeNull();
+
+      await Engine.run({
+        task: 'Task',
+        steps: [{ ref: 's1', kind: 'round', input: 'none', owner: 'approve', models: [{ id: 'C1', name: 'Claude' }] }],
+        sendParticipants: async () => ({ C1: { text: 'ok', status: 'SUCCESS' } }),
+        resume: { ...revivedRecord.snapshot, artifacts: revivedRecord.artifacts },
+        getText: (ref) => revivedRecord.texts[ref],
+        checkpoint: async (state) => {
+          CustomRunRecord.setSnapshot(revivedRecord, { schema: [{ ref: 's1', kind: 'round' }], state });
+          await store.save(revivedRecord);
+        },
+        onEvent: async (kind, fields) => {
+          if (kind === 'custom_wait_start') {
+            CustomRunRecord.recordWaitStart(revivedRecord, fields);
+            await store.save(revivedRecord);
+          } else if (kind === 'custom_wait_end') {
+            CustomRunRecord.recordWaitEnd(revivedRecord, fields);
+            await store.save(revivedRecord);
+          }
+        },
+        decide: async () => 'continue'
+      });
+
+      // Verify that after resume:
+      // Old wait retained endedAt=null
+      // New wait has resumedFrom linking to oldWaitId
+      expect(revivedRecord.waits).toHaveLength(2);
+      expect(revivedRecord.waits[0].waitId).toBe(oldWaitId);
+      expect(revivedRecord.waits[0].endedAt).toBeNull();
+
+      expect(revivedRecord.waits[1].resumedFrom).toBe(oldWaitId);
+      expect(revivedRecord.waits[1].endedAt).toBeGreaterThanOrEqual(revivedRecord.waits[1].startedAt);
+      expect(revivedRecord.waits[1].outcome).toBe('approved');
+    });
+
+    test('failure of durable checkpoint before dialog throws checkpoint_failed and prevents dialog opening', async () => {
+      let decideCalled = false;
+      const steps = [{ ref: 's1', kind: 'round', input: 'none', owner: 'approve', models: [{ id: 'C1', name: 'Claude' }] }];
+
+      await expect(
+        Engine.run({
+          task: 'Task',
+          steps,
+          checkpoint: async () => {
+            throw new Error('Storage write failed (quota exceeded)');
+          },
+          sendParticipants: async () => ({ C1: { text: 'ok', status: 'SUCCESS' } }),
+          decide: async () => {
+            decideCalled = true;
+            return 'continue';
+          }
+        })
+      ).rejects.toThrow();
+
+      expect(decideCalled).toBe(false);
+    });
+  });
 });
