@@ -938,9 +938,18 @@ function customFlowReport({ runId, delivery }) {
   const stageExecutions = arr(start.steps).map((step) => {
     const stageId = customStageId(runId, step.step);
     const batches = journal.filter((e) => e.kind === 'batch_start' && e.stageId === stageId);
-    const stepStarts = journal.filter((e) => (e.kind === 'custom_step_start' || e.kind === 'custom_step_resumed') && e.pipelineRunId === runId && e.step === step.step);
-    const ends = journal.filter((e) => e.kind === 'custom_step_end' && e.pipelineRunId === runId && e.step === step.step);
-    const interrupted = journal.filter((e) => e.kind === 'custom_step_interrupted' && e.pipelineRunId === runId && e.step === step.step);
+    const stepStarts = journal.filter((e) => (
+      e.kind === 'custom_step_start' || e.kind === 'custom_step_resumed' ||
+      ((e.kind === 'round' || e.kind === 'owner') && e.startedAt != null && e.endedAt == null)
+    ) && e.pipelineRunId === runId && e.step === step.step);
+    const ends = journal.filter((e) => (
+      e.kind === 'custom_step_end' ||
+      ((e.kind === 'round' || e.kind === 'owner') && e.endedAt != null && e.outcome !== 'stopped' && e.outcome !== 'failed' && e.outcome !== 'cancelled')
+    ) && e.pipelineRunId === runId && e.step === step.step);
+    const interrupted = journal.filter((e) => (
+      e.kind === 'custom_step_interrupted' ||
+      ((e.kind === 'round' || e.kind === 'owner') && ['stopped', 'failed', 'cancelled'].includes(e.outcome))
+    ) && e.pipelineRunId === runId && e.step === step.step);
 
     let startedAt = null;
     let startBasis = null;

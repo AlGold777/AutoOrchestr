@@ -298,4 +298,151 @@ describe('Package H: Step Boundaries and Rounds Summary (R01 / ТЗ 5.H)', () =>
     expect(legacyStage0.actual.completedAt).toBe(at(2500));
     expect(legacyStage0.endBasis).toBe('legacy_check');
   });
+
+  test('Package 3 Integration: Real Engine.run + Real Delivery.batchEvent + Real BasicTelemetry.buildReport for round -> ASK -> owner -> round', async () => {
+    const Delivery = require('../shared/message-delivery.js');
+    Delivery.reset();
+
+    const RUN_ID = 'run-pkg3-integration';
+    const steps = [
+      { ref: 'r1', kind: 'round', input: 'none', models: [{ id: 'C1', name: 'Claude' }] },
+      { ref: 'o1', kind: 'owner', input: 'previous', task: 'Review target' },
+      { ref: 'r2', kind: 'round', input: 'previous', models: [{ id: 'C2', name: 'Claude' }] }
+    ];
+
+    const record = CustomRunRecord.createRun({ runId: RUN_ID, pipelineName: 'P3', task: 'Integrate', steps });
+    const textDict = {};
+    const putText = (v) => { const r = `t_${Math.random().toString(36).slice(2, 7)}`; textDict[r] = v; return r; };
+    const getText = (r) => textDict[r];
+
+    // Wire-up identical to results.js onEvent production path
+    const onEvent = (kind, fields) => {
+      if (kind === 'custom_wait_start') {
+        CustomRunRecord.recordWaitStart(record, fields);
+      }
+      if (kind === 'custom_wait_end') {
+        CustomRunRecord.recordWaitEnd(record, fields);
+      }
+      const payload = { pipelineRunId: RUN_ID, ...fields };
+      if (kind.startsWith('custom_step') && (fields.kind || fields.stepKind)) {
+        payload.stepKind = fields.stepKind || fields.kind;
+      }
+      if (kind.startsWith('custom_wait') && (fields.kind || fields.waitKind)) {
+        payload.waitKind = fields.waitKind || fields.kind;
+      }
+      delete payload.kind;
+      Delivery.batchEvent(kind, payload);
+    };
+
+    const runResult = await Engine.run({
+      task: 'Integrate task',
+      steps,
+      onEvent,
+      onRequest: (entry) => CustomRunRecord.recordAttempt(record, entry),
+      onResponse: (entry) => CustomRunRecord.recordAttempt(record, entry),
+      putText,
+      getText,
+      checkpoint: async (state) => {
+        CustomRunRecord.setArtifacts(record, state.artifacts);
+        CustomRunRecord.setSnapshot(record, { schema: steps, state });
+      },
+      sendParticipants: async (requests) => {
+        if (requests.some((r) => r.participantId === 'C1')) {
+          return {
+            byParticipant: {
+              C1: { text: 'Round 1 output with [[ASK: What is the plan?]]', status: 'SUCCESS' }
+            }
+          };
+        }
+        if (requests.some((r) => r.participantId === 'C2')) {
+          return {
+            byParticipant: {
+              C2: { text: 'Round 2 final answer', status: 'SUCCESS' }
+            }
+          };
+        }
+        return { byParticipant: {} };
+      },
+      parseAsks: (text) => {
+        const match = text.match(/\[\[ASK:\s*([^\]]+)\]\]/);
+        return match ? [match[1]] : [];
+      },
+      askOwner: async (asks) => {
+        return [{ ask: asks[0], answer: 'Plan is go forward' }];
+      },
+      provideOwnerResult: async () => 'Owner confirmed target'
+    });
+
+    expect(runResult.stopReason).toBe('steps_done');
+
+    // 1. Verify MessageDelivery.journal(): kind must NOT be overwritten by 'round' or 'owner'
+    const journal = Delivery.journal();
+    const eventKinds = journal.map((e) => e.kind);
+
+    expect(eventKinds).toContain('custom_step_start');
+    expect(eventKinds).toContain('custom_step_end');
+    expect(eventKinds).toContain('custom_wait_start');
+    expect(eventKinds).toContain('custom_wait_end');
+    // None of the records should have kind overwritten by step/wait kind
+    expect(eventKinds).not.toContain('round');
+    expect(eventKinds).not.toContain('owner');
+
+    const stepStartEvents = journal.filter((e) => e.kind === 'custom_step_start');
+    expect(stepStartEvents).toHaveLength(3);
+    expect(stepStartEvents[0].stepKind).toBe('round');
+    expect(stepStartEvents[1].stepKind).toBe('owner');
+    expect(stepStartEvents[2].stepKind).toBe('round');
+
+    const stepEndEvents = journal.filter((e) => e.kind === 'custom_step_end');
+    expect(stepEndEvents).toHaveLength(3);
+    expect(stepEndEvents[0].stepKind).toBe('round');
+    expect(stepEndEvents[1].stepKind).toBe('owner');
+    expect(stepEndEvents[2].stepKind).toBe('round');
+
+    const waitStartEvents = journal.filter((e) => e.kind === 'custom_wait_start');
+    expect(waitStartEvents.length).toBeGreaterThanOrEqual(2); // ASK wait + Owner wait
+    expect(waitStartEvents.some((e) => e.waitKind === 'asks')).toBe(true);
+    expect(waitStartEvents.some((e) => e.waitKind === 'owner')).toBe(true);
+
+    // 2. Verify BasicTelemetry.buildReport: rounds summary must have non-null startedAt, endedAt, outcome
+    const report = BasicTelemetry.buildReport({
+      customRun: record,
+      delivery: { journal }
+    });
+
+    expect(report.rounds).toHaveLength(3);
+
+    // Step 0: Round 1 (round with ASK)
+    const r1 = report.rounds.find((r) => r.stepRef === 'r1');
+    expect(r1).toBeDefined();
+    expect(r1.kind).toBe('round');
+    expect(typeof r1.startedAt).toBe('number');
+    expect(typeof r1.endedAt).toBe('number');
+    expect(r1.endedAt).toBeGreaterThanOrEqual(r1.startedAt);
+    expect(r1.outcome).toBe('completed');
+    expect(typeof r1.durationMs).toBe('number');
+    expect(r1.waitIds.length).toBeGreaterThan(0); // ASK wait registered
+    expect(typeof r1.userWaitDurationMs).toBe('number');
+
+    // Step 1: Owner step
+    const o1 = report.rounds.find((r) => r.stepRef === 'o1');
+    expect(o1).toBeDefined();
+    expect(o1.kind).toBe('owner');
+    expect(typeof o1.startedAt).toBe('number');
+    expect(typeof o1.endedAt).toBe('number');
+    expect(o1.endedAt).toBeGreaterThanOrEqual(o1.startedAt);
+    expect(o1.outcome).toBe('completed');
+    expect(typeof o1.durationMs).toBe('number');
+    expect(o1.waitIds.length).toBeGreaterThan(0); // Owner wait registered
+    expect(typeof o1.userWaitDurationMs).toBe('number');
+
+    // Step 2: Round 2
+    const r2 = report.rounds.find((r) => r.stepRef === 'r2');
+    expect(r2).toBeDefined();
+    expect(r2.kind).toBe('round');
+    expect(typeof r2.startedAt).toBe('number');
+    expect(typeof r2.endedAt).toBe('number');
+    expect(r2.outcome).toBe('completed');
+    expect(typeof r2.durationMs).toBe('number');
+  });
 });

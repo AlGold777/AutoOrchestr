@@ -180,7 +180,13 @@
       const stepRef = step.ref || `#${index}`;
       const stepAttempts = attempts.filter((a) => a.ref === stepRef || a.step === index);
       const stepWaits = waits.filter((w) => w.stepRef === stepRef || w.stepRef === index);
-      const stepEvents = allEvents.filter((e) => (e.step === index || e.ref === stepRef) && String(e.kind || e.name || '').startsWith('custom_step'));
+      const isStepEvt = (e) => {
+        const k = String(e.kind || e.name || '');
+        if (k.startsWith('custom_step')) return true;
+        if ((k === 'round' || k === 'owner') && (e.startedAt != null || e.endedAt != null || e.outcome != null)) return true;
+        return false;
+      };
+      const stepEvents = allEvents.filter((e) => (e.step === index || e.ref === stepRef) && isStepEvt(e));
 
       // Find all visits for this step
       const visitSet = new Set([1]);
@@ -194,9 +200,18 @@
         const visitWaits = stepWaits.filter((w) => (w.visit || 1) === visit);
         const visitEvents = stepEvents.filter((e) => (e.visit || 1) === visit);
 
-        const startEvt = visitEvents.find((e) => (e.kind || e.name) === 'custom_step_start' || (e.kind || e.name) === 'custom_step_resumed');
-        const endEvt = visitEvents.find((e) => (e.kind || e.name) === 'custom_step_end');
-        const interruptedEvt = visitEvents.find((e) => (e.kind || e.name) === 'custom_step_interrupted');
+        const startEvt = visitEvents.find((e) => {
+          const k = e.kind || e.name;
+          return k === 'custom_step_start' || k === 'custom_step_resumed' || ((k === 'round' || k === 'owner') && e.startedAt != null && e.endedAt == null);
+        });
+        const endEvt = visitEvents.find((e) => {
+          const k = e.kind || e.name;
+          return k === 'custom_step_end' || ((k === 'round' || k === 'owner') && e.endedAt != null && e.outcome !== 'stopped' && e.outcome !== 'failed' && e.outcome !== 'cancelled');
+        });
+        const interruptedEvt = visitEvents.find((e) => {
+          const k = e.kind || e.name;
+          return k === 'custom_step_interrupted' || ((k === 'round' || k === 'owner') && ['stopped', 'failed', 'cancelled'].includes(e.outcome));
+        });
 
         const startedAt = startEvt ? (typeof startEvt.startedAt === 'number' ? startEvt.startedAt : toMs(startEvt.at)) : (visitAttempts[0]?.sentAt ?? null);
         const endedAt = endEvt ? (typeof endEvt.endedAt === 'number' ? endEvt.endedAt : toMs(endEvt.at)) : (interruptedEvt ? (typeof interruptedEvt.at === 'number' ? interruptedEvt.at : toMs(interruptedEvt.at)) : null);

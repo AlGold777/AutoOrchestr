@@ -531,7 +531,17 @@
   // Batch-level facts from the panel (start, refusals, acceptance, outcome) and
   // answers the panel refused for their identity. Not tied to one token.
   function batchEvent(kind, fields = {}) {
-    record({ kind, ...fields });
+    const payload = { ...fields };
+    if ('kind' in payload && payload.kind !== kind) {
+      if (!payload.stepKind && (kind.startsWith('custom_step') || payload.kind === 'round' || payload.kind === 'owner')) {
+        payload.stepKind = payload.kind;
+      }
+      if (!payload.waitKind && (kind.startsWith('custom_wait') || ['decision', 'owner', 'asks', 'unknown'].includes(payload.kind))) {
+        payload.waitKind = payload.kind;
+      }
+      delete payload.kind;
+    }
+    record({ ...payload, kind });
   }
 
   async function snapshot() {

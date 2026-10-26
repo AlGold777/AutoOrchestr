@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-26 — Basic: разделение имени события kind и вида шага/ожидания stepKind/waitKind (Пакет 3: R01, C05), версия 2.81.892
+
+- В `shared/message-delivery.js` метод `batchEvent(kind, fields)` защищён от перезаписи имени события `kind` полями `fields`: семантический вид шага или ожидания сохраняется в `stepKind` / `waitKind`.
+- В `disput/custom-engine.js` события `custom_step_start/resumed/end/interrupted` явно передают `stepKind`, а `custom_wait_start/end` передают `waitKind`, сохраняя `kind` для обратной совместимости.
+- В `results.js` обработчик `onEvent` изолирует `stepKind` и `waitKind`, исключая коллизии при вызове `batchEvent`.
+- В `shared/basic-telemetry.js` и `shared/report-digest.js` добавлена поддержка как нового формата с `stepKind`/`waitKind`, так и ретроспективного чтения старых журналов.
+- Добавлен сквозной интеграционный тест связки Engine.run → onEvent → MessageDelivery.batchEvent → BasicTelemetry.buildReport в `tests/h-step-boundaries.test.js`.
+
 ### 2026-10-26 — Basic: точная фиксация отправки волн и проброс ошибок чекпоинта (B02), версия 2.81.891
 
 - В `disput/custom-engine.js` добавлен явный учёт отправки волн через callback `meta.onWaveDispatched` / `meta.onWaveStart`.
