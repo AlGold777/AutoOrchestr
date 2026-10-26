@@ -3553,6 +3553,8 @@
     return true;
   }
 
+  const generateSourceEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
   function createTracker({
     modelName,
     dispatchId = null,
@@ -3563,14 +3565,21 @@
     navigationEpoch = lifecycleNavigationEpoch,
     promptSubmittedAt = Date.now(),
     traceId = null,
-    baselineSnapshot = null
+    baselineSnapshot = null,
+    transportRequestId = null
   }) {
+    const resolvedTransportRequestId = transportRequestId
+      || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+      || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, modelName)?.transportRequestId : null)
+      || window.__CURRENT_TRANSPORT_REQUEST_ID__
+      || null;
     return {
       modelName,
       dispatchId,
       runSessionId,
       generationEpoch,
       candidateId,
+      transportRequestId: resolvedTransportRequestId,
       documentInstanceId,
       navigationEpoch,
       navigationUrl: window.location.href,
@@ -3657,10 +3666,20 @@
     });
     if (transition.type === 'TERMINAL_DECISION' && transition.terminalResult) {
       try {
+        const sourceEventId = generateSourceEventId();
+        const transportRequestId = tracker.transportRequestId
+          || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+          || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, tracker.modelName)?.transportRequestId : null)
+          || window.__CURRENT_TRANSPORT_REQUEST_ID__
+          || null;
         chrome.runtime.sendMessage({
           type: 'LLM_COMPLETION_TERMINAL',
           llmName: tracker.modelName,
+          sourceEventId,
+          transportRequestId,
           meta: {
+            sourceEventId,
+            transportRequestId,
             runSessionId: tracker.runSessionId,
             dispatchId: tracker.dispatchId,
             generationEpoch: tracker.generationEpoch,
@@ -4414,6 +4433,7 @@
     traceId = null,
     baselineText = null,
     turnAnchor = null,
+    transportRequestId = null,
     activateObservation = false
   }) {
     const activeTracker = trackers.get(modelName);
@@ -4465,7 +4485,8 @@
       navigationEpoch,
       promptSubmittedAt,
       traceId,
-      baselineSnapshot: suppliedBaseline
+      baselineSnapshot: suppliedBaseline,
+      transportRequestId: transportRequestId || storedIdentity.transportRequestId || null
     });
     tracker.turnAnchor = capturedTurnAnchor;
     trackers.set(modelName, tracker);
@@ -4713,6 +4734,26 @@
     const originalSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
     chrome.runtime.sendMessage = function patchedSendMessage(message, callback) {
       const cb = typeof callback === 'function' ? callback : null;
+      if (message && typeof message === 'object') {
+        if (!message.sourceEventId) {
+          message.sourceEventId = generateSourceEventId();
+        }
+        const trId = message.transportRequestId
+          || message.meta?.transportRequestId
+          || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+          || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, message.llmName)?.transportRequestId : null)
+          || window.__CURRENT_TRANSPORT_REQUEST_ID__
+          || null;
+        if (trId) {
+          if (!message.transportRequestId) message.transportRequestId = trId;
+          if (message.meta && typeof message.meta === 'object' && !message.meta.transportRequestId) {
+            message.meta.transportRequestId = trId;
+          }
+        }
+        if (message.meta && typeof message.meta === 'object' && !message.meta.sourceEventId) {
+          message.meta.sourceEventId = message.sourceEventId;
+        }
+      }
       if (message?.type === 'PROMPT_SUBMITTED' && message.llmName) {
         notePromptSendAttempt({ ...message.meta, modelName: message.llmName });
         const result = originalSendMessage(message, cb);
@@ -4726,6 +4767,7 @@
           navigationEpoch: message?.meta?.navigationEpoch ?? lifecycleNavigationEpoch,
           promptSubmittedAt: Date.now(),
           traceId: message?.meta?.traceId || message?.meta?.dispatchId || null,
+          transportRequestId: message?.meta?.transportRequestId || message?.transportRequestId || null,
           activateObservation: true
         })).catch(() => {});
         return result;
@@ -4958,9 +5000,23 @@
   const root = typeof window !== 'undefined' ? window : globalThis;
   root.LLMExtension = root.LLMExtension || {};
   root.SelectorConfig = root.SelectorConfig || {};
+  const makeEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const safeRuntimeSendMessage = (payload) => {
     try {
       if (!chrome?.runtime?.id) return false;
+      if (payload && typeof payload === 'object') {
+        if (!payload.sourceEventId) payload.sourceEventId = makeEventId();
+        const trId = payload.transportRequestId
+          || root.__CURRENT_TRANSPORT_REQUEST_ID__
+          || (root.ContentUtils?.getTransportRequestId ? root.ContentUtils.getTransportRequestId() : null)
+          || (root.ContentUtils?.ensureDispatchMeta ? root.ContentUtils.ensureDispatchMeta({}, payload.llmName)?.transportRequestId : null)
+          || null;
+        if (trId && !payload.transportRequestId) payload.transportRequestId = trId;
+        if (payload.meta && typeof payload.meta === 'object') {
+          if (!payload.meta.sourceEventId) payload.meta.sourceEventId = payload.sourceEventId;
+          if (trId && !payload.meta.transportRequestId) payload.meta.transportRequestId = trId;
+        }
+      }
       chrome.runtime.sendMessage(payload, () => {
         const errMsg = chrome.runtime?.lastError?.message || '';
         if (errMsg.includes('Extension context invalidated')) {
@@ -4992,6 +5048,10 @@
         root.ContentUtils.storeSessionId(runSessionId);
       }
     }
+    const transportRequestId = meta.transportRequestId || null;
+    if (transportRequestId) {
+      root.__CURRENT_TRANSPORT_REQUEST_ID__ = transportRequestId;
+    }
     if (meta.pipelineRunId) {
       if (root.ContentUtils?.storeDispatchMeta) {
         root.ContentUtils.storeDispatchMeta({ pipelineRunId: meta.pipelineRunId });
@@ -5009,7 +5069,8 @@
         sessionId: meta.sessionId || message?.sessionId || null,
         dispatchId: meta.dispatchId || message?.dispatchId || null,
         tabSessionId: meta.tabSessionId || message?.tabSessionId || null,
-        pipelineRunId: meta.pipelineRunId || message?.pipelineRunId || null
+        pipelineRunId: meta.pipelineRunId || message?.pipelineRunId || null,
+        transportRequestId: meta.transportRequestId || message?.transportRequestId || null
       };
       captureDispatchMeta(merged);
     });
@@ -5174,9 +5235,16 @@
 
     const notifySpaNavigation = (state, reason, previousUrl, nextUrl) => {
       if (!state || !previousUrl || !nextUrl || previousUrl === nextUrl) return;
+      const sourceEventId = makeEventId();
+      const transportRequestId = root.__CURRENT_TRANSPORT_REQUEST_ID__
+        || (root.ContentUtils?.getTransportRequestId ? root.ContentUtils.getTransportRequestId() : null)
+        || (root.ContentUtils?.ensureDispatchMeta ? root.ContentUtils.ensureDispatchMeta({}, state.llmName)?.transportRequestId : null)
+        || null;
       try {
         const event = new CustomEvent('LLM_CODEX_SPA_NAVIGATION', {
           detail: {
+            sourceEventId,
+            transportRequestId,
             llmName: state.llmName,
             reason,
             previousUrl,
@@ -5187,6 +5255,8 @@
       } catch (_) {}
       safeRuntimeSendMessage({
         type: 'SPA_NAVIGATION',
+        sourceEventId,
+        transportRequestId,
         llmName: state.llmName,
         oldUrl: previousUrl,
         newUrl: nextUrl,
@@ -8052,10 +8122,31 @@
     console.warn('[ContentUtils] Extension context invalidated');
   };
 
+  const generateSourceEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
   const safeRuntimeSendMessage = (message, callback) => {
     if (!isExtensionContextValid()) {
       handleContextInvalidation();
       return false;
+    }
+    if (message && typeof message === 'object') {
+      if (!message.sourceEventId) {
+        message.sourceEventId = generateSourceEventId();
+      }
+      const trId = message.transportRequestId
+        || message.meta?.transportRequestId
+        || storedTransportRequestId
+        || window.__CURRENT_TRANSPORT_REQUEST_ID__
+        || null;
+      if (trId) {
+        if (!message.transportRequestId) message.transportRequestId = trId;
+        if (message.meta && typeof message.meta === 'object' && !message.meta.transportRequestId) {
+          message.meta.transportRequestId = trId;
+        }
+      }
+      if (message.meta && typeof message.meta === 'object' && !message.meta.sourceEventId) {
+        message.meta.sourceEventId = message.sourceEventId;
+      }
     }
     try {
       chrome.runtime.sendMessage(message, (response) => {
@@ -8115,6 +8206,7 @@
   let storedDispatchId = null;
   let storedTabSessionId = null;
   let storedGenerationEpoch = null;
+  let storedTransportRequestId = null;
   let sessionExpired = false;
   const resetSessionExpiredState = () => {
     sessionExpired = false;
@@ -8135,6 +8227,10 @@
       storedRunSessionId = runSessionId;
       storedSessionId = storedSessionId || runSessionId;
       window.__CURRENT_SESSION_ID__ = storedSessionId;
+    }
+    if (meta.transportRequestId) {
+      storedTransportRequestId = meta.transportRequestId;
+      window.__CURRENT_TRANSPORT_REQUEST_ID__ = meta.transportRequestId;
     }
     if (meta.pipelineRunId) {
       storedPipelineRunId = meta.pipelineRunId;
@@ -8159,6 +8255,9 @@
       if (!base.sessionId) {
         base.sessionId = runSessionId;
       }
+    }
+    if (storedTransportRequestId && !base.transportRequestId) {
+      base.transportRequestId = storedTransportRequestId;
     }
     if (storedDispatchId && !base.dispatchId) {
       base.dispatchId = storedDispatchId;
@@ -9496,6 +9595,8 @@
     getMainBridgeToken,
     setMainBridgeToken,
     getPipelineRunId,
+    getTransportRequestId: () => storedTransportRequestId || window.__CURRENT_TRANSPORT_REQUEST_ID__ || null,
+    generateSourceEventId,
     safeRuntimeSendMessage,
     sendRuntimeMessageForAck,
     storeSessionId,

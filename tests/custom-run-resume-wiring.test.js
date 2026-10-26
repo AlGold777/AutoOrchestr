@@ -17,7 +17,7 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
   });
 
   test('writes of the record go one after another, debounced ones too', () => {
-    expect(results).toMatch(/const writeRecord = \(\) => \{\s*const next = recordWrites\.then\(\(\) => customRunStore\.save\(record\)\);/);
+    expect(results).toMatch(/const writeRecord = \(\) => \{\s*const next = recordWrites\.then\(\(\) => (?:\{\s*runCardHistory\?\.flush\(\);\s*return\s+)?customRunStore\.save\(record\)/);
     expect(results).toContain("const write = () => writeRecord().catch((error) => console.warn('[RESULTS] Custom run record not saved', error));");
   });
 

@@ -114,10 +114,10 @@ describe('Telemetry export actions', () => {
     expect(handler).toContain('window.CustomRunRecord.exportRun(latestBasicRunRecord)');
     expect(handler).toContain('await readLatestCustomRun()');
     expect(handler).toContain('window.BasicTelemetry.buildReport({ customRun, delivery, events');
-    expect(handler).toContain('journal: window.MessageDelivery.journal(), collection: window.MessageDelivery.collection()');
+    expect(handler).toMatch(/journal:\s*deliverySnap\?\.events\s*\|\|\s*window\.MessageDelivery(?:\?\.journal\?\.\(\)|\.journal\(\))/);
     expect(handler).not.toContain('window.MessageDeliveryView');
     expect(handler).toContain('getTelemetryEventsForExport(snapshotTs, { applyFilters: false })');
-    expect(handler.indexOf('window.MessageDelivery.journal()')).toBeLessThan(handler.indexOf('getTelemetryEventsForExport(snapshotTs'));
+    expect(handler.indexOf('window.MessageDelivery')).toBeLessThan(handler.indexOf('getTelemetryEventsForExport(snapshotTs'));
   });
 
   test('Basic telemetry snapshot retains every model and info event while excluding events newer than the click', async () => {

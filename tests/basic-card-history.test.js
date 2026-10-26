@@ -192,6 +192,7 @@ describe('Basic card history', () => {
     collector.disconnect();
 
     const revived = Record.revive(checkpoint);
+    card.querySelector('.debate-model-card-output').textContent = 'A'.repeat(700);
     const reconnected = History.create({ container, record: revived, sessionId: 'session-1' });
     card.querySelector('.debate-model-card-output').textContent = `${'A'.repeat(650)}${'C'.repeat(80)}`;
     reconnected.flush();

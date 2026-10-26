@@ -299,7 +299,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('scheduleCrossViewUiStatePersist();');
     expect(source).toContain("const DISPUT_RESPONSE_LIMIT_MARKER = '[RESPONSE_LIMIT]';");
     expect(source).toContain('if (context?.pipelineRunId && !context.custom) {\n                prompt = ensureDisputResponseLimit(prompt);');
-    expect(source).toContain("const contentScopeKey = `${modelKey}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${requestId || 'unscoped'}`;");
+    expect(source).toContain("const contentScopeKey = `${modelKey}:${meta.participantId || ''}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${meta.visit || ''}:${requestId || 'unscoped'}`;");
     expect(source).toContain("card.dataset.turnClosed = isFinal ? 'true' : 'false';");
     expect(html).not.toContain('<option value="inf">∞</option>');
   });

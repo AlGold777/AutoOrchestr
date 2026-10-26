@@ -12,31 +12,6 @@
         history.version = 1;
         history.coverage = 'dom_observer_batches';
         history.events ||= [];
-        let sequence = history.events.reduce((max, event) => Math.max(max, Number(event.seq) || 0), 0);
-        let cardSequence = history.events.reduce((max, event) => Math.max(max,
-            Number(String(event.cardId || '').match(/:card:(\d+)$/)?.[1]) || 0), 0);
-        let state = sessions.get(container);
-        // A resume can load a checkpoint older than the last observed DOM batch.
-        // In that case cached refs are not guaranteed to exist in this record.
-        if (!state || state.runId !== record.runId || state.lastSeq > sequence) {
-            state = { runId: record.runId, ids: new WeakMap(), snapshots: new Map() };
-            sessions.set(container, state);
-        }
-        const { ids, snapshots } = state;
-        const initialCards = new WeakSet(container.querySelectorAll(CARD));
-        const newCards = new WeakSet();
-        let stopped = false;
-
-        const cardsWithin = (node) => {
-            if (node?.nodeType !== 1) return [];
-            return [...(node.matches(CARD) ? [node] : []), ...node.querySelectorAll(CARD)];
-        };
-        const belongs = (card) => {
-            if (sessionId && card.dataset.sessionId && card.dataset.sessionId !== String(sessionId)) return false;
-            const explicitRun = card.dataset.pipelineRunId;
-            if (explicitRun) return explicitRun === record.runId;
-            return isActive() && (snapshots.has(card) || (newCards.has(card) && !initialCards.has(card)));
-        };
         const nullable = (value) => value === undefined || value === null || value === '' ? null : value;
         const numberOrText = (value) => value == null || value === '' ? null
             : (Number.isFinite(Number(value)) ? Number(value) : value);
@@ -71,6 +46,57 @@
                 approved: nullable(card.dataset.approved),
                 live: card.dataset.live === 'true'
             };
+        };
+        let sequence = history.events.reduce((max, event) => Math.max(max, Number(event.seq) || 0), 0);
+        let cardSequence = history.events.reduce((max, event) => Math.max(max,
+            Number(String(event.cardId || '').match(/:card:(\d+)$/)?.[1]) || 0), 0);
+        let state = sessions.get(container);
+        // A resume can load a checkpoint older than the last observed DOM batch.
+        // In that case cached refs are not guaranteed to exist in this record: rewind future snapshots.
+        if (!state || state.runId !== record.runId) {
+            state = { runId: record.runId, ids: new WeakMap(), snapshots: new Map(), lastSeq: 0 };
+            sessions.set(container, state);
+        } else if (state.lastSeq > sequence) {
+            state.lastSeq = sequence;
+            for (const [card, snap] of state.snapshots.entries()) {
+                if (snap.eventSeq > sequence) {
+                    const id = state.ids.get(card);
+                    const lastEvent = id ? history.events.slice().reverse().find((e) => e.cardId === id && e.seq <= sequence) : null;
+                    if (lastEvent) {
+                        const reconstruct = (ev) => {
+                            if (!ev?.snapshot) return '';
+                            if (ev.snapshot.textRef) {
+                                return (root.CustomRunRecord?.textOf?.(record, ev.snapshot.textRef)) || record.texts?.[ev.snapshot.textRef] || '';
+                            }
+                            if (ev.snapshot.textPatch) {
+                                const base = history.events.find((e) => e.seq === ev.snapshot.textPatch.baseSeq);
+                                return reconstruct(base).slice(0, ev.snapshot.textPatch.prefixLength) + ((root.CustomRunRecord?.textOf?.(record, ev.snapshot.textPatch.suffixRef)) || record.texts?.[ev.snapshot.textPatch.suffixRef] || '');
+                            }
+                            return '';
+                        };
+                        const fullText = reconstruct(lastEvent);
+                        const semantic = { ...snapshotOf(card), text: fullText };
+                        state.snapshots.set(card, { snapshot: lastEvent.snapshot, semantic, fullText, eventSeq: lastEvent.seq });
+                    } else {
+                        state.snapshots.delete(card);
+                    }
+                }
+            }
+        }
+        const { ids, snapshots } = state;
+        const initialCards = new WeakSet(container.querySelectorAll(CARD));
+        const newCards = new WeakSet();
+        let stopped = false;
+
+        const cardsWithin = (node) => {
+            if (node?.nodeType !== 1) return [];
+            return [...(node.matches(CARD) ? [node] : []), ...node.querySelectorAll(CARD)];
+        };
+        const belongs = (card) => {
+            if (sessionId && card.dataset.sessionId && card.dataset.sessionId !== String(sessionId)) return false;
+            const explicitRun = card.dataset.pipelineRunId;
+            if (explicitRun) return explicitRun === record.runId;
+            return isActive() && (snapshots.has(card) || (newCards.has(card) && !initialCards.has(card)));
         };
         const append = (card, type, snapshot) => {
             let id = ids.get(card);
