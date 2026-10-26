@@ -9009,11 +9009,34 @@
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'STOP_AND_CLEANUP' || !hasActiveRequest()) return false;
       if (!isStopCommandCurrent(message)) return false;
+      const explicitMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
+      const stopTransportRequestId = explicitMeta.transportRequestId
+        || message.transportRequestId
+        || storedTransportRequestId
+        || window.__CURRENT_TRANSPORT_REQUEST_ID__
+        || null;
+      const stopSessionId = explicitMeta.runSessionId || explicitMeta.sessionId
+        || message.runSessionId || message.sessionId || storedSessionId || null;
+      const stopDispatchId = explicitMeta.dispatchId || message.dispatchId || null;
+
       stopProviderGeneration()
         .catch((err) => ({ stopped: false, reason: `stop_failed:${err?.message || err}` }))
         .then((result) => {
           // Visible in the Pipeline Automation journal (provider_stop).
-          safeRuntimeSendMessage({ type: 'PROVIDER_STOP_RESULT', llmName: detectLlmNameFromLocation(), ...result });
+          safeRuntimeSendMessage({
+            type: 'PROVIDER_STOP_RESULT',
+            llmName: detectLlmNameFromLocation(),
+            transportRequestId: stopTransportRequestId,
+            runSessionId: stopSessionId,
+            dispatchId: stopDispatchId,
+            meta: {
+              ...explicitMeta,
+              transportRequestId: stopTransportRequestId,
+              runSessionId: stopSessionId,
+              dispatchId: stopDispatchId
+            },
+            ...result
+          });
         });
       return false;
     });
