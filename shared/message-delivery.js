@@ -26,6 +26,7 @@
 
   const expectedByRequest = new Map(); // transportRequestId -> entry
   const latestByModel = new Map(); // model -> entry (requests without a transport id)
+  const lastStatusByModel = new Map(); // model -> last unassigned status
   const journal = [];
   const producerId = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   let producerSeq = 0;
@@ -380,8 +381,8 @@
       const entry = resolved.entry;
       const eventReason = message.source || null;
       const correlationReason = resolved.correlationReason || null;
-      const recordReason = resolved.attemptCorrelation === 'unassigned'
-        ? (correlationReason || eventReason)
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
         : (eventReason || correlationReason);
       if (entry && !entry.final) {
         entry.focusCount = (entry.focusCount || 0) + 1;
@@ -424,8 +425,8 @@
       const result = message.meta?.terminalResult || {};
       const eventReason = result.reason || null;
       const correlationReason = resolved.correlationReason || null;
-      const recordReason = resolved.attemptCorrelation === 'unassigned'
-        ? (correlationReason || eventReason)
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
         : (eventReason || correlationReason);
       record({
         kind: 'completion_terminal', model: message.llmName || entry?.model || null, token: entry?.token || null,
@@ -444,8 +445,8 @@
       const path = (url) => { try { return new URL(url).pathname; } catch (_) { return String(url || ''); } };
       const eventReason = message.reason || null;
       const correlationReason = resolved.correlationReason || null;
-      const recordReason = resolved.attemptCorrelation === 'unassigned'
-        ? (correlationReason || eventReason)
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
         : (eventReason || correlationReason);
       record({
         kind: 'navigation', model: message.llmName || entry?.model || null, token: entry?.token || null,
@@ -463,8 +464,8 @@
       const entry = resolved.entry;
       const eventReason = message.reason || null;
       const correlationReason = resolved.correlationReason || null;
-      const recordReason = resolved.attemptCorrelation === 'unassigned'
-        ? (correlationReason || eventReason)
+      const recordReason = correlationReason === 'unknown_request_id'
+        ? correlationReason
         : (eventReason || correlationReason);
       record({
         kind: 'provider_stop', model: message.llmName || entry?.model || null, token: entry?.token || null,
@@ -495,8 +496,13 @@
         });
       } else {
         if (!status) return;
+        const model = message.llmName || null;
+        if (model) {
+          if (lastStatusByModel.get(model) === status) return;
+          lastStatusByModel.set(model, status);
+        }
         record({
-          kind: 'status', model: message.llmName || null, token: null,
+          kind: 'status', model, token: null,
           requestId: null, sourceTransportRequestId: explicitId || null,
           sourceEventId, ordinal: 0,
           attemptCorrelation: resolved.attemptCorrelation, correlationReason, reason: recordReason,
@@ -611,6 +617,7 @@
     }
     expectedByRequest.clear();
     latestByModel.clear();
+    lastStatusByModel.clear();
     journal.length = 0;
     unconfirmedQueue.length = 0;
     producerSeq = 0;

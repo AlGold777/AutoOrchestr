@@ -7448,15 +7448,7 @@ document.addEventListener('click', (event) => {
                             window.CustomRunRecord?.recordWaitEnd(record, fields);
                             await writeRecord();
                         }
-                        const payload = { pipelineRunId: runContext.pipelineRunId, ...fields };
-                        if (kind.startsWith('custom_step') && (fields.kind || fields.stepKind)) {
-                            payload.stepKind = fields.stepKind || fields.kind;
-                        }
-                        if (kind.startsWith('custom_wait') && (fields.kind || fields.waitKind)) {
-                            payload.waitKind = fields.waitKind || fields.kind;
-                        }
-                        delete payload.kind;
-                        window.MessageDelivery?.batchEvent?.(kind, payload);
+                        window.MessageDelivery?.batchEvent?.(kind, { pipelineRunId: runContext.pipelineRunId, ...fields });
                     }
                 });
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
