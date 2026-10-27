@@ -5123,6 +5123,13 @@ document.addEventListener('click', (event) => {
             });
         };
 
+        const syncBasicInputCanvas = () => {
+            if (!window.BasicInputCanvas || !pipelinePanel) return;
+            const schema = isCustomEnginePipeline()
+                ? basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }) : { steps: [] };
+            const attachments = Array.from(promptAttachmentBar?.querySelectorAll('[data-attachment-key]') || [], (item) => ({ name: item.title }));
+            return window.BasicInputCanvas.sync({ panel: pipelinePanel, schema, attachments });
+        };
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             syncControlColumns();
             syncDocumentFrames();
@@ -5164,6 +5171,7 @@ document.addEventListener('click', (event) => {
             syncPipelineRunStateVisuals();
             syncCanvasTooltips();
             syncStepErrorBadges();
+            syncBasicInputCanvas();
             pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
@@ -5177,6 +5185,9 @@ document.addEventListener('click', (event) => {
             }
         };
 
+        if (promptAttachmentBar && typeof MutationObserver === 'function') {
+            new MutationObserver(() => { syncBasicInputCanvas(); }).observe(promptAttachmentBar, { childList: true });
+        }
         let pipelineAlignmentResizeFrame = 0;
         const pipelineAlignmentResizeObserver = typeof ResizeObserver === 'function'
             ? new ResizeObserver(() => {
@@ -10563,7 +10574,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.900';
+            const APP_VERSION = '2.81.901';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
