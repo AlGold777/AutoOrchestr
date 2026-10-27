@@ -111,6 +111,8 @@
   global.CompressedStorage = {
     set,
     get,
+    // The stored value as `get` returns it: null when a compressed value does not decode.
+    decode: decodeStoredValue,
     remove,
     checkQuota,
     pruneIfNeeded,

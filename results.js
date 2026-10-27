@@ -3782,33 +3782,70 @@ document.addEventListener('click', (event) => {
             };
         };
 
+        // The list of pipelines that is in the storage but cannot be read (its value does not decode) is never overwritten
+        // from this page: writing the page's empty copy would erase every pipeline. The reason is shown on each write.
+        let pipelineStoreUnreadable = '';
+        // The writer of this page: a change of the list by another page is taken over (see the storage listener below).
+        const PIPELINE_STORE_WRITER = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        const decodePipelineStore = (raw) => (window.CompressedStorage?.decode ? window.CompressedStorage.decode(raw) : raw);
+        const isPipelineStoreValue = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+        // The list is read and written while the page is still starting, before its notification window exists: the
+        // message waits for it.
+        const notifyPipelineStore = (message, type = 'error') => {
+            const attempt = (left) => {
+                try { showNotification(message, type); } catch (_) { if (left > 0) setTimeout(() => attempt(left - 1), 100); }
+            };
+            attempt(50);
+        };
         const readPipelineStore = async () => {
             let storedValue = null;
-            if (window.CompressedStorage?.get) {
-                storedValue = await window.CompressedStorage.get(PIPELINE_STORAGE_KEY);
-            } else if (chrome?.storage?.local?.get) {
+            let present = false;
+            if (chrome?.storage?.local?.get) {
                 const res = await new Promise((resolve) => chrome.storage.local.get(PIPELINE_STORAGE_KEY, resolve));
-                storedValue = res ? res[PIPELINE_STORAGE_KEY] : null;
+                const raw = res ? res[PIPELINE_STORAGE_KEY] : undefined;
+                present = raw !== undefined && raw !== null;
+                storedValue = present ? decodePipelineStore(raw) : null;
             } else {
                 try {
-                    storedValue = JSON.parse(localStorage.getItem(PIPELINE_STORAGE_KEY) || 'null');
+                    const raw = localStorage.getItem(PIPELINE_STORAGE_KEY);
+                    present = raw !== null;
+                    storedValue = JSON.parse(raw || 'null');
                 } catch (_) {
                     storedValue = null;
                 }
             }
+            pipelineStoreUnreadable = present && !isPipelineStoreValue(storedValue)
+                ? 'Список pipelines в хранилище не прочитан: запись повреждена. Изменения pipelines не сохраняются, чтобы не стереть её.'
+                : '';
+            if (pipelineStoreUnreadable) {
+                console.error('[RESULTS] Pipeline store is unreadable; writes are disabled');
+                notifyPipelineStore(pipelineStoreUnreadable);
+            }
+            adoptPipelineStoreValue(storedValue);
+        };
+        const adoptPipelineStoreValue = (storedValue, { keepActive = false } = {}) => {
             const normalized = normalizePipelineStore(storedValue);
             pipelineStore.pipelines = normalized.pipelines;
             pipelineStore.order = normalized.order;
             pipelineStore.seeded = normalized.seeded;
             pipelineStore.seededRev = normalized.seededRev;
             pipelineStore.lastSaved = normalized.lastSaved;
-            pipelineStore.active = normalized.active;
+            const activeDraft = keepActive ? pipelineStore.draftPlans?.[pipelineStore.active] : undefined;
+            if (!keepActive) pipelineStore.active = normalized.active;
             pipelineStore.overrides = normalized.overrides;
             pipelineStore.draftPlans = normalized.draftPlans;
+            if (activeDraft !== undefined) pipelineStore.draftPlans[pipelineStore.active] = activeDraft;
         };
 
+        // Writes the list of pipelines. Returns false when nothing was written (an unreadable stored list, or the storage
+        // refused, for example its quota): the owner is told why, and no exception is left unhandled.
         const persistPipelineStore = async () => {
+            if (pipelineStoreUnreadable) {
+                notifyPipelineStore(pipelineStoreUnreadable);
+                return false;
+            }
             const payload = {
+                writer: PIPELINE_STORE_WRITER,
                 version: PIPELINE_STORE_VERSION,
                 pipelines: pipelineStore.pipelines,
                 order: pipelineStore.order,
@@ -3819,16 +3856,31 @@ document.addEventListener('click', (event) => {
                 overrides: pipelineStore.overrides,
                 draftPlans: pipelineStore.draftPlans
             };
-            if (window.CompressedStorage?.set) {
-                await window.CompressedStorage.set(PIPELINE_STORAGE_KEY, payload);
-            } else if (chrome?.storage?.local?.set) {
-                await chrome.storage.local.set({ [PIPELINE_STORAGE_KEY]: payload });
-            } else {
-                try {
+            try {
+                if (window.CompressedStorage?.set) {
+                    await window.CompressedStorage.set(PIPELINE_STORAGE_KEY, payload);
+                } else if (chrome?.storage?.local?.set) {
+                    await chrome.storage.local.set({ [PIPELINE_STORAGE_KEY]: payload });
+                } else {
                     localStorage.setItem(PIPELINE_STORAGE_KEY, JSON.stringify(payload));
-                } catch (_) {}
+                }
+                return true;
+            } catch (error) {
+                console.error('[RESULTS] Pipelines are not saved', error);
+                notifyPipelineStore(`Pipelines не сохранены в хранилище: ${error?.message || error}.`);
+                return false;
             }
         };
+        // Another page of the extension wrote the list: its pipelines are taken over before this page writes again, so it
+        // never erases them with an older copy. The pipeline open here stays open; a list of this page's own is skipped.
+        chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+            if (area !== 'local' || !changes?.[PIPELINE_STORAGE_KEY]) return;
+            const value = decodePipelineStore(changes[PIPELINE_STORAGE_KEY].newValue);
+            if (!isPipelineStoreValue(value) || value.writer === PIPELINE_STORE_WRITER) return;
+            pipelineStoreUnreadable = '';
+            adoptPipelineStoreValue(value, { keepActive: true });
+            try { renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved); } catch (_) { /* the list is not built yet */ }
+        });
 
         const PipelineRuntime = window.PipelineRuntime;
         if (!PipelineRuntime) {
@@ -6588,7 +6640,8 @@ document.addEventListener('click', (event) => {
                 const settings = cards[ref]?.[participantId] ?? cards[ref]?.[id];
                 const label = settings?.label || source?.label;
                 const settingsMode = settings?.settingsMode || source?.settingsMode;
-                const model = { name, ...(participantId !== name || source?.id != null ? { id: participantId } : {}), ...(label ? { label } : {}), ...(settingsMode ? { settingsMode } : {}), ...extra };
+                // Format 2 needs the permanent id of every participant (BasicSchema.validate): a participant without its own id keeps its name as the id.
+                const model = { name, ...(window.BasicSchema.SCHEMA_VERSION >= 2 || participantId !== name || source?.id != null ? { id: participantId } : {}), ...(label ? { label } : {}), ...(settingsMode ? { settingsMode } : {}), ...extra };
                 if (source && 'input' in source) model.input = JSON.parse(JSON.stringify(source.input));
                 put(model, 'request', legacyValue(settings?.promptTemplate));
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
@@ -8391,15 +8444,18 @@ document.addEventListener('click', (event) => {
             if (pipelineStore.active === trimmedOld) pipelineStore.active = trimmedNew;
             if (customPipelineDefaults.has(trimmedOld)) { customPipelineDefaults.set(trimmedNew, customPipelineDefaults.get(trimmedOld)); customPipelineDefaults.delete(trimmedOld); }
             if (customCardSettings.has(trimmedOld)) { customCardSettings.set(trimmedNew, customCardSettings.get(trimmedOld)); customCardSettings.delete(trimmedOld); }
-            [customRoundSettings, basicRunExplicit, basicSchemaLoadErrors, basicSchemaLoadErrorList, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
+            // Every working copy of the pipeline goes with its name, its owner steps (customControls) too.
+            [customRoundSettings, customControls, basicRunExplicit, basicSchemaLoadErrors, basicSchemaLoadErrorList, basicSourceSchema].forEach((map) => { if (map.has(trimmedOld)) { map.set(trimmedNew, map.get(trimmedOld)); map.delete(trimmedOld); } });
 
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             persistPipelineStore();
             return true;
         };
 
+        const PIPELINE_RUN_LOCK_TEXT = 'Идёт прогон: другой pipeline можно открыть, вставить или переименовать после его окончания или остановки.';
         const startPipelineRename = (item) => {
             if (!item || item.classList.contains('is-editing')) return;
+            if (pipelineRunActive) { showNotification(PIPELINE_RUN_LOCK_TEXT, 'warn'); return; }
             const nameSpan = item.querySelector('.pipeline-item-name');
             if (!nameSpan) return;
             const originalName = item.dataset.name || nameSpan.getAttribute('title') || nameSpan.textContent.trim();
@@ -8602,9 +8658,7 @@ document.addEventListener('click', (event) => {
             setPipelineHeaderName('Unsaved Pipeline');
             delete pipelineStore.draftPlans.unsaved;
             delete pipelineSessionDraftPlans.unsaved;
-            customCardSettings.delete('unsaved');
-            customRoundSettings.delete('unsaved');
-            customPipelineDefaults.delete('unsaved');
+            [customCardSettings, customRoundSettings, customPipelineDefaults, customControls, basicSourceSchema, basicRunExplicit].forEach((map) => map.delete('unsaved'));
             pipelineItems?.querySelectorAll('.pipeline-item').forEach((el) => el.classList.remove('active'));
             pipelineItems?.querySelectorAll('.pipeline-radio').forEach((radio) => {
                 radio.checked = false;
@@ -8689,6 +8743,13 @@ document.addEventListener('click', (event) => {
             if (!isCustomEnginePipeline()) return { ok: false, errors: [{ path: '', message: 'Экспорт доступен для схем Basic.' }] };
             const name = String(pipelineStore.active || getPipelineHeaderName() || '').trim();
             const basedOn = isDefaultPipelineName(name) ? '' : (pipelineStore.pipelines[name]?.schema?.basedOn || '');
+            // A saved schema the page could not read has no working copies: the file is that schema as it is stored, with its errors
+            // named, never a schema rebuilt from an empty canvas.
+            const unreadable = basicSchemaLoadErrors.get(name);
+            const stored = pipelineStore.pipelines[name]?.schema;
+            if (unreadable && stored) {
+                return { ok: true, errors: [], unreadable, name, schema: stored, fileName: schemaFileName(name), text: `${JSON.stringify(stored, null, 2)}\n` };
+            }
             const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn });
             const checked = recordFromSchema(name || 'schema', schema);
             if (!checked.ok) return checked;
@@ -8750,7 +8811,9 @@ document.addEventListener('click', (event) => {
                 showNotification(`Экспорт не выполнен. ${describeSchemaErrors(built.errors)}`, 'warn');
                 return;
             }
-            await downloadSchemaText(built.text, built.fileName, `Схема сохранена в Загрузки/Схемы: ${built.fileName}`);
+            await downloadSchemaText(built.text, built.fileName, built.unreadable
+                ? `Сохранённая схема выгружена как есть в Загрузки/Схемы: ${built.fileName}. Она не проходит проверку: ${built.unreadable}`
+                : `Схема сохранена в Загрузки/Схемы: ${built.fileName}`, Boolean(built.unreadable));
         };
         // The whole catalog of saved Basic schemas in one file. Templates are not in it. A record without a schema, or one the
         // canvas cannot show, is listed in skipped with its reasons. Unsaved canvas edits are not in it.
@@ -8840,13 +8903,24 @@ document.addEventListener('click', (event) => {
         const installBasicSchema = async (name, schema) => {
             const built = recordFromSchema(name, schema);
             if (!built.ok) return built;
+            // Not written to the storage, the schema is not installed: the page goes back to what it had.
+            const before = { record: pipelineStore.pipelines[name], order: pipelineStore.order.slice(), lastSaved: pipelineStore.lastSaved,
+                draft: pipelineStore.draftPlans?.[name], sessionDraft: pipelineSessionDraftPlans[name] };
             pipelineStore.pipelines[name] = built.record;
             if (!pipelineStore.order.includes(name)) pipelineStore.order.push(name);
             delete pipelineStore.draftPlans?.[name];
             delete pipelineSessionDraftPlans[name];
             adoptBasicWorking(name, basicWorkingFromConfig(built.record));
             pipelineStore.lastSaved = name;
-            await persistPipelineStore();
+            if (!(await persistPipelineStore())) {
+                if (before.record) pipelineStore.pipelines[name] = before.record; else delete pipelineStore.pipelines[name];
+                pipelineStore.order = before.order;
+                pipelineStore.lastSaved = before.lastSaved;
+                if (before.draft !== undefined && pipelineStore.draftPlans) pipelineStore.draftPlans[name] = before.draft;
+                if (before.sessionDraft !== undefined) pipelineSessionDraftPlans[name] = before.sessionDraft;
+                if (before.record) adoptBasicWorking(name, basicWorkingFromConfig(before.record));
+                return { ok: false, errors: [{ path: 'хранилище', message: pipelineStoreUnreadable || 'запись не выполнена' }] };
+            }
             renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
             return { ok: true, errors: [] };
         };
@@ -8956,6 +9030,7 @@ document.addEventListener('click', (event) => {
         // Paste window: the reply of a model with a schema is read by window.SchemaTextReader. A catalog file goes to the
         // catalog import; a single schema is checked, then named and installed as a pipeline. Errors keep the window open.
         const openSchemaPasteWindow = () => {
+            if (pipelineRunActive) { showNotification(PIPELINE_RUN_LOCK_TEXT, 'warn'); return; }
             if (document.getElementById('schema-paste-window')) return;
             const win = document.createElement('div');
             win.id = 'schema-paste-window';
@@ -9176,6 +9251,8 @@ document.addEventListener('click', (event) => {
         };
         const customBlockModel = (block) => block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '';
         const customBlockParticipantId = (block) => block.dataset.participantId || customBlockModel(block);
+        // The fields of a participant the model card writes; Save of the card keeps every other field of the participant.
+        const CARD_EDITED_FIELDS = Object.freeze(['label', 'settingsMode', 'promptTemplate', 'maxWords', 'files', 'task', 'discipline']);
         const sourceSchemaForParticipantEdit = () => {
             const current = basicSourceSchema.get(draftPlanStorageKey());
             const schema = JSON.parse(JSON.stringify(current || basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true })));
@@ -9515,6 +9592,8 @@ document.addEventListener('click', (event) => {
                 const next = pipelineDefaults ? {} : { label: block.dataset.participantLabelValue || modelName, ...(explicitParticipant ? { settingsMode: 'explicit' } : {}), promptTemplate: !request.value.trim() || request.value === baseTemplate ? null : request.value,
                     maxWords: lengthDirty ? (length.value === '' ? null : Number(length.value)) : (saved.maxWords || null) };
                 if (!pipelineDefaults && Array.isArray(saved.files)) next.files = saved.files;
+                // The fields this card does not edit (the participant's own output and input, its name and role) stay as saved.
+                if (!pipelineDefaults) Object.entries(saved).forEach(([key, value]) => { if (!CARD_EDITED_FIELDS.includes(key)) next[key] = value; });
                 const discipline = {};
                 rows.forEach(([key]) => {
                     let value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
@@ -9552,8 +9631,8 @@ document.addEventListener('click', (event) => {
                 if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
                     persistBasicSettings(name);
                     save.disabled = true;
-                    try { await persistPipelineStore(); }
-                    catch (_) { save.disabled = false; showNotification('Не удалось сохранить настройки карточки.', 'error'); return; }
+                    // The storage refusal is named by persistPipelineStore; the card stays open to save again.
+                    if (!(await persistPipelineStore())) { save.disabled = false; return; }
                 }
                 if (close) {
                     modal.style.display = 'none'; modal.classList.remove('is-visible'); modal.setAttribute('aria-hidden', 'true'); document.body.classList.remove('modal-open');
@@ -10202,6 +10281,11 @@ document.addEventListener('click', (event) => {
         pipelineItems?.addEventListener('click', (event) => {
             const item = event.target.closest('.pipeline-item');
             if (!item || !pipelineItems.contains(item)) return;
+            // A run belongs to the pipeline it started in: its feed, its record and its continuation keep that name.
+            if (pipelineRunActive) {
+                if (item.dataset.name !== pipelineStore.active) showNotification(PIPELINE_RUN_LOCK_TEXT, 'warn');
+                return;
+            }
             selectPipeline(item, { clearDebateFeed: true });
         });
         await initPipelineList();
@@ -10918,7 +11002,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.902';
+            const APP_VERSION = '2.81.904';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
