@@ -303,6 +303,15 @@
           step.task = [`Критерии проверки: ${list(st.criteria).filter(own).join('; ') || 'ответ полный'}`, own(st.task) ? st.task : ''].filter(Boolean).join('\n\n');
           warnings.push('Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.');
         } else if (own(st.task)) step.task = st.task;
+        const labeledParticipants = list(st.models).filter((m) => isObj(m) && own(m.name)
+          && ((own(m.id) && m.id !== m.name) || (own(m.label) && m.label !== m.name) || m.settingsMode === 'explicit'));
+        if (labeledParticipants.length) {
+          warnings.push(`Шаг ${st.ref}: ID, подписи или пустые настройки формата 2 не представлены на стенде; при импорте участники станут обычными моделями, возможен обмен с потерей данных.`);
+        }
+        const providerNames = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => m.name);
+        if (new Set(providerNames).size !== providerNames.length) {
+          warnings.push(`Шаг ${st.ref}: несколько участников одного provider не различаются на стенде; обратный экспорт может быть отклонён Basic.`);
+        }
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => {
           const model = { name: m.name };
           if (m.enabled === false) model.enabled = false;

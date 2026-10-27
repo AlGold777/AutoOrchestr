@@ -20,6 +20,16 @@
     all: 'все модели независимо', lead: 'ведущая модель', review: 'проверяющая модель', gate: 'моделей нет — ворота'
   };
   const list = (value) => (Array.isArray(value) ? value.filter(Boolean).map(String) : []);
+  const participantLabel = (participant) => {
+    const label = String(participant?.label || '').trim();
+    const name = String(participant?.name || '').trim();
+    const id = String(participant?.id || participant?.participantId || '').trim();
+    const display = label || name;
+    // Duplicate provider names are separate participants; show their stable key only
+    // when the visible label alone cannot tell them apart.
+    const duplicates = participant?.duplicateLabel;
+    return display && duplicates && id ? `${display} · ${id.slice(0, 8)}` : display;
+  };
 
   // round: canvas round number; templateStage: ArchitectureFramework stage or null;
   // participants: [{ name, send }] from the round's model stack; stageRun: the engine's
@@ -31,8 +41,20 @@
   // inheritedTask (the text the round would take), first (the first round: nothing to feed in), disabled.
   // They give the input and the round's task.
   function buildModel({ round, templateStage = null, participants = [], stageRun = null, roleChoice = null } = {}) {
-    const working = list(participants.filter((item) => item && item.send).map((item) => item.name));
-    const waiting = list(participants.filter((item) => item && !item.send).map((item) => item.name));
+    const participantItems = participants.filter((item) => item && (item.name || item.label));
+    const duplicateLabels = new Set();
+    const labelCounts = new Map();
+    participantItems.forEach((item) => {
+      const key = String(item.label || item.name || '').trim();
+      labelCounts.set(key, (labelCounts.get(key) || 0) + 1);
+    });
+    participantItems.forEach((item) => {
+      const key = String(item.label || item.name || '').trim();
+      if (labelCounts.get(key) > 1) duplicateLabels.add(item);
+    });
+    const showParticipant = (item) => participantLabel({ ...item, duplicateLabel: duplicateLabels.has(item) });
+    const working = list(participantItems.filter((item) => item.send).map(showParticipant));
+    const waiting = list(participantItems.filter((item) => !item.send).map(showParticipant));
     const gate = templateStage?.who === 'gate';
     const statusCode = gate && !stageRun ? 'gate' : String(stageRun?.status || 'pending');
     const model = {

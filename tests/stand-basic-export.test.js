@@ -25,6 +25,27 @@ describe('Stand ↔ Basic exchange', () => {
     expect(basic.steps.some((st) => st.kind === 'gate')).toBe(false);
   });
 
+  test('Basic format 2 participant identities are called out when imported to the stand', () => {
+    const { schema, warnings } = Exchange.fromBasic({ schemaVersion: 2, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [
+        { name: 'Claude', id: 'claude-main', label: 'Claude' },
+        { name: 'Claude', id: 'claude-reviewer', label: 'Claude 2', enabled: false, settingsMode: 'explicit' }
+      ] }
+    ] });
+    expect(schema.steps[0].models).toEqual([{ name: 'Claude' }, { name: 'Claude', enabled: false }]);
+    expect(warnings.some((warning) => warning.includes('ID, подписи или пустые настройки формата 2'))).toBe(true);
+    expect(warnings.some((warning) => warning.includes('несколько участников одного provider'))).toBe(true);
+  });
+
+  test('the stand cannot silently export repeated providers as a valid Basic v1 schema', () => {
+    const { schema: basic } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }, { name: 'Claude' }] }
+    ] });
+    expect(Schema.validate(basic)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'steps[0].models[1].name' })
+    ]));
+  });
+
   test('a gate of a Basic file imports as a round with the criteria in the task and a remark', () => {
     const basic = { schemaVersion: 1, origin: 'user', steps: [
       { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },

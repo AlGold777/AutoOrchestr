@@ -206,6 +206,21 @@ const registerTabListeners = () => {
     }
     untrackSessionTab(tabId);
   });
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (!changeInfo?.url || !tab?.url) return;
+    let changed = false;
+    Object.values(participantTabMap).forEach((byParticipant) => {
+      Object.values(byParticipant || {}).forEach((binding) => {
+        if (binding?.tabId !== tabId || !isEligibleTabForLlm(binding.modelName, tab)) return;
+        let path = '';
+        try { path = new URL(tab.url).pathname; } catch (_) { return; }
+        if (/\/(login|signin|sign-in|auth)(\/|$)/i.test(path)) return;
+        if (!binding.initialUrl) { binding.initialUrl = tab.url; changed = true; }
+        else if (tab.url !== binding.initialUrl && binding.chatUrl !== tab.url) { binding.chatUrl = tab.url; changed = true; }
+      });
+    });
+    if (changed) void persistParticipantTabMap().catch(() => {});
+  });
 };
 
 function isValidTabId(tabId) {
@@ -317,11 +332,15 @@ async function bindParticipantChat(runId, participantId, modelName, tabId, meta 
   }
   const byParticipant = participantTabMap[runKey] || (participantTabMap[runKey] = {});
   const previous = byParticipant[pid];
+  const resetConversation = meta.resetChat === true || (typeof meta.initialUrl === 'string' && meta.initialUrl && previous?.initialUrl !== meta.initialUrl);
   byParticipant[pid] = {
+    ...(previous || {}),
     modelName,
     tabId,
     requestId: meta.requestId || null,
-    stageAttemptId: meta.stageAttemptId || null
+    stageAttemptId: meta.stageAttemptId || null,
+    ...(resetConversation ? { initialUrl: meta.initialUrl || '', chatUrl: '' } : (typeof meta.initialUrl === 'string' ? { initialUrl: meta.initialUrl } : {})),
+    ...(typeof meta.chatUrl === 'string' && meta.chatUrl ? { chatUrl: meta.chatUrl } : {})
   };
   try {
     await persistParticipantTabMap();
@@ -1159,7 +1178,18 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
   }
 
   if (bound && (!participant.newChat || sameVisit)) {
-    const continueResult = await continueParticipantChat(llmName, visit, bound, prompt, attachments, options);
+    let target = bound;
+    const live = await getTabSafe(bound.tabId);
+    const liveUrl = live?.url || live?.pendingUrl || '';
+    if (bound.chatUrl && (!live || liveUrl !== bound.chatUrl)) {
+      const restored = await restoreParticipantChat(llmName, visit, bound);
+      if (!restored?.ok) {
+        emitParticipantChatResolved({ llmName, participant, visit, action: 'refused', reason: 'conversation_restore_failed', tabId: bound.tabId });
+        return { ok: false, error: participantRunError('participant_chat_lost', `Не удалось восстановить сохранённую переписку участника ${participantId}; запрос не отправлен.`, bindingOf({ reason: 'conversation_restore_failed', chatUrl: bound.chatUrl })) };
+      }
+      target = { ...bound, tabId: restored.tabId };
+    }
+    const continueResult = await continueParticipantChat(llmName, visit, target, prompt, attachments, options);
     if (continueResult.ok) {
       emitParticipantChatResolved({ llmName, participant, visit, action: 'continued', reason: sameVisit ? 'same_visit' : 'bound_continued', tabId: continueResult.tabId });
     } else {
@@ -1184,7 +1214,8 @@ async function openParticipantChat(llmName, participant = {}, prompt = '', attac
     forceCreate: true,
     onBound: async (tabId) => {
       try {
-        await bindParticipantChat(runId, participantId, llmName, tabId, visit);
+        const tab = await getTabSafe(tabId);
+        await bindParticipantChat(runId, participantId, llmName, tabId, { ...visit, initialUrl: tab?.url || '', resetChat: participant.newChat === true });
       } catch (err) {
         bindError = err;
         throw err;
@@ -1215,12 +1246,41 @@ async function continueParticipantChat(llmName, visit, bound, prompt, attachment
   if (bound.modelName !== llmName) return lost('model_mismatch');
   const tab = await getTabSafe(bound.tabId);
   if (!tab || isAppUiTab(tab) || !isEligibleTabForLlm(llmName, tab)) return lost('tab_unavailable');
+  if (bound.chatUrl && (tab.url || tab.pendingUrl) !== bound.chatUrl) return lost('conversation_url_changed');
+  if (!bound.chatUrl && bound.initialUrl && (tab.url || tab.pendingUrl) !== bound.initialUrl) return lost('conversation_url_unproven');
   if (!options.deferDispatch) {
     const readiness = await ensureTabReadyForDispatch(bound.tabId, llmName, { reason: 'participant_continue' });
     if (!readiness?.ok) return lost(readiness?.reason || 'tab_not_ready');
     await prepareTabForUse(bound.tabId, llmName);
   }
   return sendToParticipantChat(llmName, bound.tabId, visit, prompt, attachments, options, 'participant_continue');
+}
+
+async function restoreParticipantChat(llmName, visit, bound) {
+  const url = typeof bound?.chatUrl === 'string' ? bound.chatUrl : '';
+  if (!url || !isEligibleTabForLlm(llmName, { url })) return null;
+  let parsed;
+  try { parsed = new URL(url); } catch (_) { return null; }
+  if (/\/(login|signin|sign-in|auth)(\/|$)/i.test(parsed.pathname)) return null;
+  const tab = await new Promise((resolve) => chrome.tabs.create({ url, active: false }, (created) => resolve(chrome.runtime.lastError ? null : created)));
+  if (!tab?.id) return null;
+  const ready = await ensureTabReadyForDispatch(tab.id, llmName, { reason: 'participant_restore' });
+  const live = await getTabSafe(tab.id);
+  const liveUrl = live?.url || live?.pendingUrl || '';
+  if (!ready?.ok || !live || liveUrl !== url || !isEligibleTabForLlm(llmName, live)) {
+    try { await chrome.tabs.remove(tab.id); } catch (_) {}
+    return null;
+  }
+  try {
+    await setTabBinding(llmName, tab.id);
+    await bindParticipantChat(visit.runId, visit.participantId, llmName, tab.id, { ...visit, chatUrl: url, initialUrl: url });
+    trackSessionTab(tab.id);
+    await prepareTabForUse(tab.id, llmName);
+    return { ok: true, tabId: tab.id };
+  } catch (_) {
+    try { await chrome.tabs.remove(tab.id); } catch (_) {}
+    return null;
+  }
 }
 
 // N04: the answer of a request that was sent but whose sending is not confirmed. A read only: it never sends, never binds
@@ -1242,6 +1302,9 @@ async function checkParticipantAnswer({ llmName, runId, participantId, transport
   const tab = await getTabSafe(chat.tabId);
   if (!tab || isAppUiTab(tab) || !isEligibleTabForLlm(llmName, tab)) {
     return { ok: false, status: 'chat_unavailable', reason: 'tab_unavailable', tabId: chat.tabId };
+  }
+  if (chat.chatUrl && (tab.url || tab.pendingUrl) !== chat.chatUrl) {
+    return { ok: false, status: 'chat_unavailable', reason: 'conversation_url_changed', tabId: chat.tabId };
   }
   let snapshot = null;
   try {
@@ -1291,7 +1354,9 @@ async function attachUnboundParticipantChat(llmName, visit, prompt, attachments,
     excludeTabIds: tabsOfOtherParticipants(llmName, visit.runId, visit.participantId),
     onBound: async (tabId) => {
       try {
-        await bindParticipantChat(visit.runId, visit.participantId, llmName, tabId, visit);
+        const tab = await getTabSafe(tabId);
+        const url = tab?.url || '';
+        await bindParticipantChat(visit.runId, visit.participantId, llmName, tabId, { ...visit, initialUrl: url, chatUrl: url });
       } catch (err) {
         bindError = err;
         throw err;

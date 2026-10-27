@@ -25,7 +25,8 @@ describe('Basic page sends participants (ТЗ 7, T07)', () => {
   test('the replies go back by participant id, and the transport gets the participant of each model', () => {
     expect(results).toContain('byParticipant[request.participantId] = reply;');
     expect(results).toContain('participants,');
-    expect(results).toContain('participantId: request.participantId, newChat: isNewChat(request)');
+    expect(results).toContain('participantId: request.participantId, participantLabel: request.participantLabel || request.label || request.modelName,');
+    expect(results).toContain('newChat: isNewChat(request), ...(binding ? { binding } : {})');
   });
 
   test('the batch never asks the run-level new-pages rule: the transport decides per participant', () => {
@@ -139,7 +140,9 @@ describe('Resumed Basic run keeps the chats of its participants (R01)', () => {
 
   test('a continue sends the saved chat with the request; a new chat sends none', () => {
     expect(results).toContain('const binding = !isNewChat(request) && saved?.modelName === request.modelName && saved.tabId != null');
-    expect(results).toContain('participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {})');
+    expect(results).toContain('chatUrl: saved.chatUrl || null, initialUrl: saved.initialUrl || null');
+    expect(results).toContain('participantId: request.participantId, participantLabel: request.participantLabel || request.label || request.modelName,');
+    expect(results).toContain('newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {}),');
   });
 
   test('after each wave the page reads the chats the background bound and keeps them in the state before the next send', () => {

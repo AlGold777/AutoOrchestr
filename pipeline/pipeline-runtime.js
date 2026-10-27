@@ -58,25 +58,38 @@
         activeIndices = DEFAULT_MODEL_INDICES,
         withRole = false,
         onlyActive = false,
+        items = null,
+        participantControls = false,
         orderedPrompts = [],
         escapeHtml = escapeFallback
     } = {}) => {
         const activeSet = new Set(activeIndices);
-        return MODELS
-            .map((model, index) => ({ model, index }))
-            .filter(({ index }) => !onlyActive || activeSet.has(index))
-            .map(({ model, index }) => {
-            const isActive = activeSet.has(index);
+        const source = Array.isArray(items)
+            ? items.map((item, index) => ({ model: { name: String(item?.name || ''), id: String(item?.id || item?.participantId || item?.name || ''), label: String(item?.label || item?.name || '') }, index, item }))
+                .filter(({ model }) => model.name)
+            : MODELS.map((model, index) => ({ model: { ...model, id: model.name, label: model.name }, index, item: null }));
+        return source
+            .filter(({ index }) => Array.isArray(items) || !onlyActive || activeSet.has(index))
+            .map(({ model, index, item }) => {
+            const isActive = typeof item?.send === 'boolean' ? item.send : (typeof item?.input === 'boolean' ? item.input : activeSet.has(index));
             const roleHtml = withRole
-                ? `<select class="role-selector judge-prompt-selector"${isActive ? '' : ' disabled'}>${buildJudgePromptOptionsHtml({ index, orderedPrompts, escapeHtml })}</select>`
+                ? `<select class="role-selector judge-prompt-selector"${isActive || participantControls ? '' : ' disabled'}>${buildJudgePromptOptionsHtml({ index, orderedPrompts, escapeHtml })}</select>`
                 : '';
             const inputAttrs = `${isActive ? ' checked' : ''} aria-label="Участие в раунде"`;
+            const label = model.label || model.name;
+            const removeButton = participantControls && model.id !== model.name
+                ? `<button type="button" class="model-participant-remove" data-participant-remove title="Убрать участника из этого раунда" aria-label="Убрать ${escapeHtml(label)} из раунда">×</button>`
+                : '';
+            const participantTools = participantControls
+                ? `<span class="model-participant-label-wrap"><button type="button" class="model-participant-label" data-participant-label title="Переименовать участника">${escapeHtml(label === model.name ? '✎' : label)}</button>${removeButton}<button type="button" class="model-participant-add" data-participant-add title="Добавить участника ${escapeHtml(model.name)}" aria-label="Добавить участника ${escapeHtml(model.name)}">+</button></span>`
+                : '';
             return `
-                <div class="model-block ${isActive ? 'active' : 'inactive'}${withRole ? ' with-role' : ''}" data-index="${index}">
+                <div class="model-block ${isActive ? 'active' : 'inactive'}${withRole ? ' with-role' : ''}${model.id !== model.name ? ' is-participant-duplicate' : ''}" data-index="${index}" data-provider-name="${escapeHtml(model.name)}" data-participant-id="${escapeHtml(model.id)}" data-participant-label-value="${escapeHtml(label)}">
                     <div class="model-header">
                         <span class="status-indicator" data-llm-name="${escapeHtml(model.name)}"></span>
                         <input type="checkbox" class="model-checkbox model-input-checkbox"${inputAttrs}>
                         <span class="model-name">${escapeHtml(model.name)}</span>
+                        ${participantTools}
                     </div>
                     ${roleHtml}
                 </div>
@@ -105,7 +118,9 @@
             const inputCb = block.querySelector('.model-input-checkbox');
             const role = block.querySelector('.role-selector');
             return {
-                name: block.querySelector('.model-name')?.textContent?.trim() || '',
+                name: block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '',
+                id: block.dataset.participantId || block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '',
+                label: block.dataset.participantLabelValue || block.querySelector('.model-participant-label')?.textContent?.trim() || '',
                 input: !!inputCb?.checked,
                 send: !!inputCb?.checked,
                 // None (empty value) is stored as no role.
@@ -120,17 +135,17 @@
         if (!stack) return null;
         const models = Array.from(stack.querySelectorAll('.model-block'))
             .map((block) => {
-                const name = block.querySelector('.model-name')?.textContent?.trim();
+                const name = block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim();
                 if (!name) return null;
                 const input = !!block.querySelector('.model-input-checkbox')?.checked;
                 const send = input;
                 const promptId = block.querySelector('.role-selector')?.value || null;
-                return { name, input, send, promptId };
+                return { name, id: block.dataset.participantId || name, label: block.dataset.participantLabelValue || name, input, send, promptId };
             })
             .filter(Boolean);
         const inputModels = models.filter((model) => model.input).map((model) => model.name);
         const sendModels = models.filter((model) => model.send).map((model) => model.name);
-        return { models, inputModels, sendModels };
+        return { models, inputModels, sendModels, participantIds: models.filter((model) => model.send).map((model) => model.id) };
     };
 
     const buildPipelineRuntimeSnapshot = ({ config, roundCounter = 1, getRoundState } = {}) => {

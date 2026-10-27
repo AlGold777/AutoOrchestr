@@ -387,8 +387,29 @@ async function loadResultsScript(seededPipelineStore = null) {
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export', 'debate-telemetry-view'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'owner-ask.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'choice-dialog.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);
+  // Basic's personal-request review is a real choice dialog in the page. Keep the
+  // library in this harness and accept only that review dialog so existing fake
+  // transport tests can continue to exercise the request after inspecting its copy.
+  const choiceDialog = window.ChoiceDialog;
+  window.__basicRequestPreviewDialogs = [];
+  window.ChoiceDialog = {
+    ...choiceDialog,
+    ask(options) {
+      if (options?.title !== 'Запросы Basic перед запуском') return choiceDialog.ask(options);
+      window.__basicRequestPreviewDialogs.push(options);
+      const pending = choiceDialog.ask(options);
+      window.setTimeout(() => {
+        const dialog = [...document.querySelectorAll('dialog.choice-dialog')].find((item) =>
+          item.querySelector('.choice-dialog-title')?.textContent === options.title);
+        const proceed = [...(dialog?.querySelectorAll('button') || [])].find((button) => button.textContent === 'Продолжить запуск');
+        proceed?.click();
+      }, 0);
+      return pending;
+    }
+  };
   document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
   await delay(20);
 }
@@ -2754,12 +2775,32 @@ describe('Pipeline debate favorites view', () => {
     const h = setupCustomInheritance('Role note');
     try {
       setBlockRole(canvasBlock('r2-models', 'GPT'), 'interaction_critical_audit');
-      await h.model({ promptTemplate: 'PERSONAL_NOTE_REQ {задача}' });
+      await h.model({ promptTemplate: 'PERSONAL_NOTE_REQ {задача} {вход}' });
       expect(h.openModel('GPT').textContent).toContain('Роль не применяется: используется персональный запрос.');
       expect(h.openModel('Claude').textContent).not.toContain('Роль не применяется');
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSONAL_NOTE_REQ');
       expect(h.starts[1].promptsByModel.GPT).not.toContain('Дополнительно для тебя');
+    } finally { h.cleanup(); }
+  }, 30000);
+
+  test('a personal request is reviewed with its warning and upcoming input before the run proceeds', async () => {
+    const h = setupCustomInheritance('Request preview');
+    try {
+      setBlockRole(canvasBlock('r2-models', 'GPT'), 'interaction_critical_audit');
+      await h.model({ promptTemplate: 'PERSONAL PREVIEW {вход}' });
+      window.__basicRequestPreviewDialogs.length = 0;
+
+      await h.run();
+
+      expect(window.__basicRequestPreviewDialogs).toHaveLength(1);
+      const preview = window.__basicRequestPreviewDialogs[0];
+      expect(preview.document.text).toContain('Предупреждения');
+      expect(preview.document.text).toContain('В запросе нет {задача}');
+      expect(preview.document.text).toContain('Роль игнорируется при личном запросе');
+      expect(preview.document.text).toContain('ответы предыдущего шага появятся при запуске');
+      expect(preview.document.text).toContain('PERSONAL PREVIEW');
+      expect(h.starts.length).toBeGreaterThan(0);
     } finally { h.cleanup(); }
   }, 30000);
 
@@ -2849,7 +2890,7 @@ describe('Pipeline debate favorites view', () => {
       card = h.openModel();
       expect(card.querySelector('#custom-card-request').value).toContain('COMMON_C');
       expect(card.querySelector('#custom-card-personal-note').textContent).toBe('');
-      await h.model({ promptTemplate: 'PERSONAL_REQUEST {задача}' });
+      await h.model({ promptTemplate: 'PERSONAL_REQUEST {задача} {вход}' });
       await h.general({ roundTask: 'COMMON_D', content: 'CONTENT_D' });
       expect(h.openModel().querySelector('#custom-card-personal-note').textContent).toBe('Персональный запрос: общее задание не применяется; дисциплина применяется.');
       await h.run();
@@ -2975,7 +3016,7 @@ describe('Pipeline debate favorites view', () => {
       const h = setupCustomInheritance('Schema record');
       try {
         await h.general({ roundTask: 'GENERAL_TASK' });
-        await h.model({ promptTemplate: 'OWN REQUEST {задача}' });
+        await h.model({ promptTemplate: 'OWN REQUEST {задача} {вход}' });
         const record = await storedRecord('Schema record');
         expect(record.customModelSettings).toBeUndefined();
         expect(record.customDefaults).toBeUndefined();
@@ -2983,7 +3024,7 @@ describe('Pipeline debate favorites view', () => {
         expect(record.schema).toMatchObject({ schemaVersion: 1, origin: 'user', defaults: { roundTask: 'GENERAL_TASK' } });
         expect(record.schema.basedOn).toBeUndefined();
         const own = record.schema.steps.find((step) => step.ref === 'r2').models.find((model) => model.name === 'GPT');
-        expect(own).toEqual({ name: 'GPT', request: 'OWN REQUEST {задача}' });
+        expect(own).toEqual({ name: 'GPT', request: 'OWN REQUEST {задача} {вход}' });
         // Nothing the owner did not set is written: no Basic text, no empty or null placeholders.
         expect(JSON.stringify(record.schema)).not.toContain(window.BasicSchema.DEFAULTS.discipline.content);
         expect(JSON.stringify(record.schema)).not.toContain('null');
@@ -3018,7 +3059,7 @@ describe('Pipeline debate favorites view', () => {
         expect(record().schema).toMatchObject({ origin: 'user', basedOn: 'Default' });
         expect(window.BasicSchema.validate(record().schema)).toEqual([]);
         // A card save and a ▶ save rewrite the schema and keep what it was based on.
-        await h.model({ promptTemplate: 'AFTER SAVE {задача}' });
+        await h.model({ promptTemplate: 'AFTER SAVE {задача} {вход}' });
         expect(record().schema.basedOn).toBe('Default');
         await h.general({ roundTask: 'AFTER GENERAL' });
         expect(record().schema).toMatchObject({ basedOn: 'Default', defaults: { roundTask: 'AFTER GENERAL' } });
@@ -4798,11 +4839,11 @@ describe('Pipeline debate favorites view', () => {
         await h.run();
         expect(h.starts[1].promptsByModel.GPT).toContain('EARLIER CONTENT');
         expect(h.starts[1].promptsByModel.GPT).toContain('EARLIER TASK');
-        await h.model({ promptTemplate: 'EDITED REQUEST {задача}' });
+        await h.model({ promptTemplate: 'EDITED REQUEST {задача} {вход}' });
         const record = await storedRecord('Earlier record');
         expect(record.customModelSettings).toBeUndefined();
         expect(settingsOf(record).customDefaults.roundTask).toBe('EARLIER TASK');
-        expect(settingsOf(record).customModelSettings.r2.GPT.promptTemplate).toBe('EDITED REQUEST {задача}');
+        expect(settingsOf(record).customModelSettings.r2.GPT.promptTemplate).toBe('EDITED REQUEST {задача} {вход}');
         expect(settingsOf(record).customModelSettings.r2.GPT.discipline.content).toBe('EARLIER CONTENT');
         // The run values of the earlier protocol (Auto here) go into the schema because they differ from Basic.
         expect(record.schema.run).toEqual({ policy: 'auto' });

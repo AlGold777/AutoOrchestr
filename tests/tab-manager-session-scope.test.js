@@ -48,8 +48,8 @@ function createTabManagerSandbox({
         const tab = queryTabs.find((entry) => entry.id === tabId) || null;
         cb(tab ? { ...tab } : null);
       },
-      create(_options, cb) {
-        const created = { id: 999, url: 'https://chatgpt.com/', windowId: 1, index: 0, status: 'complete' };
+      create(options, cb) {
+        const created = { id: 999, url: options?.url || 'https://chatgpt.com/', windowId: 1, index: 0, status: 'complete' };
         if (createDelayMs > 0) setTimeout(() => cb(created), createDelayMs);
         else cb(created);
       },
@@ -533,8 +533,8 @@ describe('Basic participant chats are bound per run and never lost silently (R01
     const { context } = createTabManagerSandbox({ queryTabs });
     context.ensureTabReadyForDispatch = jest.fn(async (tabId) => ({ ok: true, tab: { id: tabId, url: chatUrl(tabId) } }));
     context.schedulePromptDispatchSupervisor = jest.fn();
-    context.chrome.tabs.create = jest.fn((_options, cb) => {
-      const tab = { id: 900 + context.chrome.tabs.create.mock.calls.length, url: 'https://chatgpt.com/', windowId: 7, index: 9, status: 'complete' };
+    context.chrome.tabs.create = jest.fn((options, cb) => {
+      const tab = { id: 900 + context.chrome.tabs.create.mock.calls.length, url: options?.url || 'https://chatgpt.com/', windowId: 7, index: 9, status: 'complete' };
       queryTabs.push(tab);
       cb(tab);
     });
@@ -557,6 +557,43 @@ describe('Basic participant chats are bound per run and never lost silently (R01
     const { context } = participantSandbox([{ id: 2001, url: 'https://example.com/', windowId: 7, index: 0, status: 'complete' }]);
     await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, {});
     const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A'), 'hello', []);
+    expect(result.error.errorCode).toBe('participant_chat_lost');
+    expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
+  });
+
+  test('a closed bound tab is restored from its exact saved conversation URL before dispatch', async () => {
+    const url = 'https://chatgpt.com/c/participant-a';
+    const { context } = participantSandbox([]);
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, {
+      requestId: 'req-1', stageAttemptId: 'a1', initialUrl: 'https://chatgpt.com/', chatUrl: url
+    });
+
+    const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A', {
+      stageAttemptId: 'a2', binding: { modelName: 'GPT', tabId: 2001, initialUrl: 'https://chatgpt.com/', chatUrl: url }
+    }), 'continue', []);
+
+    expect(result.ok).toBe(true);
+    expect(result.tabId).toBeGreaterThan(0);
+    expect(context.chrome.tabs.create).toHaveBeenCalledWith({ url, active: false }, expect.any(Function));
+    expect(context.dispatchPromptToTab).toHaveBeenCalledWith('GPT', result.tabId, 'continue', [], 'participant_continue');
+    expect(context.participantChatOf('run-1', 'author-A')).toEqual(expect.objectContaining({ tabId: result.tabId, chatUrl: url }));
+  });
+
+  test('a restored chat that redirects away from its saved URL is refused before dispatch', async () => {
+    const { context } = participantSandbox([]);
+    const url = 'https://chatgpt.com/c/participant-a';
+    context.chrome.tabs.create = jest.fn((options, cb) => {
+      const tab = { id: 901, url: 'https://chatgpt.com/auth/login', windowId: 7, index: 9, status: 'complete' };
+      cb(tab);
+    });
+    await context.bindParticipantChat('run-1', 'author-A', 'GPT', 2001, {
+      requestId: 'req-1', stageAttemptId: 'a1', initialUrl: 'https://chatgpt.com/', chatUrl: url
+    });
+
+    const result = await context.openParticipantChat('GPT', visit('run-1', 'author-A', {
+      stageAttemptId: 'a2', binding: { modelName: 'GPT', tabId: 2001, chatUrl: url }
+    }), 'do not send', []);
+
     expect(result.error.errorCode).toBe('participant_chat_lost');
     expect(context.dispatchPromptToTab).not.toHaveBeenCalled();
   });

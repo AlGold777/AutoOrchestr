@@ -228,6 +228,10 @@ describe('modifier bootstrap reset', () => {
     installMocks();
   });
 
+  afterEach(() => {
+    delete performance.getEntriesByType;
+  });
+
   test('refresh clears stored selections and does not restore them in the UI', async () => {
     chrome.storage.local._store.set('llmComparatorSelected', ['mod-a', 'mod-b']);
     chrome.storage.local._store.set('llmComparatorSelectedByPreset', { base: ['mod-a', 'mod-b'] });
@@ -289,6 +293,47 @@ describe('modifier bootstrap reset', () => {
       'llmComparatorSelectedByPreset',
       'llmComparatorSelectedByPresetPipeline'
     ]));
+  });
+
+  test('browser back/forward restores the pipeline prompt without erasing either view draft', async () => {
+    renderBootstrapDom({ pipelinePage: true });
+    installMocks();
+    Object.defineProperty(performance, 'getEntriesByType', {
+      configurable: true,
+      value: () => [{ type: 'back_forward' }]
+    });
+    chrome.storage.local._store.set('llmComparatorCrossViewUiState', {
+      version: 2,
+      views: {
+        main: { promptText: 'MAIN_DRAFT_897', formControls: { 'prompt-input': { value: 'MAIN_DRAFT_897' } } },
+        pipeline: { promptText: 'PIPELINE_DRAFT_897', formControls: { modTa: { value: 'PIPELINE_DRAFT_897' } } }
+      },
+      shared: { outputs: {} }
+    });
+
+    await loadResultsScript();
+
+    const state = chrome.storage.local._store.get('llmComparatorCrossViewUiState');
+    expect(document.getElementById('modTa').value).toBe('PIPELINE_DRAFT_897');
+    expect(state.views.main.promptText).toBe('MAIN_DRAFT_897');
+    expect(state.views.pipeline.promptText).toBe('PIPELINE_DRAFT_897');
+  });
+
+  test('loading the other extension page preserves saved favorite entries', async () => {
+    chrome.storage.local._store.set('llmComparatorCrossViewNavigationIntent', {
+      sourceView: 'pipeline',
+      targetView: 'main',
+      savedAt: Date.now()
+    });
+    chrome.storage.local._store.set('llmComparatorFavoriteEntries', [
+      { id: 'fav-897', kind: 'fragment', sourceName: 'GPT', text: 'FAVORITE_DRAFT_897', html: '<b>FAVORITE_DRAFT_897</b>' }
+    ]);
+
+    await loadResultsScript();
+
+    expect(chrome.storage.local._store.get('llmComparatorFavoriteEntries')).toEqual([
+      { id: 'fav-897', kind: 'fragment', sourceName: 'GPT', text: 'FAVORITE_DRAFT_897', html: '<b>FAVORITE_DRAFT_897</b>' }
+    ]);
   });
 
   test('Pipeline action hydration restores a chip-only cross-view draft', async () => {

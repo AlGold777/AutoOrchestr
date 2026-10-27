@@ -80,7 +80,10 @@
   const modeOf = (spec) => (Array.isArray(spec) ? 'sources' : spec);
   // The output a participant answers with (3.2): its own declaration replaces the step's one as a whole, nothing is merged.
   // Works on the schema's steps and on the normalized ones: a participant's output sits on the participant.
-  const outputOf = (step, model) => (model && typeof model === 'object' && model.output != null ? model.output : (step.output ?? null));
+  const outputOf = (step, model) => {
+    if (model?.settingsMode === 'explicit') return model.output ?? null;
+    return (model && typeof model === 'object' && model.output != null ? model.output : (step.output ?? null));
+  };
   // The input of a participant: its own when it has one, else the input of the step.
   const specOf = (step, model) => (model && model.input !== undefined ? model.input : step.input);
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
@@ -93,6 +96,20 @@
       if (typeof value === 'string' && value.trim()) return { value, source };
     }
     return { value: fallback, source: 'code' };
+  }
+
+  // Diagnostics for an explicit participant request. `hasInput` is nullable: a preview
+  // cannot know whether an earlier stage will produce an accepted answer, while the run can.
+  function requestDiagnostics({ model = {}, hasInput = null, hasTask = undefined, hasRole = undefined } = {}) {
+    const request = typeof model.promptTemplate === 'string' ? model.promptTemplate : '';
+    if (!request.trim()) return { errors: [], warnings: [] };
+    const errors = [];
+    const warnings = [];
+    if (hasInput === true && !request.includes('{вход}')) errors.push('Есть входные данные, но в запросе нет {вход}.');
+    if (!request.includes('{задача}')) warnings.push('В запросе нет {задача}: задача пользователя не попадёт в запрос.');
+    if (hasRole === undefined ? text(model.extra) : hasRole) warnings.push('Роль игнорируется при личном запросе.');
+    if (hasTask === undefined ? text(model.task) : hasTask) warnings.push('Задание модели или шага игнорируется при личном запросе.');
+    return { errors, warnings };
   }
 
   // The block «Формат ответа»: the form of the step, its sections, and the fields of a json answer.
@@ -205,7 +222,9 @@
         chat: step.chat === 'new' ? 'new' : 'continue',
         approve: step.owner === 'approve',
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
-          name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
+          name: model.name, id: model.id ?? model.name, label: typeof model.label === 'string' ? model.label : model.name,
+          settingsMode: model.settingsMode === 'explicit' ? 'explicit' : null,
+          extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null,
           ...(model.input !== undefined ? { input: Array.isArray(model.input) ? model.input.slice() : model.input } : {}),
@@ -645,6 +664,10 @@
     function promptFor(step, model) {
       const spec = specOf(step, model);
       const input = inputFor(step, spec, { model });
+      const requestCheck = requestDiagnostics({ model, hasInput: input.length > 0 });
+      if (requestCheck.errors.length) {
+        throw new EngineError('invalid_request', `шаг «${step.ref}» · модель «${model.name}»`, requestCheck.errors.join(' '));
+      }
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec),
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full');
@@ -1326,13 +1349,15 @@
     'Предел длины ответа — по настройке модели или pipeline.',
     'Метка доставки создаётся транспортом; инструкцию можно изменить у модели.'
   ]);
-  function previewPrompt({ task, steps = [], stepIndex = 0, modelName = '', semiAuto = false, askInstruction = '' }) {
+  function previewPrompt({ task, steps = [], stepIndex = 0, modelName = '', participantId = null, semiAuto = false, askInstruction = '' }) {
     const plan = normalizeSteps(steps);
     const step = plan.find((item) => item.index === stepIndex) || plan[stepIndex];
     if (!step) return null;
     // A step the run would refuse, and an owner step (it sends nothing to a model), have no prompt to show.
-    if (unexecutedOf(steps[stepIndex], stepIndex) || step.kind === 'owner') return null;
-    const model = step.models.find((item) => item.name === modelName) || { name: modelName, extra: '' };
+    if (unexecutedOf(steps[stepIndex], stepIndex, { participants: participantId != null }) || step.kind === 'owner') return null;
+    const model = step.models.find((item) => participantId != null
+      ? (item.id ?? item.participantId ?? item.name) === participantId
+      : item.name === modelName) || { name: modelName, extra: '' };
     const spec = specOf(step, model);
     const input = spec === 'none' || !plan.some((item) => item.index < step.index) ? []
       : [{ label: 'Вход', text: PLACEHOLDER[modeOf(spec)] || PLACEHOLDER.previous }];
@@ -1342,10 +1367,11 @@
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
         inputMode: modeOf(spec), output: outputOf(step, model) });
     return { label: stepLabel(step), inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
+      requestDiagnostics: requestDiagnostics({ model, hasInput: null }),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : '') } };
   }
 
-  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

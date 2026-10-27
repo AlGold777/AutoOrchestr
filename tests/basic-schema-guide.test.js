@@ -23,7 +23,7 @@ const tableFirstColumn = (text) => text.split('\n').filter((line) => /^\| `/.tes
 
 describe('Basic schema guide stays true to the code', () => {
   test('it names the format version of the code', () => {
-    expect(guide).toContain(`Версия формата схемы: **${Schema.SCHEMA_VERSION}**`);
+    expect(guide).toContain(`Поддерживаются форматы схемы **1** и **${Schema.SCHEMA_VERSION}**`);
   });
 
   test('every JSON example passes the check, shows on the canvas and assembles', () => {

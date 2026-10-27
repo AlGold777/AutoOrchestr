@@ -1700,6 +1700,11 @@ body.pro-features-hidden .comparison-section {
     line-height: 1.1;
     cursor: default;
 }
+.debate-model-card-participant:not([hidden]) {
+    color: var(--text-muted, #64748b);
+    font-size: 11px;
+    line-height: 1.1;
+}
 .debate-model-card .debate-model-card-round {
     display: inline-flex;
     box-sizing: border-box;

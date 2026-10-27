@@ -243,7 +243,7 @@
   const CHAT_BINDING_FIELDS = [
     'inputFileIds',
     'modelName', 'stepRef', 'visit', 'transportRequestId', 'tabId',
-    'requestId', 'stageAttemptId', 'chatVisit', 'attachedChatVisit'
+    'requestId', 'stageAttemptId', 'chatVisit', 'attachedChatVisit', 'chatUrl', 'initialUrl'
   ];
 
   function mergeChatBindings(previous = {}, incoming = {}) {

@@ -25,7 +25,7 @@
     return bytes;
   };
 
-  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, inputFiles = [], documentRef = root.document } = {}) {
+  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, allowChoicesWithReadOnlyDocument = false, inputFiles = [], documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
       const objectUrls = [];
@@ -106,7 +106,10 @@
       };
       const answerOf = (choice) => {
         if (mode === 'editable') return area.value;
-        if (kind === 'read') return clean(area.value) || READ_DONE;
+        if (kind === 'read') {
+          if (mode === 'readOnly' && allowChoicesWithReadOnlyDocument) return choice.value;
+          return clean(area.value) || READ_DONE;
+        }
         if (kind === 'form') return root.OwnerAsk.formAnswer(formBox, documentSpec.form?.items || [], answerFormat);
         if (textInput) return area.value;
         return choice.value;
@@ -127,8 +130,8 @@
       }
       const actions = el(doc, 'div', 'choice-dialog-actions');
       const submits = [];
-      // A read-only document has no answer: its window gives no buttons but Close.
-      (mode === 'readOnly' ? [] : choices).forEach((choice) => {
+      // A read-only document has no editable answer; callers may explicitly add choice buttons for confirmation.
+      (mode === 'readOnly' && !allowChoicesWithReadOnlyDocument ? [] : choices).forEach((choice) => {
         const button = el(doc, 'button', 'choice-dialog-choice', String(choice.label ?? choice.value));
         button.type = 'button';
         button.addEventListener('click', () => finish(answerOf(choice)));

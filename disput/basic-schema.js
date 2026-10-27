@@ -27,9 +27,9 @@
 
   const Engine = root.CustomEngine || (typeof require === 'function' ? require('./custom-engine') : null);
 
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
   // Every released version stays supported; a newer one than this Basic is refused.
-  const SUPPORTED_VERSIONS = Object.freeze([1]);
+  const SUPPORTED_VERSIONS = Object.freeze([1, 2]);
   const ORIGINS = Object.freeze(['builtin', 'user']);
   const KINDS = Object.freeze(['round', 'owner']);
   // The step the owner (User) does itself; it has no models. There is no branch and no transition: steps run in their order.
@@ -139,20 +139,25 @@
       // A list of sources goes to the engine as it is.
       out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
       out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
-        const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
-        const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
+        const explicit = model.settingsMode === 'explicit';
+        const resolved = explicit
+          ? { task: { value: typeof model.task === 'string' ? model.task : '', source: 'model' }, discipline: Object.fromEntries(Object.keys(DEFAULTS.discipline).map((key) => [key, { value: typeof model.discipline?.[key] === 'string' ? model.discipline[key] : '', source: 'model' }])) }
+          : resolveFields(model, step.kind, { task: step.task }, defaults);
+        const lines = explicit ? [...(model.discipline?.lines || [])] : [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
         // The input of the participant (when it has its own) decides whether an inherited task is dropped, as the step input does.
-        const own = 'input' in model ? model.input : input;
+        const own = explicit ? ('input' in model ? model.input : 'none') : ('input' in model ? model.input : input);
         return {
           name: model.name,
           id: idOf(model),
+          ...(typeof model.label === 'string' ? { label: model.label } : {}),
           ...('files' in model ? { files: clone(model.files) } : {}),
-          ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
+          ...(explicit ? { settingsMode: 'explicit' } : {}),
+          ...(explicit || 'input' in model ? { input: Array.isArray(own) ? JSON.parse(JSON.stringify(own)) : own } : {}),
           ...('output' in model ? { output: clone(model.output) } : {}),
           // An own request, an empty one included, is a value; a missing one is the automatic request.
           promptTemplate: typeof model.request === 'string' ? model.request : null,
           maxWords: 'maxWords' in model ? model.maxWords : null,
-          extra: roleText(model.role || '', step.ref) || '',
+          extra: explicit ? '' : (roleText(model.role || '', step.ref) || ''),
           task: own === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
           discipline: {
             ...Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])),
@@ -277,7 +282,9 @@
 
     if (!isObject(schema)) return [{ path: '', message: 'схема должна быть объектом' }];
     if (!Number.isInteger(schema.schemaVersion)) fail('schemaVersion', 'версия формата не указана');
-    else if (schema.schemaVersion > Math.max(...SUPPORTED_VERSIONS)) fail('schemaVersion', `схема создана более новой версией Basic (формат ${schema.schemaVersion}); обновите расширение`);
+    else if (schema.schemaVersion > Math.max(...SUPPORTED_VERSIONS)) {
+      return [{ path: 'schemaVersion', message: `схема создана более новой версией Basic (формат ${schema.schemaVersion}); обновите расширение` }];
+    }
     else if (!SUPPORTED_VERSIONS.includes(schema.schemaVersion)) fail('schemaVersion', `версия формата ${schema.schemaVersion} не поддерживается`);
     oneOf(schema.origin, ORIGINS, 'origin', 'происхождение');
     if (schema.basedOn != null) text(schema.basedOn, 'basedOn');
@@ -348,6 +355,8 @@
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
     const namesById = new Map();
+    const labelsById = new Map();
+    const idsByProviderLabel = new Map();
     const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
     const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
@@ -480,14 +489,31 @@
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files'], modelPath);
+        unknownKeys(model, schema.schemaVersion >= 2
+          ? ['name', 'id', 'label', 'settingsMode', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files']
+          : ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files'], modelPath);
         if ('files' in model) checkFiles(model.files, `${modelPath}.files`);
         if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if ('onCanvas' in model && typeof model.onCanvas !== 'boolean') fail(`${modelPath}.onCanvas`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
-        // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
         const id = idOf(model);
+        if (schema.schemaVersion >= 2) {
+          if (typeof model.id !== 'string' || !model.id.trim()) fail(`${modelPath}.id`, 'в формате 2 требуется постоянный ID участника');
+          if ('label' in model && (typeof model.label !== 'string' || !model.label.trim())) fail(`${modelPath}.label`, 'подпись участника: непустой текст');
+          if ('settingsMode' in model && model.settingsMode !== 'explicit') fail(`${modelPath}.settingsMode`, 'допустимо explicit');
+          if (typeof id === 'string' && typeof model.name === 'string') {
+            const label = model.label ?? model.name;
+            const labelKey = `${model.name}\u0000${label}`;
+            const sameIdLabel = labelsById.get(id);
+            if (sameIdLabel !== undefined && sameIdLabel !== label) fail(`${modelPath}.label`, `ID участника «${id}» уже использует подпись «${sameIdLabel}»`);
+            else labelsById.set(id, label);
+            const otherId = idsByProviderLabel.get(labelKey);
+            if (otherId !== undefined && otherId !== id) fail(`${modelPath}.label`, `подпись «${label}» у модели «${model.name}» уже занята участником «${otherId}»`);
+            else idsByProviderLabel.set(labelKey, id);
+          }
+        }
+        // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
         if ('id' in model && (typeof model.id !== 'string' || !model.id.trim())) fail(`${modelPath}.id`, 'ID участника: непустой текст');
         else if (typeof id === 'string') {
           if (ids.has(id)) fail(`${modelPath}.${'id' in model ? 'id' : 'name'}`, 'id' in model ? `участник «${id}» повторяется в шаге` : `модель «${model.name}» повторяется в шаге`);
@@ -504,6 +530,63 @@
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path, index);
+    });
+    // A personal request must carry declared incoming answers itself. The first round
+    // defaults to `none`; disabled rounds cannot provide input, and participant input
+    // overrides the round input. This is a possibility check against the schema, not
+    // a guess based only on the participant's position in the list.
+    const steps = Array.isArray(schema.steps) ? schema.steps : [];
+    const couldProduceAnswer = (step, participant) => {
+      if (step?.kind === 'owner') return true;
+      if (step?.kind !== 'round' || !Array.isArray(step.models)) return false;
+      return step.models.some((source) => isObject(source) && source.enabled !== false
+        && (participant == null || idOf(source) === participant));
+    };
+    const couldProduceArtifact = (step, address, { participant = null, revision = false } = {}) => {
+      if (step?.kind !== 'round' || !Array.isArray(step.models)) return false;
+      return step.models.some((author) => {
+        if (!isObject(author) || author.enabled === false) return false;
+        if (participant != null && idOf(author) !== participant) return false;
+        const output = Object.hasOwn(author, 'output') ? author.output : step.output;
+        return Array.isArray(output?.artifacts) && output.artifacts.some((declaration) => (!revision && declaration?.id === address.id)
+          || (declaration?.revisionOf?.artifact?.step === address.step
+            && declaration.revisionOf.artifact.participant === address.participant
+            && declaration.revisionOf.artifact.id === address.id));
+      });
+    };
+    const hasPossibleInput = (spec, index) => {
+      if (spec === 'none' || index <= 0) return false;
+      const earlier = steps.slice(0, index);
+      if (spec === 'previous' || spec === 'all') return earlier.some((step) => couldProduceAnswer(step));
+      if (!Array.isArray(spec)) return false;
+      return spec.some((source) => {
+        if (typeof source === 'string') {
+          const sourceIndex = earlier.findIndex((step) => isObject(step) && step.ref === source);
+          return sourceIndex >= 0 && couldProduceAnswer(earlier[sourceIndex]);
+        }
+        if (!isObject(source)) return false;
+        const address = source.artifact || source;
+        const sourceIndex = earlier.findIndex((step) => isObject(step) && step.ref === address.step);
+        if (sourceIndex < 0) return false;
+        if (source.artifact) {
+          const versionParticipant = isObject(source.version) ? source.version.participant : null;
+          return earlier.slice(sourceIndex, index).some((candidate, offset) => couldProduceArtifact(candidate, address, {
+            participant: offset === 0 ? address.participant : versionParticipant,
+            revision: offset > 0
+          }));
+        }
+        return couldProduceAnswer(earlier[sourceIndex], address.participant);
+      });
+    };
+    steps.forEach((step, index) => {
+      if (!isObject(step) || step.kind !== 'round' || !Array.isArray(step.models)) return;
+      step.models.forEach((model, modelIndex) => {
+        if (!isObject(model) || model.enabled === false || typeof model.request !== 'string' || !model.request.trim()) return;
+        const spec = Object.hasOwn(model, 'input') ? model.input : (Object.hasOwn(step, 'input') ? step.input : defaultInput(index));
+        if (hasPossibleInput(spec, index) && !model.request.includes('{вход}')) {
+          fail(`steps[${index}].models[${modelIndex}].request`, 'есть возможный вход из более раннего шага, но в запросе нет {вход}');
+        }
+      });
     });
     errors.push(...executabilityErrors(schema.steps));
     return errors;
@@ -525,7 +608,11 @@
       fields.forEach((key) => { if (key in step) own[key] = JSON.parse(JSON.stringify(step[key])); });
       if (Object.keys(own).length) (step.kind === 'round' ? customRoundSettings : customStepSettings)[step.ref] = own;
       (step.models || []).forEach((model) => {
-        const participant = {};
+        const participant = { name: model.name };
+        if (typeof model.label === 'string') participant.label = model.label;
+        if (typeof model.settingsMode === 'string') participant.settingsMode = model.settingsMode;
+        if (typeof model.role === 'string') participant.role = model.role;
+        if (typeof model.onCanvas === 'boolean') participant.onCanvas = model.onCanvas;
         if (typeof model.request === 'string') participant.promptTemplate = model.request;
         if ('maxWords' in model) participant.maxWords = model.maxWords;
         if (typeof model.task === 'string') participant.task = model.task;
@@ -571,15 +658,20 @@
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
     // A model is on the canvas when a round sends it or when its onCanvas mark stands (a switched-off model on the canvas).
-    const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)
-      || (step.models || []).some((model) => model.name === name && model.onCanvas === true)));
-    // Each round's stack: its enabled participants in the order of the schema, then the other selected models of the canvas.
+    const visibleParticipants = [];
+    rounds.forEach((step) => (step.models || []).forEach((model) => {
+      if (model.enabled !== false || model.onCanvas === true || (model.id && model.id !== model.name)) {
+        if (!visibleParticipants.some((item) => idOf(item) === idOf(model))) visibleParticipants.push(model);
+      }
+    }));
+    const selectedModels = models.filter((name) => visibleParticipants.some((item) => item.name === name));
+    // Each round's stack: enabled participants, then visible disabled participants, preserving IDs and labels.
     const stacks = Object.fromEntries(rounds.map((step, index) => {
       const own = enabledOf(step);
-      const ownNames = new Set(own.map((model) => model.name));
+      const ownIds = new Set(own.map(idOf));
       const items = [
-        ...own.map((model) => ({ name: model.name, id: idOf(model), input: true, send: true, role: model.role || null })),
-        ...selectedModels.filter((name) => !ownNames.has(name)).map((name) => ({ name, id: name, input: false, send: false, role: null }))
+        ...own.map((model) => ({ name: model.name, id: idOf(model), ...(model.label ? { label: model.label } : {}), input: true, send: true, role: model.role || null })),
+        ...visibleParticipants.filter((model) => !ownIds.has(idOf(model))).map((model) => ({ name: model.name, id: idOf(model), ...(model.label ? { label: model.label } : {}), input: false, send: false, role: null }))
       ];
       return [`r${index + 1}-models`, { items }];
     }));

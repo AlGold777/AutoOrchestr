@@ -225,6 +225,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
     window.addEventListener('pageshow', (event) => {
+        if (event.persisted) crossViewNavigationSaved = false;
         console.info('[RESULTS] pageshow', {
             persisted: !!event?.persisted,
             ts: Date.now()
@@ -1671,6 +1672,8 @@ document.addEventListener('click', (event) => {
     const DEBATE_SCHEME_STORAGE_KEY = 'aoSchemeMode.v1';
     let preserveCrossViewStateOnLoad = false;
     let suppressCrossViewPersistenceOnLoad = false;
+    let crossViewNavigationSaved = false;
+    let pipelineViewDraftHandlers = null;
     function getCurrentViewKey() {
         return document.body.classList.contains('pipeline-page') ? 'pipeline' : 'main';
     }
@@ -1743,6 +1746,7 @@ document.addEventListener('click', (event) => {
             if (!viewState || typeof viewState !== 'object') return;
             delete viewState.promptText;
             delete viewState.pastedText;
+            delete viewState.pipelineDraft;
             delete viewState.modelButtonIds;
             delete viewState.modifiers;
             if (viewState.bodyFlags && typeof viewState.bodyFlags === 'object') {
@@ -1809,6 +1813,7 @@ document.addEventListener('click', (event) => {
             },
             promptText: getPromptDraftText(),
             pastedText: pastedTextComposer.getSnapshot(),
+            pipelineDraft: pipelineViewDraftHandlers?.capture() || null,
             modifiers: {
                 presetId: currentModifierPresetId,
                 selectedIds: Array.isArray(selectedModifierIds) ? [...selectedModifierIds] : [],
@@ -1820,26 +1825,36 @@ document.addEventListener('click', (event) => {
     const collectSharedUiState = () => {
         const outputs = {};
         document.querySelectorAll('.llm-panel .output[id], #comparison-output').forEach((el) => {
+            if (el.id === 'favorite-output') return; // Restored from favorite entries, not stale HTML.
             outputs[el.id] = el.innerHTML || '';
         });
         return { outputs };
     };
-    const persistCrossViewUiState = async () => {
-        const stored = await safeStorageLocalGet(crossViewUiStateKey);
-        const nextState = normalizeCrossViewUiState(stored[crossViewUiStateKey]);
+    let crossViewUiPersistQueue = Promise.resolve();
+    const persistCrossViewUiState = () => {
+        if (crossViewUiPersistTimer) {
+            clearTimeout(crossViewUiPersistTimer);
+            crossViewUiPersistTimer = null;
+        }
         const viewKey = getCurrentViewKey();
-        nextState.savedAt = Date.now();
-        nextState.views[viewKey] = collectCurrentViewUiState();
+        const viewState = collectCurrentViewUiState();
         const shared = collectSharedUiState();
-        nextState.shared = nextState.shared && typeof nextState.shared === 'object' ? nextState.shared : {};
-        if (Object.keys(shared.outputs || {}).length) {
-            nextState.shared.outputs = shared.outputs;
-        }
         const hasModifierControls = Boolean(document.querySelector('input[data-mod-id]'));
-        if (!hasModifierControls && stored[crossViewUiStateKey]?.views?.[viewKey]?.modifiers) {
-            nextState.views[viewKey].modifiers = stored[crossViewUiStateKey].views[viewKey].modifiers;
-        }
-        await safeStorageLocalSet({ [crossViewUiStateKey]: nextState });
+        // Drain earlier input/change writes before the navigation snapshot, so a
+        // slower old write cannot overwrite the draft the destination restores.
+        crossViewUiPersistQueue = crossViewUiPersistQueue.catch(() => {}).then(async () => {
+            const stored = await safeStorageLocalGet(crossViewUiStateKey);
+            const nextState = normalizeCrossViewUiState(stored[crossViewUiStateKey]);
+            nextState.savedAt = Date.now();
+            nextState.views[viewKey] = viewState;
+            nextState.shared = nextState.shared && typeof nextState.shared === 'object' ? nextState.shared : {};
+            if (Object.keys(shared.outputs || {}).length) nextState.shared.outputs = shared.outputs;
+            if (!hasModifierControls && stored[crossViewUiStateKey]?.views?.[viewKey]?.modifiers) {
+                nextState.views[viewKey].modifiers = stored[crossViewUiStateKey].views[viewKey].modifiers;
+            }
+            await safeStorageLocalSet({ [crossViewUiStateKey]: nextState });
+        });
+        return crossViewUiPersistQueue;
     };
     let crossViewUiPersistTimer = null;
     const scheduleCrossViewUiStatePersist = (delayMs = 250) => {
@@ -1876,7 +1891,9 @@ document.addEventListener('click', (event) => {
         if (promptInput && Object.prototype.hasOwnProperty.call(state, 'promptText')) {
             pastedTextComposer.restoreSnapshot(state.pastedText, String(state.promptText || ''));
         }
+        if (preserveCrossViewStateOnLoad && state.pipelineDraft) pipelineViewDraftHandlers?.restore(state.pipelineDraft);
         Object.entries(normalized.shared?.outputs || {}).forEach(([id, html]) => {
+            if (id === 'favorite-output') return;
             const el = document.getElementById(id);
             if (!el) return;
             replaceChildrenFromSanitizedHtml(el, sanitizeInlineHtml(String(html || '')));
@@ -1973,6 +1990,14 @@ document.addEventListener('click', (event) => {
         } catch (err) {
             console.warn('[RESULTS] Failed to persist sidebar session navigation intent', err);
         }
+        try {
+            await saveAttachmentDraft();
+        } catch (err) {
+            console.warn('[RESULTS] Failed to save attachments before sidebar navigation', err);
+            showNotification('Не удалось сохранить вложения. Повторите переход.', 'error');
+            return false;
+        }
+        crossViewNavigationSaved = true;
         window.location.href = 'result_new.html';
         return true;
     };
@@ -1987,7 +2012,7 @@ document.addEventListener('click', (event) => {
         persistCrossViewUiState();
     });
     window.addEventListener('beforeunload', () => {
-        persistCrossViewUiState();
+        if (!crossViewNavigationSaved) persistCrossViewUiState();
     });
     const autoCheckbox = document.getElementById('auto-checkbox');
     const debateAutoPauseBtn = document.getElementById('debate-auto-pause-btn');
@@ -2137,11 +2162,14 @@ document.addEventListener('click', (event) => {
         buildAttachmentPayload,
         tryAddTransferAttachments,
         renderPromptAttachments,
-        clearPromptAttachments
+        clearPromptAttachments,
+        saveDraft: saveAttachmentDraft,
+        restoreDraft: restoreAttachmentDraft
     } = window.ResultsAttachments.create({
         promptAttachInput,
         promptAttachBtn,
         promptAttachmentBar,
+        draftKey: getCurrentViewKey(),
         escapeHtml,
         clearNode,
         replaceChildrenFromHtml,
@@ -2699,6 +2727,14 @@ document.addEventListener('click', (event) => {
             } catch (err) {
                 console.warn('[RESULTS] Failed to persist pipeline view state', err);
             }
+            try {
+                await saveAttachmentDraft();
+            } catch (err) {
+                console.warn('[RESULTS] Failed to save attachments before navigation', err);
+                showNotification('Не удалось сохранить вложения. Повторите переход.', 'error');
+                return;
+            }
+            crossViewNavigationSaved = true;
             window.location.href = targetPage;
         });
     }
@@ -3027,6 +3063,7 @@ document.addEventListener('click', (event) => {
             : { llmName: messageOrName, answer };
         const metadata = message.metadata || message.meta || {};
         const participantId = message.participantId || metadata.participantId || null;
+        const participantLabel = message.participantLabel || metadata.participantLabel || null;
         const stepRef = message.stepRef || metadata.stepRef || null;
         const rawVisit = (message.visit !== undefined && message.visit !== null && message.visit !== '')
             ? message.visit
@@ -3038,6 +3075,7 @@ document.addEventListener('click', (event) => {
             metadata: {
                 ...metadata,
                 ...(participantId ? { participantId } : {}),
+                ...(participantLabel ? { participantLabel } : {}),
                 ...(stepRef ? { stepRef } : {}),
                 ...(visit !== null ? { visit } : {})
             },
@@ -3047,6 +3085,7 @@ document.addEventListener('click', (event) => {
             pipelineBatchId: message.pipelineBatchId || metadata.pipelineBatchId || metadata.batchId || null,
             dispatchId: message.dispatchId || metadata.dispatchId || null,
             participantId,
+            participantLabel,
             stepRef,
             visit,
             status: message.status || metadata.status || metadata.finalStatus || metadata.modelFinalStatus || null
@@ -3175,6 +3214,7 @@ document.addEventListener('click', (event) => {
             pipelineRoundId: envelope.pipelineRoundId,
             dispatchId: envelope.dispatchId,
             participantId: envelope.participantId || null,
+            participantLabel: envelope.participantLabel || envelope.metadata.participantLabel || null,
             stepRef: envelope.stepRef || null,
             visit: envelope.visit ?? null,
             answerEndMarkerSeen: envelope.metadata.answerEndMarkerSeen === true
@@ -3264,6 +3304,7 @@ document.addEventListener('click', (event) => {
                     pipelineRoundId: context?.pipelineRoundId || '',
                     sessionId: context?.sessionId || '1',
                     participantId: participant?.participantId || participant?.id || context?.participantId || null,
+                    participantLabel: participant?.label || participant?.participantLabel || context?.participantLabel || null,
                     stepRef: participant?.stepRef || context?.stepRef || null,
                     visit: participant?.visit ?? context?.visit ?? null
                 });
@@ -3877,6 +3918,8 @@ document.addEventListener('click', (event) => {
                 activeIndices,
                 withRole,
                 onlyActive,
+                items: Array.isArray(options.items) ? options.items : null,
+                participantControls: Boolean(options.participantControls),
                 orderedPrompts: getRoleOptionPrompts(),
                 escapeHtml
             }) || '';
@@ -4145,14 +4188,14 @@ document.addEventListener('click', (event) => {
             const rounds = [];
             for (let round = 1; round <= roundCounter; round++) {
                 const stack = captureModelStackState(`r${round}-models`);
-                const participantIds = (stack?.items || []).filter((item) => item.send).map((item) => item.name).filter(Boolean);
+                const participantIds = (stack?.items || []).filter((item) => item.send).map((item) => item.id || item.name).filter(Boolean);
                 if (!participantIds.length) continue;
                 rounds.push({
                     plannedStageId: `canvas-r${round}`,
                     label: round === 1 ? 'R1 Models' : `R${round}`,
                     purpose: round === 1 ? 'position' : 'response',
                     participantIds,
-                    participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.name, promptId: item.role || null }))
+                    participantBindings: (stack?.items || []).filter((item) => item.send).map((item) => ({ participantId: item.id || item.name, promptId: item.role || null }))
                 });
             }
             // The plan is the rounds of the canvas only: a synthesis is a round of one model with a role.
@@ -4667,7 +4710,8 @@ document.addEventListener('click', (event) => {
             return changed;
         };
 
-        const modelBlockName = (block) => block.querySelector('.model-name')?.textContent?.trim() || '';
+        const modelBlockName = (block) => block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '';
+        const modelBlockId = (block) => block.dataset.participantId || modelBlockName(block);
 
         // Puts the blocks of a stack in the saved order (the order of the schema); a block without a saved item stays after them.
         const orderModelStackBlocks = (stackId, state) => {
@@ -4677,7 +4721,8 @@ document.addEventListener('click', (event) => {
             if (!blocks.length) return;
             const ordered = [];
             state.items.forEach((item) => {
-                const block = blocks.find((candidate) => !ordered.includes(candidate) && modelBlockName(candidate) === item.name);
+                const wantedId = item.id || item.participantId || item.name;
+                const block = blocks.find((candidate) => !ordered.includes(candidate) && modelBlockId(candidate) === wantedId);
                 if (block) ordered.push(block);
             });
             const sequence = [...ordered, ...blocks.filter((block) => !ordered.includes(block))];
@@ -4693,8 +4738,14 @@ document.addEventListener('click', (event) => {
             if (!stack) return;
             const blocks = Array.from(stack.querySelectorAll('.model-block'));
             state.items.forEach((item, index) => {
-                const block = blocks.find((candidate) => modelBlockName(candidate) === item.name);
+                const wantedId = item.id || item.participantId || item.name;
+                const block = blocks.find((candidate) => modelBlockId(candidate) === wantedId);
                 if (!block) return;
+                if (item.label) {
+                    block.dataset.participantLabelValue = String(item.label);
+                    const label = block.querySelector('.model-participant-label');
+                    if (label) label.textContent = String(item.label) === String(item.name) ? '✎' : String(item.label);
+                }
                 // A legacy send mark was saved by the position of the block on the canvas.
                 const position = blocks.indexOf(block);
                 const inputCb = block.querySelector('.model-input-checkbox');
@@ -5151,7 +5202,7 @@ document.addEventListener('click', (event) => {
                 } else {
                     block.classList.remove('active');
                     block.classList.add('inactive');
-                    if (sel) sel.disabled = true;
+                    if (sel) sel.disabled = !isCustomEnginePipeline();
                     if (indicator) {
                         indicator.className = 'status-indicator';
                         indicator.title = '';
@@ -5758,7 +5809,7 @@ document.addEventListener('click', (event) => {
             if (!pipelinePanel) return;
             const disabled = !enabled;
                 pipelinePanel
-                .querySelectorAll('.model-input-checkbox, .role-selector, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
+                .querySelectorAll('.model-input-checkbox, .role-selector, .model-participant-add, .model-participant-label, .model-participant-remove, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
                 .forEach((el) => {
                     el.disabled = disabled;
                 });
@@ -5788,6 +5839,8 @@ document.addEventListener('click', (event) => {
         };
 
         const syncPipelineRoundModelsFromSelectedLLMs = ({ force = false } = {}) => {
+            // Basic's participant IDs, including switched-off duplicates, are restored from its schema.
+            if (isCustomEnginePipeline()) return false;
             if (!force && pipelineR1ManualDirty && !isR1DefaultSelection()) return false;
             const selectedIndices = getSelectedLLMIndicesForPipeline();
             let changed = false;
@@ -6533,7 +6586,9 @@ document.addEventListener('click', (event) => {
                 const name = source?.name || id;
                 const participantId = source ? (source.id ?? source.name) : id;
                 const settings = cards[ref]?.[participantId] ?? cards[ref]?.[id];
-                const model = { name, ...(participantId !== name ? { id: participantId } : {}), ...extra };
+                const label = settings?.label || source?.label;
+                const settingsMode = settings?.settingsMode || source?.settingsMode;
+                const model = { name, ...(participantId !== name || source?.id != null ? { id: participantId } : {}), ...(label ? { label } : {}), ...(settingsMode ? { settingsMode } : {}), ...extra };
                 if (source && 'input' in source) model.input = JSON.parse(JSON.stringify(source.input));
                 put(model, 'request', legacyValue(settings?.promptTemplate));
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
@@ -6553,7 +6608,8 @@ document.addEventListener('click', (event) => {
                 round = Number(String(stage.plannedStageId).slice('canvas-r'.length));
                 const ref = `r${round}`;
                 // A model can be configured before its Send checkbox is enabled.
-                if (ref === previewModel?.ref && !models.includes(previewModel.name)) models.push(previewModel.name);
+                const previewId = previewModel?.participantId || previewModel?.id || previewModel?.name;
+                if (ref === previewModel?.ref && previewId && !models.includes(previewId)) models.push(previewId);
                 const entries = models.map((name) => modelEntry(ref, name, roles[name] ? { role: roles[name] } : {}));
                 // A switched-off model keeps its settings in the saved schema.
                 if (forSave) {
@@ -7237,7 +7293,8 @@ document.addEventListener('click', (event) => {
                         const saved = chatBindings[request.participantId];
                         // The saved chat of a continue goes with the request; the background uses it only without a binding of its own.
                         const binding = !isNewChat(request) && saved?.modelName === request.modelName && saved.tabId != null
-                            ? { tabId: saved.tabId, requestId: saved.requestId || null, stageAttemptId: saved.stageAttemptId || null }
+                            ? { tabId: saved.tabId, requestId: saved.requestId || null, stageAttemptId: saved.stageAttemptId || null,
+                                chatUrl: saved.chatUrl || null, initialUrl: saved.initialUrl || null }
                             : null;
                         // A resumed participant that already sent in this run and has no chat on record has lost it (V01): strict.
                         const strict = Boolean(resumeRecord) && !isNewChat(request) && !binding
@@ -7250,7 +7307,8 @@ document.addEventListener('click', (event) => {
                             phase: request.phase || 'answer'
                         }) : JSON.stringify([request.stepRef ?? `#${meta.step}`, request.participantId ?? request.modelName, request.visit ?? 1, meta.attempt, request.phase ?? 'answer']);
                         return [request.modelName, {
-                            participantId: request.participantId, newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {}),
+                            participantId: request.participantId, participantLabel: request.participantLabel || request.label || request.modelName,
+                            newChat: isNewChat(request), ...(binding ? { binding } : {}), ...(strict ? { strict: true } : {}),
                             stepRef: request.stepRef, visit: request.visit, attempt: meta.attempt, phase: request.phase || 'answer', attemptKey: attKey
                         }];
                     }));
@@ -7332,6 +7390,7 @@ document.addEventListener('click', (event) => {
                                 pipelineRunId: runContext.pipelineRunId,
                                 pipelineRoundId: `s${step + 1}${request?.visit > 1 ? `v${request.visit}` : ''}`,
                                 participantId: request?.participantId,
+                                participantLabel: request?.participantLabel || request?.label || null,
                                 stepRef: request?.stepRef,
                                 visit: request?.visit,
                                 transportRequestId: modelResult.transportRequestId || '', requestId: modelResult.transportRequestId || ''
@@ -7375,7 +7434,9 @@ document.addEventListener('click', (event) => {
                         if (!bound || bound.modelName !== request.modelName) return;
                         chatBindings[request.participantId] = {
                             ...chatBindings[request.participantId],
-                            tabId: bound.tabId, requestId: bound.requestId || null, stageAttemptId: bound.stageAttemptId || null
+                            tabId: bound.tabId, requestId: bound.requestId || null, stageAttemptId: bound.stageAttemptId || null,
+                            chatUrl: bound.chatUrl || chatBindings[request.participantId]?.chatUrl || null,
+                            initialUrl: bound.initialUrl || chatBindings[request.participantId]?.initialUrl || null
                         };
                     });
                 };
@@ -7559,6 +7620,57 @@ document.addEventListener('click', (event) => {
                 updateDebateButtonsUi();
             }
         };
+        // An explicitly edited request can omit the task or incoming answers by design. Show every
+        // such request, with the not-yet-produced input marked, before allowing the Basic run to start.
+        const confirmBasicRequestPreview = async (task) => {
+            const engine = window.CustomEngine;
+            if (!engine?.previewPrompt) return true;
+            const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
+            if (built.errors.length) return true; // The normal run path reports schema errors without sending.
+            const requests = [];
+            const warnings = [];
+            const sourceSteps = built.schema?.steps || [];
+            built.steps.forEach((step, stepIndex) => {
+                if (step.kind !== 'round') return;
+                const sourceStep = sourceSteps.find((item) => item.ref === step.ref) || {};
+                step.models.forEach((model) => {
+                    if (typeof model.promptTemplate !== 'string' || !model.promptTemplate.trim()) return;
+                    const preview = engine.previewPrompt({ task, steps: built.steps, stepIndex, modelName: model.name,
+                        semiAuto: built.run.policy !== 'auto' });
+                    if (!preview) return;
+                    const sourceModel = (sourceStep.models || []).find((item) => (item.id ?? item.name) === (model.id ?? model.name))
+                        || (sourceStep.models || []).find((item) => item.name === model.name) || {};
+                    const diagnostics = engine.requestDiagnostics?.({
+                        model: { promptTemplate: model.promptTemplate },
+                        hasInput: null,
+                        hasTask: Boolean(String(sourceModel.task || '').trim() || String(sourceStep.task || '').trim()),
+                        hasRole: Boolean(String(sourceModel.role || '').trim())
+                    }) || { warnings: [] };
+                    (diagnostics.warnings || []).forEach((warning) => warnings.push(`${step.ref} · ${model.name}: ${warning}`));
+                    const prompt = composeCustomPrompts(
+                        [model.name], { [model.name]: preview.prompt }, { [model.name]: model.maxWords },
+                        { [model.name]: model.discipline }, built.schema.defaults?.modelNotes || {}, {}, built.run.maxWords
+                    )[model.name];
+                    requests.push({ ref: step.ref, name: model.name, prompt, hasInput: preview.inputMode !== 'none' });
+                });
+            });
+            if (!requests.length) return true;
+            const sections = [];
+            if (warnings.length) sections.push(`Предупреждения\n${[...new Set(warnings)].map((line) => `• ${line}`).join('\n')}`);
+            if (requests.some((item) => item.hasInput)) {
+                sections.push('Входы следующих шагов ещё неизвестны и показаны в запросе как заглушки.');
+            }
+            requests.forEach((item) => sections.push(`${item.ref} · ${item.name}\n${item.prompt}`));
+            const answer = await askChoiceDialog({
+                title: 'Запросы Basic перед запуском',
+                message: 'Проверьте персональные запросы. Продолжить запуск или отменить?',
+                document: { kind: 'read', readOnly: true, name: 'Собранные запросы', text: sections.join('\n\n---\n\n') },
+                allowChoicesWithReadOnlyDocument: true,
+                choices: [{ value: 'run', label: 'Продолжить запуск' }],
+                cancelText: 'Отмена'
+            });
+            return answer === 'run';
+        };
         const startDebateFromPage = async () => {
             if (pipelineRunActive) {
                 showNotification('Pipeline already running', 'warn');
@@ -7577,7 +7689,10 @@ document.addEventListener('click', (event) => {
                 return false;
             }
             if (selectedPreset?.runner === 'custom') {
-                return runCustomFromPage({ task: moderatorEntryText || pipelineNameText });
+                const task = moderatorEntryText || pipelineNameText;
+                const proceed = await confirmBasicRequestPreview(task);
+                if (!proceed) return false;
+                return runCustomFromPage({ task });
             }
             // The Basic engine is the only runner; any other preset is unavailable.
             showNotification('Этот профиль пока недоступен.', 'warn');
@@ -7870,7 +7985,42 @@ document.addEventListener('click', (event) => {
                 const lengthSelect = document.getElementById('debate-length-select');
                 if (lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords))) lengthSelect.value = String(run.maxWords);
             }
-            const targetRounds = Math.max(1, Number(config.roundCounter) || 1);
+            const incomingSchema = working.schema || config.schema || null;
+            const schemaCanvas = incomingSchema
+                ? window.BasicSchema.toCanvas(incomingSchema, {
+                    models: getAllPipelineModelNames(),
+                    isRole: (value) => Boolean(resolveJudgePromptId(value)),
+                    runWords: Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => Number(option.value)).filter(Number.isSafeInteger)
+                })
+                : null;
+            if (schemaCanvas?.errors?.length) {
+                showNotification(`Схема не отображена на холсте: ${window.BasicSchema.describeErrors(schemaCanvas.errors)}`, 'error');
+            }
+            const sourceRoundSteps = incomingSchema?.steps?.filter((step) => step.kind === 'round') || [];
+            const sourceParticipants = [...new Map(sourceRoundSteps.flatMap((step) => step.models || []).map((model) => [model.id || model.name, model])).values()];
+            const schemaStacksFallback = Object.fromEntries(sourceRoundSteps.map((step, index) => {
+                const local = new Map((step.models || []).map((model) => [model.id || model.name, model]));
+                const items = sourceParticipants.map((model) => {
+                    const own = local.get(model.id || model.name);
+                    const enabled = own && own.enabled !== false;
+                    return { name: model.name, id: model.id || model.name, label: model.label || model.name,
+                        input: Boolean(enabled), send: Boolean(enabled), role: own?.role || null };
+                });
+                return [`r${index + 1}-models`, { items }];
+            }));
+            const modelStacks = schemaCanvas && !schemaCanvas.errors?.length
+                ? schemaCanvas.stacks
+                : (incomingSchema ? schemaStacksFallback : (config.modelStacks && typeof config.modelStacks === 'object' ? config.modelStacks : {}));
+            if (incomingSchema) {
+                Object.values(modelStacks).forEach((state) => {
+                    const items = Array.isArray(state?.items) ? state.items : (state.items = []);
+                    const known = new Set(items.map((item) => item.id || item.name));
+                    (PipelineRuntime?.MODELS || []).forEach((model) => {
+                        if (!known.has(model.name)) items.push({ name: model.name, id: model.name, label: model.name, input: false, send: false, role: null });
+                    });
+                });
+            }
+            const targetRounds = Math.max(1, Number(schemaCanvas?.roundCounter || config.roundCounter) || 1);
             prunePipelineRoundsAfter(targetRounds);
             while (roundCounter > targetRounds) {
                 removeLastRound();
@@ -7879,9 +8029,18 @@ document.addEventListener('click', (event) => {
                 addRound();
             }
 
-            const modelStacks = config.modelStacks && typeof config.modelStacks === 'object' ? config.modelStacks : {};
             const sendOverrides = config.version >= 2 ? null : buildSendOverridesFromLegacy(config);
             Object.entries(modelStacks).forEach(([stackId, state]) => {
+                if ((working.schema || (isCustomEnginePipeline() && incomingSchema)) && Array.isArray(state?.items)) {
+                    const stack = document.getElementById(stackId);
+                    PipelineRuntime?.renderModelStack?.(stack, {
+                        items: state.items,
+                        withRole: true,
+                        participantControls: true,
+                        orderedPrompts: getOrderedJudgePrompts(),
+                        escapeHtml
+                    });
+                }
                 applyModelStackState(stackId, state, sendOverrides);
             });
 
@@ -8642,16 +8801,6 @@ document.addEventListener('click', (event) => {
         const recordFromSchema = (name, schema) => {
             const errors = window.BasicSchema.validate(schema);
             if (errors.length) return { ok: false, errors };
-            // The canvas shows one block per model name: two participants of one model in a step are refused with their place
-            // (not saved without them) until the canvas shows them.
-            const twice = [];
-            (schema.steps || []).forEach((step, at) => {
-                const names = (step.models || []).filter((model) => model.enabled !== false).map((model) => model.name);
-                names.forEach((name, index) => {
-                    if (names.indexOf(name) !== index) twice.push({ path: `steps[${at}].models`, message: `два участника модели «${name}» в одном шаге пока не показываются на холсте` });
-                });
-            });
-            if (twice.length) return { ok: false, errors: twice };
             const canvas = window.BasicSchema.toCanvas(schema, {
                 models: getAllPipelineModelNames(),
                 isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id)),
@@ -9025,29 +9174,166 @@ document.addEventListener('click', (event) => {
             const match = /^r(\d+)-models$/.exec(block.closest('.model-stack')?.id || '');
             return match ? `r${match[1]}` : '';
         };
-        const customBlockModel = (block) => block.querySelector('.model-name')?.textContent?.trim() || '';
+        const customBlockModel = (block) => block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '';
+        const customBlockParticipantId = (block) => block.dataset.participantId || customBlockModel(block);
+        const sourceSchemaForParticipantEdit = () => {
+            const current = basicSourceSchema.get(draftPlanStorageKey());
+            const schema = JSON.parse(JSON.stringify(current || basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true })));
+            if (!Array.isArray(schema.steps)) schema.steps = [];
+            return schema;
+        };
+        const applyParticipantSchemaEdit = async (schema) => {
+            const key = draftPlanStorageKey();
+            const errors = window.BasicSchema.validate(schema);
+            const draftOnlyErrors = errors.filter((error) => !(error.path === 'steps' && /нет исполнимого шага/.test(error.message)));
+            if (draftOnlyErrors.length) {
+                showNotification(`Изменение участника не применено. ${window.BasicSchema.describeErrors(draftOnlyErrors)}`, 'warn');
+                return false;
+            }
+            const working = basicWorkingFromConfig({ schema, roundCounter });
+            if (!working.schema) {
+                const settings = window.BasicSchema.toSettings(schema);
+                working.schema = schema;
+                working.cards = settings.customModelSettings;
+                working.rounds = { ...settings.customRoundSettings, ...settings.customStepSettings };
+                working.defaults = settings.customDefaults;
+                working.controls = controlsOf(schema);
+                working.error = '';
+            }
+            adoptBasicWorking(key, working);
+            basicSourceSchema.set(key, schema);
+            applyPipelineConfig({ schema, roundCounter });
+            adoptBasicWorking(key, working);
+            basicSourceSchema.set(key, schema);
+            const saved = !isDefaultPipelineName(key) && pipelineStore.pipelines[key];
+            if (saved && !errors.length) {
+                if (!persistBasicSettings(key)) return false;
+                await persistPipelineStore();
+            }
+            return true;
+        };
+        const nextParticipantLabel = (schema, providerName) => {
+            const labels = new Set((schema.steps || []).flatMap((step) => (step.models || [])
+                .filter((model) => model.name === providerName).map((model) => String(model.label || model.name))));
+            let suffix = 2;
+            while (labels.has(`${providerName} ${suffix}`)) suffix += 1;
+            return `${providerName} ${suffix}`;
+        };
+        const upgradeParticipantSchemaForCanvas = (schema) => {
+            schema.schemaVersion = 2;
+            (schema.steps || []).forEach((step) => (step.models || []).forEach((model) => {
+                if (!model.id) model.id = model.name;
+            }));
+            return schema;
+        };
+        const addBasicParticipant = async (block) => {
+            if (pipelineRunActive || !window.BasicSchema || !block) return;
+            const providerName = customBlockModel(block);
+            const id = globalThis.crypto?.randomUUID?.();
+            if (!providerName || !id) { showNotification('Не удалось создать ID участника.', 'error'); return; }
+            const schema = sourceSchemaForParticipantEdit();
+            upgradeParticipantSchemaForCanvas(schema);
+            const label = nextParticipantLabel(schema, providerName);
+            for (let round = 1; round <= roundCounter; round += 1) {
+                const ref = `r${round}`;
+                let step = (schema.steps || []).find((item) => item.ref === ref && item.kind === 'round');
+                if (!step) {
+                    step = { ref, kind: 'round', models: [] };
+                    schema.steps.push(step);
+                    schema.steps.sort((left, right) => Number(String(left.ref).slice(1)) - Number(String(right.ref).slice(1)));
+                }
+                if (!(step.models || []).some((model) => model.id === id)) {
+                    step.models.push({ id, name: providerName, label, enabled: false, onCanvas: true, settingsMode: 'explicit' });
+                }
+            }
+            if (await applyParticipantSchemaEdit(schema)) showNotification(`${label} добавлен с выключенным Send.`, 'info');
+        };
+        const renameBasicParticipant = async (block) => {
+            if (pipelineRunActive || !window.BasicSchema || !block) return;
+            const id = customBlockParticipantId(block);
+            const currentLabel = block.dataset.participantLabelValue || customBlockModel(block);
+            const value = await showPrompt('Имя участника', currentLabel);
+            if (value === null) return;
+            const label = String(value || '').trim();
+            if (!label) { showNotification('Имя участника не может быть пустым.', 'warn'); return; }
+            const schema = sourceSchemaForParticipantEdit();
+            const providerName = customBlockModel(block);
+            const duplicate = (schema.steps || []).flatMap((step) => step.models || []).some((model) => model.name === providerName
+                && (model.id || model.name) !== id && String(model.label || model.name).trim() === label);
+            if (duplicate) { showNotification('Это имя уже используется другим участником схемы.', 'warn'); return; }
+            upgradeParticipantSchemaForCanvas(schema);
+            schema.steps.forEach((step) => (step.models || []).forEach((model) => {
+                if ((model.id || model.name) === id) model.label = label;
+            }));
+            const settings = getCustomCardSettings();
+            Object.values(settings).forEach((participants) => {
+                if (participants?.[id]) participants[id].label = label;
+            });
+            customCardSettings.set(draftPlanStorageKey(), settings);
+            if (await applyParticipantSchemaEdit(schema)) showNotification('Имя участника обновлено.', 'info');
+        };
+        const removeBasicParticipantFromRound = async (block) => {
+            if (pipelineRunActive || !window.BasicSchema || !block) return;
+            const id = customBlockParticipantId(block);
+            const providerName = customBlockModel(block);
+            if (id === providerName) return;
+            const ref = customBlockRef(block);
+            const schema = sourceSchemaForParticipantEdit();
+            const step = (schema.steps || []).find((item) => item.ref === ref);
+            if (!step) return;
+            step.models = (step.models || []).filter((model) => (model.id || model.name) !== id);
+            upgradeParticipantSchemaForCanvas(schema);
+            const prospectiveErrors = window.BasicSchema.validate(schema).filter((error) => !(error.path === 'steps' && /нет исполнимого шага/.test(error.message)));
+            if (prospectiveErrors.length) {
+                showNotification(`Участник не удалён: ${window.BasicSchema.describeErrors(prospectiveErrors)}`, 'warn');
+                return;
+            }
+            const stillDeclared = (schema.steps || []).some((item) => (item.models || []).some((model) => (model.id || model.name) === id));
+            if (!stillDeclared) {
+                const settings = getCustomCardSettings();
+                Object.values(settings).forEach((participants) => { if (participants) delete participants[id]; });
+                customCardSettings.set(draftPlanStorageKey(), settings);
+            } else {
+                const settings = getCustomCardSettings();
+                if (settings[ref]) delete settings[ref][id];
+                customCardSettings.set(draftPlanStorageKey(), settings);
+            }
+            await applyParticipantSchemaEdit(schema);
+        };
         // The presentation of the pipeline (schema.description): shown in the ▶ card, collapsed to two lines; the engine never reads it.
         const basicDescription = () => String(basicSourceSchema.get(draftPlanStorageKey())?.description || '').trim();
         const basicDescriptionBlock = () => `<div class="custom-desc"><div class="custom-desc-head"><strong>Description</strong><button type="button" class="custom-desc-toggle" aria-expanded="false" title="Развернуть на весь экран">⤢</button></div>
             <div class="custom-desc-text">${basicDescription() ? escapeHtml(basicDescription()) : '<em>Описание не задано.</em>'}</div></div>`;
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
+            const participantId = pipelineDefaults ? '' : customBlockParticipantId(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
-            const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName });
+            const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName, participantId });
             const stepIndex = steps.findIndex((step) => step.ref === ref);
             if (!pipelineDefaults && stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
             const step = steps[stepIndex];
             const automaticSteps = steps.map((item) => ({ ...item, models: item.models.map((model) => ({ ...model, promptTemplate: null })) }));
-            const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
-            const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[modelName] || {};
+            const previewSteps = automaticSteps.map((item, index) => index === stepIndex
+                ? { ...item, models: item.models.filter((model) => (model.id || model.name) === participantId) }
+                : item);
+            const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: previewSteps, stepIndex, modelName, participantId });
+            const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[participantId] || {};
             const fileParticipantId = block?.dataset?.participantId || (basicSourceSchema.get(draftPlanStorageKey())?.steps || [])
                 .find((item) => item?.ref === ref)?.models?.find((item) => item.name === modelName)?.id || modelName;
             const sourceModel = pipelineDefaults ? null : (basicSourceSchema.get(draftPlanStorageKey())?.steps || [])
                 .find((item) => item?.ref === ref)?.models?.find((item) => (item.id ?? item.name) === fileParticipantId);
             const initialFiles = Array.isArray(saved.files) ? saved.files : (sourceModel?.files || []);
+            const explicitParticipant = saved.settingsMode === 'explicit';
             const baseTemplate = preview?.template;
-            const inherited = resolveCustomFields({}, step?.kind);
-            const resolved = resolveCustomFields(saved, step?.kind);
+            const inherited = resolveCustomFields({}, step?.kind, step || {});
+            const resolved = explicitParticipant
+                ? {
+                    task: { value: typeof saved.task === 'string' ? saved.task : '', source: 'model' },
+                    discipline: Object.fromEntries(Object.keys(window.BasicSchema.DEFAULTS.discipline).map((key) => [key, {
+                        value: typeof saved.discipline?.[key] === 'string' ? saved.discipline[key] : '', source: 'model'
+                    }]))
+                }
+                : resolveCustomFields(saved, step?.kind, step || {});
             const general = getDebateMaxWords();
             const defaults = customDisciplineDefaults();
             const disciplineRows = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Повторный запрос']];
@@ -9074,9 +9360,10 @@ document.addEventListener('click', (event) => {
             modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
             content.innerHTML = `
                 <header class="custom-card-top ${pipelineDefaults ? 'custom-defaults-top' : ''}">
-                    <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Basic' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span>`}</h3>
-                    ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов</div>`}
+                    <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Basic' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(block.dataset.participantLabelValue || modelName)} · ${escapeHtml(preview.label)}</span>`}</h3>
+                    ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${explicitParticipant ? '' : general}" aria-describedby="custom-card-length-note"> слов</div>`}
                     ${pipelineDefaults ? '' : '<div class="basic-input-files-slot"></div>'}
+                    ${pipelineDefaults ? '' : '<button type="button" class="modal-button" id="custom-card-default">Default</button>'}
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
@@ -9149,10 +9436,12 @@ document.addEventListener('click', (event) => {
             }
             const reset = content.querySelector('#custom-card-reset');
             const save = content.querySelector('#custom-card-save');
-            if (request) { request.value = saved.promptTemplate || baseTemplate; request.disabled = pipelineRunActive; }
-            if (length) { length.value = saved.maxWords || general; length.disabled = pipelineRunActive; }
+            if (request) { request.value = saved.promptTemplate || (explicitParticipant ? '' : baseTemplate); request.placeholder = explicitParticipant ? 'Автоматически собранный запрос' : ''; request.disabled = pipelineRunActive; }
+            if (length) { length.value = saved.maxWords || (explicitParticipant ? '' : general); length.disabled = pipelineRunActive; }
             if (reset) reset.disabled = pipelineRunActive;
             save.disabled = pipelineRunActive;
+            const defaultButton = content.querySelector('#custom-card-default');
+            if (defaultButton) defaultButton.disabled = pipelineRunActive;
             const dirtyFields = new Set();
             const fields = {};
             // Own instruction lines (the card's «+»), in the order they were added; ▶ keeps its shared lines the same way.
@@ -9167,13 +9456,13 @@ document.addEventListener('click', (event) => {
             let lengthDirty = false;
             const refresh = () => {
                 if (request) {
-                    const own = request.value !== baseTemplate;
+                    const own = explicitParticipant ? Boolean(request.value.trim()) && request.value !== baseTemplate : request.value !== baseTemplate;
                     reset.hidden = !own;
                     content.querySelector('#custom-card-personal-note').textContent = own ? 'Персональный запрос: общее задание не применяется; дисциплина применяется.' : '';
                 }
                 rows.forEach(([key]) => {
                     if (!dirtyFields.has(key)) fields[key].value = display(key, effectiveValue(key));
-                    fields[key].placeholder = display(key, inheritedValue(key));
+                    fields[key].placeholder = explicitParticipant ? '' : display(key, inheritedValue(key));
                     const raw = rawValue(key);
                     const own = dirtyFields.has(key) ? (typed(fields[key].value) || EMPTYABLE_KEYS.has(key)) : isSet(key, raw);
                     content.querySelector(`[data-discipline="${key}"] [data-action="inherit"]`).hidden = !own;
@@ -9203,14 +9492,27 @@ document.addEventListener('click', (event) => {
             });
             request?.addEventListener('input', refresh);
             length?.addEventListener('input', () => { lengthDirty = true; refresh(); });
-            reset?.addEventListener('click', () => { request.value = baseTemplate; refresh(); });
+            reset?.addEventListener('click', () => { request.value = explicitParticipant ? '' : baseTemplate; refresh(); });
+            defaultButton?.addEventListener('click', () => {
+                if (request) request.value = baseTemplate || '';
+                if (length) { length.value = String(general || ''); lengthDirty = true; }
+                rows.forEach(([key]) => {
+                    const field = fields[key];
+                    if (!field) return;
+                    field.value = String(inheritedValue(key) || '');
+                    dirtyFields.add(key);
+                });
+                lineValues.splice(0, lineValues.length, ...(inherited.discipline.lines?.value || []));
+                drawLines();
+                refresh();
+            });
             const saveSettings = async (close) => {
                 if (pipelineRunActive) return;
-                if (request && !request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
+                if (request && !explicitParticipant && !request.value.trim()) { request.focus(); showNotification('Введите запрос.', 'warn'); return; }
                 if (length && (!length.checkValidity() || (length.value !== '' && !Number.isSafeInteger(Number(length.value))))) { length.reportValidity(); return; }
                 // The request equal to the automatic one stays inherited (that text is assembled, not a stored value).
                 // A length the owner typed is kept even when it equals the shared one; an empty field gives it back.
-                const next = pipelineDefaults ? {} : { promptTemplate: request.value === baseTemplate ? null : request.value,
+                const next = pipelineDefaults ? {} : { label: block.dataset.participantLabelValue || modelName, ...(explicitParticipant ? { settingsMode: 'explicit' } : {}), promptTemplate: !request.value.trim() || request.value === baseTemplate ? null : request.value,
                     maxWords: lengthDirty ? (length.value === '' ? null : Number(length.value)) : (saved.maxWords || null) };
                 if (!pipelineDefaults && Array.isArray(saved.files)) next.files = saved.files;
                 const discipline = {};
@@ -9243,7 +9545,7 @@ document.addEventListener('click', (event) => {
                 else {
                     const settings = getCustomCardSettings();
                     if (!settings[ref]) settings[ref] = {};
-                    settings[ref][modelName] = next;
+                    settings[ref][participantId] = next;
                     customCardSettings.set(draftPlanStorageKey(), settings);
                 }
                 const name = draftPlanStorageKey();
@@ -9557,6 +9859,17 @@ document.addEventListener('click', (event) => {
         });
 
         pipelinePanel.addEventListener('click', (event) => {
+            const participantAction = event.target?.closest?.('[data-participant-add], [data-participant-label], [data-participant-remove]');
+            if (participantAction && pipelinePanel.contains(participantAction)) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!isCustomEnginePipeline()) return;
+                const block = participantAction.closest('.model-block');
+                if (participantAction.hasAttribute('data-participant-add')) void addBasicParticipant(block);
+                else if (participantAction.hasAttribute('data-participant-label')) void renameBasicParticipant(block);
+                else if (participantAction.hasAttribute('data-participant-remove')) void removeBasicParticipantFromRound(block);
+                return;
+            }
             const controlCard = event.target?.closest?.('.pipeline-control-card');
             if (controlCard && pipelinePanel.contains(controlCard)) {
                 openControlCard(controlCard.dataset.controlCard);
@@ -9895,6 +10208,33 @@ document.addEventListener('click', (event) => {
         setTimeout(() => syncPipelineRoundsToDebateLimit(), 0);
         updatePipelineAll();
         pipelineFeedClearReady = true;
+        if (isPipelinePage) {
+            let navigationDraftRestored = false;
+            pipelineViewDraftHandlers = {
+                capture: () => ({
+                    activeName: pipelineStore.active || '',
+                    headerName: getPipelineHeaderName(),
+                    isDraft: pipelinePanel.dataset.pipelineDraft === 'true',
+                    config: capturePipelineConfig()
+                }),
+                restore: (draft) => {
+                    if (navigationDraftRestored || !draft?.config) return;
+                    navigationDraftRestored = true;
+                    pipelineStore.active = String(draft.activeName || '');
+                    renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
+                    setPipelineHeaderName(String(draft.headerName || ''));
+                    if (draft.isDraft) pipelinePanel.dataset.pipelineDraft = 'true';
+                    else pipelinePanel.removeAttribute('data-pipeline-draft');
+                    const key = draftPlanStorageKey();
+                    // Default's working settings normally live only in this document.
+                    // Restore them without installing a new saved pipeline.
+                    adoptBasicWorking(key, basicWorkingFromConfig(draft.config));
+                    if (draft.config.draftPlan) pipelineSessionDraftPlans[key] = draft.config.draftPlan;
+                    applyPipelineConfig(draft.config);
+                    updateActivePipelineDescription(pipelineStore.active);
+                }
+            };
+        }
     }
 
     if (notesTree) {
@@ -20396,7 +20736,6 @@ function bindMainPageFavoritesInteractions() {
 }
 
 setTimeout(bindMainPageFavoritesInteractions, 0);
-setTimeout(() => window.clearFavoriteEntriesOnLoad?.(), 0);
 function setPromptContent(text) {
     if (!promptInput) return;
     const nextValue = (text || '').trim();
@@ -22417,6 +22756,7 @@ function checkCompareButtonState() {
             sourceCardId: card?.dataset?.sourceCardId || '',
             responseId: card?.dataset?.responseId || '',
             participantId: card?.dataset?.participantId || null,
+            participantLabel: card?.dataset?.participantLabel || '',
             stepRef: card?.dataset?.stepRef || null,
             visit: (card?.dataset?.visit !== undefined && card?.dataset?.visit !== '')
                 ? (Number.isFinite(Number(card.dataset.visit)) ? Number(card.dataset.visit) : card.dataset.visit)
@@ -22427,6 +22767,21 @@ function checkCompareButtonState() {
             html: String(outputEl?.innerHTML || '').trim(),
             timeLabel: String(timeEl?.textContent || '').trim()
         };
+    }
+    function setDebateCardParticipantLabel(card, value) {
+        const label = String(value || '').trim();
+        if (!card || !label) return;
+        card.dataset.participantLabel = label;
+        const name = card.querySelector('.debate-model-card-name');
+        if (!name) return;
+        let badge = card.querySelector('.debate-model-card-participant');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'debate-model-card-participant';
+            name.after(badge);
+        }
+        badge.textContent = label;
+        badge.hidden = label === String(name.textContent || '').trim();
     }
     function syncDebateCardFromMessage(card, message) {
         if (!(card instanceof HTMLElement) || !message) return;
@@ -22440,6 +22795,8 @@ function checkCompareButtonState() {
         if (message.responseId) card.dataset.responseId = message.responseId;
         if (message.sourceMessageId) card.dataset.sourceMessageId = message.sourceMessageId;
         if (message.sourceCardId) card.dataset.sourceCardId = message.sourceCardId;
+        const participantLabel = message.participantLabel || message.delivery?.participantLabel || message.metadata?.participantLabel || '';
+        if (participantLabel) setDebateCardParticipantLabel(card, participantLabel);
         if (message.participantId || message.delivery?.participantId || message.metadata?.participantId) {
             card.dataset.participantId = message.participantId || message.delivery?.participantId || message.metadata?.participantId;
         }
@@ -22469,6 +22826,7 @@ function checkCompareButtonState() {
         const messageId = existingId || makeDebateEntryId(card.dataset.kind || snapshot.kind || 'entry');
         const prev = debateMessageStore.get(messageId) || null;
         const participantId = card.dataset.participantId || patch.participantId || snapshot.participantId || prev?.participantId || prev?.delivery?.participantId || prev?.metadata?.participantId || null;
+        const participantLabel = card.dataset.participantLabel || patch.participantLabel || snapshot.participantLabel || prev?.participantLabel || prev?.delivery?.participantLabel || prev?.metadata?.participantLabel || null;
         const stepRef = card.dataset.stepRef || patch.stepRef || snapshot.stepRef || prev?.stepRef || prev?.delivery?.stepRef || prev?.metadata?.stepRef || null;
         const rawVisit = (card.dataset.visit !== undefined && card.dataset.visit !== '')
             ? card.dataset.visit
@@ -22487,6 +22845,7 @@ function checkCompareButtonState() {
             sourceCardId: String(snapshot.sourceCardId ?? prev?.sourceCardId ?? ''),
             responseId: String(snapshot.responseId ?? prev?.responseId ?? card.dataset.responseId ?? ''),
             model: String(snapshot.model ?? prev?.model ?? ''),
+            participantLabel: String(participantLabel || ''),
             role: String(snapshot.role ?? prev?.role ?? ''),
             targets: Array.isArray(snapshot.targets) ? snapshot.targets.slice() : (Array.isArray(prev?.targets) ? prev.targets.slice() : []),
             text: String(snapshot.text ?? prev?.text ?? ''),
@@ -22516,6 +22875,7 @@ function checkCompareButtonState() {
             ...(snapshot.metadata || {}),
             ...(patch.metadata || {}),
             ...(participantId ? { participantId } : {}),
+            ...(participantLabel ? { participantLabel } : {}),
             ...(stepRef ? { stepRef } : {}),
             ...(visit !== null ? { visit } : {})
         };
@@ -22530,6 +22890,7 @@ function checkCompareButtonState() {
         message.delivery = {
             ...message.delivery,
             ...(participantId ? { participantId } : {}),
+            ...(participantLabel ? { participantLabel } : {}),
             ...(stepRef ? { stepRef } : {}),
             ...(visit !== null ? { visit } : {}),
             sourceUrl: card.dataset.sourceUrl || message.delivery?.sourceUrl || '',
@@ -23119,6 +23480,7 @@ function checkCompareButtonState() {
         setDebateCardRound(card, {
             ...turn.delivery,
             participantId: turn.participantId || turn.delivery?.participantId || turn.metadata?.participantId,
+            participantLabel: turn.participantLabel || turn.delivery?.participantLabel || turn.metadata?.participantLabel,
             stepRef: turn.stepRef || turn.delivery?.stepRef || turn.metadata?.stepRef,
             visit: turn.visit ?? turn.delivery?.visit ?? turn.metadata?.visit,
             completedAt: turn.completedAt,
@@ -23130,6 +23492,7 @@ function checkCompareButtonState() {
                 <span class="debate-model-card-title">
                     <span class="debate-model-card-title-main">
                         <span class="debate-model-card-name">${escapeHtml(kind === 'moderator' ? 'User' : modelName)}</span>
+                        ${kind === 'moderator' ? '' : '<span class="debate-model-card-participant" hidden></span>'}
                         ${kind === 'moderator' ? '' : '<span class="status-indicator success"></span>'}
                         ${kind === 'moderator' ? '' : `<span class="debate-model-card-role">${escapeHtml(turn.role || '')}</span>`}
                         ${approvalHtml}
@@ -23470,6 +23833,7 @@ function checkCompareButtonState() {
         const requestId = String(meta.transportRequestId || meta.requestId || '').trim();
         const context = pipelineWaiter.responseContexts.get(requestId) || {};
         const participantId = meta.participantId || context.participantId || null;
+        const participantLabel = meta.participantLabel || context.participantLabel || null;
         const stepRef = meta.stepRef || context.stepRef || null;
         const rawVisit = (meta.visit !== undefined && meta.visit !== null && meta.visit !== '')
             ? meta.visit
@@ -23481,6 +23845,7 @@ function checkCompareButtonState() {
             pipelineRunId: String(meta.pipelineRunId || context.pipelineRunId || '').trim(),
             pipelineRoundId: String(meta.pipelineRoundId || meta.roundId || context.pipelineRoundId || '').trim().toLowerCase(),
             participantId: participantId ? String(participantId) : null,
+            participantLabel: participantLabel ? String(participantLabel) : null,
             stepRef: stepRef ? String(stepRef) : null,
             visit
         };
@@ -23505,6 +23870,7 @@ function checkCompareButtonState() {
         if (meta.pipelineRunId) card.dataset.pipelineRunId = meta.pipelineRunId;
         if (meta.requestId) card.dataset.requestId = meta.requestId;
         if (meta.participantId) card.dataset.participantId = String(meta.participantId);
+        if (meta.participantLabel) setDebateCardParticipantLabel(card, meta.participantLabel);
         if (meta.stepRef) card.dataset.stepRef = String(meta.stepRef);
         if (meta.visit !== undefined && meta.visit !== null && meta.visit !== '') card.dataset.visit = String(meta.visit);
         const timestamp = meta.completedAt || meta.responseTimestamp || meta.createdAt || meta.timestamp;
@@ -25661,10 +26027,20 @@ function exportSingleTemplate(templateName, sourceData = null) {
             // cannot leave the control at the HTML default (off).
             await restoreDebateAutoMode();
             preserveCrossViewStateOnLoad = await consumeCrossViewNavigationIntentOnLoad();
+            // Browser Back/Forward has no app navigation intent, but must keep drafts too.
+            preserveCrossViewStateOnLoad = preserveCrossViewStateOnLoad
+                || performance?.getEntriesByType?.('navigation')?.[0]?.type === 'back_forward';
             suppressCrossViewPersistenceOnLoad = preserveCrossViewStateOnLoad;
             if (!preserveCrossViewStateOnLoad) {
                 await clearCrossViewPromptState();
             }
+            if (preserveCrossViewStateOnLoad) {
+                const stored = await safeStorageLocalGet(favoriteStorageKey);
+                syncFavoriteStateFromEntries(stored[favoriteStorageKey] || []);
+            } else {
+                clearFavoriteEntriesOnLoad();
+            }
+            await restoreAttachmentDraft({ clear: !preserveCrossViewStateOnLoad });
             if (!isPipelinePage) {
                 await loadModifierPresets(); // <-- грузим пресеты модификаторов и рендерим список
             }

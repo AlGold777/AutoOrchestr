@@ -206,7 +206,7 @@ describe('Basic schema: the canvas a schema stands for', () => {
       expect(canvas.stacks[id].items.find((item) => item.name === 'Grok')).toEqual({ name: 'Grok', id: 'Grok', input: false, send: false, role: null });
     });
     expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT'], ['GPT']]);
-    expect(Schema.toSettings(schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT', name: 'Grok', enabled: false });
+    expect(Schema.toSettings(schema).customModelSettings.r1.Grok).toEqual({ promptTemplate: 'KEPT', name: 'Grok', enabled: false, onCanvas: true });
     // A switched-off model with onCanvas is not called, and the schema without the mark gives the same engine steps.
     expect(Schema.assemble(schema).flatMap((step) => step.models.map((model) => model.name))).not.toContain('Grok');
     const unmarked = base([round('r1', ['GPT', { name: 'Grok', enabled: false, request: 'KEPT' }]), round('r2', ['GPT', { name: 'Grok', enabled: false }])]);
@@ -310,7 +310,7 @@ describe('Basic schema: check before the first request', () => {
     const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-schema-guide.md'), 'utf8');
     const example = JSON.parse(doc.match(/```json\n([\s\S]*?)\n```/)[1]);
     expect(Schema.validate(example)).toEqual([]);
-    expect(Schema.assemble(example).map((step) => step.ref)).toEqual(['r1', 'r2']);
+    expect(Schema.assemble(example).map((step) => step.ref)).toEqual(['r1']);
   });
 
   test('a format from a newer Basic is refused, older released formats stay supported', () => {
@@ -318,7 +318,11 @@ describe('Basic schema: check before the first request', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({ path: 'schemaVersion' });
     expect(errors[0].message).toContain('более новой версией Basic');
-    Schema.SUPPORTED_VERSIONS.forEach((version) => expect(Schema.validate(base([round('r1', ['A'])], { schemaVersion: version }))).toEqual([]));
+    Schema.SUPPORTED_VERSIONS.forEach((version) => {
+      const value = base([round('r1', ['A'])], { schemaVersion: version });
+      if (version >= 2) value.steps[0].models[0].id = 'participant-a';
+      expect(Schema.validate(value)).toEqual([]);
+    });
     expect(Schema.SUPPORTED_VERSIONS).toContain(1);
   });
 
@@ -402,7 +406,7 @@ describe('Basic schema: an explicit task is sent with input none', () => {
     expect(Schema.assemble(reloaded)).toEqual(Schema.assemble(schema));
     const settings = Schema.toSettings(reloaded);
     expect(settings.customRoundSettings.r1).toEqual({ task: 'STEP_TASK' });
-    expect(settings.customModelSettings.r1.A).toEqual({ task: 'MODEL_TASK' });
+    expect(settings.customModelSettings.r1.A).toEqual({ name: 'A', task: 'MODEL_TASK' });
   });
 });
 
@@ -771,11 +775,11 @@ describe('Basic schema: owner steps on the canvas (9)', () => {
     ]);
     const settings = Schema.toSettings(schema);
     expect(settings.customRoundSettings.r1).toEqual({ owner: 'approve', chat: 'new', output: { name: 'Карта', sections: ['A'] } });
-    expect(settings.customModelSettings.r1['expert-1']).toEqual({ task: 'T1', input: 'none' });
-    expect(settings.customModelSettings.r1['expert-2']).toEqual({ input: ['r0'] });
+    expect(settings.customModelSettings.r1['expert-1']).toEqual({ name: 'GPT', task: 'T1', input: 'none' });
+    expect(settings.customModelSettings.r1['expert-2']).toEqual({ name: 'GPT', input: ['r0'] });
     expect(settings.customStepSettings['owner:x']).toEqual({ input: [{ step: 'r1', participant: 'expert-1' }], task: 'Решите' });
     expect(settings.customRoundSettings.r2).toEqual({ task: 'S' });
-    expect(settings.customModelSettings.r2.Claude).toEqual({ promptTemplate: 'R' });
+    expect(settings.customModelSettings.r2.Claude).toEqual({ name: 'Claude', promptTemplate: 'R' });
   });
 
   test('an ordinary input may name a switched-off step: it has no answers, the step is a valid reference', () => {
@@ -1014,8 +1018,8 @@ describe('Basic schema: a switched-off declared participant keeps its declaratio
   test('the declaration of a switched-off participant reaches the settings even without other settings', () => {
     const settings = Schema.toSettings(schemaWith(['r1']));
     expect(settings.customModelSettings.r1['c-1']).toEqual({ name: 'C', enabled: false });
-    expect(settings.customModelSettings.r1.A).toBeUndefined();
-    expect(settings.customModelSettings.r1['gpt-1']).toBeUndefined();
+    expect(settings.customModelSettings.r1.A).toEqual({ name: 'A' });
+    expect(settings.customModelSettings.r1['gpt-1']).toEqual({ name: 'GPT' });
   });
 
   test('an optional source to a switched-off participant is valid and keeps its id in the settings and assembly', () => {
