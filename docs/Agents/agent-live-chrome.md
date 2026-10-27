@@ -2,7 +2,7 @@
 
 Инструкция для любого задания, где нужно увидеть или проверить расширение в Chrome: открыть страницу, нажать кнопку, прочитать текст, скопировать DOM, сделать снимок, перехватить скачивание. User просить не нужно: всё делается через Chrome DevTools Protocol (CDP) в отдельном временном Chrome. «Нет доступа к живому Chrome» — не причина остановиться. Проверено на Google Chrome 155 (macOS), Node 22.
 
-Для действий на `pipeline_panel.html` — селекторов, методов страницы, обновления состояния и диагностики проблем с кликами — см. [agent-extension-page-control.md](agent-extension-page-control.md).
+Полная карта элементов и поведения обеих страниц (`pipeline_panel.html` и `result_new.html`) — [agent-extension-pages-spec.md](agent-extension-pages-spec.md). Для CUA, селекторов и методов `pipeline_panel.html` — [agent-extension-page-control.md](agent-extension-page-control.md).
 
 ## 1. Запуск отдельного Chrome
 

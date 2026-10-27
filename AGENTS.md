@@ -8,8 +8,11 @@
 
 # Старт новой сессии
 
-- Сначала прочитайте `docs/agent-onboarding.md`: откуда загружено расширение и как доставлять правки в основной чекаут, правила версии и git, как работать с User, текущий статус работ над схемами и ближайшие шаги.
-- Проверка в настоящем Chrome с загруженным расширением: `docs/agent-live-chrome.md` (запуск и управление через CDP; делать самим, User не просить).
+- Эти правила — постоянные инструкции проекта для новых и возобновлённых задач. Не просите User повторно обучать вас возможностям, уже описанным в `docs/Agents/`.
+- Сначала прочитайте `docs/Agents/agent-onboarding.md`: откуда загружено расширение и как доставлять правки в основной чекаут, правила версии и git, как работать с User, текущий статус работ над схемами и ближайшие шаги.
+- Для любого задания, затрагивающего интерфейс, кнопки, DOM, настройки или реальное тестирование страниц расширения, сначала используйте `docs/Agents/agent-extension-pages-spec.md`. В ней описаны обе страницы (`pipeline_panel.html` и `result_new.html`), элементы интерфейса, фактические обработчики и prerequisites реальных model runs.
+- Проверка в настоящем Chrome с загруженным расширением: `docs/Agents/agent-live-chrome.md` (отдельный профиль и CDP; делать самим, User не просить). Для селекторов и методов страницы `pipeline_panel.html`: `docs/Agents/agent-extension-page-control.md`. Взаимодействие с обычным Chrome User’а — только по прямому запросу, инструкция: `docs/Agents/agent-real-chrome-control.md`.
+- Реальный запуск на сайте модели требует явного разрешения на отправку конкретного тестового prompt; наличие авторизованных вкладок, доступного CDP и fixture сверяйте со спецификацией. UI-проверки без отправки выполняйте самостоятельно в изолированном профиле.
 - Схемы, предложенные нейросетями, проверяются стендом: `docs/Pipeline scenarios/canvas-prototype/README.md`.
 
 # Basic (pipeline)
@@ -24,7 +27,7 @@
 - Claude делегирует задачи своим субагентам Haiku 5.5 (`model: haiku`).
 - GPT делегирует задачи субагентам GPT-6 Luna (`model: gpt-6-luna`, `reasoning_effort: high`).
 
-- Review и исправление находок силами команды — [docs/agent-team-review.md](docs/agent-team-review.md) и [docs/agent-team-fix.md](docs/agent-team-fix.md).
+- Review и исправление находок силами команды — [docs/Agents/agent-team-review.md](docs/Agents/agent-team-review.md) и [docs/Agents/agent-team-fix.md](docs/Agents/agent-team-fix.md).
 
 # Работа с git
 
