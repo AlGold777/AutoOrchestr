@@ -16,8 +16,7 @@
       profileSchema: Number(root.DebateProfileSchema?.VERSION || 1),
       promptPack: promptPackMajor,
       promptPackVersion,
-      runStoreSchema: Number(root.DebateRunStore?.VERSION || 1),
-      traceSchema: Number(root.DebateTraceSchema?.VERSION || 1)
+      runStoreSchema: Number(root.DebateRunStore?.VERSION || 1)
     });
   }
   const api = Object.freeze({ getVersions });

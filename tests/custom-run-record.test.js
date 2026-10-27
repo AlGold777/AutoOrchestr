@@ -150,13 +150,6 @@ describe('Custom request preview', () => {
   });
 });
 
-test('the Disput Flow JSON export carries the latest Custom run record, redacted with the rest', () => {
-  const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
-  const handler = source.slice(source.indexOf("const disputBtn = event.target.closest('#disput-export-json');"));
-  expect(handler.slice(0, 1500)).toContain('const customRun = await readLatestCustomRun();');
-  expect(handler.slice(0, 1500)).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
-});
-
 test('card history text references survive serialize, revive, and export without mutating the record', () => {
   const record = Record.createRun({ runId: 'run-cards', pipelineName: 'Mine', task: 'Task' });
   const textRef = record.put('card answer');
@@ -180,7 +173,7 @@ test('card history text references survive serialize, revive, and export without
 test('the Basic export flushes card history before cloning the exported run', () => {
   const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
   const handlerStart = source.indexOf("const button = event.target.closest('#disput-basic');");
-  const handler = source.slice(handlerStart, source.indexOf("const disputBtn = event.target.closest('#disput-export-json');", handlerStart));
+  const handler = source.slice(handlerStart, source.indexOf("const btn = event.target.closest('#export-diagnostics-html');", handlerStart));
   expect(handler).toContain('basicCardHistory?.flush()');
   expect(handler.indexOf('basicCardHistory?.flush()')).toBeLessThan(handler.indexOf('JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))'));
 });

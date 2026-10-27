@@ -611,32 +611,17 @@
                             <div class="devtools-toolbar">
                                 <div class="devtools-toolbar-actions">
                                     <div class="telemetry-filters disput-trace-filters">
-                                        <label class="disput-only-problems-label" title="Display filter only; JSON and MD exports are always complete"><input type="checkbox" id="disput-only-problems"> Only problems</label>
+                                        <label class="disput-only-problems-label" title="Display filter for the delivery cards"><input type="checkbox" id="disput-only-problems"> Only problems</label>
                                     </div>
                                         <div class="disput-extract-controls">
                                             <button type="button" class="devtools-pill-btn" id="disput-basic" title="Export Basic run, model routing and transport telemetry as JSON">Basic</button>
-                                            <button type="button" class="devtools-pill-btn" id="disput-extract" title="Download the full report, transport JSON and Markdown">Extract</button>
-                                            <select id="disput-extract-type" class="devtools-select" aria-label="Extract type"><option value="transport">transport</option></select>
                                         </div>
                                     <div class="telemetry-actions">
-                                        <button type="button" class="diag-icon-btn" id="disput-clear-trace" title="Clear Disput trace" aria-label="Clear Disput trace"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                                        <button type="button" class="diag-icon-btn" id="disput-export-json" title="Export Disput telemetry as JSON" aria-label="Export Disput telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                        <button type="button" class="diag-icon-btn" id="disput-export-md" aria-label="Export Disput telemetry as Markdown" title="Export Disput telemetry as Markdown">MD</button>
+                                        <button type="button" class="diag-icon-btn" id="disput-clear-trace" title="Clear delivery journal" aria-label="Clear delivery journal"><i class="ti ti-trash" aria-hidden="true"></i></button>
                                     </div>
                                 </div>
                             </div>
                             <div class="devtools-card-grid">
-                                <article class="devtools-card" data-collapsible="disput-health">
-                                    <div class="devtools-card-header">
-                                        <h2>Run Health Summary</h2>
-                                        <span class="devtools-meta" id="disput-trace-status"></span>
-                                    </div>
-                                    <div class="devtools-card-body"><div id="disput-health-summary"><p class="diag-empty">Waiting for a Debate run…</p></div></div>
-                                </article>
-                                <article class="devtools-card telemetry-card" data-collapsible="disput-problems">
-                                    <div class="devtools-card-header"><h2>Problems &amp; Recovery</h2></div>
-                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-problems"><p class="diag-empty">No diagnoses yet.</p></div></div>
-                                </article>
                                 <article class="devtools-card" data-collapsible="delivery-health">
                                     <div class="devtools-card-header">
                                         <h2>Delivery Health</h2>
@@ -655,10 +640,6 @@
                                 <article class="devtools-card is-collapsed" data-collapsible="delivery-messages">
                                     <div class="devtools-card-header"><h2>Message Timeline</h2></div>
                                     <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="delivery-messages"><p class="diag-empty">No messages yet.</p></div></div>
-                                </article>
-                                <article class="devtools-card telemetry-card is-collapsed" data-collapsible="disput-raw">
-                                    <div class="devtools-card-header"><h2>Raw Trace Events</h2></div>
-                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-raw-events"><p class="diag-empty">No trace events.</p></div></div>
                                 </article>
                                 <article class="devtools-card telemetry-card is-collapsed" data-collapsible="delivery-raw">
                                     <div class="devtools-card-header"><h2>Raw Delivery Events</h2></div>
@@ -859,9 +840,6 @@
     <script src="disput/debate-version-manifest.js"></script>
     <script src="disput/debate-context-budget.js"></script>
     <script src="disput/debate-run-store.js"></script>
-    <script src="disput/debate-trace-schema.js"></script>
-    <script src="disput/debate-trace-store.js"></script>
-    <script src="disput/debate-trace-projections.js"></script>
     <script src="disput/debate-draft-plan.js"></script>
     <script src="disput/stage-markers.js"></script>
     <script src="disput/debate-projections.js"></script>
@@ -908,8 +886,6 @@
     <script src="results/debate-renderer.js"></script>
     <script src="results/debate-sessions-store.js"></script>
     <script src="results/debate-export.js"></script>
-    <script src="results/debate-telemetry-view.js"></script>
-    <script src="shared/report-digest.js"></script>
     <script src="shared/basic-telemetry.js"></script>
     <script src="utils/selection-block-format.js"></script>
     <script src="results/pipeline-card-cover.js"></script>

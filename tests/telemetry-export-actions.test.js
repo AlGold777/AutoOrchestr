@@ -71,44 +71,24 @@ describe('Telemetry export actions', () => {
     expect(devtoolsSource).not.toContain('Worker(');
   });
 
-  test('Disput JSON download icon precedes the textual MD export', () => {
-    const jsonAt = html.indexOf('id="disput-export-json"');
-    const mdAt = html.indexOf('id="disput-export-md"');
-    expect(jsonAt).toBeGreaterThan(-1);
-    expect(mdAt).toBeGreaterThan(jsonAt);
-    const jsonButton = html.slice(html.lastIndexOf('<button', jsonAt), html.indexOf('</button>', jsonAt));
-    expect(jsonButton).toContain('class="diag-icon-btn"');
-    expect(jsonButton).toContain('class="ti ti-download"');
-    expect(jsonButton).toContain('aria-label="Export Disput telemetry as JSON"');
-    expect(jsonButton).not.toContain('>Json');
-  });
-
-  test('Disput export whitelists diagnostic evidence and deep-redacts JSON', () => {
-    expect(resultsSource).toContain('const buildSafeDebateDiagnosticEvidence = (meta = {}) =>');
-    expect(resultsSource).toContain('evidence: { ...buildSafeDebateDiagnosticEvidence(meta), registeredRunId:');
-    expect(resultsSource).not.toContain('evidence: meta');
-    expect(resultsSource).toContain('window.SecretRedaction.redactDeep(payload)');
-    // Exports are complete: "Only problems" filters the tab view, never the JSON/MD export.
-    expect(resultsSource).not.toContain('applyDisputOnlyProblemsFilter');
-    expect(resultsSource).not.toContain('window.DebateTraceProjections.filterProblems(payload');
-    expect(resultsSource).toContain('const payload = buildDisputExportPayload(telemetryEvents);');
-  });
-
-  test('Basic export button is immediately left of Extract on both result pages', () => {
+  test('Basic is the only export of the Disput tab on both result pages', () => {
     for (const page of [html, pipelineHtml]) {
-      const controlsAt = page.indexOf('class="disput-extract-controls"');
-      const basicAt = page.indexOf('id="disput-basic"', controlsAt);
-      const extractAt = page.indexOf('id="disput-extract"', controlsAt);
+      const start = page.indexOf('id="disput-tabpanel"');
+      const end = page.indexOf('id="selectors0-tabpanel"', start);
+      const tab = page.slice(start, end);
+      const controlsAt = tab.indexOf('class="disput-extract-controls"');
+      const basicAt = tab.indexOf('id="disput-basic"', controlsAt);
       expect(controlsAt).toBeGreaterThan(-1);
       expect(basicAt).toBeGreaterThan(controlsAt);
-      expect(extractAt).toBeGreaterThan(basicAt);
-      expect(page.slice(basicAt, extractAt)).toContain('Export Basic run');
+      expect(tab.slice(basicAt, basicAt + 200)).toContain('Export Basic run');
+      ['disput-extract', 'disput-extract-type', 'disput-export-json', 'disput-export-md'].forEach((id) => expect(tab).not.toContain(`id="${id}"`));
     }
   });
 
   test('Basic export uses the in-memory run before storage and delegates identity filtering to the report builder', () => {
     const handlerAt = resultsSource.indexOf("const button = event.target.closest('#disput-basic');");
-    const handlerEnd = resultsSource.indexOf("const disputBtn = event.target.closest('#disput-export-json');", handlerAt);
+    const handlerEnd = resultsSource.indexOf("const btn = event.target.closest('#export-diagnostics-html');", handlerAt);
+    expect(handlerEnd).toBeGreaterThan(handlerAt);
     const handler = resultsSource.slice(handlerAt, handlerEnd);
     expect(handler).toContain('latestBasicRunRecord');
     expect(handler).toContain('window.CustomRunRecord.exportRun(latestBasicRunRecord)');

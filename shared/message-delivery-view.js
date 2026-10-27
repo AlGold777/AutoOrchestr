@@ -2,8 +2,7 @@
 // Telemetry window → Disput tab, "Delivery" cards (formerly the Automation tab): delivery
 // health, batches, problems with next steps, every message's timeline (request id, dispatch
 // phases, completion), per-model matrix and the raw journal. The Disput tab's model filter,
-// "Only problems" and Clear drive these cards too; the Disput JSON/MD exports embed the
-// delivery report (buildReport / buildMarkdown).
+// "Only problems" and Clear drive these cards too.
 (function initMessageDeliveryView(root) {
   'use strict';
 
@@ -54,7 +53,7 @@
   }
 
   function filtered(journal) {
-    // "Only problems" is the tab's single display toggle; the export (buildReport) is unfiltered.
+    // "Only problems" is the tab's single display toggle.
     const only = $('disput-only-problems')?.checked;
     const diagnosis = root.MessageDeliveryDiagnosis.diagnose(journal, { version: root.chrome?.runtime?.getManifest?.().version || null });
     return {
@@ -186,88 +185,13 @@
       : empty('No journal events.'));
   }
 
-  // The delivery report embedded in the Disput Flow export (section `delivery`); same
-  // shape as the former standalone message-delivery report.
-  // Export projections reference the journal; the live UI still uses the complete diagnosis.
-  function compactDiagnosis(diagnosis, journal) {
-    const source = new Map(journal.map((e, i) => [JSON.stringify(e), `delivery.journal[${i}]`]));
-    const compact = (value) => {
-      if (Array.isArray(value)) return value.map(compact);
-      if (!value || typeof value !== 'object') return value;
-      const journalPath = source.get(JSON.stringify(value));
-      if (journalPath) return { journalPath, ...Object.fromEntries(Object.entries(value).filter(([k]) => !['prompt', 'answer', 'text', 'html'].includes(k))) };
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, compact(v)]));
-    };
-    const out = compact(diagnosis);
-    (out.sends || []).forEach(send => {
-      const i = journal.findIndex(e => e.kind === 'prepared' && ((send.requestId && e.requestId === send.requestId) || (!send.requestId && e.token === send.token)));
-      if (i >= 0) { delete send.prompt; send.preparedPath = `delivery.journal[${i}]`; }
-    });
-    return out;
-  }
-
-  // options.journal: a part of the journal (one run) instead of all of it.
-  async function buildReport(options = {}) {
-    let journal = Array.isArray(options.journal) ? options.journal : null;
-    let col = root.MessageDelivery?.collection?.() || { originalSourceTotal: null };
-    if (!journal) {
-      if (root.MessageDelivery?.snapshot) {
-        try {
-          const snap = await root.MessageDelivery.snapshot();
-          if (snap && Array.isArray(snap.events)) {
-            journal = snap.events;
-            col = snap.collection || col;
-          }
-        } catch (_) {}
-      }
-      if (!journal) {
-        journal = await readJournal();
-      }
-    }
-    const version = root.chrome?.runtime?.getManifest?.().version || null;
-    return {
-      report: 'message-delivery',
-      generated_at: new Date().toISOString(),
-      extension_version: version,
-      transport_contract_version: root.TransportContract?.VERSION || null,
-      diagnosis: compactDiagnosis(root.MessageDeliveryDiagnosis.diagnose(journal, { version }), journal),
-      collection: col,
-      journal
-    };
-  }
-
-  // Short Markdown section for the Disput Flow .md export.
-  function buildMarkdown(report) {
-    const d = report?.diagnosis;
-    if (!d) return '';
-    const cell = (v) => String(v == null || v === '' ? '—' : v).replace(/\|/g, '\\|').replace(/\n/g, ' ');
-    const rows = (head, list) => [
-      `| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`,
-      ...list.map((r) => `| ${r.map(cell).join(' | ')} |`)
-    ].join('\n');
-    const out = ['## Delivery', ''];
-    out.push('### Batches', '', d.batches.length ? rows(
-      ['waitId', 'stageAttemptId', 'runMode', 'models', 'at', 'accepted.waitedMs', 'refusals', 'outcome', 'durationMs', 'skipped'],
-      d.batches.map((b) => [b.waitId || b.batchId, b.stageAttemptId, b.runMode, b.models.join(', '), b.at ? new Date(b.at).toISOString() : '',
-        b.accepted?.waitedMs, b.refusals.map((r) => `${r.attempt ?? ''}/${r.errorCode || r.reason || ''}/${r.waitedMs ?? ''}`).join('; '),
-        b.outcome, b.durationMs, (b.skipped || []).join(', ')])) : 'No batches.', '');
-    out.push('### Sends', '', d.sends.length ? rows(
-      ['model', 'batchId', 'submittedMs', 'firstTextMs', 'result', 'terminal.status', 'terminal.chars', 'terminal.completion', 'focus.count', 'focus.sources', 'revisions', 'rejections'],
-      d.sends.map((s) => [s.model, s.batchId, s.submittedMs, s.firstTextMs, s.result, s.terminal?.status, s.terminal?.chars, s.terminal?.completion,
-        s.focus.count, Object.entries(s.focus.sources).map(([k, n]) => `${k}:${n}`).join(', '), s.revisions, s.rejections.length])) : 'No sends.', '');
-    out.push('### Problems', '', d.problems.length ? rows(
-      ['severity', 'code', 'model', 'batchId', 'count', 'reason'],
-      d.problems.map((p) => [p.severity, p.code, p.model, p.batchId, p.count, p.reason])) : 'No problems.', '');
-    return out.join('\n');
-  }
-
   function init() {
-    root.MessageDeliveryView = { render, buildReport, buildMarkdown };
+    root.MessageDeliveryView = { render };
     if (!$('delivery-health')) return;
     document.addEventListener('devtools-tab-change', (e) => { if (e.detail?.targetId === 'disput-tabpanel') void render(); });
     root.chrome?.storage?.onChanged?.addListener((changes, area) => { if (area === 'session' && changes[KEY()]) void render(); });
     $('disput-only-problems')?.addEventListener('change', () => void render());
-    // One tab, one Clear: the Disput trace and the delivery journal are cleared together.
+    // One tab, one Clear: it clears the delivery journal.
     $('disput-clear-trace')?.addEventListener('click', () => { root.MessageDelivery?.clearJournal(); void render(); });
   }
 

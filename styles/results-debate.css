@@ -1415,28 +1415,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   border-color: #d18b2c;
   background: color-mix(in srgb, #d18b2c 12%, var(--surface-color, #fff));
 }
-.disput-health-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 8px;
-}
-
-.disput-health-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 9px 10px;
-  border: 1px solid var(--border-color, #d8dee8);
-  border-radius: 8px;
-  background: var(--surface-muted, rgba(127, 127, 127, 0.06));
-}
-
-.disput-health-label { font-size: 11px; opacity: 0.72; }
-.disput-health-value { font-size: 13px; overflow-wrap: anywhere; }
-.disput-health-warning, .disput-severity-warning td { color: #9a6700; }
-.disput-health-high, .disput-severity-high td { color: #b54708; }
-.disput-health-critical, .disput-severity-critical td { color: #c62828; }
-.disput-trace-table { min-width: 720px; }
 /* Post-completion updates (technical messages): one badge right of the message time,
    one popover with a tab per update. */
 .post-terminal-badge-wrap {

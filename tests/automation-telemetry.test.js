@@ -141,16 +141,6 @@ describe('Delivery cards in the Disput tab (formerly the Automation tab)', () =>
       expect(text).toContain('отправка');
       expect(text).toContain('неполный');
       expect(document.querySelector('#delivery-health th:nth-child(4)').textContent).toBe('Partial');
-
-      // The Disput export embeds the delivery report and a Markdown section.
-      const report = await window.MessageDeliveryView.buildReport();
-      expect(report.report).toBe('message-delivery');
-      expect(report.diagnosis.batches[0].waitId).toBe('wait-9');
-      expect(report.journal.length).toBe(journal.length);
-      const md = window.MessageDeliveryView.buildMarkdown(report);
-      expect(md).toContain('## Delivery');
-      expect(md).toContain('| wait-9 | S:a1 |');
-      expect(md).toContain('### Sends');
     } finally {
       window.chrome = originalChrome;
     }
@@ -165,10 +155,11 @@ describe('Delivery cards in the Disput tab (formerly the Automation tab)', () =>
       .forEach((id) => expect(disput).toContain(`id="${id}"`));
   });
 
-  test('the Disput JSON and MD exports carry the delivery section', () => {
+  test('the Disput Flow JSON/MD exports are gone; the Basic export reads the delivery journal; a remembered Automation tab opens Disput', () => {
     const source = read('results.js');
-    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
-    expect(source).toContain('window.MessageDeliveryView?.buildMarkdown?.(');
+    expect(source).not.toContain("downloadDiagnosticsJson('Disput Flow'");
+    expect(source).not.toContain("downloadDiagnosticsMarkdown('Disput Flow'");
+    expect(source).toContain('window.MessageDelivery?.snapshot');
     // A remembered Automation tab opens Disput.
     expect(source).toContain("storedTabId === 'automation-tabpanel' ? 'disput-tabpanel' : storedTabId");
   });

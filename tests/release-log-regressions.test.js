@@ -191,8 +191,9 @@ describe('release log regression guards', () => {
       expect(html.indexOf('id="telemetry-tab"')).toBeLessThan(html.indexOf('id="disput-tab"'));
       expect(html.indexOf('id="disput-tab"')).toBeLessThan(html.indexOf('id="selectors0-tab"'));
       expect(html).toContain('id="disput-tabpanel"');
-      expect(html).toContain('id="disput-export-md"');
-      expect(html).toContain('id="disput-export-json"');
+      // The Disput trace and its exports (JSON, MD, Extract) are gone: Basic is the one export of the tab.
+      expect(html).toContain('id="disput-basic"');
+      ['disput-export-md', 'disput-export-json', 'disput-extract', 'disput-extract-type'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
       expect(html).toContain('id="telemetry-export-json-btn"');
       expect(html.indexOf('id="telemetry-export-json-btn"')).toBeLessThan(html.indexOf('id="export-all-logs-md-telemetry"'));
       expect(html).not.toContain('id="telemetry-disput-btn"');
@@ -210,9 +211,7 @@ describe('release log regression guards', () => {
       expect(disputBlock).not.toContain('All types');
       expect(disputBlock).not.toContain('All tasks');
       expect(disputBlock).not.toContain('Presets');
-      expect(disputBlock.indexOf('id="disput-export-json"')).toBeLessThan(disputBlock.indexOf('id="disput-export-md"'));
-      expect(disputBlock).toContain('class="ti ti-download"');
-      expect(disputBlock).toContain('>MD</button>');
+      expect(disputBlock).not.toContain('>MD</button>');
       expect(disputBlock).not.toContain('>Json</button>');
       const actionsBlock = telemetryBlock;
       expect(actionsBlock).not.toContain('id="telemetry-refresh-btn"');
@@ -222,31 +221,21 @@ describe('release log regression guards', () => {
       expect(actionsBlock).not.toContain('↻</button>');
       expect(actionsBlock).not.toContain('🗑</button>');
     });
-    expect(source).toContain('function buildDisputTelemetryMarkdown(telemetryEvents = [])');
-    expect(source).toContain('function buildDisputProtocolTheoryMarkdown()');
-    expect(source).toContain('## Execution Plan');
-    expect(source).not.toContain('B0 | Model B silent init | no | no | openingStatementB');
-    expect(source).toContain('window.DebateTraceProjections.buildReport');
-    expect(source).toContain('function normalizeTelemetryDisputRows(events = [])');
-    expect(source).toContain("'PROMPT_SUBMITTED_ACCEPTED'");
-    expect(source).toContain("'MODEL_FINAL'");
-    expect(source).toContain("'PIPELINE_ERROR'");
-    expect(source).toContain("event.target.closest('#disput-export-md')");
-    expect(source).toContain("event.target.closest('#disput-export-json')");
-    expect(source).toContain('function buildDisputExportPayload(telemetryEvents = [])');
-    // The Disput Flow export also carries the delivery section (formerly the Automation tab).
-    expect(source).toContain("downloadDiagnosticsMarkdown('Disput Flow', deliveryMarkdown ? `${markdown}\\n\\n${deliveryMarkdown}` : markdown, disputBtn);");
-    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
+    ['buildDisputTelemetryMarkdown', 'buildDisputProtocolTheoryMarkdown', 'buildDisputExportPayload', 'normalizeTelemetryDisputRows',
+      'DebateTraceProjections', 'DebateTraceStore', 'appendDebateDiagnosticTrace', "'#disput-export-md'", "'#disput-export-json'", "'#disput-extract'"]
+      .forEach((name) => expect(source).not.toContain(name));
+    expect(source).toContain("event.target.closest('#disput-basic')");
     [pipelineHtml, resultHtml].forEach((html) => {
-      expect(html).toContain('id="disput-health-summary"');
-      expect(html).toContain('id="disput-problems"');
-      expect(html).toContain('id="disput-raw-events"');
+      ['disput-health-summary', 'disput-problems', 'disput-raw-events'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
       // Cards of the planned-topology Disput: no plan, no barriers in the universal engine.
       ['disput-plan-actual', 'disput-participants', 'disput-critical-path'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
       // One display toggle; drill-down is done on the complete export by scripts/summarize-report.js.
       ['disput-stage-filter', 'disput-model-filter', 'disput-type-filter', 'disput-severity-filter'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
-      expect(html).toContain('id="disput-only-problems"');
     });
+    // The delivery cards and their display toggle / Clear live in the pipeline panel only.
+    expect(pipelineHtml).toContain('id="disput-only-problems"');
+    expect(pipelineHtml).toContain('id="delivery-health"');
+    expect(resultHtml).not.toContain('id="disput-only-problems"');
   });
 
   test('collapsible setup covers both Telemetry and Disput cards', () => {

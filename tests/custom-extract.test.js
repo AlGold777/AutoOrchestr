@@ -62,10 +62,8 @@ test('a journal without a Custom run has nothing to extract', () => {
   expect(() => Digest.customFlowReport({ runId: 'none', delivery: { journal } })).toThrow('custom_start');
 });
 
-test('the page routes Extract of a run without Debate stages to the latest Custom run; Custom batches carry their own stage', () => {
+test('Custom batches carry their own stage, equal to the digest stage id', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
-  const handler = source.slice(source.indexOf("const button = event.target.closest('#disput-extract')"));
-  expect(handler.slice(0, 4000)).toContain('const runId = window.ReportDigest.latestCustomRunId(report.delivery?.journal);');
-  expect(handler.slice(0, 4000)).toContain('const extract = window.ReportDigest.extractTransport(source, sourceFile);');
-  expect(source).toContain("stageId: window.ReportDigest?.customStageId?.(runContext.pipelineRunId, step) || `custom:${runContext.pipelineRunId}:s${step + 1}`,");
+  expect(source).toContain("stageId: `custom:${runContext.pipelineRunId}:s${step + 1}`,");
+  expect(Digest.customStageId('run-x', 0)).toBe('custom:run-x:s1');
 });

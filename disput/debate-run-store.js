@@ -58,7 +58,7 @@
     'status', 'activeBatch', 'activeStageId', 'lastDispatchAt', 'lastResponseAt',
     'errorCode', 'reason', 'retryCount'
   ]);
-  const currentVersions = () => root.DebateVersionManifest?.getVersions?.() || { implementation: 'dev', protocol: 5, planSchema: 3, runStoreSchema: VERSION, traceSchema: 3 };
+  const currentVersions = () => root.DebateVersionManifest?.getVersions?.() || { implementation: 'dev', protocol: 5, planSchema: 3, runStoreSchema: VERSION };
   const normalizeTopology = () => 'universal';
   function createState(seed = {}) {
     const state = {
