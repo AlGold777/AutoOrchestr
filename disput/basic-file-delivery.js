@@ -14,7 +14,11 @@
       const files = global ? [...globalFiles] : [];
       ids.forEach((id) => {
         if (!Object.hasOwn(payloads, id)) throw new Error(`Нет сохранённого содержимого входного файла «${id}»`);
-        const file = payloads[id];
+        const payload = payloads[id];
+        const type = payload.type || 'application/octet-stream';
+        // The existing upload transport (including Gemini materialization) requires a data URL.
+        const file = { ...payload, type, base64: /^data:[^,]+;base64,/i.test(payload.base64)
+          ? payload.base64 : `data:${type};base64,${payload.base64}` };
         if (!files.some((existing) => existing.name === file.name && existing.type === file.type && existing.base64 === file.base64)) files.push(file);
       });
       sourceFiles.validateBatch(files);

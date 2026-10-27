@@ -19,7 +19,7 @@
   // Title of a document: its name only; without a name there is no title.
   const docTitle = (spec) => String(spec.name || '');
   const decodeBase64 = (value) => {
-    const binary = root.atob(String(value || ''));
+    const binary = root.atob(String(value || '').replace(/^data:[^,]*;base64,/i, ''));
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
     return bytes;

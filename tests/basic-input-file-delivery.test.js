@@ -5,6 +5,7 @@ const CustomRunRecord = require('../disput/custom-run-record');
 
 const inputFilePayload = (name, text) => ({ name, type: 'text/plain', size: Buffer.byteLength(text), base64: Buffer.from(text).toString('base64') });
 const descriptor = (id, name, content) => ({ id, name, type: 'text/plain', size: Buffer.byteLength(content), content });
+const transportDataUrl = (payload) => `data:${payload.type};base64,${payload.base64}`;
 
 function indexedDBHarness() {
   const data = new Map();
@@ -106,9 +107,9 @@ describe('Basic input-file delivery', () => {
     const forA = delivery.pending({ participantId: 'gpt-a', stepRef: 'r1' });
     const forB = delivery.pending({ participantId: 'gpt-b', stepRef: 'r1' });
     const forClaude = delivery.pending({ participantId: 'claude', stepRef: 'r1' });
-    expect(forA.files.map((item) => item.base64)).toEqual(['Y29tbW9u', 'QQ==']);
-    expect(forB.files.map((item) => item.base64)).toEqual(['Y29tbW9u', 'Qg==']);
-    expect(forClaude.files.map((item) => item.base64)).toEqual(['Y29tbW9u', 'Qw==']);
+    expect(forA.files.map((item) => item.base64)).toEqual([transportDataUrl(inputFilePayload('common.txt', 'common')), transportDataUrl(inputFilePayload('same.txt', 'A'))]);
+    expect(forB.files.map((item) => item.base64)).toEqual([transportDataUrl(inputFilePayload('common.txt', 'common')), transportDataUrl(inputFilePayload('same.txt', 'B'))]);
+    expect(forClaude.files.map((item) => item.base64)).toEqual([transportDataUrl(inputFilePayload('common.txt', 'common')), transportDataUrl(inputFilePayload('claude.txt', 'C'))]);
     expect(delivery.pending({ participantId: 'gpt-a', stepRef: 'r2' }).files.map((item) => item.name)).toEqual(['later.txt']);
     expect(delivery.groups([
       { participantId: 'gpt-a', stepRef: 'r1' },
@@ -117,6 +118,32 @@ describe('Basic input-file delivery', () => {
     ], 'w0').map(([key, group]) => [key, group.map((item) => item.participantId)])).toEqual([
       ['w0f0', ['gpt-a']], ['w0f1', ['gpt-b']], ['w0f2', ['claude']]
     ]);
+  });
+
+  test('raw scoped payloads become valid Gemini data URLs without changing their bytes', () => {
+    const source = descriptor('raw-gemini', 'evidence.txt', 'evidence');
+    const delivery = window.BasicFileDelivery.create({
+      steps: [{ ref: 'r1', kind: 'round', models: [{ id: 'gemini', name: 'Gemini', files: [source] }] }],
+      payloads: { 'raw-gemini': inputFilePayload(source.name, source.content) },
+      bindings: {}, isNewChat: () => true
+    });
+    const [sent] = delivery.pending({ participantId: 'gemini', stepRef: 'r1' }).files;
+    expect(sent.base64).toMatch(/^data:text\/plain;base64,/);
+    expect(Buffer.from(sent.base64.split(',')[1], 'base64').toString()).toBe('evidence');
+  });
+
+  test('a scoped raw payload matching a global data URL is sent once', () => {
+    const source = descriptor('shared', 'same.txt', 'same');
+    const global = { name: source.name, type: source.type, size: source.size, base64: 'data:text/plain;base64,c2FtZQ==' };
+    const delivery = window.BasicFileDelivery.create({
+      steps: [{ ref: 'r1', kind: 'round', models: [{ id: 'p', name: 'GPT', files: [source] }] }],
+      globalFiles: [global], payloads: { shared: inputFilePayload(source.name, source.content) },
+      bindings: {}, isNewChat: () => true
+    });
+    const pending = delivery.pending({ participantId: 'p', stepRef: 'r1' });
+    expect(pending.files).toEqual([global]);
+    expect(pending.files).toHaveLength(1);
+    expect(Buffer.from(pending.files[0].base64.split(',')[1], 'base64').toString()).toBe('same');
   });
 
   test('only SUCCESS confirms input files for an existing chat; retry resends after failure and a new chat always resends', () => {
@@ -190,13 +217,13 @@ describe('Basic input-file delivery', () => {
       const participant = Object.values(message.pipelineContext.participants)[0]?.participantId;
       if (message.pipelineContext.stageId?.includes('s1')) sentInFirstStep.set(participant, message.attachments.map((item) => item.base64));
     });
-    expect(sentInFirstStep.get('gpt-a')).toEqual(['Uw==', 'QQ==']);
-    expect(sentInFirstStep.get('gemini-b')).toEqual(['Uw==', 'Qg==']);
-    expect(sentInFirstStep.get('claude')).toEqual(['Uw==', 'Qw==']);
+    expect(sentInFirstStep.get('gpt-a')).toEqual(['data:text/plain;base64,Uw==', 'data:text/plain;base64,QQ==']);
+    expect(sentInFirstStep.get('gemini-b')).toEqual(['data:text/plain;base64,Uw==', 'data:text/plain;base64,Qg==']);
+    expect(sentInFirstStep.get('claude')).toEqual(['data:text/plain;base64,Uw==', 'data:text/plain;base64,Qw==']);
     // r2's chat already contains r1's participant inputs, so only r2's new step file is sent.
     const later = starts.find((message) => Object.values(message.pipelineContext.participants).some((item) => item.participantId === 'gpt-a')
       && message.pipelineContext.stageId?.includes('s2'));
-    expect(later.attachments.map((item) => item.base64)).toEqual(['TA==']);
+    expect(later.attachments.map((item) => item.base64)).toEqual(['data:text/plain;base64,TA==']);
 
     const runStore = window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) });
     const savedRecord = await runStore.latest('file delivery e2e');
@@ -215,7 +242,7 @@ describe('Basic input-file delivery', () => {
     const startCount = starts.length;
     await window.__pipelineLifecycleDebug.runCustomFromPage({ task: 'Check attached inputs', resumeRecord: savedRecord });
     const resumedStart = starts.slice(startCount).find((message) => message.pipelineContext.stageId?.includes('s2'));
-    expect(resumedStart.attachments.map((item) => item.base64)).toEqual(['TA==']);
+    expect(resumedStart.attachments.map((item) => item.base64)).toEqual(['data:text/plain;base64,TA==']);
   }, 60000);
 
   test('a resumed run with a missing byte snapshot stops before any model dispatch', async () => {

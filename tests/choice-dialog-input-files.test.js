@@ -54,6 +54,18 @@ describe('ChoiceDialog input file links', () => {
         expect(URL.revokeObjectURL.mock.calls).toEqual([['blob:test/1'], ['blob:test/2']]);
     });
 
+    test('opens a data URL payload as the exact User input file bytes', async () => {
+        const answer = ChoiceDialog.ask({
+            inputFiles: [file('gemini.txt', 'text/plain', 'data:text/plain;base64,R2VtaW5p', 6)],
+            choices: [{ value: 'continue', label: 'Продолжить' }]
+        });
+        expect(document.querySelectorAll('.choice-dialog-input-file')).toHaveLength(1);
+        expect(await readBlob(created[0].blob)).toBe('Gemini');
+        expect(created[0].blob.type).toBe('text/plain');
+        document.querySelector('.choice-dialog-choice').click();
+        await expect(answer).resolves.toBe('continue');
+    });
+
     test('cancel and Escape revoke every created URL', async () => {
         const byCancel = ChoiceDialog.ask({ inputFiles: [file('one.txt', 'text/plain', 'MQ==', 1)] });
         document.querySelector('.choice-dialog-cancel').click();
