@@ -5739,6 +5739,7 @@ document.addEventListener('click', (event) => {
         };
 
         const setPipelineEditingEnabled = (enabled) => {
+            document.dispatchEvent(new CustomEvent('basic-pipeline-editing', { detail: { enabled: Boolean(enabled) } }));
             if (!pipelinePanel) return;
             const disabled = !enabled;
                 pipelinePanel
@@ -6482,7 +6483,7 @@ document.addEventListener('click', (event) => {
             // The fields the owner set in the card of a round (by ref, customRoundSettings), as the schema's step
             // fields. An empty value (nothing, an empty list, an empty object) is not written.
             // The removed fields (order, require) of an older saved card are not carried over.
-            const ROUND_STEP_KEYS = ['input', 'task', 'owner', 'chat', 'output'];
+            const ROUND_STEP_KEYS = ['input', 'task', 'owner', 'chat', 'output', 'files'];
             const stepFieldsOf = (ref) => {
                 const own = {};
                 ROUND_STEP_KEYS.forEach((key) => {
@@ -6524,6 +6525,8 @@ document.addEventListener('click', (event) => {
                 put(model, 'task', keepEmpty(settings?.task, 'task'));
                 put(model, 'discipline', legacyDiscipline(settings?.discipline, { keepEmptyValues: true }));
                 if (settings && 'output' in settings) model.output = JSON.parse(JSON.stringify(settings.output));
+                const files = Array.isArray(settings?.files) ? settings.files : source?.files;
+                if (Array.isArray(files)) model.files = JSON.parse(JSON.stringify(files));
                 return model;
             };
             let round = 0;
@@ -7007,6 +7010,33 @@ document.addEventListener('click', (event) => {
                 showNotification('Basic: не загружены модули приёма ответов (DebateResponseAcceptance, DebateStageMarkers). Перезагрузите страницу.', 'error');
                 return false;
             }
+            // Resolve every declared input before starting: no participant is sent without its files.
+            const hasScopedFiles = steps.some((step) => step.files?.length || (step.models || []).some((model) => model.files?.length));
+            let inputFileStore = null;
+            let inputFilePayloads = {};
+            let preparedGlobalAttachments = null;
+            if (hasScopedFiles) {
+                try {
+                    if (!window.BasicInputFiles || !window.BasicFileDelivery) throw new Error('Модули входных файлов не загружены. Перезагрузите страницу.');
+                    inputFileStore = window.BasicInputFiles.createStore();
+                    preparedGlobalAttachments = resumeRecord ? (resumeRecord.attachments || []) : await buildAttachmentPayload();
+                    inputFilePayloads = resumeRecord
+                        ? await inputFileStore.getRun(resumeRecord.runId)
+                        : await window.BasicInputFiles.resolve(steps, { store: inputFileStore, available: preparedGlobalAttachments });
+                    const declared = window.BasicInputFiles.collect(steps);
+                    if (!inputFilePayloads || declared.some((file) => !Object.hasOwn(inputFilePayloads, file.id))) {
+                        throw new Error('Сохранённые файлы этого прогона недоступны. Для новых файлов запустите новый прогон.');
+                    }
+                    const preflightFiles = window.BasicFileDelivery.create({ steps, globalFiles: preparedGlobalAttachments,
+                        payloads: inputFilePayloads, bindings: {}, isNewChat: () => true });
+                    steps.forEach((step) => (step.models || []).forEach((model) => {
+                        preflightFiles.pending({ stepRef: step.ref, participantId: model.id || model.name });
+                    }));
+                } catch (error) {
+                    showNotification(`Basic: запуск остановлен. ${error?.message || error}`, 'error');
+                    return false;
+                }
+            }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             const semiAuto = built.run.policy !== 'auto';
             pipelineRunActive = true;
@@ -7139,13 +7169,20 @@ document.addEventListener('click', (event) => {
                 // A resumed run takes its files from the record of the run, never from the composer of the page (R05).
                 const attachments = resumeRecord
                     ? (Array.isArray(resumeRecord.attachments) ? resumeRecord.attachments : [])
-                    : await buildAttachmentPayload();
+                    : (preparedGlobalAttachments || await buildAttachmentPayload());
                 // The files of a new run go into its record, so a resume sends the same bytes (V08).
                 if (record && !resumeRecord && window.CustomRunRecord.setAttachments(record, attachments) === false) {
                     showNotification(`Basic: файлы прогона (${attachments.length}) слишком велики для записи и в ней не сохранены; продолжить этот прогон с файлами будет нельзя.`, 'warn');
                 }
+                if (hasScopedFiles && !resumeRecord) {
+                    // Freeze bytes outside chrome.storage's record quota; resume never reads newer selections.
+                    await inputFileStore.putRun(runContext.pipelineRunId, inputFilePayloads);
+                    if (record) record.inputFileIds = Object.keys(inputFilePayloads);
+                }
                 const isNewChat = (request) => request.attempt === 1 && (request.chat === 'new'
                     || (!resumeRecord && runContext.forceNewTabs && !chatBindings[request.participantId]));
+                const fileDelivery = window.BasicFileDelivery?.create({ steps, globalFiles: attachments,
+                    payloads: inputFilePayloads, bindings: chatBindings, isNewChat });
                 const requestIntent = (request) => {
                     const newChat = Boolean(isNewChat(request));
                     let reason = 'continue';
@@ -7158,9 +7195,8 @@ document.addEventListener('click', (event) => {
                     const bindingTabId = (!newChat && saved?.modelName === request.modelName && Number.isInteger(saved.tabId))
                         ? saved.tabId
                         : null;
-                    const attachmentNames = filesNeeded(request)
-                        ? attachments.map((file) => String(file.name || ''))
-                        : [];
+                    const attachmentNames = (fileDelivery ? fileDelivery.pending(request).files
+                        : filesNeeded(request) ? attachments : []).map((file) => String(file.name || ''));
                     return { newChat, reason, bindingTabId, attachmentNames };
                 };
                 // The files go with the first message of each chat only (R05). A chat is confirmed to hold them when its answer
@@ -7228,7 +7264,10 @@ document.addEventListener('click', (event) => {
                     // Reuse the existing limit contract, on first attempts and corrections alike.
                     const composed = composeCustomPrompts(models, promptsByModel, maxWordsByModel, discipline,
                         built.schema.defaults?.modelNotes || {}, correctionByModel, built.run.maxWords);
-                    const filesSent = wave.some(filesNeeded);
+                    // Groups contain only requests with identical file sets; a neighbour never inherits these files.
+                    const pendingFiles = fileDelivery ? fileDelivery.pending(wave[0])
+                        : { global: wave.some(filesNeeded), ids: [], files: wave.some(filesNeeded) ? attachments : [] };
+                    const filesSent = pendingFiles.global;
                     // The chats are written into the record while the batch is in flight: a stop or a reload before the first answer
                     // keeps them (V01). The background binds a chat before the send; the page reads it once a second.
                     const bindingsWatch = record ? setInterval(() => { void syncParticipantChats(runContext.pipelineRunId, wave); }, 1000) : null;
@@ -7239,7 +7278,7 @@ document.addEventListener('click', (event) => {
                         promptsByModel: composed,
                         deliveryInstructionsByModel: Object.fromEntries(models.map((name) => [name, discipline[name].delivery])),
                         models,
-                        attachments: filesSent ? attachments : [],
+                        attachments: pendingFiles.files,
                         // The transport opens or continues the tab of each participant (participants); the run's new-pages flag is not used here.
                         forceNewTabs: false,
                         useApiFallback,
@@ -7300,8 +7339,10 @@ document.addEventListener('click', (event) => {
                         // The chat of a new visit is opened by this request; a continue stays in the chat that opened earlier.
                         const chatVisit = isNewChat(request) ? request.visit : (saved?.chatVisit ?? request.visit);
                         const confirmed = filesSent && String(reply.status || '').toUpperCase() === 'SUCCESS';
+                        const inputFileIds = fileDelivery?.confirmed(request, reply.status, pendingFiles);
                         chatBindings[request.participantId] = {
                             ...saved,
+                            ...(inputFileIds ? { inputFileIds } : {}),
                             modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
                             transportRequestId: reply.transportRequestId,
                             chatVisit,
@@ -7366,6 +7407,8 @@ document.addEventListener('click', (event) => {
                             title: `Ответ User: ${stepRef}`,
                             message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
                             textInput: document ? null : { label: 'Ответ User', required: true },
+                            inputFiles: window.BasicInputFiles ? window.BasicInputFiles.filesFor(steps.find((step) => step.ref === stepRef), 'owner')
+                                .map((file) => inputFilePayloads[file.id]) : [],
                             // A document for reading is edited in the window.
                             choices: [{ value: 'send', label: 'Отправить' }],
                             ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {}),
@@ -7410,9 +7453,10 @@ document.addEventListener('click', (event) => {
                             // the new chat only, nobody gets files again because of a neighbour.
                             const withFiles = wave.filter(filesNeeded);
                             const without = wave.filter((request) => !filesNeeded(request));
-                            const groups = withFiles.length && without.length
-                                ? [[`${waveNo}f`, withFiles], [`${waveNo}p`, without]]
-                                : [[waveNo, wave]];
+                            const groups = fileDelivery ? fileDelivery.groups(wave, waveNo)
+                                : withFiles.length && without.length
+                                    ? [[`${waveNo}f`, withFiles], [`${waveNo}p`, without]]
+                                    : [[waveNo, wave]];
                             for (const [key, group] of groups) {
                                 if (signal?.aborted) {
                                     break wavesLoop;
@@ -8981,6 +9025,11 @@ document.addEventListener('click', (event) => {
             const automaticSteps = steps.map((item) => ({ ...item, models: item.models.map((model) => ({ ...model, promptTemplate: null })) }));
             const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: automaticSteps, stepIndex, modelName });
             const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[modelName] || {};
+            const fileParticipantId = block?.dataset?.participantId || (basicSourceSchema.get(draftPlanStorageKey())?.steps || [])
+                .find((item) => item?.ref === ref)?.models?.find((item) => item.name === modelName)?.id || modelName;
+            const sourceModel = pipelineDefaults ? null : (basicSourceSchema.get(draftPlanStorageKey())?.steps || [])
+                .find((item) => item?.ref === ref)?.models?.find((item) => (item.id ?? item.name) === fileParticipantId);
+            const initialFiles = Array.isArray(saved.files) ? saved.files : (sourceModel?.files || []);
             const baseTemplate = preview?.template;
             const inherited = resolveCustomFields({}, step?.kind);
             const resolved = resolveCustomFields(saved, step?.kind);
@@ -9012,6 +9061,7 @@ document.addEventListener('click', (event) => {
                 <header class="custom-card-top ${pipelineDefaults ? 'custom-defaults-top' : ''}">
                     <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Basic' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(preview.label)}</span>`}</h3>
                     ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${general}" aria-describedby="custom-card-length-note"> слов</div>`}
+                    ${pipelineDefaults ? '' : '<div class="basic-input-files-slot"></div>'}
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
                 <div class="custom-card-body">
@@ -9057,6 +9107,31 @@ document.addEventListener('click', (event) => {
             });
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
+            const inputFilesSlot = content.querySelector('.basic-input-files-slot');
+            if (inputFilesSlot && window.InputFilesUI && window.BasicInputFiles) {
+                try {
+                    window.InputFilesUI.mount({
+                        container: inputFilesSlot, mountKey: content, files: initialFiles, disabled: pipelineRunActive,
+                        store: window.BasicInputFiles.createStore(), validateBatch: window.BasicInputFiles.validateBatch,
+                        notify: (message) => showNotification(message, 'error'),
+                        onChange: async (files) => {
+                            const settings = getCustomCardSettings();
+                            if (!settings[ref]) settings[ref] = {};
+                            const current = { ...(settings[ref][fileParticipantId] || saved), files };
+                            settings[ref][fileParticipantId] = current;
+                            saved.files = files;
+                            customCardSettings.set(draftPlanStorageKey(), settings);
+                            const name = draftPlanStorageKey();
+                            if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) {
+                                persistBasicSettings(name);
+                                await persistPipelineStore();
+                            }
+                        }
+                    });
+                } catch (error) {
+                    showNotification(`Хранилище входных файлов недоступно: ${error?.message || error}`, 'error');
+                }
+            }
             const reset = content.querySelector('#custom-card-reset');
             const save = content.querySelector('#custom-card-save');
             if (request) { request.value = saved.promptTemplate || baseTemplate; request.disabled = pipelineRunActive; }
@@ -9122,6 +9197,7 @@ document.addEventListener('click', (event) => {
                 // A length the owner typed is kept even when it equals the shared one; an empty field gives it back.
                 const next = pipelineDefaults ? {} : { promptTemplate: request.value === baseTemplate ? null : request.value,
                     maxWords: lengthDirty ? (length.value === '' ? null : Number(length.value)) : (saved.maxWords || null) };
+                if (!pipelineDefaults && Array.isArray(saved.files)) next.files = saved.files;
                 const discipline = {};
                 rows.forEach(([key]) => {
                     let value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
@@ -9384,12 +9460,33 @@ document.addEventListener('click', (event) => {
             const { step } = entry;
             title.textContent = `${CONTROL_TITLE[step.kind] || step.kind} ${step.ref}`;
             body.replaceChildren();
+            dialog.querySelector('.pipeline-stage-dialog-header [data-basic-input-files]')?.remove();
             const onEdit = async (edit) => {
                 if (pipelineRunActive) return;
                 await commitControl(ref, edit);
                 openControlCard(ref);
             };
-            if (step.kind === 'owner') window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive, documentSources: documentSourcesFor(step.ref) }), onEdit);
+            if (step.kind === 'owner') {
+                window.StageCard.renderOwnerWindow(body, window.StageCard.ownerWindowModel(step, { disabled: pipelineRunActive, documentSources: documentSourcesFor(step.ref) }), onEdit);
+                const header = dialog.querySelector('.pipeline-stage-dialog-header');
+                if (window.InputFilesUI && window.BasicInputFiles && header) {
+                    try {
+                        window.InputFilesUI.mount({
+                            header, after: title, container: header, mountKey: header, files: step.files || [], disabled: pipelineRunActive,
+                            store: window.BasicInputFiles.createStore(), validateBatch: window.BasicInputFiles.validateBatch,
+                            notify: (message) => showNotification(message, 'error'),
+                            onChange: async (files) => {
+                                const list = getCustomControls().map((item) => item.step.ref === ref
+                                    ? { ...item, step: { ...item.step, files } }
+                                    : item);
+                                await setCustomControls(list);
+                            }
+                        });
+                    } catch (error) {
+                        showNotification(`Хранилище входных файлов недоступно: ${error?.message || error}`, 'error');
+                    }
+                }
+            }
             window.StageCard.renderAddControl(body, addControlOptionsFor(ref, dialog));
             if (!dialog.open) dialog.showModal();
         };
@@ -10466,7 +10563,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.123';
+            const APP_VERSION = '2.81.900';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');

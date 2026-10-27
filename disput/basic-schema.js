@@ -42,8 +42,8 @@
   const STEP_TEXT_KEYS = Object.freeze(['title', 'goal', 'rules', 'quality']);
   // The fields a step of each kind may have (an unknown field is an error with its path).
   const STEP_KEYS = Object.freeze({
-    round: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'owner', 'chat', ...STEP_TEXT_KEYS]),
-    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', 'document', ...STEP_TEXT_KEYS])
+    round: Object.freeze(['ref', 'kind', 'input', 'task', 'models', 'output', 'owner', 'chat', 'files', ...STEP_TEXT_KEYS]),
+    owner: Object.freeze(['ref', 'kind', 'task', 'input', 'output', 'models', 'document', 'files', ...STEP_TEXT_KEYS])
   });
   const CONTROL_REF = Object.freeze({
     owner: 'ref User: «owner:<id>», id — латинские буквы, цифры, «_» и «-»'
@@ -115,6 +115,7 @@
     const out = { kind: step.kind, ref: step.ref };
     if ('input' in step) out.input = clone(step.input);
     if ('output' in step) out.output = clone(step.output);
+    if ('files' in step) out.files = clone(step.files);
     if (typeof step.task === 'string') out.task = step.task;
     if (typeof step.document === 'string') out.document = step.document;
     return { ...out, models: [] };
@@ -132,6 +133,7 @@
       // The number a round keeps even when the rounds before it are switched off.
       const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1 };
       if ('output' in step) out.output = JSON.parse(JSON.stringify(step.output));
+      if ('files' in step) out.files = clone(step.files);
       ['owner', 'chat'].forEach((key) => { if (key in step) out[key] = step[key]; });
       out.task = input === 'none' && !writtenTask(stepFields.task) ? '' : stepFields.task.value;
       // A list of sources goes to the engine as it is.
@@ -144,6 +146,7 @@
         return {
           name: model.name,
           id: idOf(model),
+          ...('files' in model ? { files: clone(model.files) } : {}),
           ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
           ...('output' in model ? { output: clone(model.output) } : {}),
           // An own request, an empty one included, is a value; a missing one is the automatic request.
@@ -307,6 +310,23 @@
       }
     };
 
+    const checkFiles = (value, path) => {
+      if (!Array.isArray(value)) { fail(path, 'ожидается список файлов'); return; }
+      const ids = new Set();
+      value.forEach((file, index) => {
+        const at = `${path}[${index}]`;
+        if (!isObject(file)) { fail(at, 'ожидается описание файла'); return; }
+        unknownKeys(file, ['id', 'name', 'type', 'size', 'content'], at);
+        if (typeof file.id !== 'string' || !file.id.trim()) fail(`${at}.id`, 'ID файла: непустой текст');
+        else if (ids.has(file.id)) fail(`${at}.id`, `ID файла «${file.id}» повторяется`);
+        else ids.add(file.id);
+        if (typeof file.name !== 'string' || !file.name.trim()) fail(`${at}.name`, 'имя файла: непустой текст');
+        if ('type' in file && typeof file.type !== 'string') fail(`${at}.type`, 'ожидается текст');
+        if ('size' in file && !(Number.isSafeInteger(file.size) && file.size >= 0)) fail(`${at}.size`, 'ожидается неотрицательное целое число');
+        if ('content' in file && typeof file.content !== 'string') fail(`${at}.content`, 'ожидается текст');
+      });
+    };
+
     if (schema.defaults != null) {
       const defaults = schema.defaults;
       if (!isObject(defaults)) fail('defaults', 'ожидается объект');
@@ -452,6 +472,7 @@
       oneOf(step.kind, KINDS, `${path}.kind`, 'тип шага');
       if (CONTROL_KINDS.includes(step.kind) && typeof step.ref === 'string' && !new RegExp(`^${step.kind}:[A-Za-z0-9_-]+$`).test(step.ref)) fail(`${path}.ref`, CONTROL_REF[step.kind]);
       if ('input' in step) checkInput(step.input, `${path}.input`, index);
+      if ('files' in step) checkFiles(step.files, `${path}.files`);
       if ('task' in step) text(step.task, `${path}.task`);
       STEP_TEXT_KEYS.forEach((key) => { if (key in step) text(step[key], `${path}.${key}`); });
       if (!Array.isArray(step.models)) { fail(`${path}.models`, 'ожидается список моделей'); return; }
@@ -459,7 +480,8 @@
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output'], modelPath);
+        unknownKeys(model, ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files'], modelPath);
+        if ('files' in model) checkFiles(model.files, `${modelPath}.files`);
         if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if ('onCanvas' in model && typeof model.onCanvas !== 'boolean') fail(`${modelPath}.onCanvas`, 'ожидается true или false');
@@ -491,8 +513,8 @@
   // customModelSettings[ref][participantId] = { promptTemplate, maxWords, task, discipline, input } — the key is the id of
   // the participant (its name when it has none); customRoundSettings[ref] = { input, task, owner, chat, output }
   // of a round; customStepSettings[ref] = the fields of an owner step; customDefaults = the ▶ card.
-  const ROUND_FIELDS = ['input', 'task', 'owner', 'chat', 'output'];
-  const STEP_FIELDS = ['input', 'task', 'owner', 'chat', 'output'];
+  const ROUND_FIELDS = ['input', 'task', 'owner', 'chat', 'output', 'files'];
+  const STEP_FIELDS = ['input', 'task', 'owner', 'chat', 'output', 'files'];
   function toSettings(schema) {
     const customModelSettings = {};
     const customRoundSettings = {};
@@ -510,6 +532,7 @@
         if (isObject(model.discipline)) participant.discipline = JSON.parse(JSON.stringify(model.discipline));
         if ('input' in model) participant.input = JSON.parse(JSON.stringify(model.input));
         if ('output' in model) participant.output = JSON.parse(JSON.stringify(model.output));
+        if ('files' in model) participant.files = JSON.parse(JSON.stringify(model.files));
         // A switched-off participant is a declaration of its own (R12): its name and off state stay, with or without other settings.
         if (model.enabled === false) Object.assign(participant, { name: model.name, enabled: false });
         if (!Object.keys(participant).length) return;

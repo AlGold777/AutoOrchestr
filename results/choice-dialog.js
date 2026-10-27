@@ -18,13 +18,36 @@
   const clean = (value) => String(value == null ? '' : value).trim();
   // Title of a document: its name only; without a name there is no title.
   const docTitle = (spec) => String(spec.name || '');
+  const decodeBase64 = (value) => {
+    const binary = root.atob(String(value || ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  };
 
-  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, documentRef = root.document } = {}) {
+  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, inputFiles = [], documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
+      const objectUrls = [];
+      let abortHandler = null;
       const dialog = el(doc, 'dialog', 'choice-dialog');
       dialog.append(el(doc, 'h2', 'choice-dialog-title', String(title)));
       if (message) dialog.append(el(doc, 'p', 'choice-dialog-message', String(message)));
+      if (Array.isArray(inputFiles) && inputFiles.length) {
+        const filesBox = el(doc, 'div', 'choice-dialog-input-files');
+        inputFiles.forEach((file) => {
+          try {
+            const blob = new Blob([decodeBase64(file.base64)], { type: String(file.type || '') });
+            const url = root.URL.createObjectURL(blob);
+            objectUrls.push(url);
+            const link = el(doc, 'a', 'choice-dialog-input-file', `📎 ${String(file.name || 'Файл')}`);
+            link.href = url;
+            link.download = String(file.name || 'file');
+            filesBox.append(link);
+          } catch (_) { /* an invalid payload does not prevent reading the step */ }
+        });
+        if (filesBox.childNodes.length) dialog.append(filesBox);
+      }
       const kind = documentSpec?.kind || null;
       // Modes of kind 'read' with the new fields: readOnly, editable; otherwise the plain reading mode.
       const mode = kind !== 'read' ? null
@@ -68,6 +91,9 @@
       const finish = (value) => {
         if (finished) return;
         finished = true;
+        if (signal && abortHandler) signal.removeEventListener('abort', abortHandler);
+        objectUrls.forEach((url) => root.URL.revokeObjectURL(url));
+        objectUrls.length = 0;
         if (typeof dialog.close === 'function') dialog.close();
         dialog.remove();
         resolve(value);
@@ -127,7 +153,8 @@
       // A Stop of the run closes the window at once: the answer is a cancel (R07).
       if (signal) {
         if (signal.aborted) { finish(null); return; }
-        signal.addEventListener('abort', () => finish(null), { once: true });
+        abortHandler = () => finish(null);
+        signal.addEventListener('abort', abortHandler, { once: true });
       }
       // Escape closes the native dialog: the answer is a cancel.
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });

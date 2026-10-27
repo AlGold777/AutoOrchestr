@@ -96,9 +96,9 @@ describe('Attachments are confirmed per chat of a participant (R05)', () => {
   test('a chat takes the files once: the page keeps the visit that opened the chat and the visit whose chat got the files', () => {
     expect(results).toContain('const filesNeeded = (request) => {');
     expect(results).toContain('return !saved || saved.attachedChatVisit !== saved.chatVisit;');
-    expect(sendBlock).toContain('attachments: filesSent ? attachments : [],');
-    expect(sendBlock).not.toContain('attached.has(');
-    expect(results.slice(results.indexOf('const runCustomFromPage = async'), sendAt)).not.toContain('const attached = new Set();');
+    expect(sendBlock).toContain('attachments: pendingFiles.files,');
+    expect(sendBlock).toContain('const filesSent = pendingFiles.global;');
+    expect(results.slice(results.indexOf('const runCustomFromPage = async'), sendAt)).toContain('window.BasicFileDelivery?.create');
   });
 
   test('a new chat (new visit) always takes the files; a continue of a chat with confirmed files takes none', () => {
@@ -108,8 +108,9 @@ describe('Attachments are confirmed per chat of a participant (R05)', () => {
   });
 
   test('the files are confirmed only when the answer of the chat came back (a failed delivery does not mark them)', () => {
-    expect(sendBlock).toContain('const filesSent = wave.some(filesNeeded);');
+    expect(sendBlock).toContain('const filesSent = pendingFiles.global;');
     expect(sendBlock).toContain("const confirmed = filesSent && String(reply.status || '').toUpperCase() === 'SUCCESS';");
+    expect(sendBlock).toContain('fileDelivery?.confirmed(request, reply.status, pendingFiles)');
     expect(sendBlock).toContain('attachedChatVisit: confirmed ? chatVisit : (isNewChat(request) ? null : (saved?.attachedChatVisit ?? null))');
   });
 

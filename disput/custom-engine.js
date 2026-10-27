@@ -199,6 +199,7 @@
         // A list of sources stays a list here: the input is checked before the run (assertExecutable).
         input: Array.isArray(step.input) ? step.input.slice() : (step.input ?? (kind === 'owner' ? 'none' : 'previous')),
         output: step.output ?? null,
+        ...(Array.isArray(step.files) ? { files: JSON.parse(JSON.stringify(step.files)) } : {}),
         document: kind === 'owner' && typeof step.document === 'string' && step.document ? step.document : null,
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
@@ -208,7 +209,8 @@
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null,
           ...(model.input !== undefined ? { input: Array.isArray(model.input) ? model.input.slice() : model.input } : {}),
-          ...(model.output !== undefined ? { output: JSON.parse(JSON.stringify(model.output)) } : {})
+          ...(model.output !== undefined ? { output: JSON.parse(JSON.stringify(model.output)) } : {}),
+          ...(Array.isArray(model.files) ? { files: JSON.parse(JSON.stringify(model.files)) } : {})
         }))
           .filter((model) => model.name)
       };

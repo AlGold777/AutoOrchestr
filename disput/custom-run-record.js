@@ -241,6 +241,7 @@
   // The chats of the participants are an object by participantId; a list (an old snapshot) and no value are an empty object.
   const plainOf = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? copyOf(value) : {});
   const CHAT_BINDING_FIELDS = [
+    'inputFileIds',
     'modelName', 'stepRef', 'visit', 'transportRequestId', 'tabId',
     'requestId', 'stageAttemptId', 'chatVisit', 'attachedChatVisit'
   ];
