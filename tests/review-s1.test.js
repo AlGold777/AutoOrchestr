@@ -18,12 +18,15 @@ describe('review S1: Export стенда → Basic не теряет молча'
     expect(warnings.some((w) => /s2/.test(w) && /вход|input/i.test(w))).toBe(true);
   });
 
-  test('вход «s1.Артефакт» не превращается молча во весь ответ этапа', () => {
-    const { schema, warnings } = Exchange.toBasic({ task: 'T', steps: [
+  test('вход «s1.Артефакт» адресует объявленный выход и точного участника', () => {
+    const { schema, warnings, errors } = Exchange.toBasic({ task: 'T', steps: [
       round('s1', { artifacts: [{ name: 'Артефакт', description: 'd' }] }),
       round('s2', { inputs: ['s1.Артефакт'] })] });
     expect(Schema.validate(schema)).toEqual([]);
-    expect(schema.steps[1].input).toEqual(['r1']);
-    expect(warnings.some((w) => w.includes('Артефакт'))).toBe(true);
+    expect(errors).toEqual([]);
+    expect(schema.steps[0].output.artifacts).toEqual([{ id: 'a1', name: 'Артефакт', pointer: '/a1', description: 'd' }]);
+    expect(schema.steps[0].output.requiredFields).toEqual(['/a1']);
+    expect(schema.steps[1].input).toEqual([{ artifact: { step: 'r1', participant: 'Claude', id: 'a1' }, version: 'latest', required: true }]);
+    expect(warnings).toEqual([]);
   });
 });

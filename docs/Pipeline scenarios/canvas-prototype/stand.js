@@ -6,7 +6,7 @@
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '65';
+  const STAND_VERSION = '66';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
@@ -1336,7 +1336,8 @@
   // Export: схема на холсте → файл, который принимает кнопка Import в Basic.
   function exportCatalog() {
     if (!stand.active || !stand.schema) { toast('Сначала примените схему (кнопка i) или откройте шаблон'); return; }
-    const { schema, warnings } = root.ProtoBasicExport.toBasic(pickSchema(stand.schema), { roleIdOf });
+    const { schema, warnings, errors: conversionErrors = [] } = root.ProtoBasicExport.toBasic(pickSchema(stand.schema), { roleIdOf });
+    if (conversionErrors.length) { toast(`Экспорт в Basic невозможен без потери данных:\n${conversionErrors.join('\n')}`); return; }
     if (!schema.steps.length) { toast(`Нечего экспортировать\n${warnings.join('\n')}`); return; }
     // Тот же проверяющий код, что у Import в Basic: недопустимый файл не пишем.
     const errors = root.BasicSchema?.validate(schema) || [];

@@ -1,7 +1,7 @@
 // Обмен схемами между стендом ({ task, steps: [{ id, block, … }] }) и Basic ({ schemaVersion, origin, steps: [{ ref, kind, models }] }).
 // toBasic — экспорт со стенда: файл, который принимает кнопка Import в Basic. fromBasic — импорт файла Basic на стенд.
-// Переносятся round, owner, defaults (roundTask, discipline, modelNotes), run, description. Остальные этапы (file), исходные
-// артефакты и defaults.synthesisTask пропускаются с предупреждением: синтеза в Basic нет, это роль раунда из одной модели.
+// Переносятся round, owner, defaults (roundTask, discipline, modelNotes), run, description, исходные файлы и выходные артефакты.
+// Остальные этапы (включая file) и defaults.synthesisTask не переносятся.
 // Проверки на стенде нет: шаг gate из старого файла Basic приходит на стенд обычным раундом, шаг synthesis — раундом из одной модели.
 (function initBasicExport(root) {
   'use strict';
@@ -11,6 +11,19 @@
   const list = (v) => (Array.isArray(v) ? v : []);
   const idPart = (id, fallback) => (String(id || '').replace(/[^A-Za-z0-9_-]/g, '') || fallback);
   const MODEL_COPY = ['maxWords', 'discipline'];
+  const fieldPointer = (index) => `/${index === 0 ? 'a1' : `a${index + 1}`}`;
+
+  const freshIdNamespace = () => {
+    try {
+      const cryptoApi = root.crypto || globalThis.crypto;
+      if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
+      if (cryptoApi?.getRandomValues) {
+        const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+        return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (_) { /* use the local fallback below */ }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  };
 
   // Ссылка входа стенда ("s2" или "s3.Артефакт") → id этапа.
   const stepOf = (ref) => String(ref).split('.')[0];
@@ -18,8 +31,18 @@
   function toBasic(schema, opts = {}) {
     const roleIdOf = opts.roleIdOf || (() => '');
     const warnings = [];
+    const errors = [];
     const steps = list(schema?.steps).filter(isObj);
     const pos = new Map(steps.map((st, i) => [st.id, i]));
+    const sourceArtifacts = list(schema?.artifacts).filter(isObj);
+    const artifactIds = new Map();
+    const sourceFiles = new Map();
+    const sourceNamespace = freshIdNamespace();
+    sourceArtifacts.forEach((artifact, i) => {
+      const name = String(artifact.name || '').trim();
+      if (name && sourceFiles.has(name)) errors.push(`Исходный артефакт «${name}» объявлен несколько раз; входы нельзя сопоставить однозначно.`);
+      else if (name) sourceFiles.set(name, { artifact, id: `${sourceNamespace}-in-${i + 1}` });
+    });
 
     // Первый проход: ref каждого переносимого шага.
     const refs = new Map();
@@ -28,10 +51,76 @@
       if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
       else if (st.block === 'owner') refs.set(st.id, `owner:${idPart(st.id, `s${i + 1}`)}`);
     });
-    // Every stand link means the later step depends on the earlier one. Preserve that
-    // dependency in Basic as an explicit required whole-step source.
-    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)))]
-      .map((id) => ({ step: refs.get(id), required: true }));
+    const enabledModels = (st) => list(st.models).filter((m) => isObj(m) && own(m.name) && m.enabled !== false);
+    const artifactsOf = (st) => list(st.artifacts).map((a) => typeof a === 'string' ? { name: a } : a)
+      .filter((a) => isObj(a) && own(a.name));
+    const artifactNames = (st) => {
+      const ids = new Map();
+      let n = 0;
+      artifactsOf(st).forEach((a) => {
+        const name = String(a.name).trim();
+        if (ids.has(name)) { errors.push(`Этап ${st.id}: артефакт «${name}» объявлен несколько раз.`); return; }
+        if (a.document === 'read') { ids.set(name, { id: idPart(name, 'doc'), document: 'read' }); return; }
+        if (a.document === 'form') { ids.set(name, { id: null, document: 'form' }); return; }
+        n += 1;
+        ids.set(name, { id: `a${n}`, pointer: fieldPointer(n - 1), document: '' });
+      });
+      artifactIds.set(st.id, ids);
+      return ids;
+    };
+    const inputRefs = (st) => {
+      const result = [];
+      const seen = new Set();
+      list(st.inputs).forEach((value) => {
+        const r = String(value);
+        if (r.startsWith('in.')) {
+          const name = r.slice(3);
+          const file = sourceFiles.get(name);
+          if (!file) { errors.push(`Этап ${st.id}: вход «${r}» не перенесён: исходный файл «${name}» не найден.`); return; }
+          const artifact = file.artifact;
+          const descriptor = { id: file.id };
+          if (typeof artifact.type === 'string') descriptor.type = artifact.type;
+          if (Number.isSafeInteger(artifact.size) && artifact.size >= 0) descriptor.size = artifact.size;
+          if (own(artifact.content)) {
+            descriptor.name = /\.txt$/i.test(name) ? name : `${name}.txt`;
+            descriptor.content = artifact.content;
+          } else if (own(artifact.attachment)) descriptor.name = artifact.attachment;
+          else { errors.push(`Этап ${st.id}: исходный артефакт «${name}» не перенесён: нужен content или attachment.`); return; }
+          const key = `file:${descriptor.id}`;
+          if (!seen.has(key)) { result.push({ file: descriptor }); seen.add(key); }
+          return;
+        }
+        const dot = r.indexOf('.');
+        const sid = dot < 0 ? r : r.slice(0, dot);
+        if (!refs.has(sid)) {
+          const sourceStep = pos.has(sid) ? steps[pos.get(sid)] : null;
+          const message = sourceStep?.block === 'file'
+            ? `Этап ${st.id}: вход «${r}» не перенесён: он зависит от этапа file, которого нет в Basic.`
+            : `Этап ${st.id}: вход «${r}» не перенесён: источник «${sid}» отсутствует или не поддерживается.`;
+          errors.push(message);
+          if (sourceStep?.block === 'file') warnings.push(message);
+          return;
+        }
+        if (pos.get(sid) >= pos.get(st.id)) {
+          errors.push(`Этап ${st.id}: вход «${r}» не перенесён: источник должен быть раньше потребителя.`);
+          return;
+        }
+        let source;
+        if (dot >= 0) {
+          const name = r.slice(dot + 1);
+          const sourceStep = steps[pos.get(sid)];
+          const enabled = sourceStep.block === 'owner' ? [{ name: 'owner' }] : enabledModels(sourceStep);
+          const declaration = artifactIds.get(sid)?.get(name);
+          if (!declaration) { errors.push(`Этап ${st.id}: вход «${r}» не перенесён: артефакт «${name}» не объявлен.`); return; }
+          if (declaration.document === 'form') { errors.push(`Этап ${st.id}: вход «${r}» не перенесён: document form не объявляет адресуемый выходной артефакт.`); return; }
+          if (enabled.length !== 1) { errors.push(`Этап ${st.id}: вход «${r}» не перенесён: у этапа ${sid} несколько включённых моделей, участника артефакта нельзя определить.`); return; }
+          source = { artifact: { step: refs.get(sid), participant: enabled[0].name, id: declaration.id }, version: 'latest', required: true };
+        } else source = { step: refs.get(sid), required: true };
+        const key = JSON.stringify(source);
+        if (!seen.has(key)) { result.push(source); seen.add(key); }
+      });
+      return result;
+    };
 
     const modelOf = (m) => {
       const roleId = roleIdOf(m.role);
@@ -42,6 +131,7 @@
       if (roleId && roleId !== 'None') out.role = roleId;
       if (task) out.task = task;
       MODEL_COPY.forEach((k) => { if (m[k] !== undefined && m[k] !== '') out[k] = m[k]; });
+      if (Array.isArray(m.files)) out.files = m.files.map((file) => ({ ...file }));
       return out;
     };
     const out = [];
@@ -49,44 +139,86 @@
     const docRounds = new Set();
     steps.forEach((st, i) => {
       const ref = refs.get(st.id);
-      if (!ref) { warnings.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`); return; }
+      if (!ref) {
+        if (st.block === 'file') {
+          const message = `Этап ${st.id || i + 1} (file) не перенесён: вид file в Basic не поддерживается.`;
+          errors.push(message);
+          warnings.push(message);
+        }
+        else errors.push(`Этап ${st.id || i + 1} (${st.block}) не перенесён: в Basic такого блока нет.`);
+        return;
+      }
+      const idsForArtifacts = st.block === 'round' || st.block === 'owner' ? artifactNames(st) : new Map();
       const input = inputRefs(st);
-      list(st.inputs).forEach((r) => {
-        const sid = stepOf(r);
-        if (sid === 'in') warnings.push(`Этап ${st.id}: вход «${r}» не перенесён: в Basic исходных артефактов нет.`);
-        else if (!refs.has(sid) && pos.has(sid)) warnings.push(`Этап ${st.id}: вход «${r}» не перенесён: этап ${sid} (${steps[pos.get(sid)].block}) в Basic не переносится.`);
-        else if (refs.has(sid) && String(r).includes('.')) warnings.push(`Этап ${st.id}: вход «${r}» перенесён как весь ответ этапа ${sid}: в Basic артефакт строкой не адресуется.`);
-      });
       const step = { ref, kind: st.block };
       if (st.block === 'round') {
-        step.input = input.length ? input : 'none';
+        const basicInput = input.filter((source) => !source.file);
+        step.input = basicInput.length ? basicInput : 'none';
         if (own(st.task)) step.task = st.task.trim();
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map(modelOf);
+        const fileInputs = input.filter((source) => source.file).map((source) => source.file);
+        if (fileInputs.length) step.files = fileInputs;
+        const ordinary = artifactsOf(st).filter((a) => a.document !== 'read' && a.document !== 'form');
+        const docArt = artifactsOf(st).find((a) => a.document === 'read' || a.document === 'form');
+        if (ordinary.length) {
+          if (docArt) errors.push(`Этап ${st.id}: обычные артефакты не перенесены вместе с document «${docArt.name}»: несовместимые выходы.`);
+          else {
+            const fields = ordinary.map((a) => {
+              const declaration = idsForArtifacts.get(String(a.name).trim());
+              return { id: declaration.id, name: String(a.name).trim(), pointer: declaration.pointer, ...(own(a.description) ? { description: a.description } : {}) };
+            });
+            step.output = { format: 'json', requiredFields: fields.map((field) => field.pointer), artifacts: fields };
+            step.output.form = `Верни JSON. Поле ${fields.map((field) => `"${field.pointer.slice(1)}" — артефакт «${field.name}»`).join('; ')}. Содержимое каждого поля должно быть готовым артефактом.`;
+          }
+        }
         // Документ для User: только в раунде из одной модели; вид read — артефакт в output, form — опросник (json).
-        const docArt = list(st.artifacts).find((a) => isObj(a) && (a.document === 'read' || a.document === 'form'));
         if (docArt) {
           const name = String(docArt.name || '').trim();
-          if (list(st.models).filter((m) => isObj(m) && m.enabled !== false).length !== 1) warnings.push(`Этап ${st.id}: документ «${name}» не перенесён: в Basic документ для User даёт раунд из одной модели.`);
+          if (ordinary.length) { /* reported as an incompatible output above */ }
+          else if (enabledModels(st).length !== 1) errors.push(`Этап ${st.id}: документ «${name}» не перенесён: в Basic документ для User даёт раунд из одной модели.`);
           else {
             docRounds.add(st.id);
-            step.output = docArt.document === 'read' ? { document: 'read', artifacts: [{ id: idPart(name, 'doc'), name, pointer: '' }] } : { format: 'json', document: 'form' };
+            step.output = docArt.document === 'read'
+              ? { document: 'read', artifacts: [{ id: idPart(name, 'doc'), name, pointer: '', ...(own(docArt.description) ? { description: docArt.description } : {}) }] }
+              : { format: 'json', document: 'form' };
           }
         }
         if (['new', 'continue'].includes(st.chat)) step.chat = st.chat;
       } else if (st.block === 'owner') {
         step.task = own(st.ask) ? st.ask.trim() : 'Дайте ответ';
         step.models = [];
-        if (input.length) step.input = input;
+        const basicInput = input.filter((source) => !source.file);
+        if (basicInput.length) step.input = basicInput;
+        const fileInputs = input.filter((source) => source.file).map((source) => source.file);
+        if (fileInputs.length) step.files = fileInputs;
+        const ownerArtifacts = artifactsOf(st).filter((artifact) => {
+          if (artifact.document) {
+            errors.push(`Этап ${st.id}: документ User «${artifact.name}» не перенесён: Basic не поддерживает document-выходы у owner.`);
+            return false;
+          }
+          return true;
+        });
+        if (ownerArtifacts.length) {
+          const fields = ownerArtifacts.map((artifact) => {
+            const declaration = idsForArtifacts.get(String(artifact.name).trim());
+            return { id: declaration.id, name: String(artifact.name).trim(), pointer: declaration.pointer, ...(own(artifact.description) ? { description: artifact.description } : {}) };
+          });
+          step.output = { format: 'json', requiredFields: fields.map((field) => field.pointer), artifacts: fields };
+          step.output.form = `Верни JSON. Поле ${fields.map((field) => `"${field.pointer.slice(1)}" — артефакт «${field.name}»`).join('; ')}. Содержимое каждого поля должно быть готовым артефактом.`;
+        }
         if (st.document != null) {
           if (docRounds.has(st.document)) step.document = refs.get(st.document);
-          else warnings.push(`Этап ${st.id}: document «${st.document}» не перенесён: этап не переносится.`);
+          else errors.push(`Этап ${st.id}: document «${st.document}» не перенесён: исходный round не экспортирован как document read.`);
         }
       }
       if (own(st.title)) step.title = st.title.trim();
       if (own(st.why)) step.goal = st.why.trim();
       out.push(step);
     });
-    list(schema?.artifacts).filter(isObj).forEach((a) => warnings.push(`Исходный артефакт «${a.name}» не перенесён: в Basic исходных артефактов нет.`));
+    sourceArtifacts.forEach((a) => {
+      const used = steps.some((st) => list(st.inputs).includes(`in.${a.name}`));
+      if (!used) warnings.push(`Исходный артефакт «${a.name}» не перенесён: ни один этап его не использует.`);
+    });
 
     const result = { schemaVersion: 1, origin: 'user' };
     if (own(schema.description)) result.description = schema.description;
@@ -107,7 +239,7 @@
     }
     result.steps = out;
     if (!out.some((st) => st.kind === 'round' || st.kind === 'owner')) warnings.push('Нечего экспортировать: в схеме нет раунда или этапа User.');
-    return { schema: result, warnings };
+    return { schema: result, warnings, errors };
   }
 
   function fromBasic(basic, opts = {}) {
@@ -156,9 +288,13 @@
     steps.forEach((st, i) => {
       const id = ids.get(st.ref);
       const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
+      if (list(st.files).length) warnings.push(`Шаг ${st.ref}: входные файлы Basic не представлены в формате стенда и не перенесены.`);
       if (list(st.models).some((model) => isObj(model) && model.input !== undefined)) {
         warnings.push(`Шаг ${st.ref}: индивидуальный models[].input не перенесён на стенд.`);
       }
+      list(st.models).forEach((model) => {
+        if (isObj(model) && list(model.files).length) warnings.push(`Шаг ${st.ref}: файлы участника «${model.name}» Basic не представлены в формате стенда и не перенесены.`);
+      });
       const inputs = inputsOf(st, i);
       if (inputs.length) step.inputs = inputs;
       if (st.kind === 'round' || st.kind === 'gate') {

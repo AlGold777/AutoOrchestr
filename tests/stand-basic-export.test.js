@@ -71,10 +71,126 @@ describe('Stand ↔ Basic exchange', () => {
     ]);
   });
 
-  test('source artifacts of the stand are not exported to Basic and the warning names them', () => {
-    const { warnings } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'Бриф', content: 'текст' }], steps: [
+  test('a source artifact used as input becomes an inline Basic file', () => {
+    const { schema: basic, warnings, errors } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'Бриф', content: 'текст' }], steps: [
       { id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай', inputs: ['in.Бриф'] }] });
-    expect(warnings.some((w) => w.includes('Бриф'))).toBe(true);
+    expect(basic.steps[0].files).toEqual([{ id: expect.stringMatching(/-in-1$/), name: 'Бриф.txt', content: 'текст' }]);
+    expect(basic.steps[0].input).toBe('none');
+    expect(warnings).toEqual([]);
+    expect(errors).toEqual([]);
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('an attachment input keeps the exact filename and a generated file id', () => {
+    const { schema: basic, errors } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'макет', attachment: 'brief.final.pdf' }], steps: [
+      { id: 's1', block: 'owner', ask: 'Прочитай', inputs: ['in.макет'] }] });
+    expect(basic.steps[0].files).toEqual([{ id: expect.stringMatching(/-in-1$/), name: 'brief.final.pdf' }]);
+    expect(errors).toEqual([]);
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('inline source files do not receive a duplicate txt extension', () => {
+    const { schema: basic } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'brief.txt', content: 'text' }], steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }], inputs: ['in.brief.txt'] }
+    ] });
+    expect(basic.steps[0].files[0].name).toBe('brief.txt');
+  });
+
+  test('source file IDs are fresh per export and shared across consumers within one export', () => {
+    const stand = { task: 'T', artifacts: [{ name: 'Brief', content: 'text' }], steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }], inputs: ['in.Brief'] },
+      { id: 's2', block: 'owner', ask: 'Review', inputs: ['in.Brief'] }
+    ] };
+    const first = Exchange.toBasic(stand).schema;
+    const second = Exchange.toBasic(stand).schema;
+    const firstId = first.steps[0].files[0].id;
+    expect(firstId).not.toBe('in-1');
+    expect(first.steps[1].files[0].id).toBe(firstId);
+    expect(second.steps[0].files[0].id).not.toBe(firstId);
+    expect(second.steps[1].files[0].id).toBe(second.steps[0].files[0].id);
+  });
+
+  test('ordinary artifacts become declared JSON outputs with exact semantic inputs', () => {
+    const { schema: basic, errors } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', title: 'R', models: [{ name: 'Claude' }], artifacts: [{ name: 'План' }, { name: 'Риски' }] },
+      { id: 's2', block: 'round', title: 'Продолжение', models: [{ name: 'GPT' }], inputs: ['s1.План'] }
+    ] });
+    expect(basic.steps[0].output).toMatchObject({
+      format: 'json', requiredFields: ['/a1', '/a2'],
+      artifacts: [{ id: 'a1', name: 'План', pointer: '/a1' }, { id: 'a2', name: 'Риски', pointer: '/a2' }]
+    });
+    expect(basic.steps[0].output.form).toContain('«План»');
+    expect(basic.steps[1].input).toEqual([{ artifact: { step: 'r1', participant: 'Claude', id: 'a1' }, version: 'latest', required: true }]);
+    expect(errors).toEqual([]);
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('shared output declarations export with multiple models, but artifact references remain ambiguous', () => {
+    const { schema: basic, errors } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }, { name: 'GPT' }], artifacts: [{ name: 'Итог' }] },
+      { id: 's2', block: 'round', models: [{ name: 'Gemini' }], inputs: ['s1.Итог'] }
+    ] });
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('участника артефакта нельзя определить')
+    ]));
+    expect(basic.steps[0].output.artifacts).toEqual([{ id: 'a1', name: 'Итог', pointer: '/a1' }]);
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('ordinary outputs cannot be combined with read or form documents', () => {
+    const { errors } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }], artifacts: [{ name: 'Документ', document: 'read' }, { name: 'Дополнение' }] }
+    ] });
+    expect(errors).toContain('Этап s1: обычные артефакты не перенесены вместе с document «Документ»: несовместимые выходы.');
+  });
+
+  test('read documents retain exact artifact addresses while form references are rejected', () => {
+    const read = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }], artifacts: [{ name: 'Док', description: 'Описание', document: 'read' }] },
+      { id: 's2', block: 'round', models: [{ name: 'GPT' }], inputs: ['s1.Док'] }
+    ] });
+    expect(read.schema.steps[0].output.artifacts).toEqual([{ id: 'doc', name: 'Док', pointer: '', description: 'Описание' }]);
+    expect(read.schema.steps[1].input).toEqual([{ artifact: { step: 'r1', participant: 'Claude', id: 'doc' }, version: 'latest', required: true }]);
+    expect(read.errors).toEqual([]);
+    const form = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }], artifacts: [{ name: 'Опрос', document: 'form' }] },
+      { id: 's2', block: 'round', models: [{ name: 'GPT' }], inputs: ['s1.Опрос'] }
+    ] });
+    expect(form.schema.steps[0].output).toEqual({ format: 'json', document: 'form' });
+    expect(form.errors.some((error) => error.includes('document form не объявляет адресуемый выходной артефакт'))).toBe(true);
+  });
+
+  test('owner ordinary artifacts export as JSON and are addressable by the owner participant', () => {
+    const { schema: basic, errors } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'owner', ask: 'Подготовьте итог', artifacts: [{ name: 'Решение', description: 'Выбор User' }] },
+      { id: 's2', block: 'round', models: [{ name: 'Claude' }], inputs: ['s1.Решение'] }
+    ] });
+    expect(basic.steps[0].output).toMatchObject({ format: 'json', requiredFields: ['/a1'], artifacts: [
+      { id: 'a1', name: 'Решение', pointer: '/a1', description: 'Выбор User' }
+    ] });
+    expect(basic.steps[1].input).toEqual([{ artifact: { step: 'owner:s1', participant: 'owner', id: 'a1' }, version: 'latest', required: true }]);
+    expect(errors).toEqual([]);
+    expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('an absent or unsupported source input is an export error', () => {
+    const missing = Exchange.toBasic({ task: 'T', steps: [{ id: 's1', block: 'round', models: [{ name: 'Claude' }], inputs: ['in.Файл'] }] });
+    expect(missing.errors.some((error) => error.includes('исходный файл «Файл» не найден'))).toBe(true);
+    const fileStep = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'file', inputs: [] },
+      { id: 's2', block: 'round', models: [{ name: 'Claude' }], inputs: ['s1'] }
+    ] });
+    expect(fileStep.errors.some((error) => error.includes('вид file в Basic не поддерживается'))).toBe(true);
+    expect(fileStep.errors.some((error) => error.includes('зависит от этапа file'))).toBe(true);
+    const dangling = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }], inputs: ['missing'] }
+    ] });
+    expect(dangling.errors.some((error) => error.includes('отсутствует или не поддерживается'))).toBe(true);
+    const backward = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', models: [{ name: 'Claude' }], inputs: ['s2'] },
+      { id: 's2', block: 'round', models: [{ name: 'GPT' }] }
+    ] });
+    expect(backward.errors.some((error) => error.includes('источник должен быть раньше потребителя'))).toBe(true);
   });
 
   test('stand step inputs export as required whole-step Basic sources', () => {
@@ -98,12 +214,20 @@ describe('Stand ↔ Basic exchange', () => {
     expect(back.steps[0]).toMatchObject({ id: 's1', block: 'round', models: [{ name: 'Claude' }] });
   });
 
-  test('blocks Basic does not have are skipped with a warning', () => {
-    const { schema: basic, warnings } = Exchange.toBasic({ task: 'T', steps: [
+  test('file blocks Basic does not have produce an export error', () => {
+    const { schema: basic, errors } = Exchange.toBasic({ task: 'T', steps: [
       { id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай' },
       { id: 's2', block: 'file', title: 'F', why: 'w', file: 'x.md', mode: 'overwrite', inputs: ['s1'] }] });
-    expect(warnings.some((w) => w.includes('s2'))).toBe(true);
+    expect(errors.some((error) => error.includes('s2 (file)'))).toBe(true);
     expect(Schema.validate(basic)).toEqual([]);
+  });
+
+  test('unknown stand blocks are export errors', () => {
+    const { errors } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'unexpected', title: 'X' },
+      { id: 's2', block: 'round', models: [{ name: 'Claude' }] }
+    ] });
+    expect(errors.some((error) => error.includes('unexpected') && error.includes('Basic такого блока нет'))).toBe(true);
   });
 
   test('S-4/S-5: модель стенда с enabled:false уходит в Basic с enabled:false и проходит проверку', () => {
@@ -160,6 +284,14 @@ describe('Stand ↔ Basic exchange', () => {
       'Шаг r4: индивидуальный models[].input не перенесён на стенд.',
       'Шаг r4: input «all» собирает имеющиеся ответы всех предыдущих этапов; на стенде связи выглядят обязательными, и повторный экспорт сделает их обязательными.'
     ]);
+  });
+
+  test('Import Basic warns when files have no stand representation', () => {
+    const { warnings } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', files: [{ id: 'in-1', name: 'brief.txt', content: 'x' }], models: [{ name: 'Claude', files: [{ id: 'model-1', name: 'extra.txt' }] }] }
+    ] });
+    expect(warnings).toContain('Шаг r1: входные файлы Basic не представлены в формате стенда и не перенесены.');
+    expect(warnings).toContain('Шаг r1: файлы участника «Claude» Basic не представлены в формате стенда и не перенесены.');
   });
 
   test('B-2: раунд после шага User без input берёт этот шаг', () => {
@@ -222,7 +354,7 @@ describe('Документ для User и чат при обмене со сте
     expect(Schema.validate(basic)).toEqual([]);
     expect(warnings).toEqual([]);
     const [round, owner] = basic.steps;
-    expect(round.output).toEqual({ document: 'read', artifacts: [{ id: 'doc', name: 'ТЗ', pointer: '' }] });
+    expect(round.output).toEqual({ document: 'read', artifacts: [{ id: 'doc', name: 'ТЗ', pointer: '', description: 'д' }] });
     expect(owner.document).toBe('r1');
   });
 
@@ -232,10 +364,10 @@ describe('Документ для User и чат при обмене со сте
     expect(Schema.validate(basic)).toEqual([]);
   });
 
-  test('в) раунд из нескольких моделей: флаг не переносится, есть предупреждение', () => {
-    const { schema: basic, warnings } = Exchange.toBasic(docSchema(undefined, [{ name: 'Claude' }, { name: 'GPT' }]));
+  test('в) раунд из нескольких моделей: перенос документа завершится ошибкой', () => {
+    const { schema: basic, errors } = Exchange.toBasic(docSchema(undefined, [{ name: 'Claude' }, { name: 'GPT' }]));
     expect(basic.steps[0].output).toBeUndefined();
-    expect(warnings).toContain('Этап s1: документ «ТЗ» не перенесён: в Basic документ для User даёт раунд из одной модели.');
+    expect(errors).toContain('Этап s1: документ «ТЗ» не перенесён: в Basic документ для User даёт раунд из одной модели.');
   });
 
   test('г) chat new переносится в шаг Basic', () => {
