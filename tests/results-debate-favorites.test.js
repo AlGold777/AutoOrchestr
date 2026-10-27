@@ -2463,7 +2463,8 @@ describe('Pipeline debate favorites view', () => {
       const steps = h.debug.customStepsFromPlan({ plannedStages: [
         { plannedStageId: 'canvas-r1', participantIds: [] }, { plannedStageId: 'canvas-r2', participantIds: ['GPT'] }
       ] });
-      expect(steps.map((step) => [step.ref, step.round, step.input])).toEqual([['r2', 2, 'previous']]);
+      // The first round that runs has nothing to take (plan 2.6): no input before it.
+      expect(steps.map((step) => [step.ref, step.round, step.input])).toEqual([['r2', 2, 'none']]);
     } finally { h.cleanup(); }
   });
 

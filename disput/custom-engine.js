@@ -218,6 +218,7 @@
         output: step.output ?? null,
         ...(Array.isArray(step.files) ? { files: JSON.parse(JSON.stringify(step.files)) } : {}),
         document: kind === 'owner' && typeof step.document === 'string' && step.document ? step.document : null,
+        ...(kind === 'round' && Array.isArray(step.off) && step.off.length ? { off: step.off.map((model) => ({ id: model.id ?? model.name, name: model.name, ...(model.output !== undefined ? { output: model.output } : {}) })) } : {}),
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
         approve: step.owner === 'approve',
@@ -372,11 +373,13 @@
             if (from >= index) throw new EngineError('invalid_input', address, `шаг «${ref}» стоит не раньше этого шага`);
             if (participant === undefined) return;
             // The owner step has one participant, the owner (3.3); a model of a round keeps its own id.
+            // A switched-off participant (`off`) is declared too: it gives no answer, so the source is empty or missing (5.5, 5.7).
+            const off = Array.isArray(steps[from].off) ? steps[from].off : [];
             const declared = steps[from].kind === 'owner' ? [OWNER_PARTICIPANT]
-              : (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
+              : [...(Array.isArray(steps[from].models) ? steps[from].models : []), ...off].map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
             if (!declared.includes(participant)) throw new EngineError('invalid_input', address, `участник «${participant}» не объявлен в шаге «${ref}»`);
             // The artifact is declared in the output of that participant (3.2): its own, or the step's when it has none.
-            const author = (Array.isArray(steps[from].models) ? steps[from].models : []).find((model) => model && typeof model === 'object' && (model.id ?? model.name) === participant);
+            const author = [...(Array.isArray(steps[from].models) ? steps[from].models : []), ...off].find((model) => model && typeof model === 'object' && (model.id ?? model.name) === participant);
             if (artifactId !== null && !(outputOf(steps[from], author)?.artifacts || []).some((item) => item && item.id === artifactId)) {
               throw new EngineError('invalid_input', address, `артефакт «${artifactId}» не объявлен в шаге «${ref}»`);
             }

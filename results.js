@@ -4147,6 +4147,12 @@ document.addEventListener('click', (event) => {
             return round ? `Раунд ${round[1]}` : ref;
         };
         // The rounds before a step, in the schema's order; a switched-off one is marked by enabled.
+        // A round with no runnable step before it (the first that runs) has nothing to take by default (BasicSchema.defaultInputOf).
+        const isFirstToRun = (ref) => {
+            const steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [];
+            const at = steps.findIndex((step) => step.ref === ref);
+            return window.BasicSchema.defaultInputOf(steps, at < 0 ? steps.length : at) === 'none';
+        };
         const stepsBefore = (ref) => {
             const steps = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || [])
                 .filter((step) => step.kind === 'round');
@@ -4975,7 +4981,29 @@ document.addEventListener('click', (event) => {
             const attachments = Array.from(promptAttachmentBar?.querySelectorAll('[data-attachment-key]') || [], (item) => ({ name: item.title }));
             return window.BasicInputCanvas.sync({ panel: pipelinePanel, schema, attachments });
         };
+        // A change of the structure on the canvas of a saved Basic pipeline (Send, a role, a round, a participant) rebuilds its record
+        // at once, as a card save does (basic-developer.md, «Save»): the record and the run never differ, a switch to another
+        // pipeline and back keeps the change. Opening a pipeline writes nothing: only a pipeline whose structure the owner touched.
+        let basicStructureTouched = '';
+        let basicStructureTimer = null;
+        const BASIC_STRUCTURE_CONTROLS = '#pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, .model-participant-add, .model-participant-remove';
+        const persistBasicStructureSoon = () => {
+            clearTimeout(basicStructureTimer);
+            basicStructureTimer = setTimeout(() => {
+                const key = draftPlanStorageKey();
+                const record = pipelineStore.pipelines[key];
+                if (basicStructureTouched !== key || !record?.schema || isDefaultPipelineName(key) || pipelineApplyingConfig || pipelineRunActive) return;
+                if (getPresetMetaForConfig(record)?.runner !== 'custom' || !customCardSettings.has(key) || basicSchemaLoadErrors.has(key)) return;
+                const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn: record.schema.basedOn || '', run: record.schema.run || {} });
+                if (JSON.stringify(schema) === JSON.stringify(record.schema)) return;
+                if (persistBasicSettings(key)) void persistPipelineStore();
+            }, 150);
+        };
+        const touchBasicStructure = () => { basicStructureTouched = draftPlanStorageKey(); persistBasicStructureSoon(); };
+        pipelinePanel?.addEventListener('change', (event) => { if (event.target?.closest?.('.model-input-checkbox, .role-selector')) touchBasicStructure(); });
+        pipelinePanel?.addEventListener('click', (event) => { if (event.target?.closest?.(BASIC_STRUCTURE_CONTROLS)) touchBasicStructure(); });
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
+            if (basicStructureTouched) persistBasicStructureSoon();
             syncControlColumns();
             syncDocumentFrames();
             updatePipelineLayout();
@@ -6378,8 +6406,7 @@ document.addEventListener('click', (event) => {
                 const settings = cards[ref]?.[participantId] ?? cards[ref]?.[id];
                 const label = settings?.label || source?.label;
                 const settingsMode = settings?.settingsMode || source?.settingsMode;
-                // Format 2 needs the permanent id of every participant (BasicSchema.validate): a participant without its own id keeps its name as the id.
-                const model = { name, ...(window.BasicSchema.SCHEMA_VERSION >= 2 || participantId !== name || source?.id != null ? { id: participantId } : {}), ...(label ? { label } : {}), ...(settingsMode ? { settingsMode } : {}), ...extra };
+                const model = { name, ...(participantId !== name || source?.id != null ? { id: participantId } : {}), ...(label ? { label } : {}), ...(settingsMode ? { settingsMode } : {}), ...extra };
                 if (source && 'input' in source) model.input = JSON.parse(JSON.stringify(source.input));
                 put(model, 'request', legacyValue(settings?.promptTemplate));
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
@@ -6390,6 +6417,11 @@ document.addEventListener('click', (event) => {
                 if (Array.isArray(files)) model.files = JSON.parse(JSON.stringify(files));
                 return model;
             };
+            // A switched-off participant: one with a card of its own, or one the source schema declares in that step. It stays
+            // with enabled: false when it has fields of its own or the source schema declares it (a source may name it, R12).
+            const sourceParticipantsOf = (ref) => ((sourceSchema?.steps || []).find((step) => step?.ref === ref)?.models || []).filter(Boolean).map((model) => model.id ?? model.name);
+            const offCandidates = (ref) => [...new Set([...Object.keys(cards[ref] || {}), ...sourceParticipantsOf(ref)])];
+            const keepsOff = (ref, model) => hasOwnFields(model) || sourceParticipantsOf(ref).includes(model.id ?? model.name);
             let round = 0;
             const steps = (plan?.plannedStages || []).map((stage) => {
                 const models = (stage.participantIds || []).filter(Boolean);
@@ -6406,9 +6438,10 @@ document.addEventListener('click', (event) => {
                 if (forSave) {
                     // A card of a participant on the canvas is not a switched-off model, whatever key it has (its id or its name).
                     const shown = new Set(models.flatMap((id) => [id, sourceModelOf(ref, id)?.id].filter((key) => key !== undefined)));
-                    Object.keys(cards[ref] || {}).filter((name) => !shown.has(name)).forEach((name) => {
+                    offCandidates(ref).filter((name) => !shown.has(name)).forEach((name) => {
                         const model = modelEntry(ref, name, { enabled: false });
-                        if (hasOwnFields(model)) entries.push(model);
+                        const id = model.id ?? model.name;
+                        if (keepsOff(ref, model) && !entries.some((item) => (item.id ?? item.name) === id)) entries.push(model);
                     });
                 }
                 return { ref, kind: 'round', ...stepFieldsOf(ref), models: entries };
@@ -6416,7 +6449,9 @@ document.addEventListener('click', (event) => {
             if (forSave) {
                 // The canvas keeps every round, also one nobody sends in; the schema holds them all in order (r1…rN), or
                 // the canvas could not show it again (the rounds are numbered by their place).
-                const total = Math.max(1, Number(roundCounter) || 1);
+                // A schema of owner steps only gets no round from the empty column the canvas always shows (guide, «Правила холста»).
+                const ownerStepsOnly = !steps.length && Boolean(sourceSchema) && !(sourceSchema.steps || []).some((step) => step?.kind === 'round');
+                const total = ownerStepsOnly ? 0 : Math.max(1, Number(roundCounter) || 1);
                 const have = new Set(steps.map((step) => step.ref));
                 const complete = [];
                 let nextRound = 1;
@@ -6425,7 +6460,8 @@ document.addEventListener('click', (event) => {
                         const ref = `r${nextRound}`;
                         if (have.has(ref)) continue;
                         complete.push({ ref, kind: 'round', ...stepFieldsOf(ref),
-                            models: Object.keys(cards[ref] || {}).map((name) => modelEntry(ref, name, { enabled: false })).filter((model) => hasOwnFields(model)) });
+                            models: offCandidates(ref).map((name) => modelEntry(ref, name, { enabled: false }))
+                                .filter((model, at, list) => keepsOff(ref, model) && list.findIndex((item) => (item.id ?? item.name) === (model.id ?? model.name)) === at) });
                         have.add(ref);
                     }
                 };
@@ -6453,7 +6489,18 @@ document.addEventListener('click', (event) => {
                 });
             }
             const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
-            return { schemaVersion: window.BasicSchema.SCHEMA_VERSION, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
+            // The format of the schema: the one of its source, and format 2 only when the page uses what format 2 adds (a label
+            // other than the model name, an explicit profile). A schema of format 1 stays format 1 through Save, Run and Export.
+            // Format 2 holds the permanent id of every participant (its name when it has none); format 1 has no labels.
+            const sourceVersion = Number.isSafeInteger(sourceSchema?.schemaVersion) ? sourceSchema.schemaVersion : 1;
+            const pageModels = steps.flatMap((step) => step.models || []);
+            const needsFormat2 = pageModels.some((model) => (typeof model.label === 'string' && model.label !== model.name) || 'settingsMode' in model);
+            const schemaVersion = Math.min(window.BasicSchema.SCHEMA_VERSION, Math.max(sourceVersion, needsFormat2 ? 2 : 1));
+            pageModels.forEach((model) => {
+                if (schemaVersion >= 2) { if (model.id === undefined) model.id = model.name; }
+                else if (model.label === model.name) delete model.label;
+            });
+            return { schemaVersion, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(sourceSchema && 'spec' in sourceSchema ? { spec: JSON.parse(JSON.stringify(sourceSchema.spec)) } : {}),
                 ...(sourceSchema && typeof sourceSchema.description === 'string' ? { description: sourceSchema.description } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
@@ -6583,7 +6630,10 @@ document.addEventListener('click', (event) => {
         // request preview and the run share. `errors` stop a run before the first request; the run keeps
         // the result (steps, policy, limit) for its whole length.
         const buildBasicRun = (plan, previewModel = null) => {
-            const schema = basicSchemaFromPage(plan, previewModel);
+            // The run checks and runs the schema Save writes (every round r1…rN, the switched-off participants): what is installed
+            // and saved is what runs. The run values are those of the header now.
+            const schema = basicSchemaFromPage(plan, previewModel, { forSave: true,
+                run: { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() } });
             const loadError = basicSchemaLoadErrors.get(draftPlanStorageKey());
             const errors = [...(loadError ? [{ path: 'сохранённая схема', message: loadError }] : []), ...window.BasicSchema.validate(schema)];
             return { schema, errors, run: window.BasicSchema.resolveRun(schema), steps: errors.length ? [] : window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
@@ -6864,7 +6914,8 @@ document.addEventListener('click', (event) => {
                 return false;
             }
             const steps = built.steps;
-            if (!engine || !steps.some((step) => step.kind === 'round')) {
+            // A schema of owner steps only is valid (BasicSchema.validate) and runs: the page refuses only a run with no step at all.
+            if (!engine || !steps.length) {
                 showNotification('Basic: выберите модели хотя бы в одном раунде.', 'warn');
                 return false;
             }
@@ -7732,6 +7783,7 @@ document.addEventListener('click', (event) => {
         };
 
         const applyPipelineConfig = (config = {}) => {
+            basicStructureTouched = '';
             if (!config || typeof config !== 'object') return;
             pipelineApplyingConfig = true;
             const working = basicWorkingFromConfig(config);
@@ -7820,6 +7872,13 @@ document.addEventListener('click', (event) => {
                 addRound();
             }
 
+            // A schema is the whole canvas: a round the schema has no stack for (a schema of owner steps only, a round left from the
+            // canvas before) sends nobody, so the run never takes models the schema does not have.
+            if (incomingSchema && !schemaCanvas?.errors?.length) {
+                for (let round = 1; round <= roundCounter; round += 1) {
+                    if (!modelStacks[`r${round}-models`]) modelStacks[`r${round}-models`] = { items: (PipelineRuntime?.MODELS || []).map((model) => ({ name: model.name, id: model.name, label: model.name, input: false, send: false, role: null })) };
+                }
+            }
             const sendOverrides = config.version >= 2 ? null : buildSendOverridesFromLegacy(config);
             Object.entries(modelStacks).forEach(([stackId, state]) => {
                 if ((working.schema || (isCustomEnginePipeline() && incomingSchema)) && Array.isArray(state?.items)) {
@@ -7836,7 +7895,7 @@ document.addEventListener('click', (event) => {
             });
 
             pipelineApplyingConfig = false;
-            pipelineR1ManualDirty = !!modelStacks['r1-models'];
+            pipelineR1ManualDirty = !!modelStacks['r1-models'] || Boolean(incomingSchema);
             debateRunState.maxTurns = getDebateMaxTurns();
             if (debateMaxTurnsInput) debateMaxTurnsInput.value = String(debateRunState.maxTurns);
             // The sync rebuilds each stack in the canvas order (marks and roles are kept by name): the saved order is put back after it.
@@ -8625,7 +8684,7 @@ document.addEventListener('click', (event) => {
                 ...base,
                 version: 3,
                 // The page grows or cuts the rounds to the round limit after loading: it is the number of the schema's rounds.
-                protocol: { ...base.protocol, runPolicy: run.policy, selectedModels: canvas.selectedModels, roundLimit: String(canvas.roundCounter),
+                protocol: { ...base.protocol, runPolicy: run.policy, selectedModels: canvas.selectedModels, roundLimit: String(Math.max(1, canvas.roundCounter)),
                     ...(lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords)) ? { length: String(run.maxWords) } : {}) },
                 draftPlan: plan,
                 roundCounter: canvas.roundCounter,
@@ -9646,7 +9705,7 @@ document.addEventListener('click', (event) => {
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
                         // The round card of Basic: the input, the task, the owner and the output.
                         settings: getCustomRoundSettings()[`r${round}`] || {}, drafts: stepDraftsOf(`r${round}`), earlier: stepsBefore(`r${round}`),
-                        first: round === 1 && !getCustomControls().some((item) => item.after === ''), inheritedTask: resolveCustomFields({}, 'round').task.value }
+                        first: isFirstToRun(`r${round}`), inheritedTask: resolveCustomFields({}, 'round').task.value }
                     : null;
                 const model = window.StageCard.buildModel({
                     round,
@@ -10740,7 +10799,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.904';
+            const APP_VERSION = '2.81.906';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');

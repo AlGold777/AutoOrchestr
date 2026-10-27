@@ -94,16 +94,24 @@
   // The value of one card: model → round (reserved for the round card) → ▶ → Basic.
   // `model` is { task?, discipline? }, `defaults` is the ▶ layer of the schema. `kind` is the kind of the step: every
   // step with models is a round, so its task inherits roundTask.
+  // The delivery mark and the correction request are never empty: the transport needs the mark, a correction needs a text.
+  // An empty one is inheritance there (the page reads them the same way), every other empty text is a value.
+  const NEVER_EMPTY = Object.freeze(['delivery', 'correction']);
+  const valueOf = (key, value) => (NEVER_EMPTY.includes(key) && value === '' ? undefined : value);
   function resolveFields(model = {}, kind = 'round', round = {}, defaults = {}) {
     return {
       task: pick([['model', model?.task], ['round', round?.task], ['pipeline', defaults?.roundTask]], DEFAULTS.roundTask),
       discipline: Object.fromEntries(Object.entries(DEFAULTS.discipline).map(([key, fallback]) => [key,
-        pick([['model', model?.discipline?.[key]], ['round', round?.discipline?.[key]], ['pipeline', defaults?.discipline?.[key]]], fallback)]))
+        pick([['model', valueOf(key, model?.discipline?.[key])], ['round', valueOf(key, round?.discipline?.[key])], ['pipeline', valueOf(key, defaults?.discipline?.[key])]], fallback)]))
     };
   }
 
-  // Only the very first step of the schema has nothing to take; any model step after another step (an owner step too) gets the previous step.
-  const defaultInput = (position) => (position === 0 ? 'none' : 'previous');
+  // A step that runs: an owner step, or a round with an enabled model. A switched-off round gives nothing.
+  const runnable = (step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
+    || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false)));
+  // Only a step with no runnable step before it has nothing to take (the first step that runs, the steps switched off before it);
+  // any later model step (after an owner step too) gets the previous step.
+  const defaultInputOf = (steps, position) => ((Array.isArray(steps) ? steps : []).slice(0, position).some(runnable) ? 'previous' : 'none');
 
   // With input none only a task written by the owner (on the model or the step) goes to the model; ▶ and Basic values do not.
   const writtenTask = (field) => field.source === 'model' || field.source === 'round';
@@ -128,7 +136,7 @@
     return schema.steps.map((step, position) => {
       if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step);
       const roundIndex = rounds++;
-      const input = step.input || defaultInput(position);
+      const input = step.input || defaultInputOf(schema.steps, position);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
       // The number a round keeps even when the rounds before it are switched off.
       const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1 };
@@ -165,6 +173,10 @@
           }
         };
       });
+      // A switched-off participant stays declared (R12): a source may name it, it gives no answer (5.5, 5.7).
+      const off = (step.models || []).filter((model) => isObject(model) && model.enabled === false)
+        .map((model) => ({ id: idOf(model), name: model.name, ...('output' in model ? { output: clone(model.output) } : {}) }));
+      if (off.length) out.off = off;
       return out;
     }).filter((step) => step.models.length || CONTROL_KINDS.includes(step.kind));
   }
@@ -266,9 +278,7 @@
   // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model.
   // A pipeline without a round is valid; an empty one or one with no runnable step is named at `steps`.
   function executabilityErrors(steps) {
-    const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
-      || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
-    if (runnable) return [];
+    if (steps.some(runnable)) return [];
     return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг User' }];
   }
 
@@ -582,7 +592,7 @@
       if (!isObject(step) || step.kind !== 'round' || !Array.isArray(step.models)) return;
       step.models.forEach((model, modelIndex) => {
         if (!isObject(model) || model.enabled === false || typeof model.request !== 'string' || !model.request.trim()) return;
-        const spec = Object.hasOwn(model, 'input') ? model.input : (Object.hasOwn(step, 'input') ? step.input : defaultInput(index));
+        const spec = Object.hasOwn(model, 'input') ? model.input : (Object.hasOwn(step, 'input') ? step.input : defaultInputOf(steps, index));
         if (hasPossibleInput(spec, index) && !model.request.includes('{вход}')) {
           fail(`steps[${index}].models[${modelIndex}].request`, 'есть возможный вход из более раннего шага, но в запросе нет {вход}');
         }
@@ -688,7 +698,7 @@
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

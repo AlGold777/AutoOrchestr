@@ -102,7 +102,10 @@ describe('Basic schema: assembly of engine steps', () => {
     expect(Schema.validate(schema)).toEqual([]);
     const steps = Schema.assemble(schema);
     expect(steps.map((step) => step.ref)).toEqual(['r2']);
-    expect(steps[0].input).toBe('previous');
+    // The first round that runs has nothing to take (plan 2.6): no input, and the inherited «previous answers» task is not sent.
+    expect(steps[0].input).toBe('none');
+    expect(steps[0].task).toBe('');
+    expect(steps[0].models[0].task).toBe('');
   });
 
   test('a new optional field does not change an old schema: assembled steps are stable', () => {
@@ -281,7 +284,7 @@ describe('Basic schema: a switched-off round keeps its number', () => {
   test('assembly gives the original number and the id of every step', () => {
     const steps = Schema.assemble(schema);
     expect(steps.map((step) => [step.ref, step.round])).toEqual([['r2', 2], ['r3', 3], ['r4', 4], ['r5', 5]]);
-    expect(steps[0].input).toBe('previous');
+    expect(steps.map((step) => step.input)).toEqual(['none', 'previous', 'previous', 'previous']);
   });
 
   test('the preview, the journal and the run use the same numbers and ids', async () => {
