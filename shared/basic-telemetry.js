@@ -150,11 +150,13 @@
     const rounds = buildRoundsSummary({
       customRun,
       events: telemetryProcessed.selected,
-      journal: deliveryProcessed.selected
+      journal: deliveryProcessed.selected,
+      executionActive
     });
+    const diagnosis = buildDiagnosis(deliveryProcessed.selected, { extensionVersion, exportedAt });
 
     return {
-      format: 'basic-telemetry/2',
+      format: 'basic-telemetry/3',
       extensionVersion,
       exportedAt,
       runId,
@@ -165,6 +167,7 @@
         journal: deliveryProcessed.selected,
         unassigned: deliveryProcessed.unassigned,
         selection: deliveryProcessed.selection,
+        ...diagnosis,
         collection: delivery?.collection || null
       },
       telemetry: {
@@ -173,6 +176,40 @@
         selection: telemetryProcessed.selection
       }
     };
+  }
+
+  // The delivery verdict of the run (MessageDeliveryDiagnosis, loaded on the pipeline panel) computed over the run's own
+  // journal. Only joinable facts stay: texts (prompt, answer, html) are removed and a journal event is named by its path in
+  // delivery.journal instead of being copied. Without the module the verdict is null: it is never guessed.
+  const DIAGNOSIS_TEXT_KEYS = new Set(['prompt', 'sentPrompt', 'answer', 'answerHtml', 'answerArtifacts', 'promptArtifact', 'text', 'html']);
+  const PROBLEM_FIELDS = ['code', 'severity', 'model', 'at', 'title', 'detail', 'hint', 'reason', 'count'];
+
+  function buildDiagnosis(journal, { extensionVersion, exportedAt }) {
+    const api = root.MessageDeliveryDiagnosis;
+    if (!api || typeof api.diagnose !== 'function') return { diagnosis: null };
+    try {
+      const now = Date.parse(exportedAt);
+      const result = api.diagnose(journal, { version: extensionVersion || null, ...(Number.isFinite(now) ? { now } : {}) });
+      const paths = new Map(journal.map((entry, index) => [entry, `delivery.journal[${index}]`]));
+      const compact = (value) => {
+        if (Array.isArray(value)) return value.map(compact);
+        if (!value || typeof value !== 'object') return value;
+        const own = Object.fromEntries(Object.entries(value).filter(([key]) => !DIAGNOSIS_TEXT_KEYS.has(key)).map(([key, item]) => [key, compact(item)]));
+        return paths.has(value) ? { journalPath: paths.get(value), ...own } : own;
+      };
+      return {
+        diagnosis: {
+          sends: list(result.sends).map(compact),
+          problems: list(result.problems).map((problem) => ({
+            ...Object.fromEntries(PROBLEM_FIELDS.filter((key) => problem[key] !== undefined).map((key) => [key, problem[key]])),
+            ...(problem.batchId ? { batchId: problem.batchId } : {}),
+            ...(problem.requestId ? { requestId: problem.requestId } : {})
+          }))
+        }
+      };
+    } catch (error) {
+      return { diagnosis: null, diagnosisError: String(error?.message || error) };
+    }
   }
 
   function computeNonOverlappingWaitDuration(waits) {
@@ -202,11 +239,94 @@
     return total;
   }
 
-  function buildRoundsSummary({ customRun, events = [], journal = [] }) {
+  // The models a step expects, as { participant, model, idKnown }. The run record keeps only model names for a step; the
+  // participant ids live in the schema of the snapshot (the run's own schema), so it is read from there when the counts agree.
+  function expectedModelsOf(customRun, step) {
+    const own = list(step.models);
+    const asEntry = (m, idKnown) => ({ participant: typeof m === 'string' ? m : (m?.id ?? m?.name), model: typeof m === 'string' ? m : (m?.name ?? null), idKnown });
+    if (own.length && own.every((m) => m && typeof m === 'object')) return own.map((m) => asEntry(m, true));
+    const schema = customRun.snapshot?.schema;
+    const schemaSteps = Array.isArray(schema) ? schema : list(schema?.steps);
+    const schemaModels = list(schemaSteps.find((s) => s && step.ref && s.ref === step.ref)?.models).filter((m) => m && m.enabled !== false);
+    if (schemaModels.length && schemaModels.length === own.length) return schemaModels.map((m) => asEntry(m, true));
+    return own.map((m) => asEntry(m, false));
+  }
+
+  // The owner (User) step has no attempts: what happened is in the record of the run itself (the accepted answer is kept in
+  // the snapshot), in the waits of the step and in the events of the owner window.
+  function ownerParticipant({ customRun, stepRef, visit, visitWaits, visitEvents, ownerEvents, executionActive }) {
+    const snapshot = customRun.snapshot || {};
+    const isThis = (item) => item && item.stepRef === stepRef && (item.visit || 1) === visit && item.owner;
+    const endEvt = visitEvents.find((e) => (e.kind || e.name) === 'custom_step_end');
+    const ownerWaits = visitWaits.filter((w) => w.kind === 'owner');
+    const lastWait = ownerWaits[ownerWaits.length - 1] || null;
+    const rejection = ownerEvents[ownerEvents.length - 1];
+    let outcome;
+    let reason = null;
+    if (list(snapshot.results).some(isThis) || isThis(snapshot.current) || endEvt?.accepted === 1) {
+      outcome = 'accepted';
+    } else if (executionActive && ownerWaits.some((w) => w.endedAt == null)) {
+      outcome = 'in_flight';
+    } else if (rejection && rejection.accepted === false) {
+      outcome = 'rejected';
+      reason = rejection.reason || null;
+    } else if (lastWait) {
+      outcome = 'no_answer';
+      reason = lastWait.endedAt == null ? 'unclosed_wait' : (lastWait.outcome || null);
+    } else {
+      outcome = 'no_attempt';
+    }
+    return { participant: 'owner', model: null, outcome, reason, status: null, attempts: null, transportRequestId: null };
+  }
+
+  // One entry per participant of the visit: the expected ones in schema order, then any other that has attempts. The outcome
+  // follows the latest attempt (an accepted answer stays accepted). Nothing is inferred: no record of a fact means no_attempt.
+  function participantsOf({ expected, visitAttempts, executionActive }) {
+    const groups = new Map();
+    visitAttempts.forEach((a) => {
+      const id = a.participant || a.model;
+      if (!groups.has(id)) groups.set(id, []);
+      groups.get(id).push(a);
+    });
+    const claimed = new Set();
+    const slots = [];
+    expected.forEach((e) => {
+      let participant = e.participant;
+      // A step known only by model names: its attempts are found by the model when no attempt carries the name as its id.
+      if (!e.idKnown && !groups.has(participant)) {
+        const alt = [...groups.keys()].find((id) => !claimed.has(id) && !expected.some((x) => x.participant === id) && groups.get(id)[0].model === e.model);
+        if (alt !== undefined) participant = alt;
+      }
+      if (claimed.has(participant)) return;
+      claimed.add(participant);
+      slots.push({ participant, model: e.model });
+    });
+    groups.forEach((items, id) => { if (!claimed.has(id)) slots.push({ participant: id, model: items[0].model ?? null }); });
+
+    return slots.map(({ participant, model }) => {
+      // Latest first: by attempt number, then by the order of the record.
+      const ordered = (groups.get(participant) || []).map((a, i) => ({ a, i }))
+        .sort((x, y) => (Number(x.a.attempt) || 0) - (Number(y.a.attempt) || 0) || x.i - y.i).map((x) => x.a);
+      if (!ordered.length) return { participant, model: model ?? null, outcome: 'no_attempt', reason: null, status: null, attempts: 0, transportRequestId: null };
+      const accepted = ordered.filter((a) => a.accepted === true);
+      const decisive = accepted.length ? accepted[accepted.length - 1] : ordered[ordered.length - 1];
+      let outcome;
+      if (accepted.length) outcome = 'accepted';
+      else if (decisive.state === 'done') outcome = 'rejected';
+      else if (decisive.state === 'not_sent') outcome = 'not_sent';
+      else if (decisive.state === 'sent' && executionActive) outcome = 'in_flight';
+      else outcome = 'no_answer'; // unknown, and a sent attempt of a run that is no longer executing
+      return { participant, model: decisive.model ?? model ?? null, outcome, reason: decisive.reason || null, status: decisive.status || null,
+        attempts: ordered.length, transportRequestId: decisive.transportRequestId || null };
+    });
+  }
+
+  function buildRoundsSummary({ customRun, events = [], journal = [], executionActive = false }) {
     if (!customRun) return [];
     const steps = list(customRun.steps);
     const attempts = list(customRun.attempts);
     const waits = list(customRun.waits);
+    const hasWaitRecords = Array.isArray(customRun.waits);
     const allEvents = [...list(events), ...list(journal)];
     const toMs = (v) => typeof v === 'number' ? v : (v ? Date.parse(v) : null);
 
@@ -248,13 +368,11 @@
           return k === 'custom_step_interrupted' || ((k === 'round' || k === 'owner') && ['stopped', 'failed', 'cancelled'].includes(e.outcome));
         });
 
-        const startedAt = startEvt ? (typeof startEvt.startedAt === 'number' ? startEvt.startedAt : toMs(startEvt.at)) : (visitAttempts[0]?.sentAt ?? null);
+        // The start is the engine's own boundary event; the time an attempt was prepared is not the start of the step.
+        const startedAt = startEvt ? (typeof startEvt.startedAt === 'number' ? startEvt.startedAt : toMs(startEvt.at)) : null;
         const endedAt = endEvt ? (typeof endEvt.endedAt === 'number' ? endEvt.endedAt : toMs(endEvt.at)) : (interruptedEvt ? (typeof interruptedEvt.at === 'number' ? interruptedEvt.at : toMs(interruptedEvt.at)) : null);
         const outcome = endEvt ? (endEvt.outcome || 'completed') : (interruptedEvt ? (interruptedEvt.outcome || 'interrupted') : null);
         const durationMs = startedAt != null && endedAt != null && endedAt >= startedAt ? (endedAt - startedAt) : null;
-
-        const acceptedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted === true).map((a) => a.participant || a.model)));
-        const failedParticipants = Array.from(new Set(visitAttempts.filter((a) => a.accepted === false && a.state === 'done').map((a) => a.participant || a.model))).filter((p) => !acceptedParticipants.includes(p));
 
         const isConfirmedSent = (a) => {
           if (a.state === 'not_sent' || a.reason === 'cancelled_before_dispatch') return false;
@@ -272,21 +390,31 @@
           userWaitDurationReason = 'unclosed_wait';
         } else if (visitWaits.length > 0) {
           userWaitDurationMs = computeNonOverlappingWaitDuration(visitWaits);
+        } else if (!hasWaitRecords) {
+          // An old record has no waits at all: the time spent on the User is not known, it is not zero.
+          userWaitDurationMs = null;
+          userWaitDurationReason = 'no_wait_records';
         } else {
           userWaitDurationMs = 0;
         }
+
+        const isOwner = step.kind === 'owner';
+        const expected = isOwner ? [{ participant: 'owner', model: null, idKnown: true }] : expectedModelsOf(customRun, step);
+        const ownerEvents = isOwner
+          ? allEvents.filter((e) => (e.step === index || e.ref === stepRef) && (e.kind || e.name) === 'custom_owner' && (e.visit || 1) === visit)
+          : [];
+        const participants = isOwner
+          ? [ownerParticipant({ customRun, stepRef, visit, visitWaits, visitEvents, ownerEvents, executionActive })]
+          : participantsOf({ expected, visitAttempts, executionActive });
 
         rounds.push({
           stepRef,
           index,
           kind: step.kind || 'round',
-          label: step.kind === 'owner' ? `Шаг User (${stepRef})` : `Раунд ${index + 1}`,
+          label: isOwner ? `Шаг User (${stepRef})` : `Раунд ${index + 1}`,
           visit,
-          expectedParticipants: step.models ? step.models.map((m) => (typeof m === 'string' ? m : (m.id || m.name))) : (step.kind === 'owner' ? ['owner'] : []),
-          participantResults: {
-            accepted: acceptedParticipants,
-            failed: failedParticipants
-          },
+          expectedParticipants: expected.map((e) => e.participant),
+          participants,
           attemptCount: visitAttempts.length,
           sentCount,
           startedAt,

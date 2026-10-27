@@ -24,8 +24,8 @@ const createMockRun = (overrides = {}) => ({
   ...overrides
 });
 
-describe('Package F: Unassigned Observations and basic-telemetry/2 Export (C03 / ТЗ 5.F)', () => {
-  test('format is basic-telemetry/2', () => {
+describe('Package F: Unassigned Observations and basic-telemetry/3 Export (C03 / ТЗ 5.F)', () => {
+  test('format is basic-telemetry/3', () => {
     const customRun = createMockRun();
     const report = BasicTelemetry.buildReport({
       customRun,
@@ -33,7 +33,7 @@ describe('Package F: Unassigned Observations and basic-telemetry/2 Export (C03 /
       events: []
     });
 
-    expect(report.format).toBe('basic-telemetry/2');
+    expect(report.format).toBe('basic-telemetry/3');
     expect(report.runId).toBe('run-f1');
   });
 
@@ -228,7 +228,7 @@ describe('Package F: Unassigned Observations and basic-telemetry/2 Export (C03 /
       expect(report.delivery.selection.totalScanned).toBe(5);
     });
 
-    test('rounds summary: participant rejected in attempt 1 and accepted in attempt 2 is NOT in failed', () => {
+    test('rounds summary: participant rejected in attempt 1 and accepted in attempt 2 is accepted, once', () => {
       const customRun = {
         runId: 'run-retry-fix',
         steps: [{ ref: 'r1', kind: 'round', models: [{ id: 'C1', name: 'Claude' }] }],
@@ -247,8 +247,9 @@ describe('Package F: Unassigned Observations and basic-telemetry/2 Export (C03 /
 
       const round = report.rounds[0];
       expect(round).toBeDefined();
-      expect(round.participantResults.accepted).toEqual(['C1']);
-      expect(round.participantResults.failed).toEqual([]); // Must NOT be in failed!
+      expect(round.participants).toEqual([
+        { participant: 'C1', model: 'Claude', outcome: 'accepted', reason: null, status: null, attempts: 2, transportRequestId: 'req-ok' }
+      ]);
     });
 
     test('rounds summary: expectedParticipants preserves distinct participant IDs for multiple instances of same provider', () => {

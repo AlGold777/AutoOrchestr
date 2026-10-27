@@ -219,7 +219,8 @@
     const record = { ...stored, version: stored.version || 1, texts: { ...(stored.texts || {}) }, attempts: (stored.attempts || []).map((item) => ({ ...item })),
       artifacts: (stored.artifacts || []).map((item) => ({ ...item })),
       cardHistory: copyOf(stored.cardHistory),
-      waits: (stored.waits || []).map((w) => ({ ...w })) };
+      // A record written before the waits were kept has none: null says "not recorded", [] says "no waits".
+      waits: Array.isArray(stored.waits) ? stored.waits.map((w) => ({ ...w })) : null };
     // A field of an older record that is no longer part of the record (documents) is not carried over.
     delete record.documents;
     record.put = (value) => {
@@ -367,7 +368,7 @@
       artifacts: (record.artifacts || []).map((entry) => ({ ...entry, pointer: entry.content?.pointer ?? '', text: textOf(record, entry.content?.answerRef) })),
       snapshot,
       cardHistory: copyOf(record.cardHistory),
-      waits: (record.waits || []).map((w) => ({ ...w })),
+      waits: Array.isArray(record.waits) ? record.waits.map((w) => ({ ...w })) : null,
       attempts: record.attempts.map((attempt) => {
         const parts = attempt.parts || {};
         return {

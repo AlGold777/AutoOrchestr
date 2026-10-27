@@ -266,6 +266,15 @@ describe('Package H: Step Boundaries and Rounds Summary (R01 / ТЗ 5.H)', () =>
 
     // Overlapping intervals 3000-5000 and 4000-6000 must merge into 3000ms, not 4000ms
     expect(round1.userWaitDurationMs).toBe(3000);
+
+    expect(round1.participants.map((p) => [p.participant, p.outcome, p.attempts, p.transportRequestId])).toEqual([
+      ['Claude', 'accepted', 1, 'req-claude-1'],
+      ['GPT', 'accepted', 1, 'req-gpt-1']
+    ]);
+    // The owner step has no attempts and no owner window in this record
+    expect(report.rounds[1].participants).toEqual([
+      { participant: 'owner', model: null, outcome: 'no_attempt', reason: null, status: null, attempts: null, transportRequestId: null }
+    ]);
   });
 
   test('ReportDigest.customFlowReport uses step boundaries with fallback to legacy_check', () => {
@@ -423,6 +432,7 @@ describe('Package H: Step Boundaries and Rounds Summary (R01 / ТЗ 5.H)', () =>
     expect(typeof r1.durationMs).toBe('number');
     expect(r1.waitIds.length).toBeGreaterThan(0); // ASK wait registered
     expect(typeof r1.userWaitDurationMs).toBe('number');
+    expect(r1.participants).toEqual([expect.objectContaining({ participant: 'C1', model: 'Claude', outcome: 'accepted', attempts: 1 })]);
 
     // Step 1: Owner step
     const o1 = report.rounds.find((r) => r.stepRef === 'o1');
@@ -435,6 +445,8 @@ describe('Package H: Step Boundaries and Rounds Summary (R01 / ТЗ 5.H)', () =>
     expect(typeof o1.durationMs).toBe('number');
     expect(o1.waitIds.length).toBeGreaterThan(0); // Owner wait registered
     expect(typeof o1.userWaitDurationMs).toBe('number');
+    expect(o1.expectedParticipants).toEqual(['owner']);
+    expect(o1.participants).toEqual([expect.objectContaining({ participant: 'owner', model: null, outcome: 'accepted' })]);
 
     // Step 2: Round 2
     const r2 = report.rounds.find((r) => r.stepRef === 'r2');
@@ -444,5 +456,6 @@ describe('Package H: Step Boundaries and Rounds Summary (R01 / ТЗ 5.H)', () =>
     expect(typeof r2.endedAt).toBe('number');
     expect(r2.outcome).toBe('completed');
     expect(typeof r2.durationMs).toBe('number');
+    expect(r2.participants).toEqual([expect.objectContaining({ participant: 'C2', model: 'Claude', outcome: 'accepted' })]);
   });
 });

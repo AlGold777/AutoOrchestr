@@ -26,7 +26,7 @@ describe('Basic telemetry export', () => {
     const result = report(customRun);
 
     expect(result.customRun).toBe(customRun);
-    expect(result).toMatchObject({ format: 'basic-telemetry/2', runId: 'run-1', extensionVersion: '2.81.874' });
+    expect(result).toMatchObject({ format: 'basic-telemetry/3', runId: 'run-1', extensionVersion: '2.81.874' });
     expect(result.customRun).toMatchObject({ lifecycle: 'RUNNING', finishedAt: null, stopReason: null });
     expect(result.customRun.attempts).toHaveLength(3);
     expect(result.customRun.attempts[1]).toMatchObject({ participant: 'B', model: 'Claude', accepted: true });
