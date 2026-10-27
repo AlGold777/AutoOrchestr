@@ -19,11 +19,14 @@
 - Как писать схему — `basic-schema-guide.md`; окна настроек — `basic-windows.md`; код, правила, диагностика, открытые вопросы и постоянно падающие тесты (не из-за вас) — `basic-developer.md`.
 - Документы Basic лежат в `docs/Pipeline scenarios/`. Изменяя поведение, обновляйте их в том же коммите (тесты `tests/basic-schema-guide.test.js` и `tests/basic-docs-refs.test.js` сверяют документы с кодом).
 
-# Команда агентов (Sonnet + Haiku)
+# Команда агентов (Claude и GPT)
+
+- Claude делегирует задачи своим субагентам Haiku 5.5 (`model: haiku`).
+- GPT делегирует задачи субагентам GPT-6 Luna (`model: gpt-6-luna`, `reasoning_effort: high`).
 
 - Review и исправление находок силами команды — [docs/agent-team-review.md](docs/agent-team-review.md) и [docs/agent-team-fix.md](docs/agent-team-fix.md).
 
 # Работа с git
 
 - После всех изменений всегда делать commit.
-- Задание на commit поручать субагенту Haiku 5.5 (`model: haiku`).
+- Задание на commit поручать субагенту своей платформы по правилу выше: Claude — Haiku, GPT — GPT-6 Luna.
