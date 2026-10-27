@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-27 — Вкладка Disput: удалён трейс, экспорт Basic с исходами участников, версия 2.81.905
+
+- Удалён трейс Disput: карточки Run Health Summary, Problems & Recovery, Raw Trace Events и кнопки JSON, MD, Extract. Трейс запускался только событием начала прогона Debate, которое с 2.81.781 никто не отправлял, поэтому для Basic окно было пустым, а JSON/MD/Extract повторяли запись Basic и журнал доставки без привязки к прогону. Удалены `disput/debate-trace-schema.js`, `disput/debate-trace-store.js`, `disput/debate-trace-projections.js`, `results/debate-telemetry-view.js`, переводчик меток и обработчики экспорта в `results.js`, `buildReport`/`buildMarkdown` в `shared/message-delivery-view.js`; `shared/report-digest.js` больше не загружается страницей (остаётся для CLI `scripts/summarize-report.js`).
+- На вкладке Disput остались карточки доставки, `Only problems` и очистка журнала доставки (`Clear delivery journal`); в `result_new.html` — только кнопка Basic.
+- Экспорт Basic — формат `basic-telemetry/3` (`shared/basic-telemetry.js`): в `rounds[]` вместо `participantResults` список `participants` с исходом каждого ожидаемого участника (`accepted`, `rejected`, `no_answer`, `not_sent`, `in_flight`, `no_attempt`), причиной, статусом, числом попыток и `transportRequestId`; шаг User — запись `owner`. Добавлен `delivery.diagnosis` — вердикт доставки по журналу прогона без текстов.
+- Неизвестное не подменяется: без события начала шага `startedAt` и `durationMs` равны `null` (время подготовки попытки не подставляется); у записей без ожиданий User (`waits: null`, записи до 2.81.890) `userWaitDurationMs: null` с причиной `no_wait_records`. `CustomRunRecord.exportRun`/`revive` больше не заменяют отсутствующие `waits` пустым списком.
+- Документация: `docs/Telemetry/telemetry.md` (вкладка Disput, состав JSON Basic), запрос «Прогон Basic» в `docs/Telemetry/queries.md`, ссылки в `basic-developer.md`, `basic-start-here.md`, `basic-windows.md`, `docs/Transport/message-delivery.md`, `docs/project-overview.md`, пометка в `report-analysis-prompt.md`.
+
 ### 2026-10-27 — Basic: сохранность данных пользователя, версия 2.81.904
 
 - Переименование pipeline больше не теряет шаги User.

@@ -472,11 +472,12 @@ Telemetry exposes exactly two filters: Platform and Tasks. It has no
 `Only problems` mode. A selected Task exports an incident-scoped,
 proof-preserving projection from the single canonical ledger; All tasks exports
 the shared ledger plus all diagnostic projections without parallel recording.
-Disput keeps at most two traces in page memory and does not persist or restore run history. Late events of a retained inactive run do not activate it. Legacy trace snapshots are deleted on initialization; reload releases all traces. Extract downloads the original report, structured JSON tables/counters and separate Markdown using the same snapshot.
-The Disput tab is a live overview of the active trace: Run Health Summary, Problems &
-Recovery, the delivery cards and the raw trace/journal. Its only display toggle
-is `Only problems`; it never filters the JSON/MD export, which is always
-complete. Drill-down by request, stage or model is done on the export with
+The Disput tab holds the delivery cards (health, batches, problems, message
+timeline, raw journal) with the `Only problems` display toggle and the
+clear-journal button, and one export: **Basic**, the JSON of one Basic run
+(`basic-telemetry/3`, see `docs/Telemetry/telemetry.md`). The Disput trace
+(run health, problems & recovery, raw trace, JSON/MD/Extract) was removed in
+2.81.905; older `Disput Flow` files can still be read with
 `scripts/summarize-report.js`.
 
 ## Basic Pipeline

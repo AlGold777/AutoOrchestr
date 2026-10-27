@@ -45,7 +45,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `disput/debate-draft-plan.js` | `createCanvasPlan`, `normalize` | План холста: только раунды; `normalize` читает и прежние планы со стадиями синтеза |
 | `disput/debate-response-acceptance.js` | `evaluate` | Техническая приёмка ответа |
 | `shared/message-delivery.js` | `batchEvent` | Журнал доставки |
-| `shared/report-digest.js` | `customStageId`, `latestCustomRunId`, `customFlowReport` | Extract (Transport) для прогона Basic |
+| `shared/basic-telemetry.js` | `buildReport` | JSON кнопки Basic: запись прогона, сводка шагов `rounds`, журнал и вердикт доставки, события моделей этого прогона |
 | `styles/pipeline.css` | — | Рамка документа на холсте (`.pipeline-doc-frame`) |
 | `manifest.json` | — | Разрешения расширения; для документов дополнительных разрешений нет (документы в записи прогона) |
 | `pipeline/pipeline-runtime.js` | `MODELS` | Список моделей холста |
@@ -86,7 +86,8 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/custom-engine-document.test.js` | Документ для User: чтение по меткам раунда с одной моделью, опросник, ссылка на документ, `invalid_form`, `invalid_document` до окна |
 | `tests/custom-engine-document-versions.test.js` | Документ с версиями: метки и `missing_artifact`, утверждение и новая версия, вход `latest`, продолжение, документ в `json`, отсутствие текста в записи прогона (`invalid_document`) |
 | `tests/custom-run-record.test.js` | Запись о прогоне, хранение через адаптер `chrome.storage` (отказы), экспорт со всеми ссылками, состояние `not_sent` |
-| `tests/custom-extract.test.js` | Разбор прогона в Extract (Transport) |
+| `tests/custom-extract.test.js` | Разбор прогона Basic в `shared/report-digest.js` (CLI `scripts/summarize-report.js`); на вкладке Disput только экспорт Basic |
+| `tests/basic-telemetry-rounds.test.js` | Сводка `rounds`: исход каждого участника, шаг User, ожидания, `delivery.diagnosis` |
 | `tests/custom-engine-checkpoint.test.js` | Checkpoint: точки записи состояния, живое состояние, `checkpoint_failed`, автономный запуск без callback |
 | `tests/custom-run-resume-wiring.test.js` | Привязка страницы к записи: callbacks текстов, checkpoint, очередь записи, «Продолжить прогон» (контракт в `results.js`, без браузера) |
 | `tests/basic-participant-transport.test.js` | Участники в транспорте: волны, ответы по participantId, `chat`, привязки в снимке, фон не подменяет вкладку другого участника (контракт в коде, без браузера) |
@@ -319,9 +320,9 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | Источник | Где взять | Что в нём |
 | --- | --- | --- |
 | Уведомления страницы | Всплывающие сообщения внизу страницы | Причина остановки и ошибки схемы: «Basic: …», «Схема не установлена. …», «Pipeline: error (…)». |
-| Журнал доставки (`delivery`) | Поле `delivery` в JSON Disput Flow | События прогона Basic: `custom_start`, `custom_answer`, `custom_step`, `custom_decision`, `custom_step_end`, `custom_end` (движок) и `owner_answer` (ответ User на вопрос `[[ASK]]`). |
-| Запись о прогоне (`customRun`) | Поле `customRun` в JSON Disput Flow: кнопка на вкладке Disput панели диагностики, значок загрузки с подсказкой «Export Disput telemetry as JSON» (`#disput-export-json`) | Полные тексты прогона: задача, запросы по попыткам, входы, ответы, исходы, `state` каждой попытки (`sent`, `done`, `not_sent`, `unknown`). Экспорт самодостаточен: все ссылки на тексты (поля `*Ref` и `file.ref`; `stepRef` — адрес шага) разрешаются через поле `texts`; `snapshot` и `attempts` сохраняют ссылки, попытки несут `ref`, `participant`, `visit`, `attempt`, `phase`. `resumable: true` только у записи версии 2 с полным состоянием (схема, позиция, все тексты); у записи версии 1 `resumable: false`. Импорта записи прогона в интерфейсе нет. |
-| Extract (Transport) | Кнопка «Extract» на той же вкладке (`#disput-extract`) | Сохраняет JSON Disput Flow и разбор в Markdown. Для прогона Basic разбирает последний прогон: шаги как этапы. Если прогона Basic в журнале нет, выводит предупреждение. |
+| Журнал доставки (`delivery`) | Поле `delivery.journal` в JSON кнопки Basic | События прогона Basic: `custom_start`, `custom_answer`, `custom_step`, `custom_decision`, `custom_step_end`, `custom_end` (движок) и `owner_answer` (ответ User на вопрос `[[ASK]]`). |
+| Запись о прогоне (`customRun`) | Поле `customRun` в JSON кнопки **Basic** на вкладке Disput панели диагностики (`#disput-basic`) | Полные тексты прогона: задача, запросы по попыткам, входы, ответы, исходы, `state` каждой попытки (`sent`, `done`, `not_sent`, `unknown`). Экспорт самодостаточен: все ссылки на тексты (поля `*Ref` и `file.ref`; `stepRef` — адрес шага) разрешаются через поле `texts`; `snapshot` и `attempts` сохраняют ссылки, попытки несут `ref`, `participant`, `visit`, `attempt`, `phase`. `resumable: true` только у записи версии 2 с полным состоянием (схема, позиция, все тексты); у записи версии 1 `resumable: false`. Импорта записи прогона в интерфейсе нет. |
+| Сводка шагов (`rounds`) и вердикт доставки (`delivery.diagnosis`) | Тот же JSON кнопки Basic | По каждому шагу и визиту исход каждого участника: `accepted`, `rejected`, `no_answer`, `not_sent`, `in_flight`, `no_attempt` с причиной; по каждой отправке — результат доставки. Состав — [телеметрия](../Telemetry/telemetry.md), раздел «Basic: JSON прогона». |
 | Холст | Шаги на холсте pipeline | Статусы шагов: серый `pending`, синий или оранжевый `running`, `completed`. Итоговое состояние прогона: `COMPLETED` (все шаги пройдены), `CANCELLED` (остановлено или ограничено бюджетом), `FAILED` (ошибка). |
 | Export schema | Кнопка «Export schema» в шапке pipeline | Схема того, что сейчас на холсте, одним JSON-файлом. |
 
@@ -343,14 +344,13 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 | Import: «Файл не похож на схему Basic.» | Уведомление | В файле нет полей схемы (`schemaVersion` и `steps`) и нет набора `pipelines`. |
 | Нужно перенести схему на другой компьютер или отправить другому | Кнопки Export schema и Import schema | Export schema выгружает схему файлом `<имя pipeline>.json`, Import schema добавляет её как новый pipeline; правила — в [basic-developer.md](basic-developer.md), раздел «Export и Import схемы». |
 | Настройки пропали после перезагрузки | Была ли нажата Save в шапке pipeline или сохранялась карточка | Настройки записываются в запись pipeline при Save и при изменении карточек уже сохранённого под именем pipeline. Несохранённые изменения шаблона живут до перезагрузки страницы. Резерв — Export schema. |
-| Stop не закрыл окно паузы | Окно паузы | Stop закрывает открытое окно паузы: это делает блок `finally` в `runCustomFromPage`. Если окно осталось открытым после Stop, это ошибка: приложить Disput Flow JSON. |
+| Stop не закрыл окно паузы | Окно паузы | Stop закрывает открытое окно паузы: это делает блок `finally` в `runCustomFromPage`. Если окно осталось открытым после Stop, это ошибка: приложить JSON кнопки Basic. |
 
 ### Как собрать материалы для передачи другой модели
 
 1. Export schema: схема того, что на холсте.
-2. Disput Flow JSON сразу после прогона: в нём `customRun` и `delivery`.
-3. Extract (Transport) для сжатого разбора прогона.
-4. Текст задачи, которую вводили в поле модератора, и что ожидалось.
+2. JSON кнопки Basic сразу после прогона: в нём `customRun`, `rounds` и `delivery`. Запрос для модели — [queries.md](../Telemetry/queries.md), раздел «Прогон Basic».
+3. Текст задачи, которую вводили в поле модератора, и что ожидалось.
 
 Скриншоты вместо JSON не нужны: в JSON есть всё, что нужно для разбора.
 
