@@ -90,7 +90,7 @@
     return model;
   }
 
-  const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы предыдущего шага', all: 'Всё принятое за все предыдущие шаги' };
+  const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы последнего этапа с принятым результатом', all: 'Всё принятое за все предыдущие шаги' };
   const STEPS_LABEL = 'Выбранные этапы';
   const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -98,10 +98,30 @@
   // (a participant, an artifact written in JSON) stay in place. Returns the new list for the step ref.
   function stepsAfterToggle(current, ref, checked) {
     const list = Array.isArray(current) ? current.slice() : [];
-    const at = list.indexOf(ref);
+    const at = list.findIndex((item) => inputStepRef(item) === ref);
     if (checked && at < 0) list.push(ref);
     if (!checked && at >= 0) list.splice(at, 1);
     return list;
+  }
+
+  function inputStepRef(item) {
+    if (typeof item === 'string') return item;
+    if (isPlain(item) && typeof item.step === 'string' && !item.participant && !item.artifact && !item.revisionOf) return item.step;
+    return '';
+  }
+
+  // Promote a selected string to a required whole-step source, or update an existing whole-step object in place.
+  function stepRequiredAfterToggle(current, ref, required) {
+    const next = Array.isArray(current) ? current.slice() : [];
+    const at = next.findIndex((item) => inputStepRef(item) === ref);
+    if (at < 0) return next;
+    const item = next[at];
+    if (typeof item === 'string') {
+      if (required) next[at] = { step: ref, required: true };
+    } else {
+      next[at] = { ...item, required: Boolean(required) };
+    }
+    return next;
   }
 
   // The owner's edit of the output: name, form, sections (non-empty lines) and strictLength replace their values;
@@ -140,7 +160,6 @@
     const picked = Array.isArray(input) ? input : [];
     const defaultInput = 'previous';
     const stepsMode = Array.isArray(input) || input === 'steps' || drafts.input === 'steps';
-    const refs = picked.filter((item) => typeof item === 'string');
     const options = [
       { value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` },
       ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })),
@@ -150,10 +169,12 @@
       value: stepsMode ? 'steps' : input,
       options,
       steps: earlier.map((item) => {
-        const at = refs.indexOf(item.ref);
-        return { ref: item.ref, label: item.label, disabled: !item.enabled, checked: at >= 0, number: at >= 0 ? at + 1 : 0 };
+        const at = picked.findIndex((source) => inputStepRef(source) === item.ref);
+        const source = at >= 0 ? picked[at] : null;
+        return { ref: item.ref, label: item.label, disabled: !item.enabled, checked: at >= 0,
+          required: isPlain(source) && source.required === true, number: at >= 0 ? at + 1 : 0 };
       }),
-      objectRefs: picked.length - refs.length
+      objectRefs: picked.filter((source) => !inputStepRef(source)).length
     };
   }
 
@@ -188,21 +209,35 @@
     container.append(wrap);
   }
 
-  // The list of steps of the input «выбранные этапы». emit('steps', { ref, checked }) — the page keeps the order of choice.
+  // The list of steps of the input «выбранные этапы». The page keeps the source order.
   // The number is the place of the step in the owner's list; a switched-off step is marked, not hidden.
   function renderSteps(container, input, emit, disabled = false) {
     const doc = container.ownerDocument;
     const box = el(doc, 'fieldset', 'stage-card-steps');
-    box.append(el(doc, 'legend', '', 'Этапы для входа (номер — порядок выбора)'));
+    box.append(el(doc, 'legend', '', 'Этапы для входа (номер — порядок выбора)'),
+      el(doc, 'p', 'stage-card-muted', 'Вход «Ответы последнего этапа с принятым результатом» пропускает этапы без ответа. Здесь можно выбрать этапы явно и сделать каждый обязательным: без результата прогон остановится.'));
     if (!input.steps.length) box.append(el(doc, 'p', 'stage-card-muted', 'Раньше этих шагов нет.'));
     input.steps.forEach((item) => {
-      const row = el(doc, 'label', 'stage-card-step-option');
+      const row = el(doc, 'div', 'stage-card-step-option');
       const check = el(doc, 'input');
       check.type = 'checkbox';
       check.checked = item.checked;
       check.disabled = Boolean(disabled);
       check.addEventListener('change', () => emit('steps', { ref: item.ref, checked: check.checked }));
-      row.append(check, doc.createTextNode(` ${item.label}${item.disabled ? ' (выключен)' : ''}${item.number ? ` · ${item.number}` : ''}`));
+      const selectLabel = el(doc, 'label');
+      selectLabel.append(check, doc.createTextNode(` ${item.label}${item.disabled ? ' (выключен)' : ''}${item.number ? ` · ${item.number}` : ''}`));
+      row.append(selectLabel);
+      if (item.checked) {
+        const required = el(doc, 'input', 'stage-card-step-required');
+        required.type = 'checkbox';
+        required.checked = item.required;
+        required.disabled = Boolean(disabled);
+        required.setAttribute('aria-label', `Обязательный этап: ${item.label}`);
+        required.addEventListener('change', () => emit('stepRequired', { ref: item.ref, required: required.checked }));
+        const requiredLabel = el(doc, 'label', 'stage-card-step-required-label');
+        requiredLabel.append(required, doc.createTextNode(' Обязательный'));
+        row.append(requiredLabel);
+      }
       box.append(row);
     });
     if (input.objectRefs) box.append(el(doc, 'p', 'stage-card-muted', `Ссылки на участников и артефакты (${input.objectRefs}) заданы в JSON и сохраняются.`));
@@ -552,7 +587,7 @@
     return '';
   }
 
-  const api = Object.freeze({ buildModel, render, stepsAfterToggle, outputAfterEdit, STATUS, feed,
+  const api = Object.freeze({ buildModel, render, stepsAfterToggle, stepRequiredAfterToggle, outputAfterEdit, STATUS, feed,
     controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

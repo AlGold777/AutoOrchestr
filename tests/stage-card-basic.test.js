@@ -11,7 +11,7 @@ describe('Round card of Basic: model', () => {
     expect(first.input).toBeNull();
     expect(first.task).toEqual({ value: '', placeholder: '', sent: false });
     const later = build().settings;
-    expect(later.input.options[0].label).toBe('По умолчанию (ответы предыдущего шага)');
+    expect(later.input.options[0].label).toBe('По умолчанию (ответы последнего этапа с принятым результатом)');
     expect(later.task).toEqual({ value: '', placeholder: 'INHERITED', sent: true });
     expect(later).not.toHaveProperty('order');
     expect(later).not.toHaveProperty('require');
@@ -43,8 +43,8 @@ describe('Round card of Basic: render', () => {
     task.dispatchEvent(new Event('change'));
     expect(seen).toEqual([['input', 'none'], ['task', 'TEXT']]);
     const locked = document.createElement('div');
-    StageCard.render(locked, build({ disabled: true, settings: { input: 'all', task: '' } }), {});
-    expect([...locked.querySelectorAll('select, textarea')].every((node) => node.disabled)).toBe(true);
+    StageCard.render(locked, build({ disabled: true, earlier: [{ ref: 'r1', label: 'Раунд 1', enabled: true }], settings: { input: [{ step: 'r1', required: true }], task: '' } }), {});
+    expect([...locked.querySelectorAll('select, textarea, input')].every((node) => node.disabled)).toBe(true);
   });
 
   test('text of the task and the options are written as text, not as markup', () => {
@@ -107,7 +107,7 @@ describe('Step controls of Basic: input «выбранные этапы»', () =
     const container = document.createElement('div');
     const seen = [];
     StageCard.render(container, roundWith({ input: ['r1', { step: 'r2', participant: 'GPT' }] }), { onSetting: (field, value) => seen.push([field, value]) });
-    const boxes = container.querySelectorAll('.stage-card-steps input[type="checkbox"]');
+    const boxes = container.querySelectorAll('.stage-card-step-option > label:first-child input[type="checkbox"]');
     expect(boxes.length).toBe(3);
     expect(boxes[1].checked).toBe(false);
     boxes[1].checked = true;
@@ -122,6 +122,34 @@ describe('Step controls of Basic: input «выбранные этапы»', () =
     expect(StageCard.stepsAfterToggle(['r1', object], 'r3', true)).toEqual(['r1', object, 'r3']);
     expect(StageCard.stepsAfterToggle(['r1', object, 'r3'], 'r1', false)).toEqual([object, 'r3']);
     expect(StageCard.stepsAfterToggle(['r1'], 'r1', true)).toEqual(['r1']);
+  });
+
+  test('whole-step required setting preserves order and all participant or artifact addresses', () => {
+    const participant = { step: 'r2', participant: 'GPT', required: true };
+    const artifact = { artifact: { step: 'r1', participant: 'Claude', id: 'map' }, version: 'latest' };
+    expect(StageCard.stepRequiredAfterToggle(['r1', participant, artifact], 'r1', true)).toEqual([
+      { step: 'r1', required: true }, participant, artifact
+    ]);
+    expect(StageCard.stepRequiredAfterToggle([{ step: 'r3', required: true }, participant, artifact], 'r3', false)).toEqual([
+      { step: 'r3', required: false }, participant, artifact
+    ]);
+    expect(StageCard.stepsAfterToggle([{ step: 'r1', required: true }, participant, artifact], 'r1', false)).toEqual([participant, artifact]);
+  });
+
+  test('a selected step has its own required checkbox; the caption explains previous is optional', () => {
+    const required = roundWith({ input: [{ step: 'r1', required: true }, { artifact: { step: 'r2', participant: 'GPT', id: 'map' } }] });
+    expect(required.settings.input.steps[0]).toMatchObject({ checked: true, required: true });
+    expect(required.settings.input.objectRefs).toBe(1);
+    const container = document.createElement('div');
+    const seen = [];
+    StageCard.render(container, required, { onSetting: (field, value) => seen.push([field, value]) });
+    expect(container.querySelector('.stage-card-steps').textContent).toContain('Этапы для входа (номер — порядок выбора)');
+    expect(container.querySelector('.stage-card-steps').textContent).toContain('пропускает этапы без ответа');
+    const requiredBox = container.querySelector('.stage-card-step-required');
+    expect(requiredBox.checked).toBe(true);
+    requiredBox.checked = false;
+    requiredBox.dispatchEvent(new Event('change'));
+    expect(seen).toEqual([['stepRequired', { ref: 'r1', required: false }]]);
   });
 
   test('the card has no window of a synthesis: a synthesis is a round of one model with a role', () => {

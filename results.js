@@ -4336,6 +4336,10 @@ document.addEventListener('click', (event) => {
                 key = 'input';
                 stored = window.StageCard.stepsAfterToggle(Array.isArray(current.input) ? current.input : [], value.ref, value.checked);
             }
+            if (field === 'stepRequired') {
+                key = 'input';
+                stored = window.StageCard.stepRequiredAfterToggle(Array.isArray(current.input) ? current.input : [], value.ref, value.required);
+            }
             delete drafts[key];
             if (key === 'input' && (stored === 'steps' || (Array.isArray(stored) && !stored.length))) { drafts.input = 'steps'; stored = ''; }
             if (key === 'output') stored = window.StageCard.outputAfterEdit(current.output, value);
