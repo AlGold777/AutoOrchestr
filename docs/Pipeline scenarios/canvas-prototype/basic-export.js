@@ -28,7 +28,10 @@
       if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
       else if (st.block === 'owner') refs.set(st.id, `owner:${idPart(st.id, `s${i + 1}`)}`);
     });
-    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)).map((id) => refs.get(id)))];
+    // Every stand link means the later step depends on the earlier one. Preserve that
+    // dependency in Basic as an explicit required whole-step source.
+    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)))]
+      .map((id) => ({ step: refs.get(id), required: true }));
 
     const modelOf = (m) => {
       const roleId = roleIdOf(m.role);
@@ -113,19 +116,49 @@
     const ids = new Map(steps.map((st, i) => [st.ref, `s${i + 1}`]));
     const MODEL_KINDS = ['round', 'gate', 'synthesis'];
     const linkable = (st) => MODEL_KINDS.includes(st.kind) || st.kind === 'owner';
-    const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => steps.find((st) => st.ref === r)).filter((st) => st && linkable(st)).map((st) => ids.get(st.ref)))] : []);
+    const refList = (input, consumer) => {
+      if (!Array.isArray(input)) return [];
+      const mapped = input.map((source) => {
+        const ref = typeof source === 'string' ? source : (source?.step || source?.artifact?.step);
+        const sourceStep = steps.find((candidate) => candidate.ref === ref);
+        if (!sourceStep || !linkable(sourceStep)) return null;
+        const label = typeof source === 'string' ? source : (source?.artifact
+          ? `артефакт «${source.artifact.id || '?'}» участника «${source.artifact.participant || '?'}»`
+          : source?.participant ? `участник «${source.participant}»` : `шаг «${ref}»`);
+        if (!isObj(source) || source.required !== true) {
+          warnings.push(`Шаг ${consumer.ref}: необязательный вход (${label}) Basic перенесён как связь со стендом; необязательность не сохраняется.`);
+        }
+        if (isObj(source) && source.artifact) {
+          warnings.push(`Шаг ${consumer.ref}: адрес артефакта (${label}) сведён к связи со всем этапом ${ref}; артефакт и его версия не переносятся.`);
+        } else if (isObj(source) && source.participant) {
+          warnings.push(`Шаг ${consumer.ref}: адрес участника ${source.participant} этапа ${ref} сведён к связи со всем этапом.`);
+        }
+        return ids.get(sourceStep.ref);
+      });
+      return [...new Set(mapped.filter(Boolean))];
+    };
     // «previous» — шаг перед этим, «all» — все шаги перед этим; раунд без input берёт предыдущий шаг (в том числе шаг User), если перед ним есть шаг; первый шаг — без входа (умолчание Basic).
     const inputsOf = (st, i) => {
+      if (st.kind === 'route') return [];
       const spec = st.input === undefined && MODEL_KINDS.includes(st.kind) ? (steps.slice(0, i).some(linkable) ? 'previous' : 'none') : st.input;
       const before = steps.slice(0, i).filter(linkable).map((x) => ids.get(x.ref));
-      if (spec === 'previous') return before.slice(-1);
-      if (spec === 'all') return before;
-      return refList(spec);
+      if (spec === 'previous') {
+        if (before.length) warnings.push(`Шаг ${st.ref}: input «previous» импортирован как связь с ближайшим предыдущим этапом стенда; при прогоне Basic предыдущим может оказаться более ранний результат.`);
+        return before.slice(-1);
+      }
+      if (spec === 'all') {
+        if (before.length) warnings.push(`Шаг ${st.ref}: input «all» собирает имеющиеся ответы всех предыдущих этапов; на стенде связи выглядят обязательными, и повторный экспорт сделает их обязательными.`);
+        return before;
+      }
+      return refList(spec, st);
     };
     const out = [];
     steps.forEach((st, i) => {
       const id = ids.get(st.ref);
       const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
+      if (list(st.models).some((model) => isObj(model) && model.input !== undefined)) {
+        warnings.push(`Шаг ${st.ref}: индивидуальный models[].input не перенесён на стенд.`);
+      }
       const inputs = inputsOf(st, i);
       if (inputs.length) step.inputs = inputs;
       if (st.kind === 'round' || st.kind === 'gate') {

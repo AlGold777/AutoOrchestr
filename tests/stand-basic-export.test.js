@@ -35,8 +35,12 @@ describe('Stand ↔ Basic exchange', () => {
     expect(schema.steps.map((st) => st.block)).toEqual(['round', 'round', 'round']);
     expect(schema.steps[1].models).toEqual([{ name: 'GPT' }]);
     expect(schema.steps[1].task).toBe('Критерии проверки: полнота; сроки');
-    expect(warnings).toEqual(['Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.',
-      'Синтез Basic импортирован как раунд из одной модели с ролью.']);
+    expect(warnings).toEqual([
+      'Шаг gate:g1: input «previous» импортирован как связь с ближайшим предыдущим этапом стенда; при прогоне Basic предыдущим может оказаться более ранний результат.',
+      'Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.',
+      'Шаг final: input «previous» импортирован как связь с ближайшим предыдущим этапом стенда; при прогоне Basic предыдущим может оказаться более ранний результат.',
+      'Синтез Basic импортирован как раунд из одной модели с ролью.'
+    ]);
   });
 
   test('a synthesis of a Basic file imports as a one-model round with the role as text and the task kept', () => {
@@ -47,7 +51,10 @@ describe('Stand ↔ Basic exchange', () => {
     const { schema, warnings } = Exchange.fromBasic(basic);
     expect(schema.steps[1]).toMatchObject({ block: 'round', task: 'Сведи ответы', inputs: ['s1'], models: [{ name: 'Gemini', role: 'свести' }] });
     expect(schema.steps[1].model).toBeUndefined();
-    expect(warnings).toEqual(['Синтез Basic импортирован как раунд из одной модели с ролью.']);
+    expect(warnings).toEqual([
+      'Шаг final: необязательный вход (r1) Basic перенесён как связь со стендом; необязательность не сохраняется.',
+      'Синтез Basic импортирован как раунд из одной модели с ролью.'
+    ]);
   });
 
   test('a route of a Basic file is skipped with a remark and does not break the import', () => {
@@ -58,13 +65,27 @@ describe('Stand ↔ Basic exchange', () => {
     ] };
     const { schema, warnings } = Exchange.fromBasic(basic);
     expect(schema.steps.map((st) => st.block)).toEqual(['round', 'round']);
-    expect(warnings).toEqual(['Маршрут Basic не импортирован: в черновой схеме ветвления нет.']);
+    expect(warnings).toEqual([
+      'Маршрут Basic не импортирован: в черновой схеме ветвления нет.',
+      'Шаг r2: input «previous» импортирован как связь с ближайшим предыдущим этапом стенда; при прогоне Basic предыдущим может оказаться более ранний результат.'
+    ]);
   });
 
   test('source artifacts of the stand are not exported to Basic and the warning names them', () => {
     const { warnings } = Exchange.toBasic({ task: 'T', artifacts: [{ name: 'Бриф', content: 'текст' }], steps: [
       { id: 's1', block: 'round', title: 'R', why: 'w', models: [{ name: 'Claude' }], task: 'Сделай', inputs: ['in.Бриф'] }] });
     expect(warnings.some((w) => w.includes('Бриф'))).toBe(true);
+  });
+
+  test('stand step inputs export as required whole-step Basic sources', () => {
+    const { schema: basic, warnings } = Exchange.toBasic({ task: 'T', steps: [
+      { id: 's1', block: 'round', title: 'Первый', models: [{ name: 'Claude' }], task: 'Сделай первое' },
+      { id: 's2', block: 'round', title: 'Второй', models: [{ name: 'GPT' }], task: 'Продолжи', inputs: ['s1'] }
+    ] });
+
+    expect(basic.steps[1].input).toEqual([{ step: 'r1', required: true }]);
+    expect(warnings).toEqual([]);
+    expect(Schema.validate(basic)).toEqual([]);
   });
 
   test('description and run travel both ways', () => {
@@ -121,6 +142,26 @@ describe('Stand ↔ Basic exchange', () => {
     expect('inputs' in schema.steps[1]).toBe(false);
   });
 
+  test('импорт предупреждает о необязательных, адресных и previous-входах с потерей смысла', () => {
+    const { warnings } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
+      { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }], output: { artifacts: [{ id: 'draft', name: 'Черновик' }] } },
+      { ref: 'r2', kind: 'round', input: [
+        { step: 'r1', participant: 'Claude' },
+        { artifact: { step: 'r1', participant: 'Claude', id: 'draft' }, version: 'latest', required: true }
+      ], models: [{ name: 'GPT' }] },
+      { ref: 'r3', kind: 'round', input: 'previous', models: [{ name: 'Gemini' }] },
+      { ref: 'r4', kind: 'round', input: 'all', models: [{ name: 'Claude', input: 'none' }] }
+    ] });
+    expect(warnings).toEqual([
+      'Шаг r2: необязательный вход (участник «Claude») Basic перенесён как связь со стендом; необязательность не сохраняется.',
+      'Шаг r2: адрес участника Claude этапа r1 сведён к связи со всем этапом.',
+      'Шаг r2: адрес артефакта (артефакт «draft» участника «Claude») сведён к связи со всем этапом r1; артефакт и его версия не переносятся.',
+      'Шаг r3: input «previous» импортирован как связь с ближайшим предыдущим этапом стенда; при прогоне Basic предыдущим может оказаться более ранний результат.',
+      'Шаг r4: индивидуальный models[].input не перенесён на стенд.',
+      'Шаг r4: input «all» собирает имеющиеся ответы всех предыдущих этапов; на стенде связи выглядят обязательными, и повторный экспорт сделает их обязательными.'
+    ]);
+  });
+
   test('B-2: раунд после шага User без input берёт этот шаг', () => {
     const { schema } = Exchange.fromBasic({ schemaVersion: 1, origin: 'user', steps: [
       { ref: 'owner:u', kind: 'owner', task: 'Уточните' },
@@ -154,7 +195,7 @@ describe('Stand ↔ Basic exchange', () => {
       { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }] },
       { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }] }] };
     const back = Exchange.toBasic(Exchange.fromBasic(basic).schema).schema;
-    expect(back.steps[1].input).toEqual(['r1']);
+    expect(back.steps[1].input).toEqual([{ step: 'r1', required: true }]);
   });
 
   test('S-5: вход на пропущенный route не остаётся висячей ссылкой', () => {

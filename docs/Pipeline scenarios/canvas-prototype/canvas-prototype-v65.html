@@ -138,6 +138,7 @@ button i.ti {
     --pipeline-green-soft: #dcfce7;
     --pipeline-orange: #f59e0b;
     --pipeline-connector: #cbd5e1;
+    --pipeline-block-width: 139px;
     --pipeline-block-height: 59.52px;
     --pipeline-block-gap: 11px;
 }
@@ -1649,7 +1650,7 @@ body.is-resizing {
 }
 
 .model-block {
-    width: 139px;
+    width: var(--pipeline-block-width);
     height: var(--pipeline-block-height);
     padding: 8px 10px;
     background: #ffffff;
@@ -1717,10 +1718,6 @@ body.is-resizing {
     cursor: not-allowed;
 }
 
-.model-send-checkbox {
-    accent-color: var(--pipeline-orange);
-}
-
 .model-name {
     min-width: 0;
     flex: 1 1 auto;
@@ -1763,6 +1760,15 @@ body.is-resizing {
     width: 50px;
     height: 240px;
     overflow: visible;
+    transition: opacity 0.3s ease;
+}
+
+.pipeline-canvas.arrows-hidden .connector-svg {
+    opacity: 0;
+}
+
+#pipeline-arrows-toggle[aria-pressed="false"] {
+    opacity: 0.45;
 }
 
 .connector-line {
@@ -2471,7 +2477,8 @@ body.is-resizing {
 
 .pipeline-control-card {
     display: block;
-    width: 100%;
+    width: var(--pipeline-block-width);
+    box-sizing: border-box;
     padding: 8px 10px;
     border: 1px dashed currentColor;
     border-radius: 8px;
@@ -2494,6 +2501,8 @@ body.is-resizing {
 .pipeline-doc-frame { display: block; margin: 6px auto 0; padding: 4px 8px; border: 1px solid #888; border-radius: 6px; background: transparent; font-size: 12px; cursor: pointer; }
 .pipeline-doc-frame.is-pending { border-style: dashed; opacity: .6; cursor: default; }
 .pipeline-doc-frame.is-approved { border-color: #2e8b57; }
+
+.step-error-badge { margin-left: 6px; width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%; background: #dc2626; color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; cursor: pointer; }
 
 .top-control-bar {
     display: flex;
@@ -2593,8 +2602,8 @@ body.is-resizing {
 
 .sidebar-toggle-icon-branch-v3 {
     display: block;
-    width: 28.6px;
-    height: 30.42px;
+    width: 26.6px;
+    height: 28.29px;
     color: currentColor;
     flex: 0 0 auto;
 }
@@ -2693,9 +2702,12 @@ body.is-resizing {
     flex: 0 0 auto;
 }
 
+/* Смещения измерены в Chrome: центр иконки Pipeline совпадает с центром иконок моделей, полоска Telemetry — с подписями моделей. */
 .right-sidebar-toggle-btn {
     margin-bottom: 0;
     color: rgb(133 137 142);
+    position: relative;
+    top: -9.5px;
 }
 
 .telemetry-toggle-btn {
@@ -2712,6 +2724,8 @@ body.is-resizing {
     width: 100%;
     height: 4px;
     margin-top: 2px;
+    position: relative;
+    top: -2.5px;
     border-radius: 2px;
     background: #30609445;
 }
@@ -2873,6 +2887,19 @@ body.left-sidebar-open .mode-pill .pill-dot {
 .floating-tooltip.is-visible {
     opacity: 1;
     transform: translateY(0);
+}
+
+.floating-tooltip-name {
+    display: block;
+    font-weight: 600;
+}
+
+.floating-tooltip-desc {
+    display: block;
+    margin-top: 4px;
+    font-weight: 400;
+    max-width: 320px;
+    white-space: pre-wrap;
 }
 
 .visually-hidden {
@@ -4907,6 +4934,7 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     border-radius: 13px;
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
+#disput-tabpanel #disput-basic,
 #disput-tabpanel #disput-extract {
     margin: 0;
     min-height: 34px;
@@ -4922,11 +4950,13 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     box-shadow: 0 2px 4px rgba(37, 99, 235, 0.18);
     transition: background 150ms ease, box-shadow 150ms ease;
 }
+#disput-tabpanel #disput-basic:hover,
 #disput-tabpanel #disput-extract:hover {
     transform: none;
     background: #1d4ed8;
     box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
 }
+#disput-tabpanel #disput-basic:active,
 #disput-tabpanel #disput-extract:active {
     background: #1e40af;
 }
@@ -4943,11 +4973,13 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     font-weight: 500;
     cursor: pointer;
 }
+#disput-tabpanel #disput-basic:focus-visible,
 #disput-tabpanel #disput-extract:focus-visible,
 #disput-tabpanel #disput-extract-type:focus-visible {
     outline: 2px solid #60a5fa;
     outline-offset: 2px;
 }
+#disput-tabpanel #disput-basic:disabled,
 #disput-tabpanel #disput-extract:disabled {
     opacity: 0.6;
     cursor: wait;
@@ -9511,6 +9543,19 @@ hr.section-divider {
 .code-viewer-table th{background:#f1f3f5}
 .code-viewer-note{padding:6px 16px;background:#fff4e5;color:#8a4b00;font:12px/1.4 system-ui,sans-serif}
 /* code-block:end */
+#notification-message { white-space: pre-line; max-height: 60vh; overflow-y: auto; }
+
+/* schema paste window */
+.schema-paste-window { position: fixed; inset: 0; z-index: 10000; display: flex; flex-direction: column; align-items: stretch; justify-content: center; padding: 24px max(16px, calc(50vw - 340px)); background: rgba(0, 0, 0, .35); box-sizing: border-box; }
+.schema-paste-card { background: #fff; border-radius: 12px; padding: 20px 24px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow: auto; }
+.schema-paste-card h3 { margin: 0; }
+.schema-paste-card textarea { width: 100%; min-height: 240px; font: 12px/1.4 ui-monospace, monospace; box-sizing: border-box; }
+#schema-paste-problems { white-space: pre-line; color: #b3261e; font-size: 13px; overflow-wrap: anywhere; }
+#schema-paste-problems:empty { display: none; }
+.schema-paste-card pre { white-space: pre-wrap; max-height: 30vh; overflow: auto; }
+.schema-paste-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.choice-dialog-folder { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.choice-dialog-folder-name { overflow-wrap: anywhere; opacity: .8; }
 
 /* Choice dialog (results/choice-dialog.js): a modal with any number of buttons and an optional text field. */
 .choice-dialog {
@@ -11642,7 +11687,7 @@ window.ProtoState = {
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
-    checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null,
+    checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
@@ -11680,7 +11725,7 @@ window.ProtoState = {
           'чат «new» нужен транспорту по участникам (callback sendParticipants)');
       }
     });
-    const emit = (kind, fields) => { if (typeof onEvent === 'function') onEvent(kind, fields); };
+    const emit = async (kind, fields) => { if (typeof onEvent === 'function') await onEvent(kind, fields); };
     const aborted = () => Boolean(signal?.aborted);
     const plan = normalizeSteps(steps);
     if (plan.some((step) => step.kind === 'owner') && typeof provideOwnerResult !== 'function') {
@@ -11699,6 +11744,7 @@ window.ProtoState = {
     let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
     let chatBindings = {}; // participantId → { modelName, stepRef, visit, transportRequestId }: the chat of each participant (kept on resume)
     let openOwner = null; // the owner interaction that is open now (a decision, an owner step, an ASK): kept on a stop
+    let resumePendingOwner = null;
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
     emit('custom_start', { semiAuto: Boolean(semiAuto), maxAttempts, taskChars: text(task).length,
@@ -11717,12 +11763,14 @@ window.ProtoState = {
       const step = plan[pos];
       const outcomeNow = current?.outcome || {};
       const finished = results.filter((item) => item !== current);
+      const unsentDecisions = step ? state.decisions[`unsent@${step.ref}@${activeVisit}`] : null;
       return JSON.parse(JSON.stringify({
         pc: step ? step.ref : null, visits: state.visits, decisions: state.decisions,
         // `active` is true while a step is in progress; between steps the current position is the next step, not started.
         current: current && step ? { active: true, stepRef: step.ref, visit: activeVisit, phase, valid: current.valid !== false,
           accepted: Object.keys(outcomeNow).filter((id) => outcomeNow[id]?.ok), pending: extra.pending ?? inFlight,
           outcome: compactOutcome(outcomeNow),
+          ...((extra.cancelled || unsentDecisions) ? { cancelled: extra.cancelled || unsentDecisions } : {}),
           owner: current.owner ? ownerOf(current.owner) : null }
           : { active: false, stepRef: step ? step.ref : null, visit: step ? (state.visits[refKey(step)] || 0) : 0, phase, valid: true,
             accepted: [], pending: [], outcome: {}, owner: null },
@@ -11745,20 +11793,41 @@ window.ProtoState = {
 
     // Waiting for the owner (a decision, an [[ASK]] answer) ends on Stop: the run is cancelled with
     // what was collected, also when the owner's dialog itself rejects with AbortError.
-    async function ownerWait(start) {
+    async function ownerWait(start, waitMeta = {}) {
       if (aborted()) throw new StopRun('cancelled');
+      const waitId = String(waitMeta.waitId || `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+      const kind = String(waitMeta.kind || 'decision');
+      const stepRef = waitMeta.stepRef ?? (plan[pos]?.ref || null);
+      const visit = waitMeta.visit ?? activeVisit;
+      const startedAt = Date.now();
+      const resumedFrom = waitMeta.resumedFrom || (resumePendingOwner && resumePendingOwner.kind === kind && resumePendingOwner.stepRef === stepRef ? resumePendingOwner.waitId : null);
+      if (resumedFrom && resumePendingOwner?.waitId === resumedFrom) {
+        resumePendingOwner = null;
+      }
+      await emit('custom_wait_start', { waitId, waitKind: kind, kind, stepRef, visit, startedAt, ...(resumedFrom ? { resumedFrom } : {}) });
+      await checkpointNow(kind === 'asks' ? 'asks' : 'decision', { pendingOwner: { kind, stepRef, visit, waitId } });
       let onAbort = null;
+      let outcome = null;
       const stopped = new Promise((resolve, reject) => {
         onAbort = () => reject(new StopRun('cancelled'));
         signal?.addEventListener?.('abort', onAbort, { once: true });
       });
       try {
-        return await Promise.race([Promise.resolve().then(start), stopped]);
+        const result = await Promise.race([Promise.resolve().then(start), stopped]);
+        outcome = typeof waitMeta.outcomeOf === 'function' ? waitMeta.outcomeOf(result) : (result === 'continue' ? 'approved' : typeof result === 'string' ? result : 'completed');
+        openOwner = null;
+        return result;
       } catch (error) {
-        if (error instanceof StopRun || error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
+        if (error instanceof StopRun || error?.name === 'AbortError' || aborted()) {
+          outcome = aborted() ? 'cancelled' : 'stopped';
+          throw new StopRun('cancelled');
+        }
+        outcome = 'error';
         throw error;
       } finally {
         signal?.removeEventListener?.('abort', onAbort);
+        const endedAt = Date.now();
+        await emit('custom_wait_end', { waitId, waitKind: kind, kind, stepRef, visit, startedAt, endedAt, outcome: outcome || 'completed' });
       }
     }
 
@@ -11798,6 +11867,11 @@ window.ProtoState = {
       if (!found || !found.valid) {
         if (!required) return [];
         throw new StopRun('missing_input', `артефакт «${address.id}» шага «${address.step}», участник «${address.participant}»: нет актуальной версии; шаг «${step.ref}» не отправлен`);
+      }
+      // A version made by a step the owner skipped is not an input: a reference to the artifact excludes it as a reference to the step does.
+      if (results.some((item) => item.skipped && item.step.ref === found.source.step && item.visit === found.source.visit)) {
+        if (!required) return [];
+        throw new StopRun('missing_input', `артефакт «${address.id}» шага «${address.step}», участник «${address.participant}»: шаг пропущен; шаг «${step.ref}» не отправлен`);
       }
       const answer = getText(found.content.answerRef);
       if (answer === undefined || answer === null) throw new EngineError('missing_content', `шаг «${step.ref}» · input`, `текст ответа «${found.content.answerRef}» не найден`);
@@ -11888,17 +11962,23 @@ window.ProtoState = {
 
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
     // is a history entry of its own: a retry never rewrites the attempt it follows, it refers to it.
-    async function attempt(step, models, requests, outcome, firstAttempt = 1) {
+    async function attempt(step, models, requests, outcome, firstAttempt = 1, initialTriggerInfo = null) {
       const phase = 'answer';
       let pending = models.slice();
-      let current = requests; // participant id → { prompt, parts, retryOf }
+      let current = requests; // participant id → { prompt, parts, retryOf, trigger, triggerReason, previousAttemptKey }
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
         if (aborted()) throw new StopRun('cancelled');
         // The budget is checked before every send, a correction request included.
         if (pending.some((model) => String(current[model.id].prompt || '').length > maxPromptChars)) throw new StopRun('context_full');
         const entries = Object.fromEntries(pending.map((model) => {
+          const prevAttemptKey = current[model.id]?.previousAttemptKey || (current[model.id]?.retryOf ? JSON.stringify([step.ref, model.id, activeVisit, current[model.id].retryOf, phase]) : null);
+          const trig = current[model.id]?.trigger || (tryNo > 1 ? 'automatic_retry' : (initialTriggerInfo?.trigger || 'initial'));
+          const trigReason = current[model.id]?.triggerReason || (tryNo > 1 ? (outcome[model.id]?.reason === 'empty' ? 'empty_answer' : 'rejected_by_judge') : (initialTriggerInfo?.triggerReason || null));
           const entry = { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo,
             retryOf: current[model.id].retryOf || null, prompt: current[model.id].prompt, parts: current[model.id].parts,
+            trigger: trig,
+            triggerReason: trigReason,
+            previousAttemptKey: prevAttemptKey,
             phase, visit: activeVisit, state: 'sent', sentAt: Date.now() };
           history.push(entry);
           if (typeof onRequest === 'function') onRequest(entry);
@@ -11906,49 +11986,17 @@ window.ProtoState = {
         }));
         inFlight = pending.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit }));
         await checkpointNow('send');
-        const meta = { step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit };
-        const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
-        const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
+        const processed = new Set();
+        const retry = [];
+        let wasClosedByOwner = false;
+        let viaCheck = false; // the answers were read by «check»: nothing is sent, so a rejected one is not corrected by itself
         let reply;
         let byId; // participant id → the reply of the transport
-        try {
-          const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
-          if (pending.length && pending.every((model) => found[model.id])) {
-            byId = found;
-            reply = {};
-            pending.forEach((model) => { delete prefetched[model.id]; });
-            if (!Object.keys(prefetched).length) prefetched = null;
-          } else if (participants) {
-            reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
-              // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
-              chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
-            { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
-            byId = reply?.byParticipant || {};
-          } else {
-            reply = await send(pending.map((model) => model.name), Object.fromEntries(pending.map((model) => [model.name, current[model.id].prompt])),
-              { ...meta,
-                maxWordsByModel: Object.fromEntries(pending.map((model) => [model.name, model.maxWords || null])),
-                correctionByModel: Object.fromEntries(pending.map((model) => [model.name, correctionOf[model.id]])) });
-            byId = Object.fromEntries(pending.map((model) => [model.id, reply?.byModel?.[model.name]]));
-          }
-        } catch (error) {
-          if (error?.code === 'context_full') {
-            Object.values(entries).forEach((entry) => {
-              Object.assign(entry, { state: 'not_sent', reason: 'context_full', finishedAt: Date.now() });
-              if (typeof onResponse === 'function') onResponse(entry);
-            });
-            inFlight = [];
-            throw new StopRun('context_full');
-          }
-          if (error?.name === 'AbortError' || aborted()) throw new StopRun('cancelled');
-          byId = Object.fromEntries(pending.map((model) => [model.id, { text: '', status: String(error?.message || error) }]));
-        }
-        const retry = [];
-        pending.forEach((model) => {
-          const result = byId[model.id] || {};
+
+        const processParticipantResult = (model, result = {}) => {
           if (result.transportRequestId) chatBindings[model.id] = { modelName: model.name, stepRef: step.ref, visit: activeVisit, transportRequestId: result.transportRequestId };
           let verdict = judge(result, accept, checkFor(step, model));
-          if (!verdict.ok && reply?.closedByOwner && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
+          if (!verdict.ok && (reply?.closedByOwner || wasClosedByOwner) && !text(result.text)) verdict = { ...verdict, reason: 'closed_by_owner' };
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
           // An accepted answer is stored once, then each artifact it declares is registered (one line, one version).
           if (verdict.ok) {
@@ -11974,7 +12022,7 @@ window.ProtoState = {
           delete outcome[model.id].detail;
           if (verdict.detail) outcome[model.id].detail = verdict.detail;
           Object.assign(entries[model.id], {
-            state: 'done', finishedAt: Date.now(), sentPrompt: typeof result.sentPrompt === 'string' ? result.sentPrompt : null,
+            state: result.status === 'UNCERTAIN' ? 'unknown' : 'done', finishedAt: Date.now(), sentPrompt: typeof result.sentPrompt === 'string' ? result.sentPrompt : null,
             answer: text(result.text), attribution: result.attribution || '', accepted: verdict.ok, reason: verdict.reason || '', ...(verdict.detail ? { detail: verdict.detail } : {}),
             status: result.status || '', transportRequestId: result.transportRequestId || ''
           });
@@ -11982,27 +12030,190 @@ window.ProtoState = {
           emit('custom_answer', { step: step.index, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo, input: modeOf(specOf(step, model)),
             accepted: verdict.ok, reason: verdict.reason || null, status: result.status || null,
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
-          if (!verdict.ok && !reply?.closedByOwner) retry.push(model);
+          inFlight = inFlight.filter((item) => item.participantId !== model.id);
+          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN') retry.push(model);
+        };
+
+        const dispatched = new Set();
+        let waveDispatchedExplicit = false;
+
+        const onWaveDispatched = (payload) => {
+          waveDispatchedExplicit = true;
+          if (Array.isArray(payload)) {
+            payload.forEach((item) => {
+              if (typeof item === 'string') dispatched.add(item);
+              else if (item && typeof item.participantId === 'string') dispatched.add(item.participantId);
+            });
+          } else if (typeof payload === 'string') {
+            dispatched.add(payload);
+          } else if (payload && typeof payload === 'object') {
+            const list = payload.participantIds || payload.participants || payload.group;
+            if (Array.isArray(list)) {
+              list.forEach((item) => {
+                if (typeof item === 'string') dispatched.add(item);
+                else if (item && typeof item.participantId === 'string') dispatched.add(item.participantId);
+              });
+            }
+          }
+        };
+
+        const onWaveResult = async (wavePayload) => {
+          const map = (wavePayload && typeof wavePayload.byParticipant === 'object' && wavePayload.byParticipant !== null)
+            ? wavePayload.byParticipant
+            : (wavePayload || {});
+          if (wavePayload?.closedByOwner) wasClosedByOwner = true;
+          let newlyHandled = 0;
+          for (const model of pending) {
+            if (model.id in map) {
+              dispatched.add(model.id);
+            }
+            if (processed.has(model.id)) continue;
+            if (model.id in map) {
+              processed.add(model.id);
+              newlyHandled += 1;
+              processParticipantResult(model, map[model.id]);
+            }
+          }
+          if (newlyHandled > 0) {
+            await checkpointNow('judge');
+          }
+        };
+
+        const handleCancelled = async () => {
+          const unsentIds = [];
+          const unknownPending = [];
+          pending.forEach((model) => {
+            if (processed.has(model.id)) return;
+            const wasDispatched = dispatched.has(model.id);
+            const entry = entries[model.id];
+            if (!wasDispatched) {
+              unsentIds.push(model.id);
+              if (entry) {
+                Object.assign(entry, { state: 'not_sent', reason: 'cancelled_before_dispatch', finishedAt: Date.now() });
+                if (typeof onResponse === 'function') onResponse(entry);
+              }
+            } else {
+              unknownPending.push({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit });
+              if (entry) {
+                Object.assign(entry, { state: 'unknown', reason: 'interrupted_in_flight', finishedAt: Date.now() });
+                if (typeof onResponse === 'function') onResponse(entry);
+              }
+            }
+          });
+          if (unsentIds.length) {
+            state.decisions[`unsent@${step.ref}@${activeVisit}`] = unsentIds;
+          }
+          inFlight = unknownPending.slice();
+          await checkpointNow('judge', { cancelled: unsentIds, pending: unknownPending });
+          throw new StopRun('cancelled');
+        };
+
+        const meta = {
+          step: step.index, kind: step.kind, label: stepLabel(step), attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit,
+          onWaveResult,
+          onWaveDispatched,
+          onWaveStart: onWaveDispatched
+        };
+        const maxWordsOf = Object.fromEntries(pending.map((model) => [model.id, model.maxWords || null]));
+        const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
+        try {
+          const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
+          if (pending.length && pending.every((model) => found[model.id])) {
+            byId = found;
+            viaCheck = true;
+            reply = {};
+            pending.forEach((model) => { delete prefetched[model.id]; });
+            if (!Object.keys(prefetched).length) prefetched = null;
+          } else if (participants) {
+            reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
+              // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
+              chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
+            { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
+            byId = reply?.byParticipant || (reply && typeof reply === 'object' && !('byParticipant' in reply) ? reply : {});
+          } else {
+            reply = await send(pending.map((model) => model.name), Object.fromEntries(pending.map((model) => [model.name, current[model.id].prompt])),
+              { ...meta,
+                maxWordsByModel: Object.fromEntries(pending.map((model) => [model.name, model.maxWords || null])),
+                correctionByModel: Object.fromEntries(pending.map((model) => [model.name, correctionOf[model.id]])) });
+            byId = Object.fromEntries(pending.map((model) => [model.id, reply?.byModel?.[model.name]]));
+          }
+        } catch (error) {
+          if (error instanceof StopRun) throw error;
+          if (error instanceof EngineError || error?.code === 'checkpoint_failed') throw error;
+          if (error?.code === 'context_full') {
+            pending.forEach((model) => {
+              if (!processed.has(model.id)) {
+                const entry = entries[model.id];
+                if (entry) {
+                  Object.assign(entry, { state: 'not_sent', reason: 'context_full', finishedAt: Date.now() });
+                  if (typeof onResponse === 'function') onResponse(entry);
+                }
+              }
+            });
+            inFlight = [];
+            throw new StopRun('context_full');
+          }
+          if (error?.name === 'AbortError' || aborted()) {
+            if (participants) {
+              await handleCancelled();
+            }
+            throw new StopRun('cancelled');
+          }
+          byId = Object.fromEntries(pending.map((model) => [model.id, { text: '', status: String(error?.message || error) }]));
+        }
+
+        if (aborted()) {
+          if (participants) {
+            await handleCancelled();
+          }
+          throw new StopRun('cancelled');
+        }
+
+        let remainingHandled = 0;
+        pending.forEach((model) => {
+          if (processed.has(model.id)) return;
+          processed.add(model.id);
+          remainingHandled += 1;
+          processParticipantResult(model, byId[model.id] || {});
         });
-        inFlight = [];
-        await checkpointNow('judge');
-        if (reply?.closedByOwner) return { closedByOwner: true };
-        pending = retry;
+        if (remainingHandled > 0 || inFlight.length > 0) {
+          inFlight = [];
+          await checkpointNow('judge');
+        }
+        const uncertain = pending.filter((model) => (byId[model.id]?.status === 'UNCERTAIN' || outcome[model.id]?.status === 'UNCERTAIN') && !outcome[model.id]?.ok);
+        if (uncertain.length) {
+          const stepEntry = { step, visit: activeVisit, outcome, skipped: false, valid: true };
+          await settleUnknown(step, stepEntry, uncertain.map((m) => ({ participantId: m.id, attempt: tryNo })));
+        }
+        if (reply?.closedByOwner || wasClosedByOwner) return { closedByOwner: true };
+        pending = retry.filter((m) => !outcome[m.id]?.ok);
+        if (!pending.length) break;
+        const lastEntries = entries;
         // No text at all means no answer exists to correct (a refused or unconfirmed dispatch looks the same):
         // the same request goes out again. A correction is for an answer that came back and was not accepted.
-        current = Object.fromEntries(retry.map((model) => (outcome[model.id].reason === 'empty' ? [model.id, { ...current[model.id], retryOf: tryNo }] : [model.id, (() => {
+        current = Object.fromEntries(pending.map((model) => {
+          const prevKey = lastEntries[model.id]?.attemptKey || JSON.stringify([step.ref, model.id, activeVisit, tryNo, phase]);
+          const trigReason = outcome[model.id]?.reason === 'empty' ? 'empty_answer' : 'rejected_by_judge';
+          if (outcome[model.id].reason === 'empty') {
+            return [model.id, { ...current[model.id], retryOf: tryNo, trigger: 'automatic_retry', triggerReason: trigReason, previousAttemptKey: prevKey }];
+          }
           const correction = correctionPrompt(outcome[model.id].reason, model.discipline?.correction, outcome[model.id].detail);
-          // The correction keeps the input of the request it corrects: the answer is still made from that input.
-          return { prompt: correction, parts: { correction: { reason: outcome[model.id].reason, text: correction }, input: current[model.id].parts?.input }, retryOf: tryNo };
-        })()])));
+          return [model.id, { prompt: correction, parts: { correction: { reason: outcome[model.id].reason, text: correction }, input: current[model.id].parts?.input }, retryOf: tryNo, trigger: 'automatic_retry', triggerReason: trigReason, previousAttemptKey: prevKey }];
+        }));
       }
       return { closedByOwner: false };
     }
 
     // The same request goes to all the participants at once; they answer independently.
-    async function execute(step, models, outcome, firstAttempt = 1) {
-      const requests = Object.fromEntries(models.map((model) => [model.id, { ...promptFor(step, model), retryOf: outcome[model.id]?.attempt || null }]));
-      await attempt(step, models, requests, outcome, firstAttempt);
+    async function execute(step, models, outcome, firstAttempt = 1, triggerInfo = null) {
+      const requests = Object.fromEntries(models.map((model) => [model.id, {
+        ...promptFor(step, model),
+        retryOf: outcome[model.id]?.attempt || null,
+        trigger: triggerInfo?.trigger || (firstAttempt > 1 ? 'user_retry' : 'initial'),
+        triggerReason: triggerInfo?.triggerReason || (firstAttempt > 1 ? 'user_decision' : null),
+        previousAttemptKey: triggerInfo?.previousAttemptKey || (outcome[model.id]?.attempt ? JSON.stringify([step.ref, model.id, activeVisit, outcome[model.id].attempt, 'answer']) : null)
+      }]));
+      await attempt(step, models, requests, outcome, firstAttempt, triggerInfo);
     }
 
     // The owner's answer to an owner step (8.1): a text, or a reference to a file that the page stored. An empty or rejected
@@ -12075,9 +12286,9 @@ window.ProtoState = {
       });
       let document = await documentFor(step);
       for (;;) {
-        await checkpointNow('decision', { pendingOwner: { kind: 'owner', stepRef: step.ref, visit: entry.visit } });
+        const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const reply = await ownerWait(() => provideOwnerResult({ stepRef: step.ref, visit: entry.visit, task: step.task, output: step.output, ...(step.goal ? { goal: step.goal } : {}),
-          ...(step.input !== 'none' ? { input } : {}), ...(document ? { document } : {}), ...(reason ? { reason, detail } : {}) }));
+          ...(step.input !== 'none' ? { input } : {}), ...(document ? { document } : {}), ...(reason ? { reason, detail } : {}) }), { waitId, kind: 'owner', stepRef: step.ref, visit: entry.visit, outcomeOf: () => 'answered' });
         if (reply === null) throw new StopRun('stopped');
         const verdict = ownerVerdict(step, reply);
         if (!verdict.ok) {
@@ -12166,12 +12377,20 @@ window.ProtoState = {
         if (item.owner) entry.owner = restoredOwner(item.owner);
         results.push(entry);
       });
+      if (saved.pendingOwner && typeof saved.pendingOwner === 'object') {
+        resumePendingOwner = { ...saved.pendingOwner };
+      }
       const at = saved.pc == null ? -1 : pointAt(saved.pc);
       if (saved.pc != null && at < 0) throw new EngineError('resume_mismatch', `шаг «${saved.pc}»`, 'шага сохранённого состояния нет в схеме продолжения');
       pos = at < 0 ? plan.length : at;
       const cur = saved.current;
       if (cur && cur.active && at >= 0 && cur.stepRef === saved.pc) {
-        resumePoint = { index: at, visit: cur.visit, phase: cur.phase, pending: Array.isArray(cur.pending) ? cur.pending : [], outcome: restoredOutcome(cur.outcome),
+        const unsent = new Set([
+          ...(Array.isArray(cur.cancelled) ? cur.cancelled : []),
+          ...(Array.isArray(state.decisions[`unsent@${cur.stepRef}@${cur.visit}`]) ? state.decisions[`unsent@${cur.stepRef}@${cur.visit}`] : [])
+        ]);
+        const pending = (Array.isArray(cur.pending) ? cur.pending : []).filter((item) => !unsent.has(item.participantId));
+        resumePoint = { index: at, visit: cur.visit, phase: cur.phase, pending, outcome: restoredOutcome(cur.outcome),
           valid: cur.valid !== false,
           owner: cur.owner ? restoredOwner(cur.owner) : null };
       }
@@ -12179,14 +12398,17 @@ window.ProtoState = {
     // A request that may have been sent before the reload has no known answer: the owner decides, and the request is never
     // sent again on its own. The accepted answers of the visit stay. Resend is a new attempt; skip is recorded for it only.
     async function settleUnknown(step, entry, pending = []) {
-      let items = pending.filter((item) => !entry.outcome[item.participantId]?.ok);
+      const unsent = new Set([
+        ...(Array.isArray(state.decisions[`unsent@${step.ref}@${entry.visit}`]) ? state.decisions[`unsent@${step.ref}@${entry.visit}`] : [])
+      ]);
+      let items = pending.filter((item) => !entry.outcome[item.participantId]?.ok && !unsent.has(item.participantId));
       if (!items.length) return;
       // Until the owner decides, the requests stay in flight: a Stop keeps them unknown in the saved state.
       const markInFlight = () => {
         inFlight = items.map((item) => ({ participantId: item.participantId, attempt: item.attempt, phase: 'answer', stepRef: step.ref, visit: entry.visit }));
       };
+      const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       markInFlight();
-      await checkpointNow('decision', { pendingOwner: { kind: 'unknown', stepRef: step.ref, visit: entry.visit } });
       // The answer a participant gave before: a read of its chat must not take it for the answer of the unknown request (V03).
       const previousAnswerOf = (participantId) => {
         for (let at = results.length - 1; at >= 0; at -= 1) {
@@ -12196,11 +12418,21 @@ window.ProtoState = {
         return '';
       };
       for (;;) {
-        const canCheck = typeof checkUnknown === 'function';
+        const canCheck = typeof checkUnknown === 'function' || typeof optionsSettleUnknown === 'function';
         const choices = canCheck ? ['check', 'resend', 'skip'] : ['resend', 'skip'];
-        const choice = typeof resolveUnknown === 'function'
-          ? await ownerWait(() => resolveUnknown({ stepRef: step.ref, visit: entry.visit, items: items.map((item) => ({ participantId: item.participantId, attempt: item.attempt })), choices }))
-          : undefined;
+        let choice;
+        let checkedAnswers = null;
+        if (typeof optionsSettleUnknown === 'function') {
+          const res = await ownerWait(() => optionsSettleUnknown({ stepRef: step.ref, visit: entry.visit, items: items.map((item) => ({ participantId: item.participantId, attempt: item.attempt })), choices }), { waitId, kind: 'unknown', stepRef: step.ref, visit: entry.visit, outcomeOf: (r) => (typeof r === 'object' && r?.choice ? r.choice : r) });
+          if (typeof res === 'object' && res !== null) {
+            choice = res.choice;
+            checkedAnswers = res.checkedAnswers || null;
+          } else {
+            choice = res;
+          }
+        } else if (typeof resolveUnknown === 'function') {
+          choice = await ownerWait(() => resolveUnknown({ stepRef: step.ref, visit: entry.visit, items: items.map((item) => ({ participantId: item.participantId, attempt: item.attempt })), choices }), { waitId, kind: 'unknown', stepRef: step.ref, visit: entry.visit, outcomeOf: (r) => (typeof r === 'object' && r?.choice ? r.choice : r) });
+        }
         if (choice === null) throw new StopRun('stopped');
         if (!choices.includes(choice)) throw new StopRun('no_decision', `шаг «${step.ref}»: нет решения о неизвестном ответе (${canCheck ? 'проверить, ' : ''}отправить заново или пропустить)`);
         if (choice === 'check') {
@@ -12209,7 +12441,14 @@ window.ProtoState = {
           for (const item of items) {
             const model = step.models.find((candidate) => candidate.id === item.participantId);
             if (!model) continue;
-            const read = await ownerWait(() => checkUnknown({ participantId: model.id, modelName: model.name, transportRequestId: null, excludeText: previousAnswerOf(model.id) }));
+            let read;
+            if (checkedAnswers && checkedAnswers[model.id]) {
+              read = { ok: true, status: 'found', text: checkedAnswers[model.id] };
+            } else if (typeof checkUnknown === 'function') {
+              read = await ownerWait(() => checkUnknown({ participantId: model.id, modelName: model.name, transportRequestId: null, excludeText: previousAnswerOf(model.id) }), { kind: 'unknown', stepRef: step.ref, visit: entry.visit, outcomeOf: () => 'checked' });
+            } else {
+              read = { ok: false, status: 'chat_unavailable', text: '' };
+            }
             emit('custom_unknown_check', { step: step.index, label: stepLabel(step), participant: model.id, attempt: item.attempt, status: read?.status || 'chat_unavailable', reason: read?.reason || null });
             if (read?.ok && read.status === 'found' && text(read.text)) {
               foundNow[model.id] = { text: read.text, status: 'SUCCESS', attribution: 'checked', transportRequestId: '' };
@@ -12218,9 +12457,27 @@ window.ProtoState = {
           const foundModels = step.models.filter((model) => foundNow[model.id]);
           if (!foundModels.length) continue;
           inFlight = [];
-          prefetched = { ...(prefetched || {}), ...foundNow };
-          await execute(step, foundModels, entry.outcome, Math.max(...items.filter((item) => foundNow[item.participantId]).map((item) => item.attempt || 1)));
-          prefetched = null;
+          for (const model of foundModels) {
+            const result = foundNow[model.id];
+            const item = items.find((it) => it.participantId === model.id);
+            const verdict = judge(result, accept, checkFor(step, model));
+            entry.outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: 'SUCCESS', attempt: item.attempt, transportRequestId: '', recoveredBy: 'check' };
+            let answerRef = null;
+            if (verdict.ok) {
+              answerRef = putText(verdict.text);
+              entry.outcome[model.id].textRef = answerRef;
+            }
+            const existingEntry = history.find((h) => h.ref === step.ref && h.participant === model.id && h.attempt === item.attempt && h.visit === entry.visit) || {
+              step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: model.name, participant: model.id, attempt: item.attempt,
+              phase: 'answer', visit: entry.visit
+            };
+            Object.assign(existingEntry, {
+              state: 'done', finishedAt: Date.now(), answer: text(result.text), accepted: verdict.ok, reason: verdict.reason || '',
+              status: 'SUCCESS', recoveredBy: 'check', ...(answerRef ? { answerRef } : {})
+            });
+            if (typeof onResponse === 'function') onResponse(existingEntry);
+          }
+          await checkpointNow('judge');
           items = items.filter((item) => !entry.outcome[item.participantId]?.ok);
           if (!items.length) { await checkpointNow('decision', { pendingOwner: null }); return; }
           markInFlight();
@@ -12233,7 +12490,7 @@ window.ProtoState = {
           const item = items.find((candidate) => candidate.participantId === model.id);
           entry.outcome[model.id] = { ok: false, reason: choice === 'skip' ? 'skipped' : 'unknown', text: '', model: model.name, participant: model.id, attempt: item.attempt || 0, status: '', transportRequestId: '' };
         });
-        if (choice === 'resend') await execute(step, models, entry.outcome, Math.max(...items.map((item) => item.attempt || 0)) + 1);
+        if (choice === 'resend') await execute(step, models, entry.outcome, Math.max(...items.map((item) => item.attempt || 0)) + 1, { trigger: 'user_resend', triggerReason: 'resend_unknown' });
         return;
       }
     }
@@ -12268,9 +12525,15 @@ window.ProtoState = {
         const entry = { step, visit: activeVisit, outcome, skipped: false, valid: resumed ? resumed.valid : true };
         if (resumed?.owner) entry.owner = resumed.owner;
         current = entry;
+        if (resumed) {
+          emit('custom_step_resumed', { step: step.index, ref: step.ref, stepKind: step.kind, kind: step.kind, label: stepLabel(step), visit: activeVisit });
+        } else {
+          emit('custom_step_start', { step: step.index, ref: step.ref, stepKind: step.kind, kind: step.kind, label: stepLabel(step), visit: activeVisit, startedAt: Date.now() });
+        }
         if (step.kind === 'owner') {
           // The owner's answer is asked until it is accepted; an accepted one (also one found after a reload) is not asked again.
           if (!entry.owner) await ownerAnswer(step, entry);
+          emit('custom_step_end', { step: step.index, ref: step.ref, stepKind: step.kind, kind: step.kind, label: stepLabel(step), visit: entry.visit, outcome: 'completed', skipped: false, accepted: entry.owner ? 1 : 0, failed: entry.owner ? 0 : 1, endedAt: Date.now() });
           results.push(entry);
           pos += 1;
           current = null;
@@ -12279,7 +12542,7 @@ window.ProtoState = {
         if (resumed) await settleUnknown(step, entry, resumed.pending);
         // The participants that were never sent (a reload in the middle of a step) are sent now; a sent one is not sent again.
         const never = step.models.filter((model) => !outcome[model.id]);
-        if (never.length) await execute(step, never, outcome);
+        if (never.length) await execute(step, never, outcome, 1, resumed ? { trigger: 'resume_unsent', triggerReason: 'resumed_after_stop' } : null);
         const last = step === plan[plan.length - 1];
         // A visit whose decision is saved, or that has passed its decision (asks), is not asked again.
         const decided = Boolean(resumed) && (resumed.phase === 'asks' || state.decisions[decidedKey] !== undefined);
@@ -12298,10 +12561,10 @@ window.ProtoState = {
             if (enough && semiAuto && last && !failed.length && !approve) break;
             // Without every answer "continue" is not offered: the owner repeats, skips or stops the step.
             const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
-            if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: { kind: 'decision', stepRef: step.ref, visit: entry.visit } });
+            const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             const action = typeof decide === 'function'
               ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
-                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }))
+                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }), { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res) })
               : null;
             // The fallback "the answers go on" holds only when every answer is accepted and no approval is asked.
             if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
@@ -12313,22 +12576,33 @@ window.ProtoState = {
             if (action === 'stop') throw new StopRun('stopped');
             if (action === 'skip') { entry.skipped = true; break; }
             const firstAttempt = Math.max(0, ...failed.map((id) => outcome[id]?.attempt || 0)) + 1;
-            await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt);
+            await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt, { trigger: 'user_retry', triggerReason: 'user_decision' });
           }
         }
-        results.push(entry);
         if (typeof parseAsks === 'function' && typeof askOwner === 'function' && !entry.skipped) {
           const asks = acceptedOf(entry).flatMap((item) => parseAsks(item.text) || []);
           if (asks.length) {
-            await checkpointNow('asks', { pendingOwner: { kind: 'asks', stepRef: step.ref, visit: entry.visit } });
-            ownerAnswers.push(...((await ownerWait(() => askOwner(asks, { step: step.index, label: stepLabel(step) }))) || []));
+            const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            ownerAnswers.push(...((await ownerWait(() => askOwner(asks, { step: step.index, label: stepLabel(step) }), { waitId, kind: 'asks', stepRef: step.ref, visit: entry.visit, outcomeOf: () => 'answered' })) || []));
             await checkpointNow('asks', { pendingOwner: null });
           }
         }
+        // The end of the round: after the decision of the owner and after ASK.
+        emit('custom_step_end', { step: step.index, ref: step.ref, stepKind: step.kind, kind: step.kind, label: stepLabel(step), visit: entry.visit, outcome: entry.skipped ? 'skipped' : 'completed', skipped: entry.skipped === true,
+          accepted: step.models.filter((model) => outcome[model.id]?.ok).length, failed: step.models.filter((model) => !outcome[model.id]?.ok).length, endedAt: Date.now() });
+        results.push(entry);
         pos += 1;
         current = null;
       }
     } catch (error) {
+      if (current) {
+        const step = current.step;
+        const outcome = (error instanceof StopRun)
+          ? (error.stopReason === 'stopped' ? 'stopped' : error.stopReason === 'cancelled' ? 'cancelled' : 'interrupted')
+          : (error?.name === 'AbortError' || aborted() ? 'cancelled' : 'failed');
+        const reason = (error instanceof StopRun) ? error.stopReason : (error?.message || String(error));
+        emit('custom_step_interrupted', { step: step.index, ref: step.ref, stepKind: step.kind, kind: step.kind, label: stepLabel(step), visit: current.visit, outcome, reason, at: Date.now() });
+      }
       if (!(error instanceof StopRun)) throw error;
       stopReason = error.stopReason;
       stopDetail = error.stopDetail || '';
@@ -12999,7 +13273,10 @@ window.ProtoState = {
       if (st.block === 'round') refs.set(st.id, `r${++rounds}`);
       else if (st.block === 'owner') refs.set(st.id, `owner:${idPart(st.id, `s${i + 1}`)}`);
     });
-    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)).map((id) => refs.get(id)))];
+    // Every stand link means the later step depends on the earlier one. Preserve that
+    // dependency in Basic as an explicit required whole-step source.
+    const inputRefs = (st) => [...new Set(list(st.inputs).map(stepOf).filter((id) => refs.has(id) && pos.get(id) < pos.get(st.id)))]
+      .map((id) => ({ step: refs.get(id), required: true }));
 
     const modelOf = (m) => {
       const roleId = roleIdOf(m.role);
@@ -13084,19 +13361,49 @@ window.ProtoState = {
     const ids = new Map(steps.map((st, i) => [st.ref, `s${i + 1}`]));
     const MODEL_KINDS = ['round', 'gate', 'synthesis'];
     const linkable = (st) => MODEL_KINDS.includes(st.kind) || st.kind === 'owner';
-    const refList = (input) => (Array.isArray(input) ? [...new Set(input.map((x) => (typeof x === 'string' ? x : x?.step)).map((r) => steps.find((st) => st.ref === r)).filter((st) => st && linkable(st)).map((st) => ids.get(st.ref)))] : []);
+    const refList = (input, consumer) => {
+      if (!Array.isArray(input)) return [];
+      const mapped = input.map((source) => {
+        const ref = typeof source === 'string' ? source : (source?.step || source?.artifact?.step);
+        const sourceStep = steps.find((candidate) => candidate.ref === ref);
+        if (!sourceStep || !linkable(sourceStep)) return null;
+        const label = typeof source === 'string' ? source : (source?.artifact
+          ? `артефакт «${source.artifact.id || '?'}» участника «${source.artifact.participant || '?'}»`
+          : source?.participant ? `участник «${source.participant}»` : `шаг «${ref}»`);
+        if (!isObj(source) || source.required !== true) {
+          warnings.push(`Шаг ${consumer.ref}: необязательный вход (${label}) Basic перенесён как связь со стендом; необязательность не сохраняется.`);
+        }
+        if (isObj(source) && source.artifact) {
+          warnings.push(`Шаг ${consumer.ref}: адрес артефакта (${label}) сведён к связи со всем этапом ${ref}; артефакт и его версия не переносятся.`);
+        } else if (isObj(source) && source.participant) {
+          warnings.push(`Шаг ${consumer.ref}: адрес участника ${source.participant} этапа ${ref} сведён к связи со всем этапом.`);
+        }
+        return ids.get(sourceStep.ref);
+      });
+      return [...new Set(mapped.filter(Boolean))];
+    };
     // «previous» — шаг перед этим, «all» — все шаги перед этим; раунд без input берёт предыдущий шаг (в том числе шаг User), если перед ним есть шаг; первый шаг — без входа (умолчание Basic).
     const inputsOf = (st, i) => {
+      if (st.kind === 'route') return [];
       const spec = st.input === undefined && MODEL_KINDS.includes(st.kind) ? (steps.slice(0, i).some(linkable) ? 'previous' : 'none') : st.input;
       const before = steps.slice(0, i).filter(linkable).map((x) => ids.get(x.ref));
-      if (spec === 'previous') return before.slice(-1);
-      if (spec === 'all') return before;
-      return refList(spec);
+      if (spec === 'previous') {
+        if (before.length) warnings.push(`Шаг ${st.ref}: input «previous» импортирован как связь с ближайшим предыдущим этапом стенда; при прогоне Basic предыдущим может оказаться более ранний результат.`);
+        return before.slice(-1);
+      }
+      if (spec === 'all') {
+        if (before.length) warnings.push(`Шаг ${st.ref}: input «all» собирает имеющиеся ответы всех предыдущих этапов; на стенде связи выглядят обязательными, и повторный экспорт сделает их обязательными.`);
+        return before;
+      }
+      return refList(spec, st);
     };
     const out = [];
     steps.forEach((st, i) => {
       const id = ids.get(st.ref);
       const step = { id, block: st.kind, title: own(st.title) ? st.title : String(st.ref), why: own(st.goal) ? st.goal : 'Из схемы Basic' };
+      if (list(st.models).some((model) => isObj(model) && model.input !== undefined)) {
+        warnings.push(`Шаг ${st.ref}: индивидуальный models[].input не перенесён на стенд.`);
+      }
       const inputs = inputsOf(st, i);
       if (inputs.length) step.inputs = inputs;
       if (st.kind === 'round' || st.kind === 'gate') {
@@ -13163,7 +13470,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '64';
+  const STAND_VERSION = '65';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};
