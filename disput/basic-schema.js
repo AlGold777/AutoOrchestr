@@ -704,9 +704,54 @@
     strictLength: typeof schema.run?.strictLength === 'boolean' ? schema.run.strictLength : DEFAULTS.run.strictLength
   });
 
+  // Remarks about a valid schema that do not block it (the author decides): [{ path, message }]. Three patterns that lose
+  // the author's intent silently: a participant's own task replaces the step's task; an owner answer that no later step
+  // reads (an owner step at the end may close the schema); a placeholder instead of a text.
+  const PLACEHOLDER_TEXT = /^(?:\.{3}|…|todo|tbd|и\s*т\.\s*д\.?)$/i;
+  const placeholder = (value) => typeof value === 'string' && (PLACEHOLDER_TEXT.test(value.trim()) || /(?:\.{3}|…)$/.test(value.trim()));
+  function warnings(schema) {
+    const out = [];
+    const steps = isObject(schema) && Array.isArray(schema.steps) ? schema.steps : [];
+    const warn = (path, message) => out.push({ path, message });
+    const enabledOf = (step) => (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
+    if (placeholder(schema?.description)) warn('description', 'похоже на заглушку вместо текста');
+    steps.forEach((step, index) => {
+      if (!isObject(step)) return;
+      const path = `steps[${index}]`;
+      ['task', 'goal'].forEach((key) => { if (placeholder(step[key])) warn(`${path}.${key}`, 'похоже на заглушку вместо текста'); });
+      enabledOf(step).forEach((model, at) => {
+        if (placeholder(model.task)) warn(`${path}.models[${at}].task`, 'похоже на заглушку вместо текста');
+        if (step.kind === 'round' && typeof model.task === 'string' && model.task.trim() && typeof step.task === 'string' && step.task.trim()) {
+          warn(`${path}.models[${at}].task`, `личное задание заменяет общее task шага целиком: участнику «${idOf(model)}» общее задание не отправляется`);
+        }
+      });
+    });
+    // The inputs of a step: its own and the ones of its enabled participants (an owner step has only its own).
+    const specsOf = (step, position) => [step.kind === 'owner' ? (step.input ?? 'none') : (step.input ?? defaultInputOf(steps, position)),
+      ...(step.kind === 'owner' ? [] : enabledOf(step).filter((model) => 'input' in model).map((model) => model.input))];
+    steps.forEach((owner, index) => {
+      if (!isObject(owner) || owner.kind !== 'owner' || index === steps.length - 1) return;
+      const read = steps.slice(index + 1).some((step, offset) => isObject(step) && specsOf(step, index + 1 + offset).some((spec) => {
+        if (spec === 'all') return true;
+        // previous: the owner is the nearest earlier step that runs.
+        if (spec === 'previous') return !steps.slice(index + 1, index + 1 + offset).some(runnable);
+        if (!Array.isArray(spec)) return false;
+        return spec.some((source) => {
+          if (typeof source === 'string') return source === owner.ref;
+          if (!isObject(source)) return false;
+          // The owner's edit of a document is a new version of the document's line: a later reference to that line reads it.
+          if (isObject(source.artifact)) return source.artifact.step === owner.ref || (owner.document && source.artifact.step === owner.document);
+          return source.step === owner.ref;
+        });
+      }));
+      if (!read) warn(`steps[${index}]`, `ответ User «${owner.ref}» не читает ни один шаг ниже`);
+    });
+    return out;
+  }
+
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, toSettings, toCanvas, validate, warnings, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

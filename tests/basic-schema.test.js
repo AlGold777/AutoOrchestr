@@ -1261,3 +1261,34 @@ describe('Basic schema: этап 2 — документ для чтения в �
     expect(errors.filter((e) => e.path.includes('artifacts'))).toEqual([]);
   });
 });
+
+describe('Basic schema: remarks that do not block a valid schema (warnings)', () => {
+  const owner = (ref, extra = {}) => ({ ref, kind: 'owner', task: 'Ответьте', models: [], ...extra });
+  const paths = (schema) => Schema.warnings(schema).map((item) => item.path);
+
+  test('a participant task next to the step task is a remark at the participant; either one alone is none', () => {
+    expect(paths(base([round('r1', ['A'], { task: 'общее' })]))).toEqual([]);
+    const both = base([{ ref: 'r1', kind: 'round', task: 'общее', models: [{ name: 'A', task: 'своё' }, { name: 'B' }] }]);
+    expect(Schema.validate(both)).toEqual([]);
+    expect(paths(both)).toEqual(['steps[0].models[0].task']);
+  });
+
+  test('an owner answer that no later step reads is a remark; previous, all, a reference and the document line read it', () => {
+    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'], { input: 'none' })]))).toEqual(['steps[1]']);
+    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'])]))).toEqual([]);
+    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'], { input: 'none' }), round('r3', ['A'], { input: 'all' })]))).toEqual([]);
+    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'], { input: 'none' }), round('r3', ['A'], { input: ['owner:a'] })]))).toEqual([]);
+    const doc = { document: 'read', artifacts: [{ id: 'map', name: 'Карта', pointer: '' }] };
+    expect(paths(base([round('r1', ['A'], { output: doc }), owner('owner:a', { document: 'r1' }), round('r2', ['A'], { input: 'none' }),
+      round('r3', ['A'], { input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }] })]))).toEqual([]);
+  });
+
+  test('an owner step at the end closes the schema: no remark', () => {
+    expect(paths(base([round('r1', ['A']), owner('owner:end')]))).toEqual([]);
+  });
+
+  test('a placeholder text is a remark; an ellipsis inside a text is not', () => {
+    expect(paths(base([round('r1', ['A'], { task: 'TODO' })], { description: '…' }))).toEqual(['description', 'steps[0].task']);
+    expect(paths(base([round('r1', ['A'], { task: 'Сравни варианты… и выбери лучший.' })]))).toEqual([]);
+  });
+});

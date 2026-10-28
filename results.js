@@ -8681,9 +8681,9 @@ document.addEventListener('click', (event) => {
         // The errors of a schema in one line: the place and the reason of each, at most five.
         const describeSchemaErrors = (errors) => errors.slice(0, 5).map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
         const schemaErrorsText = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('\n');
-        const showSchemaErrors = (title, errors) => {
+        const showSchemaErrors = (title, errors, countLabel = 'Ошибок') => {
             try {
-                askChoiceDialog({ title, message: `Ошибок: ${errors.length}`, document: { kind: 'read', readOnly: true, name: '', text: schemaErrorsText(errors) }, choices: [], cancelText: 'Закрыть' });
+                askChoiceDialog({ title, message: `${countLabel}: ${errors.length}`, document: { kind: 'read', readOnly: true, name: '', text: schemaErrorsText(errors) }, choices: [], cancelText: 'Закрыть' });
             } catch (_) { /* the list is a convenience: a failure to show it changes nothing */ }
         };
         // The record of a Basic pipeline built from its schema, and nowhere else: the schema is the content, the canvas
@@ -8781,6 +8781,9 @@ document.addEventListener('click', (event) => {
             const item = findPipelineItemByName(name);
             if (item) selectPipeline(item, { applyConfig: true, persist: true });
             showNotification(`Схема установлена как pipeline «${name}».`, 'success');
+            // Remarks do not block the schema: the author reads them and decides (BasicSchema.warnings).
+            const remarks = window.BasicSchema.warnings?.(schema) || [];
+            if (remarks.length) showSchemaErrors(`Схема «${name}» установлена, есть замечания`, remarks, 'Замечаний');
             return true;
         };
         const importBasicBundle = async (parsed) => {
