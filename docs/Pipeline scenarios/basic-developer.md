@@ -428,7 +428,7 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 
 #### TEST-2. Нестабильный тест
 
-`tests/false-success-watcher-guard.test.js`, тест `content growth extends a short deadline without exceeding hardMax` зависит от времени и иногда падает при полном прогоне (примерно в одном из трёх запусков отдельно). К Basic не относится. Перед тем как считать его падение вашей ошибкой, перезапустите файл отдельно: `npx jest tests/false-success-watcher-guard.test.js`.
+Устранено в 2.81.920: `tests/false-success-watcher-guard.test.js`, тест `content growth extends a short deadline without exceeding hardMax`, использует фиксированные тестовые часы. Ранее время между вычислением deadline и проверкой могло уменьшить остаток на миллисекунду и давало случайное падение. Точные assertions сохранены; этот тест больше не является допустимым исключением из полного зелёного прогона.
 
 
 #### TEST-3. Падения после работы по участникам формата 2

@@ -522,7 +522,26 @@ describe('release log regression guards', () => {
     expect(source).toContain('const buildSelectedRoundModelBlocksHtml = (withRole = true) => {');
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
     expect(runtime).toContain('onlyActive = false,');
-    expect(runtime).toContain('.filter(({ index }) => !onlyActive || activeSet.has(index))');
+    // Explicit schema participants are authoritative and remain visible even when
+    // inactive; legacy provider stacks still use activeIndices as their filter.
+    window.eval(runtime);
+    const runtimeApi = window.PipelineRuntime;
+    const schemaStack = document.createElement('div');
+    runtimeApi.renderModelStack(schemaStack, {
+      items: [
+        { name: 'GPT', id: 'gpt-primary', label: 'Primary', send: true },
+        { name: 'GPT', id: 'gpt-backup', label: 'Backup', send: false }
+      ],
+      activeIndices: [],
+      onlyActive: true
+    });
+    const schemaBlocks = [...schemaStack.querySelectorAll('.model-block')];
+    expect(schemaBlocks.map((block) => block.dataset.participantId)).toEqual(['gpt-primary', 'gpt-backup']);
+    expect(schemaBlocks.map((block) => block.querySelector('.model-input-checkbox').checked)).toEqual([true, false]);
+
+    const legacyStack = document.createElement('div');
+    runtimeApi.renderModelStack(legacyStack, { activeIndices: [1], onlyActive: true });
+    expect([...legacyStack.querySelectorAll('.model-block .model-name')].map((node) => node.textContent.trim())).toEqual(['GPT']);
     expect(runtime).toContain('renderModelStack(r1Stack, { activeIndices: [], withRole: true, onlyActive: true');
     expect(runtime).toContain('activeIndices: [], withRole: true, onlyActive: true');
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");

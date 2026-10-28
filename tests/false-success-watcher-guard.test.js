@@ -86,13 +86,19 @@ describe('false success: watcher completion guards', () => {
   });
 
   test('content growth extends a short deadline without exceeding hardMax', () => {
-    const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT' });
-    const initial = watcher.timeoutManager.calculateTimeout(1);
-    const grown = watcher.timeoutManager.recalculateOnGrowth(6000);
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    try {
+      const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT' });
+      const initial = watcher.timeoutManager.calculateTimeout(1);
+      const grown = watcher.timeoutManager.recalculateOnGrowth(6000);
 
-    expect(initial).toEqual({ soft: 50000, hard: 100000 });
-    expect(grown.softRemaining).toBe(450000);
-    expect(grown.hardRemaining).toBe(450000);
+      expect(initial).toEqual({ soft: 50000, hard: 100000 });
+      expect(grown.softRemaining).toBe(450000);
+      expect(grown.hardRemaining).toBe(450000);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('while the lifecycle detector tracks the dispatch, only its terminal result ends the wait', async () => {

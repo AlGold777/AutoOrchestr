@@ -33,7 +33,7 @@
 
 - Тесты запускает Jest: `npm test` (то же, что `jest --config tests/jest.config.js`) или на отдельных файлах `npx jest --config tests/jest.config.js tests/<файл>.test.js`. В worktree может не быть `node_modules`: тогда `npm install` по `package.json` либо запуск Jest из основного чекаута на файлах worktree (`<основной чекаут>/node_modules/.bin/jest --config tests/jest.config.js <файлы>`, из каталога worktree).
 - Изменили документацию Basic — обязательно прогнать `tests/basic-schema-guide.test.js` и `tests/basic-docs-refs.test.js` (на 22.10 — 19 тестов, все проходят). Изменили код — прогнать тесты затронутых модулей и перед доставкой, по возможности, весь набор.
-- «Зелёным» считается набор без падений, кроме известных нестабильных: тест `false success: watcher completion guards` (`tests/false-success-watcher-guard.test.js`, зависит от времени; описан как TEST-2 в `Pipeline scenarios/basic-developer.md`, раздел 5). Падение любого другого теста до вашей правки — не повод его игнорировать: выяснить причину и сообщить.
+- «Зелёным» считается набор без падений. Известные и ранее существовавшие ошибки не являются исключением. Нестабильные часы теста `false success: watcher completion guards` исправлены в 2.81.920 (TEST-2 в `Pipeline scenarios/basic-developer.md`); любое падение требует выяснения причины.
 - Загруженная версия расширения по телеметрии: поле `extensionVersion` в отчётах телеметрии; формат и разбор — [telemetry.md](../Telemetry/telemetry.md) и [инструкция анализа отчёта](../Telemetry/report-analysis-prompt.md). Если отчёта нет, версию берут из `manifest.json` основного чекаута.
 
 ## 2б. Слова, которые легко перепутать
