@@ -7957,7 +7957,7 @@ document.addEventListener('click', (event) => {
                         items: state.items,
                         withRole: true,
                         participantControls: true,
-                        orderedPrompts: getOrderedJudgePrompts(),
+                        orderedPrompts: getRoleOptionPrompts(),
                         escapeHtml
                     });
                 }
