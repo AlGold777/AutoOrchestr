@@ -7446,6 +7446,14 @@ document.addEventListener('click', (event) => {
                 }
                 markStaleBasicCards(result.steps);
                 const artifacts = result.artifacts || [];
+                // The copy of each document on disk ends with its last version: a model may revise it after the owner approved it.
+                void (async () => {
+                    const textOfFinal = (ref) => (record ? window.CustomRunRecord.textOf(record, ref) : String(result.texts?.[ref] ?? ''));
+                    for (const entry of window.BasicArtifacts?.finalDocuments?.(steps, artifacts) || []) {
+                        const text = textOfFinal(entry.content?.answerRef);
+                        if (text) await saveDocumentCopy({ stepRef: entry.source.step, document: { name: entry.name, kind: 'read' }, answer: text, startedAt: runContext.startedAt, pipeline: customPipelineName() }, documentCopyState);
+                    }
+                })();
                 if (artifacts.length) {
                     const textOf = (ref) => (record ? window.CustomRunRecord.textOf(record, ref) : String(result.texts?.[ref] ?? ''));
                     appendBasicRunLine(`Артефакты прогона: ${artifacts.length}`, { buttonLabel: 'Открыть', onButton: () => openBasicArtifacts(artifacts, textOf) });

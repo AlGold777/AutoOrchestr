@@ -79,3 +79,25 @@ describe('Basic artifact registry: description of an artifact', () => {
     expect(plain.entry).not.toHaveProperty('description');
   });
 });
+
+describe('Basic artifacts: the final version of each document of a run', () => {
+  const steps = [
+    { ref: 'r1', kind: 'round', models: [{ id: 'GPT', name: 'GPT' }], output: { document: 'read', artifacts: [{ id: 'table', name: 'Таблица', pointer: '' }] } },
+    { ref: 'owner:t', kind: 'owner', models: [], document: 'r1' },
+    { ref: 'r2', kind: 'round', models: [{ id: 'GPT', name: 'GPT' }], output: { document: 'read', artifacts: [{ id: 'table', name: 'Таблица', pointer: '', revisionOf: {} }] } },
+    { ref: 'r3', kind: 'round', models: [{ id: 'Claude', name: 'Claude' }], output: { artifacts: [{ id: 'note', name: 'Заметка', pointer: '' }] } }
+  ];
+  const line = { step: 'r1', participant: 'GPT', id: 'table' };
+  const entry = (lineage, step, participant, answerRef, valid = true) => ({ id: lineage.id, name: 'x', lineage, source: { step, participant, visit: 1 }, content: { answerRef, pointer: '' }, valid });
+
+  test('a document line gives its last version (the model revision after the owner approval); an ordinary artifact is not a document', () => {
+    const entries = [entry(line, 'r1', 'GPT', 't1'), entry(line, 'owner:t', 'owner', 't2'), entry(line, 'r2', 'GPT', 't3'),
+      entry({ step: 'r3', participant: 'Claude', id: 'note' }, 'r3', 'Claude', 't4')];
+    expect(Artifacts.finalDocuments(steps, entries).map((item) => item.content.answerRef)).toEqual(['t3']);
+  });
+
+  test('a stale last version is not written; the line keeps its last valid one', () => {
+    const entries = [entry(line, 'r1', 'GPT', 't1'), entry(line, 'r2', 'GPT', 't3', false)];
+    expect(Artifacts.finalDocuments(steps, entries).map((item) => item.content.answerRef)).toEqual(['t1']);
+  });
+});

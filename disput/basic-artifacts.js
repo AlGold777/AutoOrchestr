@@ -46,7 +46,25 @@
       && entry.source.step === address.step && entry.source.participant === address.participant && entry.source.visit === address.visit) || null;
   }
 
-  const api = Object.freeze({ createRegistry, register, latest, version, lineKey });
+  // The documents for reading (output.document: read) of a run at its end: the last valid version of each line, in the order
+  // of registration. A line is a document when the output of its author (the participant's own, else the step's) says so.
+  // `steps` are the steps of the run (BasicSchema.assemble); the copy on disk ends with this version, not with the approved one.
+  function finalDocuments(steps, entries) {
+    const isDocument = (lineage) => {
+      const step = (Array.isArray(steps) ? steps : []).find((item) => item && item.ref === lineage.step);
+      if (!step) return false;
+      const author = (Array.isArray(step.models) ? step.models : []).find((model) => model && (model.id ?? model.name) === lineage.participant);
+      const output = author && author.output !== undefined ? author.output : step.output;
+      return Boolean(output) && output.document === 'read' && output.format !== 'json';
+    };
+    const last = new Map();
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+      if (entry && entry.valid !== false && isDocument(entry.lineage)) last.set(lineKey(entry.lineage), entry);
+    });
+    return [...last.values()];
+  }
+
+  const api = Object.freeze({ createRegistry, register, latest, version, lineKey, finalDocuments });
   root.BasicArtifacts = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
