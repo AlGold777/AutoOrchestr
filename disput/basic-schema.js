@@ -166,6 +166,8 @@
           ...('output' in model ? { output: clone(model.output) } : {}),
           // An own request, an empty one included, is a value; a missing one is the automatic request.
           promptTemplate: typeof model.request === 'string' ? model.request : null,
+          // Format 1: an own request without {вход} runs as before (the input is not in it); format 2 stops it (invalid_request).
+          ...(typeof model.request === 'string' && !(schema.schemaVersion >= 2) ? { requestInput: 'lenient' } : {}),
           maxWords: 'maxWords' in model ? model.maxWords : null,
           extra: explicit ? '' : (roleText(model.role || '', step.ref) || ''),
           task: own === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
@@ -590,7 +592,9 @@
         return couldProduceAnswer(earlier[sourceIndex], address.participant);
       });
     };
-    steps.forEach((step, index) => {
+    // Format 1 keeps its meaning (a schema already saved must keep reading): an own request without {вход} is a warning of the
+    // page there, not an error of the schema.
+    if (schema.schemaVersion >= 2) steps.forEach((step, index) => {
       if (!isObject(step) || step.kind !== 'round' || !Array.isArray(step.models)) return;
       step.models.forEach((model, modelIndex) => {
         if (!isObject(model) || model.enabled === false || typeof model.request !== 'string' || !model.request.trim()) return;

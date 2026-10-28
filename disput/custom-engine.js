@@ -226,6 +226,7 @@
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
           name: model.name, id: model.id ?? model.name, label: typeof model.label === 'string' ? model.label : model.name,
           settingsMode: model.settingsMode === 'explicit' ? 'explicit' : null,
+          ...(model.requestInput === 'lenient' ? { requestInput: 'lenient' } : {}),
           extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null,
@@ -671,7 +672,8 @@
       const spec = specOf(step, model);
       const input = inputFor(step, spec, { model });
       const requestCheck = requestDiagnostics({ model, hasInput: input.length > 0 });
-      if (requestCheck.errors.length) {
+      // A schema of format 1 keeps running its own request as written (requestInput: lenient), the page warns before the run.
+      if (requestCheck.errors.length && model.requestInput !== 'lenient') {
         throw new EngineError('invalid_request', `шаг «${step.ref}» · модель «${model.name}»`, requestCheck.errors.join(' '));
       }
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec),

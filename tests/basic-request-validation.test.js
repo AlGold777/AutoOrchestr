@@ -3,7 +3,8 @@ const path = require('path');
 const Schema = require('../disput/basic-schema');
 const Engine = require('../disput/custom-engine');
 
-const base = (steps) => ({ schemaVersion: 1, origin: 'user', steps });
+// The check is an error of format 2: every participant there has its permanent id (its name here).
+const base = (steps) => ({ schemaVersion: 2, origin: 'user', steps: steps.map((step) => ({ ...step, models: step.models.map((model) => ({ id: model.name, ...model })) })) });
 const round = (ref, models, extra = {}) => ({
   ref,
   kind: 'round',
@@ -52,6 +53,15 @@ describe('Basic personal request input validation', () => {
       round('r2', [{ name: 'NeedsSource', request: 'Use the source.', input: 'previous' }], { input: 'none' })
     ]);
     expect(requestErrors(missingOverride).map((error) => error.path)).toEqual(['steps[1].models[0].request']);
+  });
+
+  test('format 1 keeps its meaning: the same request is not an error and runs without its input', async () => {
+    const steps = [round('r1', ['Source']), round('r2', [{ name: 'Writer', request: 'Write a reply to the task.' }])];
+    const schema = { schemaVersion: 1, origin: 'user', steps };
+    expect(requestErrors(schema)).toEqual([]);
+    const send = async (models) => ({ byModel: Object.fromEntries(models.map((name) => [name, { text: `answer from ${name}.`, status: 'SUCCESS' }])) });
+    const result = await Engine.run({ task: 'Task', steps: Schema.assemble(schema), send, maxAttempts: 1 });
+    expect(result.stopReason).toBe('steps_done');
   });
 
   test('a disabled model is neither validated as a requester nor treated as a source', () => {

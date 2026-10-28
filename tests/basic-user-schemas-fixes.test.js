@@ -243,6 +243,28 @@ describe('Basic: user schemas keep working and keep their data', () => {
     expect(record.snapshot.steps).toEqual(steps);
   });
 
+  test('5.3 an own request without {вход}: format 1 reads and runs as before, format 2 is refused', async () => {
+    const steps = [round('r1', ['A']), round('r2', [{ name: 'B', request: 'Своя задача: {задача}' }])];
+    expect(Schema.validate(schemaOf(steps))).toEqual([]);
+    const v2 = { ...schemaOf(steps.map((step) => ({ ...step, models: step.models.map((model) => ({ id: model.name, ...model })) }))), schemaVersion: 2 };
+    expect(Schema.validate(v2).map((error) => error.path)).toEqual(['steps[1].models[0].request']);
+    const send = async (models) => ({ byModel: Object.fromEntries(models.map((model) => [model, { text: `ответ ${model}.`, status: 'SUCCESS' }])), closedByOwner: false });
+    const result = await Engine.run({ task: 'T', steps: Schema.assemble(schemaOf(steps)), send, maxAttempts: 1 });
+    expect(result.stopReason).toBe('steps_done');
+  });
+
+  test('5.2 the notice of an unreadable saved schema says what to do for its reason', async () => {
+    const open = (schema) => {
+      const record = { version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'] }, modelStacks: {}, schema };
+      debug.setPipelineStoreForTest({ active: 'Old', pipelines: { Old: record }, order: ['Old'] });
+      debug.applyPipelineConfig(record);
+      return note();
+    };
+    expect(open(schemaOf([round('r1', ['GPT'])], { schemaVersion: 9 }))).toContain('обновите расширение');
+    expect(open(schemaOf([round('r1', ['GPT']), { ref: 'g', kind: 'gate', models: [] }]))).toContain('перепишите эти места');
+    expect(open(schemaOf([round('r1', ['GPT'], { extraField: 1 })]))).toContain('Исправьте схему по ошибкам');
+  });
+
   test('1.7 another pipeline cannot be opened while a run goes on', async () => {
     const twoRounds = (model) => schemaOf([round('r1', [model]), round('r2', [model])], { run: { policy: 'auto' } });
     await install('RunA', twoRounds('GPT'));

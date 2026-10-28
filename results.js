@@ -6582,10 +6582,20 @@ document.addEventListener('click', (event) => {
             if (working.error) {
                 basicSchemaLoadErrors.set(key, working.error);
                 basicSchemaLoadErrorList.set(key, working.errorList || []);
-                showNotification(unreadableSchemaMessage(working.error), 'error');
+                showNotification(unreadableSchemaMessage(working.error, working.errorList), 'error');
             } else { basicSchemaLoadErrors.delete(key); basicSchemaLoadErrorList.delete(key); }
         };
-        const unreadableSchemaMessage = (reason) => `Схема pipeline не прочитана: ${reason}. Она использует то, чего в Basic больше нет; соберите схему заново.`;
+        // What the owner does with a saved schema that is not read depends on why: a schema of a newer Basic needs a newer extension,
+        // a removed kind or field is written another way now (the error says how), any other error is corrected in the schema.
+        const unreadableSchemaMessage = (reason, errors = []) => {
+            const list = Array.isArray(errors) ? errors : [];
+            const advice = list.some((error) => error?.path === 'schemaVersion' && /более новой версией/.test(error.message || ''))
+                ? 'Схема записана более новой версией Basic: обновите расширение.'
+                : list.some((error) => /допустимо round, owner;|не поддерживается: /.test(error?.message || ''))
+                    ? 'Она использует то, чего в Basic больше нет: перепишите эти места, как подсказано, и установите схему заново.'
+                    : 'Исправьте схему по ошибкам и установите её заново.';
+            return `Схема pipeline не прочитана: ${reason}. ${advice}`;
+        };
         // Writes the settings of a saved pipeline: a Basic pipeline stores its schema (and drops the earlier
         // members), any other keeps the earlier members.
         const persistBasicSettings = (name) => {
@@ -6593,7 +6603,7 @@ document.addEventListener('click', (event) => {
             if (!record) return false;
             // An unreadable saved schema is never overwritten by a schema rebuilt from the page.
             if (basicSchemaLoadErrors.has(name)) {
-                showNotification(unreadableSchemaMessage(basicSchemaLoadErrors.get(name)), 'error');
+                showNotification(unreadableSchemaMessage(basicSchemaLoadErrors.get(name), basicSchemaLoadErrorList.get(name)), 'error');
                 return false;
             }
             if (getPresetMetaForConfig(record)?.runner !== 'custom') {
@@ -7497,6 +7507,10 @@ document.addEventListener('click', (event) => {
                         hasRole: Boolean(String(sourceModel.role || '').trim())
                     }) || { warnings: [] };
                     (diagnostics.warnings || []).forEach((warning) => warnings.push(`${step.ref} · ${model.name}: ${warning}`));
+                    // Format 1 runs an own request without {вход} as written (format 2 refuses it): the owner is told the input is left out.
+                    if (!(built.schema.schemaVersion >= 2) && preview.inputMode !== 'none' && !model.promptTemplate.includes('{вход}')) {
+                        warnings.push(`${step.ref} · ${model.name}: В запросе нет {вход}: ответы предыдущих шагов в запрос не попадут.`);
+                    }
                     const prompt = composeCustomPrompts(
                         [model.name], { [model.name]: preview.prompt }, { [model.name]: model.maxWords },
                         { [model.name]: model.discipline }, built.schema.defaults?.modelNotes || {}, {}, built.run.maxWords
@@ -7844,7 +7858,8 @@ document.addEventListener('click', (event) => {
                     runWords: Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => Number(option.value)).filter(Number.isSafeInteger)
                 })
                 : null;
-            if (schemaCanvas?.errors?.length) {
+            // A schema that is not read has its own notice (unreadableSchemaMessage); the canvas notice would replace it.
+            if (schemaCanvas?.errors?.length && !working.error) {
                 showNotification(`Схема не отображена на холсте: ${window.BasicSchema.describeErrors(schemaCanvas.errors)}`, 'error');
             }
             const sourceRoundSteps = incomingSchema?.steps?.filter((step) => step.kind === 'round') || [];
@@ -8487,7 +8502,7 @@ document.addEventListener('click', (event) => {
             // Saving would rebuild the schema from the page and lose what the unreadable one holds.
             const loadedError = basicSchemaLoadErrors.get(draftPlanStorageKey());
             if (loadedError) {
-                showNotification(unreadableSchemaMessage(loadedError), 'error');
+                showNotification(unreadableSchemaMessage(loadedError, basicSchemaLoadErrorList.get(draftPlanStorageKey())), 'error');
                 return;
             }
             const isDraft = pipelinePanel?.dataset.pipelineDraft === 'true' || currentName === 'Unsaved Pipeline';
@@ -10807,7 +10822,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.908';
+            const APP_VERSION = '2.81.909';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
