@@ -27,7 +27,7 @@
 - Claude делегирует задачи своим субагентам Haiku 5.5 (`model: haiku`).
 - GPT делегирует задачи субагентам GPT-6 Luna (`model: gpt-6-luna`, `reasoning_effort: high`).
 
-- Review и реализация сложных изменений силами команды (главный архитектор, ведущий, исполнитель, проверяющий) — [docs/Agents/agent-team.md](docs/Agents/agent-team.md).
+- Review, реализация сложных изменений и расследование сбоя силами команды (главный архитектор, ведущий, исполнитель, проверяющий) — [docs/Agents/agent-team.md](docs/Agents/agent-team.md).
 
 # Работа с git
 
