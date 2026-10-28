@@ -6,6 +6,7 @@ const { delay, renderDebateDom, loadResultsScript } = require('./helpers/results
 const Engine = require('../disput/custom-engine');
 const Schema = require('../disput/basic-schema');
 const Record = require('../disput/custom-run-record');
+const Reader = require('../disput/schema-text-reader');
 
 const settle = () => delay(0);
 const schemaOf = (steps, extra = {}) => ({ schemaVersion: 1, origin: 'user', steps, ...extra });
@@ -263,6 +264,42 @@ describe('Basic: user schemas keep working and keep their data', () => {
     expect(open(schemaOf([round('r1', ['GPT'])], { schemaVersion: 9 }))).toContain('обновите расширение');
     expect(open(schemaOf([round('r1', ['GPT']), { ref: 'g', kind: 'gate', models: [] }]))).toContain('перепишите эти места');
     expect(open(schemaOf([round('r1', ['GPT'], { extraField: 1 })]))).toContain('Исправьте схему по ошибкам');
+  });
+
+  test('6.3 the reader skips braces before the schema, names a second schema and reads odd spaces', () => {
+    const schema = '{"schemaVersion":1,"origin":"user","steps":[{"ref":"r1","kind":"round","models":[{"name":"GPT"}]}]}';
+    const preamble = Reader.read(`Вот схема {v2}, пример шага {"ref":"r1"}:\n${schema}`);
+    expect(preamble.ok).toBe(true);
+    expect(preamble.value.schemaVersion).toBe(1);
+    expect(preamble.notes.join(' ')).toContain('Текст со скобками перед схемой пропущен');
+    const two = Reader.read(`${schema}\n\nИли так:\n${schema.replace('GPT', 'Claude')}`);
+    expect(two.value.steps[0].models[0].name).toBe('GPT');
+    expect(two.notes.join(' ')).toContain('больше одной схемы');
+    const spaces = Reader.read(schema.replace('{"schemaVersion"', '{\u00A0"schemaVersion"').replace(',"origin"', ',\u200B"origin"'));
+    expect(spaces.ok).toBe(true);
+    expect(spaces.notes.join(' ')).toContain('Неразрывные и невидимые пробелы');
+  });
+
+  test('6.2 a schema file is read like a pasted reply and checked before its name is asked', async () => {
+    const importFile = async (text, answer) => {
+      const oldPrompt = window.prompt;
+      const prompts = [];
+      window.prompt = jest.fn((message, proposed) => { prompts.push(proposed); return answer; });
+      try {
+        document.getElementById('pipeline-import-btn').click();
+        const input = [...document.querySelectorAll('input[type="file"]')].filter((node) => node.accept === 'application/json').pop();
+        Object.defineProperty(input, 'files', { value: [new File([text], 'fenced.json', { type: 'application/json' })], configurable: true });
+        input.dispatchEvent(new Event('change'));
+        await delay(150);
+      } finally { window.prompt = oldPrompt; }
+      return prompts;
+    };
+    const fenced = 'Схема:\n```json\n{ "schemaVersion": 1, "origin": "user", "steps": [{ "ref": "r1", "kind": "round", "models": [{ "name": "GPT" }], }] }\n```';
+    await importFile(fenced, 'From fence');
+    expect(debug.getPipelineStoreSnapshot().pipelines['From fence'].schema.steps[0].models[0].name).toBe('GPT');
+    const prompts = await importFile(JSON.stringify({ name: 'not a schema' }), 'Nope');
+    expect(prompts).toEqual([]);
+    expect(note()).toContain('schemaVersion: версия формата не указана');
   });
 
   test('1.7 another pipeline cannot be opened while a run goes on', async () => {

@@ -4365,10 +4365,14 @@ describe('Pipeline debate favorites view', () => {
         const h = setupCustomInheritance('Refuse host');
         try {
           const before = JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines);
+          // The file is read as a pasted reply is (plan 6.2): what cannot be read says why; an object without the schema fields
+          // gets the errors of the schema check with their place.
           await importFile('not json {', 'x.json', 'Nope');
-          expect(document.getElementById('notification-message').textContent).toContain('Файл не JSON');
+          expect(document.getElementById('notification-message').textContent).toContain('Файл не прочитан как схема Basic');
           await importFile(JSON.stringify([1, 2]), 'x.json', 'Nope');
-          expect(document.getElementById('notification-message').textContent).toContain('Файл не похож на схему Basic');
+          expect(document.getElementById('notification-message').textContent).toContain('Файл не прочитан как схема Basic');
+          await importFile(JSON.stringify({ name: 'not a schema' }), 'x.json', 'Nope');
+          expect(document.getElementById('notification-message').textContent).toContain('schemaVersion: версия формата не указана');
           await importFile(JSON.stringify({ schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'Nobody' }] }] }), 'x.json', 'Nope');
           expect(document.getElementById('notification-message').textContent).toContain('steps[0].models[0].name');
           expect(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines)).toBe(before);

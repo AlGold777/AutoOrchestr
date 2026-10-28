@@ -104,17 +104,48 @@
   const SERVICE_LINE = /^\s*(?:\[\[AO-[^\]]*\]\]|\[(?:НЕ\s+)?СКОПИРОВАНО:.*\])\s*$/i;
   const commentOf = (text) => text.replace(/```\w*/g, '').trim();
 
+  // A value that looks like a schema: an object with schemaVersion or steps (a step, an example of a field or a {placeholder} does not).
+  const schemaLike = (value) => isObj(value) && ('schemaVersion' in value || 'steps' in value);
+  // The value of a JSON object that starts at s[at], strict or softened; null when there is none there.
+  function objectAt(s, at) {
+    const res = soften(s, at);
+    if (!res.closed) return null;
+    if (!errorOf(s.slice(at, res.end))) return { value: JSON.parse(s.slice(at, res.end)), end: res.end };
+    return errorOf(res.out) ? null : { value: JSON.parse(res.out), end: res.end };
+  }
+  // The first schema-like object of the text after `from`, among the first `limit` braces; null when there is none.
+  function schemaAt(s, from = 0, limit = 300) {
+    for (let at = s.indexOf('{', from), seen = 0; at >= 0 && seen < limit; at = s.indexOf('{', at + 1), seen += 1) {
+      const found = objectAt(s, at);
+      if (found && schemaLike(found.value)) return { start: at, ...found };
+    }
+    return null;
+  }
+  // Spaces that look like spaces but are not (no-break, narrow, zero width, BOM) break JSON between its tokens.
+  const ODD_SPACES = /[\u00A0\u2007\u202F]/g;
+  const NO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
+
   // Text → the first JSON value. Errors and notes go to ctx; ctx.comment gets the text outside the JSON.
   function readJson(text, ctx) {
     const lines = text.split('\n');
     const kept = lines.filter((line) => !SERVICE_LINE.test(line));
     if (kept.length < lines.length) ctx.notes.push(`Удалено служебных строк расширения: ${lines.length - kept.length}.`);
-    const raw = kept.join('\n');
+    let raw = kept.join('\n');
+    if (ODD_SPACES.test(raw) || NO_WIDTH.test(raw)) {
+      raw = raw.replace(ODD_SPACES, ' ').replace(NO_WIDTH, '');
+      ctx.notes.push('Неразрывные и невидимые пробелы заменены обычными.');
+    }
     if (!raw.trim()) { ctx.errors.push('Поле пустое: вставьте JSON-схему.'); return null; }
-    const brace = raw.indexOf('{');
+    // Braces before the schema (a preamble «формат {поле}», an example object) are not the schema: its start is the first
+    // schema-like object when the first object is not one.
+    const firstAt = raw.indexOf('{');
+    const firstObject = firstAt >= 0 ? objectAt(raw, firstAt) : null;
+    const schemaFound = firstObject && schemaLike(firstObject.value) ? null : schemaAt(raw, firstAt + 1);
+    const brace = schemaFound ? schemaFound.start : firstAt;
     if (brace < 0 && raw.indexOf('[') < 0) { ctx.errors.push('В тексте нет JSON-схемы (не найдена «{»).'); return null; }
     let start = brace;
     if (brace < 0) start = raw.indexOf('[');
+    else if (schemaFound) ctx.notes.push('Текст со скобками перед схемой пропущен: схема — первый объект с schemaVersion или steps.');
     else {
       const sq = raw.lastIndexOf('[', brace);
       if (sq >= 0 && !raw.slice(sq + 1, brace).trim()) start = sq;
@@ -151,6 +182,8 @@
       rest = t.slice(next.end);
     }
     if (count > 1) ctx.notes.push(`Найдено ${count} JSON-объектов, применён первый.`);
+    // Another schema further in the text (after a sentence): only the first is applied, the owner is told.
+    else if (schemaLike(value) && schemaAt(rest)) ctx.notes.push('В ответе больше одной схемы: применена первая, остальные остались в комментарии.');
     ctx.comment = [before, commentOf(rest)].filter(Boolean).join('\n\n');
     if (ctx.comment) ctx.notes.push('Текст вне JSON сохранён как комментарий модели.');
     return value;

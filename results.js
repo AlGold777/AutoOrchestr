@@ -8923,21 +8923,41 @@ document.addEventListener('click', (event) => {
             readPipelineImportFile(file);
         };
 
+        // A schema file is read as the paste window reads a reply (SchemaTextReader: a fence, text around the JSON, comments,
+        // trailing commas), and checked before its name is asked: the errors name their place, as the schema check gives them.
+        const SCHEMA_FILE_MAX_BYTES = 5 * 1024 * 1024;
         const readPipelineImportFile = (file) => {
+            if (Number(file.size) > SCHEMA_FILE_MAX_BYTES) {
+                showNotification(`Файл «${file.name}» больше 5 МБ: это не схема Basic.`, 'error');
+                return;
+            }
             const reader = new FileReader();
+            reader.onerror = () => showNotification(`Файл «${file.name}» не прочитан: ${reader.error?.message || 'ошибка чтения'}.`, 'error');
             reader.onload = async () => {
+                const text = String(reader.result || '');
                 let parsed;
-                try { parsed = JSON.parse(String(reader.result || '')); }
-                catch (_) { showNotification('Файл не JSON.', 'error'); return; }
-                const isObject = Boolean(parsed) && typeof parsed === 'object' && !Array.isArray(parsed);
-                if (isObject && 'basicCatalog' in parsed) {
+                let notes = [];
+                try { parsed = JSON.parse(text); } catch (_) { parsed = undefined; }
+                const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+                if (!isPlainObject(parsed)) {
+                    const read = window.SchemaTextReader?.read?.(text);
+                    if (!read?.ok) { showNotification(`Файл не прочитан как схема Basic: ${(read?.errors || ['не JSON']).join(' ')}`, 'error'); return; }
+                    parsed = read.value;
+                    notes = read.notes || [];
+                }
+                if ('basicCatalog' in parsed) {
                     await importBasicCatalog(parsed);
-                } else if (isObject && 'schemaVersion' in parsed && 'steps' in parsed && !parsed.pipelines) {
-                    await importBasicSchemaFile(parsed, String(file.name || '').replace(/\.json$/i, '').trim());
-                } else if (isObject && parsed.pipelines && typeof parsed.pipelines === 'object') {
+                } else if (parsed.pipelines && typeof parsed.pipelines === 'object') {
                     await importBasicBundle(parsed);
                 } else {
-                    showNotification('Файл не похож на схему Basic.', 'error');
+                    const checked = recordFromSchema('schema', parsed);
+                    if (!checked.ok) {
+                        showNotification(`Схема не установлена. ${describeSchemaErrors(checked.errors)}`, 'error');
+                        showSchemaErrors('Схема не установлена', checked.errors);
+                        return;
+                    }
+                    const done = await importBasicSchemaFile(parsed, String(file.name || '').replace(/\.json$/i, '').trim());
+                    if (done && notes.length) showNotification(notes.join('\n'));
                 }
             };
             reader.readAsText(file);
@@ -10822,7 +10842,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.909';
+            const APP_VERSION = '2.81.910';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
