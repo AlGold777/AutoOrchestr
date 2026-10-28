@@ -414,6 +414,38 @@ async function loadResultsScript(seededPipelineStore = null) {
 // The settings of the cards in a stored pipeline: from its schema (Basic), or from the earlier members.
 const settingsOf = (config) => (config.schema ? window.BasicSchema.toSettings(config.schema)
   : { customModelSettings: config.customModelSettings, customDefaults: config.customDefaults });
+// Strip only identity/display metadata. Participation flags and schema fields
+// are behavior, so they remain visible to callers checking the record.
+const customOverridesOf = (config) => Object.fromEntries(Object.entries(settingsOf(config).customModelSettings || {}).flatMap(([ref, models]) => {
+  const overrides = Object.fromEntries(Object.entries(models || {}).map(([id, value]) => [id,
+    Object.fromEntries(Object.entries(value || {}).filter(([key]) => !['name', 'id', 'label'].includes(key)))
+  ]).filter(([, value]) => Object.keys(value).length));
+  return Object.keys(overrides).length ? [[ref, overrides]] : [];
+}));
+
+// Legacy saved Basic records need explicit canvas participants. Basic does not
+// infer round membership from the header selection.
+const withLegacyParticipants = (config) => {
+  const models = config.protocol?.selectedModels || [];
+  const roundCount = Math.max(1, Number(config.roundCounter) || 1);
+  return {
+    ...config,
+    modelStacks: Object.fromEntries(Array.from({ length: roundCount }, (_, index) => [`r${index + 1}-models`, {
+      items: models.map((name) => ({ name, id: name, label: name, input: true, send: true, role: null }))
+    }]))
+  };
+};
+const activateBasicParticipantsForTest = (models = ['GPT', 'Claude'], roundCount = 2) => {
+  const debug = window.__pipelineLifecycleDebug;
+  const name = 'Basic participant UI fixture';
+  debug.clearCustomSessionForTest();
+  const config = withLegacyParticipants({ version: 3, roundCounter: roundCount,
+    protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: models, roundLimit: String(roundCount) }, modelStacks: {} });
+  debug.setPipelineStoreForTest({ active: name, order: [name], pipelines: { [name]: config } });
+  debug.applyPipelineConfig(config);
+  document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
+  return config;
+};
 
 describe('Pipeline debate favorites view', () => {
   beforeAll(async () => {
@@ -1947,20 +1979,24 @@ describe('Pipeline debate favorites view', () => {
     expect(debug.getModeratorDispatchText()).toBe('');
   });
 
-  test('pipeline runtime snapshot uses R1 Pipeline UI as source of truth', () => {
+  test('Basic runtime snapshot reads R1 membership while header selection changes', () => {
+    activateBasicParticipantsForTest();
     const debug = window.__pipelineLifecycleDebug;
+    const beforeR1 = debug.capturePipelineConfig().modelStacks['r1-models'].items
+      .map(({ id, name, input, role }) => ({ id, name, input, role }));
     document.querySelectorAll('.llm-button').forEach((button) => {
-      button.classList.toggle('active', button.id === 'llm-gpt' || button.id === 'llm-claude');
+      button.classList.toggle('active', button.id === 'llm-gemini' || button.id === 'llm-grok');
     });
     document.dispatchEvent(new CustomEvent('llm-selection-change', {
-      detail: { selected: ['GPT', 'Claude'] }
+      detail: { selected: ['Gemini', 'Grok'] }
     }));
     const snapshot = debug.buildPipelineRuntimeSnapshot();
 
     expect(snapshot.rounds[0].stage).toBe('models');
-    expect(snapshot.rounds[0].inputModels).toEqual(['Claude', 'GPT']);
+    expect(snapshot.rounds[0].inputModels).toEqual(['GPT', 'Claude']);
     expect(snapshot.rounds[0].sendModels).toEqual(expect.arrayContaining(['GPT', 'Claude']));
     expect(snapshot.rounds[0].sendModels).toHaveLength(2);
+    expect(snapshot.config.modelStacks['r1-models'].items.map(({ id, name, input, role }) => ({ id, name, input, role }))).toEqual(beforeR1);
     const gptConfig = snapshot.config.modelStacks['r1-models'].items.find((item) => item.name === 'GPT');
     expect(gptConfig).toMatchObject({
       name: 'GPT',
@@ -1998,6 +2034,7 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('Custom turns the canvas plan into engine steps: rounds only; a synthesis stage of an older plan gives no step', () => {
+    activateBasicParticipantsForTest(['GPT', 'Claude'], 2);
     const steps = window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [
       { plannedStageId: 'canvas-r1', participantIds: ['GPT', 'Claude'], outputIntent: 'discussion_work' },
       { plannedStageId: 'planned-working-synthesis-after-canvas-r1', participantIds: ['Gemini'], outputIntent: 'working_synthesis' },
@@ -2008,7 +2045,7 @@ describe('Pipeline debate favorites view', () => {
     expect(window.__pipelineLifecycleDebug.customStepsFromPlan({ plannedStages: [{ plannedStageId: 'canvas-r1', participantIds: [] }] }, { ref: 'r1', name: 'GPT' })[0].models.map((model) => model.name)).toEqual(['GPT']);
     expect(steps.map((step) => ({ ...step, models: step.models.map((model) => model.name) }))).toEqual([
       { kind: 'round', ref: 'r1', round: 1, task: '', input: 'none', models: ['GPT', 'Claude'] },
-      { kind: 'round', ref: 'r2', round: 2, task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'] },
+      { kind: 'round', ref: 'r2', round: 2, task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['GPT'], off: [{ id: 'Claude', name: 'Claude' }] },
       { kind: 'round', ref: 'r3', round: 3, task: expect.stringContaining('Учти ответы'), input: 'previous', models: ['Claude'] }
     ]);
     // The round of one model with the synthesis role is a synthesis: its role text reaches the model.
@@ -2017,10 +2054,12 @@ describe('Pipeline debate favorites view', () => {
 
   test('unnamed canvas opens the real Custom editor and saves the Custom runner without a draft flag', async () => {
     const debug = window.__pipelineLifecycleDebug;
+    debug.clearCustomSessionForTest();
     debug.setPipelineStoreForTest({ pipelines: {}, order: [], active: '' });
     document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
     document.getElementById('currentPipelineName').textContent = '';
-    document.getElementById('llm-gemini').click();
+    debug.applyPipelineConfig(withLegacyParticipants({ version: 3, roundCounter: 2,
+      protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['Gemini'], roundLimit: '2' }, modelStacks: {} }));
     expect(window.getSelectedPipelinePresetId()).toBe('CUSTOM');
     const block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'Gemini');
     expect(block).toBeDefined();
@@ -2034,7 +2073,7 @@ describe('Pipeline debate favorites view', () => {
     modal.querySelector('#custom-card-save').click();
     const config = debug.capturePipelineConfig();
     expect(config.protocol.presetId).toBe('CUSTOM');
-    expect(settingsOf(config).customModelSettings.r2.Gemini).toEqual({ promptTemplate: 'UNNAMED REQUEST {вход}', maxWords: 45 });
+    expect(settingsOf(config).customModelSettings.r2.Gemini).toMatchObject({ promptTemplate: 'UNNAMED REQUEST {вход}', maxWords: 45 });
     modal.remove();
   });
 
@@ -2047,7 +2086,8 @@ describe('Pipeline debate favorites view', () => {
 
   test.each(['saved', 'unnamed', 'cleared'])('Custom card sends its edited request and length through Run, including retries (%s pipeline)', async (kind) => {
     const debug = window.__pipelineLifecycleDebug;
-    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
+    debug.clearCustomSessionForTest();
+    const config = withLegacyParticipants({ version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} });
     debug.setPipelineStoreForTest(kind === 'saved'
       ? { active: 'Card dispatch test', order: ['Card dispatch test'], pipelines: { 'Card dispatch test': config } }
       : { active: '', order: [], pipelines: {} });
@@ -2073,10 +2113,10 @@ describe('Pipeline debate favorites view', () => {
     modal.querySelector('#custom-card-save').click();
     const stored = await chrome.storage.local.get('llmComparatorPipelines');
     if (kind === 'saved') {
-      expect(settingsOf(stored.llmComparatorPipelines.pipelines['Card dispatch test']).customModelSettings.r2.GPT.maxWords).toBe(37);
+      expect(settingsOf(stored.llmComparatorPipelines.pipelines['Card dispatch test']).customModelSettings.r2.GPT).toMatchObject({ maxWords: 37 });
     }
     const saved = debug.capturePipelineConfig();
-    expect(settingsOf(saved).customModelSettings.r2.GPT).toEqual({ promptTemplate: request.value, maxWords: 37 });
+    expect(settingsOf(saved).customModelSettings.r2.GPT).toMatchObject({ promptTemplate: request.value, maxWords: 37 });
     // Reloading the saved configuration must restore the actual card controls.
     debug.applyPipelineConfig(JSON.parse(JSON.stringify(saved)));
     block = [...document.querySelectorAll('#r2-models .model-block')].find((item) => item.querySelector('.model-name')?.textContent === 'GPT');
@@ -2162,7 +2202,8 @@ describe('Pipeline debate favorites view', () => {
 
   test('the Custom model card rejects empty requests and invalid lengths; reset and inherited length persist', async () => {
     const debug = window.__pipelineLifecycleDebug;
-    const config = { version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'], roundLimit: '1', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
+    debug.clearCustomSessionForTest();
+    const config = withLegacyParticipants({ version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'], roundLimit: '1', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} });
     debug.setPipelineStoreForTest({ active: 'Card validation test', order: ['Card validation test'], pipelines: { 'Card validation test': config } });
     debug.applyPipelineConfig(config);
     const block = document.querySelector('#r1-models .model-block');
@@ -2177,19 +2218,19 @@ describe('Pipeline debate favorites view', () => {
     const original = request.value;
     request.value = '';
     modal.querySelector('#custom-card-save').click();
-    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings).toEqual({});
+    expect(customOverridesOf(debug.capturePipelineConfig())).toEqual({});
     request.value = 'Edited request';
     length.value = '0';
     modal.querySelector('#custom-card-save').click();
-    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings).toEqual({});
+    expect(customOverridesOf(debug.capturePipelineConfig())).toEqual({});
     length.value = '1.5';
     modal.querySelector('#custom-card-save').click();
-    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings).toEqual({});
+    expect(customOverridesOf(debug.capturePipelineConfig())).toEqual({});
     modal.querySelector('#custom-card-reset').click();
     expect(request.value).toBe(original);
     length.value = '';
     modal.querySelector('#custom-card-save').click();
-    expect(settingsOf(debug.capturePipelineConfig()).customModelSettings.r1?.GPT).toBeUndefined();
+    expect(customOverridesOf(debug.capturePipelineConfig()).r1?.GPT).toBeUndefined();
     const limited = (text) => debug.prepareCustomPrompts(['GPT'], { GPT: text }, { GPT: 44 }).GPT;
     for (const stale of ['[RESPONSE_LIMIT] stale 999 words', '[DISPUT_RESPONSE_LIMIT] stale 999 words']) {
       const sent = limited(`TEST\n${stale}`);
@@ -2226,7 +2267,8 @@ describe('Pipeline debate favorites view', () => {
 
   test('Custom card «+» adds own lines, saves only non-empty ones, and «×» removes a line', async () => {
     const debug = window.__pipelineLifecycleDebug;
-    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} };
+    debug.clearCustomSessionForTest();
+    const config = withLegacyParticipants({ version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', synthesizer: '', runPolicy: 'auto' }, modelStacks: {} });
     debug.setPipelineStoreForTest({ active: '', order: [], pipelines: {} });
     document.getElementById('pipeline-panel').removeAttribute('data-pipeline-draft');
     debug.applyPipelineConfig(config);
@@ -2255,6 +2297,7 @@ describe('Pipeline debate favorites view', () => {
 
   test.each(['input', 'limit', 'content', 'delivery', 'correction', 'token'])('Custom stops without dispatch or compaction when the full %s overflows', async (part) => {
     const debug = window.__pipelineLifecycleDebug;
+    debug.clearCustomSessionForTest();
     const originalBudget = window.DebateContextBudget;
     const originalDelivery = window.MessageDelivery;
     const budget = require('../disput/debate-context-budget');
@@ -2264,8 +2307,8 @@ describe('Pipeline debate favorites view', () => {
     const discipline = { limit: 'L', content: 'C', delivery: 'D', ask: 'A', correction: 'RETRY' };
     if (part !== 'input' && part !== 'token') discipline[part] = 'Z'.repeat(700);
     const promptTemplate = part === 'input' ? 'X'.repeat(700) : 'X';
-    const config = { version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'], roundLimit: '1', synthesizer: '', runPolicy: part === 'ask' ? 'manual' : 'auto' }, modelStacks: {},
-      customModelSettings: { r1: { GPT: { promptTemplate, discipline } } } };
+    const config = withLegacyParticipants({ version: 3, roundCounter: 1, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT'], roundLimit: '1', synthesizer: '', runPolicy: part === 'ask' ? 'manual' : 'auto' }, modelStacks: {},
+      customModelSettings: { r1: { GPT: { promptTemplate, discipline } } } });
     debug.setPipelineStoreForTest({ active: 'Budget check', pipelines: { 'Budget check': config }, order: ['Budget check'] });
     debug.applyPipelineConfig(config);
     document.getElementById('debate-run-policy-select').value = config.protocol.runPolicy;
@@ -2329,7 +2372,24 @@ describe('Pipeline debate favorites view', () => {
   };
   const setupCustomInheritance = (name) => {
     const debug = window.__pipelineLifecycleDebug;
-    const config = { version: 3, roundCounter: 2, protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '300', roundLimit: '2', runPolicy: 'auto' }, modelStacks: {} };
+    debug.clearCustomSessionForTest();
+    const participants = (models) => ({ items: models.map((model) => ({
+      name: model,
+      id: model,
+      label: model,
+      input: true,
+      send: true,
+      role: null
+    })) });
+    const config = {
+      version: 3,
+      roundCounter: 2,
+      protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '300', roundLimit: '2', runPolicy: 'auto' },
+      modelStacks: {
+        'r1-models': participants(['GPT', 'Claude']),
+        'r2-models': participants(['GPT', 'Claude'])
+      }
+    };
     debug.setPipelineStoreForTest({ active: name, pipelines: { [name]: config }, order: [name] });
     debug.applyPipelineConfig(config);
     document.getElementById('debate-run-policy-select').value = 'auto';
@@ -2387,7 +2447,7 @@ describe('Pipeline debate favorites view', () => {
       h.debug.applyPipelineConfig(bad);
       const starts = await h.run();
       expect(starts).toHaveLength(0);
-      expect(document.getElementById('notification-message').textContent).toContain('steps[0].models[1].maxWords');
+      expect(document.getElementById('notification-message').textContent).toContain('steps[0].models[0].maxWords');
       // The same pipeline with a valid value runs.
       const good = { ...h.config, customModelSettings: { r1: { GPT: { maxWords: 120 } } } };
       h.debug.clearCustomSessionForTest();
@@ -2572,7 +2632,7 @@ describe('Pipeline debate favorites view', () => {
       expect(general.querySelector('#custom-card-length')).toBeNull();
       expect(general.querySelector('#custom-discipline-synthesisTask')).toBeNull();
       await h.general({ roundTask: 'ROUND_GENERAL_A', content: 'CONTENT_GENERAL_A', delivery: 'DELIVERY_GENERAL {метка}', correction: 'FIX_GENERAL {причина}' });
-      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings).toEqual({});
+      expect(customOverridesOf(h.debug.capturePipelineConfig())).toEqual({});
       await h.run();
       expect(h.starts).toHaveLength(2);
       for (const model of ['GPT', 'CLAUDE']) {
@@ -2586,7 +2646,7 @@ describe('Pipeline debate favorites view', () => {
       expect(h.starts[1].promptsByModel.GPT).toContain('ROUND_GENERAL_B');
       expect(h.starts[2].promptsByModel.GPT).toContain('FIX_GENERAL');
       expect(h.starts[2].promptsByModel.GPT).toContain('CONTENT_GENERAL_B');
-      expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings).toEqual({});
+      expect(customOverridesOf(h.debug.capturePipelineConfig())).toEqual({});
       expect(h.openModel().querySelector('[data-source-for]')).toBeNull();
     } finally { h.cleanup(); }
   }, 30000);
@@ -2813,7 +2873,7 @@ describe('Pipeline debate favorites view', () => {
     const h = setupCustomInheritance('Model notes');
     try {
       const general = h.openGeneral();
-      expect([...general.querySelectorAll('[data-model-note]')].map((field) => field.dataset.modelNote)).toEqual(['Claude', 'GPT']);
+      expect([...general.querySelectorAll('[data-model-note]')].map((field) => field.dataset.modelNote)).toEqual(['GPT', 'Claude']);
       general.querySelector('[data-model-note="GPT"]').value = 'NOTE_GPT без вступлений';
       general.querySelector('#custom-card-save').click();
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -2948,6 +3008,12 @@ describe('Pipeline debate favorites view', () => {
       try { document.getElementById('pipeline-save-btn').click(); await settleCustomCard(); }
       finally { window.prompt = oldPrompt; }
     };
+    const loadRunnableDefaultCopy = (h) => h.debug.applyPipelineConfig(withLegacyParticipants({
+      version: 3,
+      roundCounter: 2,
+      protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: ['GPT', 'Claude'], length: '700', roundLimit: '2', runPolicy: 'auto' },
+      modelStacks: {}
+    }));
     const storedRecord = async (name) => (await chrome.storage.local.get('llmComparatorPipelines')).llmComparatorPipelines.pipelines[name];
     const reload = (h, name) => {
       const record = JSON.parse(JSON.stringify(h.debug.getPipelineStoreSnapshot().pipelines[name]));
@@ -3052,6 +3118,7 @@ describe('Pipeline debate favorites view', () => {
         h.debug.clearCustomSessionForTest();
         document.querySelector('.pipeline-item[data-name="Default"]').click();
         await settleCustomCard();
+        loadRunnableDefaultCopy(h);
         await saveAs('From template');
         const record = () => h.debug.getPipelineStoreSnapshot().pipelines['From template'];
         expect(record().schema).toMatchObject({ origin: 'user', basedOn: 'Default' });
@@ -3144,6 +3211,13 @@ describe('Pipeline debate favorites view', () => {
     describe('a schema is installed as a pipeline', () => {
       const stackFlags = (stackId) => [...document.querySelectorAll(`#${stackId} .model-block:not(.pipeline-empty-slot)`)]
         .map((block) => [block.querySelector('.model-name').textContent, block.querySelector('.model-input-checkbox').checked, block.querySelector('.role-selector')?.value || '']);
+      const expectDeclaredStack = (stackId, declaredNames, expectedRows, expectedInactiveNames) => {
+        const rows = stackFlags(stackId);
+        expect(rows.filter(([name]) => declaredNames.includes(name))).toEqual(expectedRows);
+        const extras = rows.filter(([name]) => !declaredNames.includes(name));
+        expect(extras.map(([name]) => name)).toEqual(expectedInactiveNames);
+        expect(extras.every(([, input]) => input === false)).toBe(true);
+      };
       const select = (name) => document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
 
       test('the order of a round and the send marks of its models survive load and a second save', async () => {
@@ -3160,8 +3234,9 @@ describe('Pipeline debate favorites view', () => {
           expect(await h.debug.installBasicSchema('Ordered', schema)).toEqual({ ok: true, errors: [] });
           select('Ordered');
           await settleCustomCard();
-          expect(stackFlags('r1-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', true]]);
-          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', false]]);
+          const inactiveProviders = window.PipelineRuntime.MODELS.map((model) => model.name).filter((name) => !['GPT', 'Claude'].includes(name));
+          expectDeclaredStack('r1-models', ['GPT', 'Claude'], [['GPT', true, ''], ['Claude', true, '']], inactiveProviders);
+          expectDeclaredStack('r2-models', ['GPT', 'Claude'], [['GPT', true, ''], ['Claude', false, '']], inactiveProviders);
           const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
           expect(saved.steps.slice(0, 2).map((step) => step.models.map((model) => [model.name, model.enabled !== false]))).toEqual([
             [['GPT', true], ['Claude', true]], [['GPT', true], ['Claude', false]]
@@ -3171,7 +3246,8 @@ describe('Pipeline debate favorites view', () => {
           expect(await h.debug.installBasicSchema('Ordered again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
           select('Ordered again');
           await settleCustomCard();
-          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['GPT', true], ['Claude', false]]);
+          expectDeclaredStack('r1-models', ['GPT', 'Claude'], [['GPT', true, ''], ['Claude', true, '']], inactiveProviders);
+          expectDeclaredStack('r2-models', ['GPT', 'Claude'], [['GPT', true, ''], ['Claude', false, '']], inactiveProviders);
           expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(saved.steps);
         } finally {
           h.cleanup();
@@ -3301,10 +3377,11 @@ describe('Pipeline debate favorites view', () => {
           expect(await h.debug.installBasicSchema('Off on canvas', schema)).toEqual({ ok: true, errors: [] });
           select('Off on canvas');
           await settleCustomCard();
+          const inactiveProviders = window.PipelineRuntime.MODELS.map((model) => model.name).filter((name) => !['GPT', 'Claude', 'Grok'].includes(name));
           // Grok is on the canvas (in the header and in every round) with Send off, and its settings came along.
           expect(h.debug.getPipelineStoreSnapshot().pipelines['Off on canvas'].protocol.selectedModels.slice().sort()).toEqual(['Claude', 'GPT', 'Grok']);
-          expect(stackFlags('r1-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
-          expect(stackFlags('r2-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expectDeclaredStack('r1-models', ['GPT', 'Claude', 'Grok'], [['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']], inactiveProviders);
+          expectDeclaredStack('r2-models', ['GPT', 'Claude', 'Grok'], [['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']], inactiveProviders);
           const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
           expect(saved.steps.slice(0, 2).map((step) => step.models.find((model) => model.name === 'Grok'))).toEqual([
             { name: 'Grok', enabled: false, onCanvas: true, request: 'OFF REQUEST' }, { name: 'Grok', enabled: false, onCanvas: true }
@@ -3315,8 +3392,8 @@ describe('Pipeline debate favorites view', () => {
           expect(await h.debug.installBasicSchema('Off on canvas again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
           select('Off on canvas again');
           await settleCustomCard();
-          expect(stackFlags('r1-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
-          expect(stackFlags('r2-models')).toEqual([['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']]);
+          expectDeclaredStack('r1-models', ['GPT', 'Claude', 'Grok'], [['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']], inactiveProviders);
+          expectDeclaredStack('r2-models', ['GPT', 'Claude', 'Grok'], [['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']], inactiveProviders);
           expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).toEqual(saved.steps);
           // The switched-off model is not called.
           await h.run();
@@ -3384,8 +3461,8 @@ describe('Pipeline debate favorites view', () => {
             'r2-models': { items: [{ name: 'Claude', input: false, send: false, role: null }, { name: 'GPT', input: true, send: true, role: null }] } };
           h.debug.setPipelineStoreForTest({ active: 'Marks host', order: ['Marks host'], pipelines: { 'Marks host': record } });
           h.debug.applyPipelineConfig(record);
-          expect(stackFlags('r2-models').map(([name, send]) => [name, send])).toEqual([['Claude', false], ['GPT', true]]);
-          expect(stackFlags('r1-models').map(([name, send]) => [name, send])).toEqual([['Claude', true], ['GPT', true]]);
+          expectDeclaredStack('r2-models', ['Claude', 'GPT'], [['Claude', false, ''], ['GPT', true, '']], []);
+          expectDeclaredStack('r1-models', ['Claude', 'GPT'], [['Claude', true, ''], ['GPT', true, '']], []);
         } finally { h.cleanup(); }
       }, 30000);
 
@@ -3502,16 +3579,27 @@ describe('Pipeline debate favorites view', () => {
         } finally { h.cleanup(); }
       }, 30000);
 
-      test('A06: two participants of one model in a step are refused at install with their place, nothing is saved without them', async () => {
+      test('A06: two participants of one provider keep distinct IDs through install, save and reload', async () => {
         const h = setupCustomInheritance('Twice host');
         try {
-          const twice = { schemaVersion: 1, origin: 'user', steps: [
-            { ref: 'r1', kind: 'round', models: [{ name: 'Claude', id: 'claude-a' }, { name: 'Claude', id: 'claude-b' }] }
+          const twice = { schemaVersion: 2, origin: 'user', steps: [
+            { ref: 'r1', kind: 'round', models: [
+              { name: 'Claude', id: 'claude-a', label: 'Claude A' },
+              { name: 'Claude', id: 'claude-b', label: 'Claude B' }
+            ] }
           ] };
-          const refused = await h.debug.installBasicSchema('Twice', twice);
-          expect(refused.ok).toBe(false);
-          expect(refused.errors).toEqual([{ path: 'steps[0].models', message: 'два участника модели «Claude» в одном шаге пока не показываются на холсте' }]);
-          expect(h.debug.getPipelineStoreSnapshot().pipelines.Twice).toBeUndefined();
+          expect(await h.debug.installBasicSchema('Twice', twice)).toEqual({ ok: true, errors: [] });
+          const installed = h.debug.getPipelineStoreSnapshot().pipelines.Twice;
+          expect(installed.schema.steps[0].models).toEqual(twice.steps[0].models);
+          select('Twice');
+          await settleCustomCard();
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.steps[0].models.map(({ id, label, name }) => ({ id, label, name }))).toEqual([
+            { id: 'claude-a', label: 'Claude A', name: 'Claude' },
+            { id: 'claude-b', label: 'Claude B', name: 'Claude' }
+          ]);
+          expect(await h.debug.installBasicSchema('Twice again', JSON.parse(JSON.stringify(saved)))).toEqual({ ok: true, errors: [] });
+          expect(h.debug.getPipelineStoreSnapshot().pipelines['Twice again'].schema.steps[0].models).toEqual(saved.steps[0].models);
         } finally { h.cleanup(); }
       }, 30000);
 
@@ -4706,6 +4794,7 @@ describe('Pipeline debate favorites view', () => {
           h.debug.clearCustomSessionForTest();
           document.querySelector('.pipeline-item[data-name="Default"]').click();
           await settleCustomCard();
+          loadRunnableDefaultCopy(h);
           await saveAs('Derived save');
           const { record, again } = derived(h, 'Derived save');
           expect(record.schema.basedOn).toBe('Default');
@@ -4869,7 +4958,7 @@ describe('Pipeline debate favorites view', () => {
         expect(first.task.placeholder).toBe('');
         const second = rows(openRoundCard(2));
         expect([...second.input.options].map((option) => option.value)).toEqual(['', 'none', 'previous', 'all', 'steps']);
-        expect(second.input.options[0].textContent).toBe('По умолчанию (ответы предыдущего шага)');
+        expect(second.input.options[0].textContent).toBe('По умолчанию (ответы последнего этапа с принятым результатом)');
         expect(second.task.value).toBe('');
         expect(second.task.placeholder).toBe(window.BasicSchema.DEFAULTS.roundTask);
         expect(second.role).not.toBeNull();
@@ -5001,17 +5090,22 @@ describe('Pipeline debate favorites view', () => {
           // The card of R2 shows the schema's values.
           const card = openRoundCard(2);
           expect(card.querySelector('.stage-card-input-select').value).toBe('steps');
-          expect([...card.querySelectorAll('.stage-card-steps input')].map((box) => box.checked)).toEqual([true]);
+          const sourceRows = [...card.querySelectorAll('.stage-card-step-option')];
+          const sourceChecks = sourceRows.map((row) => row.querySelector('label:not(.stage-card-step-required-label) input[type="checkbox"]'));
+          const selectedSourceLabels = sourceRows.filter((row, index) => sourceChecks[index].checked).map((row) => row.textContent);
+          expect(selectedSourceLabels).toHaveLength(1);
+          expect(selectedSourceLabels[0]).toContain('Раунд 1');
+          expect(card.querySelector('.stage-card-step-required')?.checked).toBe(false);
           expect(card.querySelector('.stage-card-owner-check').checked).toBe(true);
           expect(card.querySelector('.stage-card-output-name').value).toBe('Замечания');
           expect(card.querySelector('.stage-card-output-sections').value).toBe('Карта\nЗамечания');
           expect(card.querySelector('.stage-card-output-strict').checked).toBe(true);
 
           // The owner's changes: a step off the list, the count above the models, the owner off, the output name.
-          await toggle(card.querySelector('.stage-card-steps input'), false);
+          await toggle(sourceChecks[0], false);
           expect(withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps)[1].input).toEqual([{ step: 'r1', participant: 'GPT' }]);
           await toggle(openRoundCard(2).querySelector('.stage-card-owner-check'), false);
-          await toggle(openRoundCard(2).querySelector('.stage-card-steps input'), true);
+          await toggle(openRoundCard(2).querySelector('.stage-card-step-option input:not(.stage-card-step-required)'), true);
           const name = openRoundCard(2).querySelector('.stage-card-output-name');
           name.value = 'Замечания 2';
           name.dispatchEvent(new Event('change'));
@@ -5030,9 +5124,14 @@ describe('Pipeline debate favorites view', () => {
           // The synthesis is the card of R3, a round of one model: it lists R1 and R2 and keeps its own fields.
           const last = openRoundCard(3);
           expect(last.querySelector('.stage-card-input-select').value).toBe('steps');
-          expect([...last.querySelectorAll('.stage-card-steps input')].map((box) => box.checked)).toEqual([false, true]);
+          const lastSourceRows = [...last.querySelectorAll('.stage-card-step-option')];
+          const lastSourceChecks = lastSourceRows.map((row) => row.querySelector('label:not(.stage-card-step-required-label) input[type="checkbox"]'));
+          const selectedLastSources = lastSourceRows.filter((row, index) => lastSourceChecks[index].checked).map((row) => row.textContent);
+          expect(selectedLastSources).toHaveLength(1);
+          expect(selectedLastSources[0]).toContain('Раунд 2');
+          expect(last.querySelector('.stage-card-step-required')?.checked).toBe(false);
           expect(last.querySelector('.stage-card-owner-check').checked).toBe(true);
-          await toggle(last.querySelectorAll('.stage-card-steps input')[0], true);
+          await toggle(lastSourceChecks[0], true);
           const lastSaved = withoutModels(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).steps).find((step) => step.ref === 'r3');
           expect(lastSaved).toMatchObject({ input: ['r2', 'r1'], owner: 'approve', output: { name: 'Итог', form: 'Сводка' } });
 
@@ -5132,6 +5231,7 @@ describe('Pipeline debate favorites view', () => {
   });
 
   test('new empty pipeline resets an inherited round limit to the three-round default', () => {
+    activateBasicParticipantsForTest();
     document.getElementById('debate-round-limit-select').value = '5';
     document.getElementById('pipeline-add-btn').click();
 
@@ -5140,7 +5240,7 @@ describe('Pipeline debate favorites view', () => {
     expect(document.getElementById('round2')).not.toBeNull();
     expect(document.getElementById('round3')).not.toBeNull();
     expect(document.querySelectorAll('.stage-column[data-round]')).toHaveLength(3);
-    expect(document.querySelectorAll('.model-stack .pipeline-empty-slot')).toHaveLength(3);
+    expect(document.querySelectorAll('.model-stack .model-block:not(.pipeline-empty-slot)')).toHaveLength(0);
   });
 
   test('a new empty pipeline is rounds only: no final synthesis is added', () => {
@@ -5168,22 +5268,34 @@ describe('Pipeline debate favorites view', () => {
     expect(window.PipelineRuntime.MODELS.filter((model) => model.defaultActive)).toEqual([]);
   });
 
-  test('Universal selection keeps every selected available model', () => {
+  test('Basic header selection does not replace declared round participants', () => {
+    activateBasicParticipantsForTest();
+    const debug = window.__pipelineLifecycleDebug;
+    const beforeR1 = debug.capturePipelineConfig().modelStacks['r1-models'].items
+      .map(({ id, name, input, role }) => ({ id, name, input, role }));
     const selectedIds = ['llm-gpt', 'llm-gemini', 'llm-claude', 'llm-grok'];
-    selectedIds.forEach((id) => document.getElementById(id).click());
+    document.querySelectorAll('.llm-button').forEach((button) => button.classList.toggle('active', selectedIds.includes(button.id)));
+    document.dispatchEvent(new CustomEvent('llm-selection-change', {
+      detail: { selected: ['GPT', 'Gemini', 'Claude', 'Grok'] }
+    }));
 
     expect(window.ResultsShared.getSelectedLLMs()).toEqual([
       'GPT', 'Gemini', 'Claude', 'Grok'
     ]);
-    expect(document.querySelectorAll('#r1-models .pipeline-empty-slot')).toHaveLength(0);
-    expect(document.querySelectorAll('#r1-models .model-block')).toHaveLength(4);
+    const rows = [...document.querySelectorAll('#r1-models .model-block:not(.pipeline-empty-slot)')]
+      .map((block) => [block.querySelector('.model-name')?.textContent, block.querySelector('.model-input-checkbox')?.checked]);
+    expect(rows).toEqual([['GPT', true], ['Claude', true]]);
+    expect(debug.capturePipelineConfig().modelStacks['r1-models'].items
+      .map(({ id, name, input, role }) => ({ id, name, input, role }))).toEqual(beforeR1);
   });
 
-  test('round blocks keep the model order; the canvas has no final synthesis column', () => {
+  test('Basic round blocks keep schema order; the canvas has no final synthesis column', () => {
+    activateBasicParticipantsForTest(['Claude', 'GPT', 'Gemini', 'Grok']);
     document.getElementById('debate-round-limit-select').value = '3';
     ['llm-gpt', 'llm-gemini', 'llm-claude', 'llm-grok'].forEach((id) => document.getElementById(id).click());
     window.syncPipelineModelsFromSelectedLLMs({ force: true });
-    const roundNames = (id) => [...document.querySelectorAll(`#${id} .model-block`)].map((block) => block.querySelector('.model-name').textContent);
+    const roundNames = (id) => [...document.querySelectorAll(`#${id} .model-block:not(.pipeline-empty-slot)`)]
+      .map((block) => block.querySelector('.model-name').textContent);
     const modelOrder = ['Claude', 'GPT', 'Gemini', 'Grok'];
     ['r1-models', 'r2-models'].forEach((id) => {
       expect(roundNames(id)).toEqual(modelOrder);
@@ -5193,39 +5305,8 @@ describe('Pipeline debate favorites view', () => {
   });
 
 
-  test('pipeline R1 mirrors selected top models before run when R1 is still default', () => {
-    document.getElementById('pipeline-panel').insertAdjacentHTML('beforeend', `
-      <div class="model-stack" id="r2-models">
-        <div class="model-block">
-          <span class="model-name">GPT</span>
-          <input type="checkbox" class="model-input-checkbox" checked>
-          <input type="checkbox" class="model-send-checkbox" checked>
-        </div>
-        <div class="model-block">
-          <span class="model-name">Claude</span>
-          <input type="checkbox" class="model-input-checkbox" checked>
-          <input type="checkbox" class="model-send-checkbox" checked>
-        </div>
-        <div class="model-block">
-          <span class="model-name">Le Chat</span>
-          <input type="checkbox" class="model-input-checkbox">
-          <input type="checkbox" class="model-send-checkbox">
-        </div>
-        <div class="model-block">
-          <span class="model-name">Perplexity</span>
-          <input type="checkbox" class="model-input-checkbox">
-          <input type="checkbox" class="model-send-checkbox">
-        </div>
-      </div>
-    `);
-    const blocks = Array.from(document.querySelectorAll('#r1-models .model-block'));
-    blocks.forEach((block) => {
-      const name = block.querySelector('.model-name')?.textContent?.trim();
-      const isDefault = ['Claude', 'GPT', 'Gemini'].includes(name);
-      if (block.querySelector('.model-input-checkbox')) block.querySelector('.model-input-checkbox').checked = isDefault;
-      if (block.querySelector('.model-send-checkbox')) block.querySelector('.model-send-checkbox').checked = isDefault;
-    });
-
+  test('Basic header selection does not overwrite explicit R1 or R2 participants', () => {
+    activateBasicParticipantsForTest();
     document.querySelectorAll('.llm-button').forEach((button) => {
       button.classList.toggle('active', button.id === 'llm-lechat' || button.id === 'llm-perplexity');
     });
@@ -5235,12 +5316,10 @@ describe('Pipeline debate favorites view', () => {
 
     const snapshot = window.__pipelineLifecycleDebug.buildPipelineRuntimeSnapshot();
 
-    expect(snapshot.rounds[0].inputModels).toEqual(['Le Chat', 'Perplexity']);
-    expect(snapshot.rounds[0].sendModels).toEqual(['Le Chat', 'Perplexity']);
-    expect(snapshot.rounds[0].sendModels).not.toEqual(expect.arrayContaining(['Claude', 'GPT', 'Gemini']));
-    expect(snapshot.rounds[1].inputModels).toEqual(['Le Chat', 'Perplexity']);
-    expect(snapshot.rounds[1].sendModels).toEqual(['Le Chat', 'Perplexity']);
-    expect(snapshot.rounds[1].sendModels).not.toEqual(expect.arrayContaining(['Claude', 'GPT', 'Gemini']));
+    expect(snapshot.rounds[0].inputModels).toEqual(['GPT', 'Claude']);
+    expect(snapshot.rounds[0].sendModels).toEqual(['GPT', 'Claude']);
+    expect(snapshot.rounds[1].inputModels).toEqual(['GPT', 'Claude']);
+    expect(snapshot.rounds[1].sendModels).toEqual(['GPT', 'Claude']);
   });
 
   test('pipeline HTML entrypoints expose mount points instead of hard-coded model blocks', () => {
