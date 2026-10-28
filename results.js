@@ -6405,7 +6405,14 @@ document.addEventListener('click', (event) => {
                 const settings = cards[ref]?.[participantId] ?? cards[ref]?.[id];
                 const label = settings?.label || source?.label;
                 const settingsMode = settings?.settingsMode || source?.settingsMode;
-                const model = { name, ...(participantId !== name || source?.id != null ? { id: participantId } : {}), ...(label ? { label } : {}), ...(settingsMode ? { settingsMode } : {}), ...extra };
+                const stack = document.getElementById(`${ref}-models`);
+                const block = Array.from(stack?.querySelectorAll('.model-block') || [])
+                    .find((candidate) => modelBlockId(candidate) === participantId || modelBlockId(candidate) === id);
+                const roleSelector = block?.querySelector('.role-selector') || null;
+                const selectedRole = Object.prototype.hasOwnProperty.call(extra, 'role') ? extra.role
+                    : (roleSelector ? (roleSelector.value || null) : source?.role);
+                const model = { name, ...(participantId !== name || source?.id != null ? { id: participantId } : {}), ...(label ? { label } : {}), ...(settingsMode ? { settingsMode } : {}), ...(selectedRole ? { role: selectedRole } : {}), ...extra };
+                if (model.role === null) delete model.role;
                 if (source && 'input' in source) model.input = JSON.parse(JSON.stringify(source.input));
                 put(model, 'request', legacyValue(settings?.promptTemplate));
                 put(model, 'maxWords', legacyValue(settings?.maxWords));
@@ -6432,7 +6439,7 @@ document.addEventListener('click', (event) => {
                 // A model can be configured before its Send checkbox is enabled.
                 const previewId = previewModel?.participantId || previewModel?.id || previewModel?.name;
                 if (ref === previewModel?.ref && previewId && !models.includes(previewId)) models.push(previewId);
-                const entries = models.map((name) => modelEntry(ref, name, roles[name] ? { role: roles[name] } : {}));
+                const entries = models.map((name) => modelEntry(ref, name, Object.prototype.hasOwnProperty.call(roles, name) ? { role: roles[name] } : {}));
                 // A switched-off model keeps its settings in the saved schema.
                 if (forSave) {
                     // A card of a participant on the canvas is not a switched-off model, whatever key it has (its id or its name).
@@ -6572,8 +6579,35 @@ document.addEventListener('click', (event) => {
             return { cards: settings.customModelSettings, rounds: { ...settings.customRoundSettings, ...settings.customStepSettings }, defaults: settings.customDefaults, schema: config.schema, error: '',
                 runExplicit: { policy: 'policy' in (config.schema.run || {}), maxWords: 'maxWords' in (config.schema.run || {}) }, controls: controlsOf(config.schema) };
         };
+        // Pre-schema Basic records kept participant identity and status in modelStacks. Keep that data as a source
+        // while the page rebuilds a schema from the canvas; it is not a stored schema and is only used for Custom.
+        const legacyBasicSourceSchema = (config) => {
+            const stacks = config?.modelStacks;
+            if (!stacks || typeof stacks !== 'object') return null;
+            const explicitRounds = Object.keys(stacks).some((key) => /^r\d+-models$/.test(key) && Array.isArray(stacks[key]?.items));
+            if (!explicitRounds) return null;
+            const total = Math.max(1, Number(config.roundCounter) || 1);
+            const steps = Array.from({ length: total }, (_, index) => {
+                const ref = `r${index + 1}`;
+                const items = stacks[`${ref}-models`]?.items;
+                const models = (Array.isArray(items) ? items : []).map((item) => {
+                    const name = String(item?.name || item?.providerName || '').trim();
+                    if (!name) return null;
+                    const id = item.id || item.participantId || name;
+                    return {
+                        name,
+                        ...(id !== name ? { id } : {}),
+                        ...(item.label ? { label: String(item.label) } : {}),
+                        ...(item.role ? { role: item.role } : {}),
+                        ...(item.input === false || item.checked === false || item.send === false ? { enabled: false } : {})
+                    };
+                }).filter(Boolean);
+                return { ref, kind: 'round', models };
+            });
+            return { schemaVersion: 1, origin: 'user', steps };
+        };
         const adoptBasicWorking = (key, working) => {
-            basicSourceSchema.set(key, working.schema || null);
+            basicSourceSchema.set(key, working.schema || working.legacySourceSchema || null);
             customPipelineDefaults.set(key, working.defaults);
             customCardSettings.set(key, working.cards);
             customRoundSettings.set(key, working.rounds || {});
@@ -7821,6 +7855,7 @@ document.addEventListener('click', (event) => {
             if (!config || typeof config !== 'object') return;
             pipelineApplyingConfig = true;
             const working = basicWorkingFromConfig(config);
+            if (!working.schema && isCustomEnginePipeline()) working.legacySourceSchema = legacyBasicSourceSchema(config);
             if (!isDefaultPipelineName(draftPlanStorageKey()) || !customPipelineDefaults.has(draftPlanStorageKey())) {
                 adoptBasicWorking(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, error: '' } : working);
             }
@@ -7916,7 +7951,7 @@ document.addEventListener('click', (event) => {
             }
             const sendOverrides = config.version >= 2 ? null : buildSendOverridesFromLegacy(config);
             Object.entries(modelStacks).forEach(([stackId, state]) => {
-                if ((working.schema || (isCustomEnginePipeline() && incomingSchema)) && Array.isArray(state?.items)) {
+                if ((working.schema || isCustomEnginePipeline()) && Array.isArray(state?.items)) {
                     const stack = document.getElementById(stackId);
                     PipelineRuntime?.renderModelStack?.(stack, {
                         items: state.items,
