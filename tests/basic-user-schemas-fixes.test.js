@@ -166,6 +166,38 @@ describe('Basic: user schemas keep working and keep their data', () => {
     expect(debug.basicSchemaFromPage(planOf(), null, { forSave: true }).steps.map((step) => step.ref)).toEqual(['owner:o']);
   });
 
+  test('3.1 the owner window gets the purpose (goal) of its step', async () => {
+    const asked = [];
+    const steps = Schema.assemble(schemaOf([round('r1', ['A']), { ref: 'owner:o', kind: 'owner', task: 'Ответьте', goal: 'Выбрать вариант', models: [] }]));
+    const send = async (models) => ({ byModel: Object.fromEntries(models.map((model) => [model, { text: 'ответ.', status: 'SUCCESS' }])), closedByOwner: false });
+    const result = await Engine.run({ task: 'T', steps, send, maxAttempts: 1, provideOwnerResult: async (request) => { asked.push(request); return 'да'; } });
+    expect(result.stopReason).toBe('steps_done');
+    expect(asked[0].goal).toBe('Выбрать вариант');
+  });
+
+  test('3.2 a document revised by a later round is the one the owner reads, edits and passes on', async () => {
+    const draft = { step: 'r1', participant: 'A', id: 'draft' };
+    const schema = schemaOf([
+      round('r1', ['A'], { output: { document: 'read', artifacts: [{ id: 'draft', name: 'Черновик', pointer: '' }] } }),
+      round('r2', ['B'], { input: [{ artifact: draft, version: 'latest' }],
+        output: { document: 'read', artifacts: [{ id: 'final', name: 'Доработка', pointer: '', revisionOf: { artifact: draft, version: 'latest' } }] } }),
+      { ref: 'owner:o', kind: 'owner', task: 'Утвердите', document: 'r2', models: [] },
+      round('r3', ['C'])
+    ]);
+    expect(Schema.validate(schema)).toEqual([]);
+    const steps = Schema.assemble(schema);
+    const prompts = {};
+    const replies = { A: '[[DOC: draft]]\nЧЕРНОВИК\n[[/DOC]]', B: '[[DOC: final]]\nДОРАБОТКА\n[[/DOC]]', C: 'итог.' };
+    const send = async (models, byModel) => { Object.assign(prompts, byModel); return { byModel: Object.fromEntries(models.map((model) => [model, { text: replies[model], status: 'SUCCESS' }])), closedByOwner: false }; };
+    const asked = [];
+    const result = await Engine.run({ task: 'T', steps, send, maxAttempts: 1, provideOwnerResult: async (request) => { asked.push(request); return 'ДОРАБОТКА С ПРАВКОЙ USER'; } });
+    expect(result.stopReason).toBe('steps_done');
+    expect(asked[0].document).toEqual(expect.objectContaining({ kind: 'read', text: 'ДОРАБОТКА' }));
+    expect(prompts.C).toContain('ДОРАБОТКА С ПРАВКОЙ USER');
+    const line = result.artifacts.filter((entry) => entry.lineage.id === 'draft');
+    expect(line.map((entry) => entry.source.participant)).toEqual(['A', 'B', 'owner']);
+  });
+
   test('1.7 another pipeline cannot be opened while a run goes on', async () => {
     const twoRounds = (model) => schemaOf([round('r1', [model]), round('r2', [model])], { run: { policy: 'auto' } });
     await install('RunA', twoRounds('GPT'));

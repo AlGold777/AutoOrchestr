@@ -126,6 +126,8 @@
     if ('files' in step) out.files = clone(step.files);
     if (typeof step.task === 'string') out.task = step.task;
     if (typeof step.document === 'string') out.document = step.document;
+    // The purpose of the step: the owner window shows it first («Назначение: …»); the requests to models never read it.
+    if (typeof step.goal === 'string' && step.goal.trim()) out.goal = step.goal;
     return { ...out, models: [] };
   }
 

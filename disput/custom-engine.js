@@ -218,6 +218,7 @@
         output: step.output ?? null,
         ...(Array.isArray(step.files) ? { files: JSON.parse(JSON.stringify(step.files)) } : {}),
         document: kind === 'owner' && typeof step.document === 'string' && step.document ? step.document : null,
+        ...(kind === 'owner' && typeof step.goal === 'string' && step.goal.trim() ? { goal: step.goal } : {}),
         ...(kind === 'round' && Array.isArray(step.off) && step.off.length ? { off: step.off.map((model) => ({ id: model.id ?? model.name, name: model.name, ...(model.output !== undefined ? { output: model.output } : {}) })) } : {}),
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
@@ -982,12 +983,18 @@
       }
       const declaration = (output?.artifacts || [])[0];
       if (!declaration) throw new EngineError('invalid_document', at, 'документ для чтения: один артефакт в выходе раунда');
-      const lineage = { step: source.ref, participant: source.models[0].id, id: declaration.id };
+      const lineage = documentLineage(source, declaration);
       const found = Artifacts.latest(registry, lineage);
       if (!found || !found.valid) throw new EngineError('invalid_document', at, 'у раунда нет актуальной версии документа');
       const stored = getText(found.content.answerRef);
       if (stored === undefined || stored === null) throw new EngineError('invalid_document', at, 'текст документа не найден в записи прогона');
       return { ref: source.ref, kind: 'read', text: contentOf(stored, found.content.pointer, at), id: found.id, name: found.name };
+    }
+    // The line of the document a round wrote: its own line, or the line it revises (a declaration with revisionOf registers its
+    // versions in the line of the revised artifact). The owner reads and edits the latest version of that line.
+    function documentLineage(source, declaration) {
+      const written = registry.entries.filter((entry) => entry.source.step === source.ref && entry.source.participant === source.models[0].id && entry.id === declaration.id).pop();
+      return written ? { ...written.lineage } : { step: source.ref, participant: source.models[0].id, id: declaration.id };
     }
     async function ownerAnswer(step, entry) {
       let reason = '';
@@ -1035,7 +1042,8 @@
           approved = { id: document.id };
           if (verdict.text !== document.text) {
             const source = plan.find((item) => item.ref === step.document);
-            const lineage = { step: source.ref, participant: source.models[0].id, id: document.id };
+            const declared = (outputOf(source, source.models[0])?.artifacts || [])[0];
+            const lineage = declared ? documentLineage(source, declared) : { step: source.ref, participant: source.models[0].id, id: document.id };
             const previous = Artifacts.latest(registry, lineage);
             Artifacts.register(registry, { id: document.id, name: document.name, lineage,
               source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: '',

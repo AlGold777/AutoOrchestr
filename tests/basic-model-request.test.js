@@ -113,20 +113,20 @@ describe('Basic model request: example schema', () => {
     expect(asked[1].document.kind).toBe('read');
   });
 
-  test('the last round does not resend the map document and carries the User approval', async () => {
+  test('the last round gets the map as the User sent it from the document window', async () => {
     const schema = exampleSchema();
     const { send, calls } = transport({
       Claude: [QUESTIONNAIRE, ROUND2_CLAUDE, DOC_MAP, DOC_FINAL],
       GPT: [ROUND2_GPT],
       Gemini: [ROUND2_GEMINI]
     });
-    const { provideOwnerResult } = owner(['Что важнее — запись', 'утвердить']);
+    // The document window answers with the text of the document: the owner's edit and notes are in it.
+    const { provideOwnerResult } = owner(['Что важнее — запись', 'Карта функций: уникальнаяКартаXYZ — запись на занятия. ДОБАВИТЬ: оплата']);
     await Engine.run({ task: 'T', steps: Schema.assemble(schema, { roleText: () => 'ROLE' }), send, provideOwnerResult });
 
     const claudeCalls = calls.filter((call) => call.models.includes('Claude'));
     const lastRound = claudeCalls[claudeCalls.length - 1];
-    expect(lastRound.prompts.Claude).toContain('утвердить');
-    expect(lastRound.prompts.Claude).not.toContain('уникальнаяКартаXYZ');
+    expect(lastRound.prompts.Claude).toContain('ДОБАВИТЬ: оплата');
   });
 
   test('the request text keeps its key formulations, forbids the removed steps and does not mention the stand', () => {
