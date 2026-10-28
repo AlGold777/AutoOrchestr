@@ -465,6 +465,8 @@
       steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), input: modeOf(step.input), models: step.models.map((model) => model.name) })) });
 
     class StopRun extends Error { constructor(reason, detail = '') { super(reason); this.stopReason = reason; this.stopDetail = detail; } }
+    // The detail of context_full: where, and how far over the budget the request is.
+    const overBudget = (step, model, chars) => `шаг «${step.ref}» · модель «${model.name}»: запрос ${chars} символов, бюджет ${maxPromptChars}`;
 
     // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps);
     // a pending owner interaction and the pending participants of a send are named, so a reload can show them.
@@ -674,7 +676,7 @@
       }
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec),
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
-      if (prompt.length > maxPromptChars) throw new StopRun('context_full');
+      if (prompt.length > maxPromptChars) throw new StopRun('context_full', overBudget(step, model, prompt.length));
       return { prompt, parts: partsFor(step, model, input, spec) };
     }
 
@@ -687,7 +689,8 @@
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
         if (aborted()) throw new StopRun('cancelled');
         // The budget is checked before every send, a correction request included.
-        if (pending.some((model) => String(current[model.id].prompt || '').length > maxPromptChars)) throw new StopRun('context_full');
+        const tooLong = pending.find((model) => String(current[model.id].prompt || '').length > maxPromptChars);
+        if (tooLong) throw new StopRun('context_full', overBudget(step, tooLong, String(current[tooLong.id].prompt || '').length));
         const entries = Object.fromEntries(pending.map((model) => {
           const prevAttemptKey = current[model.id]?.previousAttemptKey || (current[model.id]?.retryOf ? JSON.stringify([step.ref, model.id, activeVisit, current[model.id].retryOf, phase]) : null);
           const trig = current[model.id]?.trigger || (tryNo > 1 ? 'automatic_retry' : (initialTriggerInfo?.trigger || 'initial'));
@@ -869,7 +872,7 @@
               }
             });
             inFlight = [];
-            throw new StopRun('context_full');
+            throw new StopRun('context_full', `шаг «${step.ref}»: запрос с меткой доставки не помещается в бюджет транспорта`);
           }
           if (error?.name === 'AbortError' || aborted()) {
             if (participants) {

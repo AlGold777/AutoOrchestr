@@ -6797,17 +6797,20 @@ document.addEventListener('click', (event) => {
         const builtFromRecord = (record) => {
             const schema = record.snapshot?.schema;
             try {
-                return { schema, errors: [], run: window.BasicSchema.resolveRun(schema), steps: window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
+                // The steps the run started with (Basic values and role texts of that moment); an older record has only its schema.
+                const steps = Array.isArray(record.snapshot?.steps) ? record.snapshot.steps : window.BasicSchema.assemble(schema, { roleText: customRoleText });
+                return { schema, errors: [], run: window.BasicSchema.resolveRun(schema), steps };
             } catch (error) {
                 return { schema, errors: [{ path: 'снимок прогона', message: String(error?.message || error) }], run: null, steps: [] };
             }
         };
         // «Продолжить прогон»: the latest run of this pipeline goes on from its saved state. A run without one is only history.
-        const resumeCustomFromPage = async () => {
+        // `runId`: the run a line of the feed offers to continue; without it, the latest run of this pipeline.
+        const resumeCustomFromPage = async (runId = null) => {
             requestDocumentsAccess();
             if (!customRunStore || !window.CustomRunRecord) { showNotification('Basic: записи прогонов недоступны.', 'warn'); return false; }
             if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
-            const latest = await customRunStore.latest(customPipelineName());
+            const latest = runId ? await customRunStore.load(runId) : await customRunStore.latest(customPipelineName());
             if (!latest) { showNotification('Basic: сохранённого прогона нет.', 'info'); return false; }
             // Files that were not kept in the record are not replaced by the composer or by nothing (V08).
             if (latest.attachmentsStored === false) {
@@ -6861,11 +6864,14 @@ document.addEventListener('click', (event) => {
         };
         // A run that ended before its steps were done offers its own continuation as a line of the feed, where it is needed: the
         // state is in the record, so a stop, an error or a lost page goes on from there (the button goes away once it is used).
+        // A stop that a continuation would only repeat (the same schema, budget and answers) offers none: the prompt does not fit,
+        // a required input is missing, a binary file cannot be passed as text.
+        const DEAD_END_STOPS = Object.freeze(['context_full', 'missing_input', 'unsupported_input']);
         const offerResumeLine = (record) => {
-            if (!record || !window.CustomRunRecord?.canResume?.(record)) return;
+            if (!record || !window.CustomRunRecord?.canResume?.(record) || DEAD_END_STOPS.includes(record.stopReason)) return;
             const line = appendBasicRunLine('Прогон остановлен. Его можно продолжить с сохранённого места.', {
                 buttonLabel: 'Продолжить',
-                onButton: () => { line?.querySelector('.basic-run-line-button')?.remove(); void resumeCustomFromPage(); }
+                onButton: () => { line?.querySelector('.basic-run-line-button')?.remove(); void resumeCustomFromPage(record.runId); }
             });
         };
         // A version that a later decision made stale stays in the feed, marked «устарело»: its answer is kept, not an input.
@@ -7019,7 +7025,8 @@ document.addEventListener('click', (event) => {
                     if ((!current.accepted || !current.accepted.length) && prevCurrent.accepted?.length) {
                         current.accepted = prevCurrent.accepted;
                     }
-                    if ((!current.pending || !current.pending.length) && prevCurrent.pending?.length) {
+                    // The engine names the requests in flight itself: an empty list is «none», only a state without it keeps the older one.
+                    if (current.pending === undefined && prevCurrent.pending?.length) {
                         current.pending = prevCurrent.pending;
                     }
                 }
@@ -7032,6 +7039,7 @@ document.addEventListener('click', (event) => {
 
                 return {
                     schema: built.schema,
+                    steps: built.steps,
                     runSettings: { semiAuto, maxAttempts: engine.DEFAULT_ATTEMPTS, runMaxWords: built.run.maxWords ?? null },
                     state: { ...state, chatBindings: { ...chatBindings } },
                     current,
@@ -10799,7 +10807,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.907';
+            const APP_VERSION = '2.81.908';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');

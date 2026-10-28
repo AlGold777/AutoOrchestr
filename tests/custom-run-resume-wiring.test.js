@@ -24,7 +24,8 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
   test('«Продолжить прогон» takes the latest record only when it has a saved state, and goes on with its own schema and state', () => {
     expect(results).toContain('if (!window.CustomRunRecord.canResume(latest)) {');
     expect(results).toContain('const builtFromRecord = (record) => {');
-    expect(results).toContain('steps: window.BasicSchema.assemble(schema, { roleText: customRoleText })');
+    // The steps the run started with come from the snapshot; an older record has only its schema (plan 4.6).
+    expect(results).toContain('const steps = Array.isArray(record.snapshot?.steps) ? record.snapshot.steps : window.BasicSchema.assemble(schema, { roleText: customRoleText });');
     expect(results).toContain('...(resumeRecord ? { resume: { ...resumeRecord.snapshot, artifacts: resumeRecord.artifacts } } : {}),');
     expect(results).toContain('pipelineRunId: resumeRecord ? resumeRecord.runId : makePipelineRunId(),');
     expect(results).toContain('resumeCustomFromPage,');
@@ -39,9 +40,11 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
     const panel = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
     expect(panel).not.toContain('pipeline-resume-btn');
     expect(results).toContain("if (result.stopReason !== 'steps_done') offerResumeLine(record);");
-    expect(results).toMatch(/const offerResumeLine = \(record\) => \{\s*if \(!record \|\| !window\.CustomRunRecord\?\.canResume\?\.\(record\)\) return;/);
+    // A stop a continuation would only repeat offers none; the button goes on with its own run (plan 4.2).
+    expect(results).toMatch(/const offerResumeLine = \(record\) => \{\s*if \(!record \|\| !window\.CustomRunRecord\?\.canResume\?\.\(record\) \|\| DEAD_END_STOPS\.includes\(record\.stopReason\)\) return;/);
+    expect(results).toContain("const DEAD_END_STOPS = Object.freeze(['context_full', 'missing_input', 'unsupported_input']);");
     expect(results).toContain("buttonLabel: 'Продолжить',");
-    expect(results).toContain('void resumeCustomFromPage(); }');
+    expect(results).toContain('void resumeCustomFromPage(record.runId); }');
   });
 
   test('V01: the page writes the chats into the record while the batch is in flight, and marks a lost chat of a resumed participant strict', () => {

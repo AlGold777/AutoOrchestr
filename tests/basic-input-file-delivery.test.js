@@ -239,6 +239,8 @@ describe('Basic input-file delivery', () => {
     savedRecord.snapshot.pc = 'r2';
     savedRecord.snapshot.results = savedRecord.snapshot.results.filter((item) => item.stepRef === 'r1');
     savedRecord.snapshot.schema.steps[1].chat = 'new';
+    // A continuation runs the steps the run was assembled with (plan 4.6): the same change goes there.
+    savedRecord.snapshot.steps.find((step) => step.ref === 'r2').chat = 'new';
     const startCount = starts.length;
     await window.__pipelineLifecycleDebug.runCustomFromPage({ task: 'Check attached inputs', resumeRecord: savedRecord });
     const resumedStart = starts.slice(startCount).find((message) => message.pipelineContext.stageId?.includes('s2'));

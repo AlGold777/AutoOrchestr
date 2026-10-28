@@ -83,11 +83,28 @@
     };
   }
 
+  // The text a model got is the request with the page's additions after it (limit, notes, the delivery mark): it is stored as
+  // that tail only (sentPromptTailRef), so a long input is not kept twice. Another text is stored whole (sentPromptRef).
+  function sentPromptFields(record, attempt, sentPrompt) {
+    const prompt = textOf(record, attempt.promptRef);
+    if (typeof sentPrompt === 'string' && prompt && sentPrompt.startsWith(prompt)) return { sentPromptTailRef: record.put(sentPrompt.slice(prompt.length)) || null, sentPromptRef: null };
+    return { sentPromptRef: record.put(sentPrompt) };
+  }
+  const sentPromptOf = (record, attempt) => (attempt.sentPromptTailRef !== undefined && attempt.sentPromptRef == null && (attempt.sentPromptTailRef || attempt.promptRef)
+    ? `${textOf(record, attempt.promptRef)}${textOf(record, attempt.sentPromptTailRef)}` : textOf(record, attempt.sentPromptRef));
+
   // Called when an attempt is sent and again when it finished; the same attempt object is updated
   // in place until it is done, never after.
   function recordAttempt(record, entry) {
     const key = entry.attemptKey || attemptKey(entry);
     let attempt = record.attempts.find((item) => item.key === key || (item.attemptKey && item.attemptKey === key));
+    // An attempt that never left (not_sent: a stop before the dispatch) is sent on a continuation under the same key: it becomes
+    // the sent attempt, with its request.
+    if (attempt && attempt.state === 'not_sent' && entry.state !== 'not_sent' && entry.prompt !== undefined) {
+      Object.assign(attempt, { state: 'sent', sentAt: entry.sentAt || Date.now(), promptRef: record.put(entry.prompt), parts: storedParts(record.put, entry.parts) });
+      delete attempt.finishedAt;
+      delete attempt.reason;
+    }
     // An attempt left unknown by a reload is settled by its answer too (N04: the read of its chat).
     if (attempt && attempt.state !== 'sent' && attempt.state !== 'unknown' && !entry.recoveredBy) {
       if (entry.chatRoute) {
@@ -128,7 +145,7 @@
     }
     if (entry.state === 'done') {
       Object.assign(attempt, {
-        state: 'done', finishedAt: entry.finishedAt || Date.now(), sentPromptRef: record.put(entry.sentPrompt),
+        state: 'done', finishedAt: entry.finishedAt || Date.now(), ...sentPromptFields(record, attempt, entry.sentPrompt),
         answerRef: record.put(entry.answer), attribution: entry.attribution || '', accepted: Boolean(entry.accepted),
         reason: entry.reason || '', status: entry.status || '', transportRequestId: entry.transportRequestId || ''
       });
@@ -280,7 +297,7 @@
     return merged;
   }
 
-  function setSnapshot(record, { schema = [], runSettings = {}, state = {}, current = null, ownerAnswers = undefined, pendingOwner = undefined } = {}) {
+  function setSnapshot(record, { schema = [], steps = undefined, runSettings = {}, state = {}, current = null, ownerAnswers = undefined, pendingOwner = undefined } = {}) {
     const visits = state.visits || {};
     const previous = record.snapshot || {};
     const chatBindings = mergeChatBindings(previous.chatBindings, state.chatBindings);
@@ -296,12 +313,16 @@
       if ((!resolvedCurrent.accepted || !resolvedCurrent.accepted.length) && prevCurrent.accepted?.length) {
         resolvedCurrent = { ...resolvedCurrent, accepted: prevCurrent.accepted };
       }
-      if ((!resolvedCurrent.pending || !resolvedCurrent.pending.length) && prevCurrent.pending?.length) {
+      // The requests in flight are the engine's own list: an empty list is «none in flight», only a state without it keeps the older one.
+      if (resolvedCurrent.pending === undefined && prevCurrent.pending?.length) {
         resolvedCurrent = { ...resolvedCurrent, pending: prevCurrent.pending };
       }
     }
+    // The steps the run was assembled with (the schema over the Basic values and role texts of its start): a continuation runs
+    // them, so a later change of a Basic value or a role text does not change a started run.
+    const assembled = steps !== undefined ? steps : previous.steps;
     record.snapshot = copyOf({
-      schema, taskRef: record.taskRef, runSettings, pc: state.pc, visits,
+      schema, ...(assembled !== undefined ? { steps: assembled } : {}), taskRef: record.taskRef, runSettings, pc: state.pc, visits,
       current: resolvedCurrent,
       results: state.results || [], decisions: state.decisions || {},
       ownerAnswers: resolvedOwnerAnswers, pendingOwner: resolvedPendingOwner, chatBindings
@@ -379,7 +400,7 @@
             ownerAnswers: parts.instructions?.ownerAnswers || []
           },
           input: parts.input ? { mode: parts.input.mode, items: parts.input.items.map(resolve), earlier: parts.input.earlier.map(resolve) } : null,
-          prompt: textOf(record, attempt.promptRef), sentPrompt: textOf(record, attempt.sentPromptRef), answer: textOf(record, attempt.answerRef)
+          prompt: textOf(record, attempt.promptRef), sentPrompt: sentPromptOf(record, attempt), answer: textOf(record, attempt.answerRef)
         };
       })
     };

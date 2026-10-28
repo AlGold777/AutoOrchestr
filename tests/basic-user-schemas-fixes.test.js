@@ -5,6 +5,7 @@ const path = require('path');
 const { delay, renderDebateDom, loadResultsScript } = require('./helpers/results-page-harness');
 const Engine = require('../disput/custom-engine');
 const Schema = require('../disput/basic-schema');
+const Record = require('../disput/custom-run-record');
 
 const settle = () => delay(0);
 const schemaOf = (steps, extra = {}) => ({ schemaVersion: 1, origin: 'user', steps, ...extra });
@@ -196,6 +197,50 @@ describe('Basic: user schemas keep working and keep their data', () => {
     expect(prompts.C).toContain('ДОРАБОТКА С ПРАВКОЙ USER');
     const line = result.artifacts.filter((entry) => entry.lineage.id === 'draft');
     expect(line.map((entry) => entry.source.participant)).toEqual(['A', 'B', 'owner']);
+  });
+
+  test('4.1 the snapshot takes the requests in flight from the state: an empty list stays empty', () => {
+    const record = Record.createRun({ runId: 'p', pipelineName: 'P', task: 'T', steps: [{ ref: 'r1', kind: 'round', models: ['A'] }] });
+    Record.setSnapshot(record, { schema: {}, state: { pc: 'r1', current: { stepRef: 'r1', pending: [{ participantId: 'A', attempt: 1 }] } } });
+    Record.setSnapshot(record, { schema: {}, state: { pc: 'r1', current: { stepRef: 'r1', pending: [] } } });
+    expect(record.snapshot.current.pending).toEqual([]);
+  });
+
+  test('4.3 an attempt that was not sent becomes the sent attempt on a continuation', () => {
+    const record = Record.createRun({ runId: 'n', pipelineName: 'P', task: 'T', steps: [{ ref: 'r1', kind: 'round', models: ['A'] }] });
+    const key = { step: 0, ref: 'r1', participant: 'A', model: 'A', visit: 1, attempt: 1 };
+    Record.recordAttempt(record, { ...key, prompt: 'P', parts: {}, state: 'not_sent', reason: 'cancelled_before_dispatch' });
+    Record.recordAttempt(record, { ...key, prompt: 'P', parts: {} });
+    Record.recordAttempt(record, { ...key, state: 'done', sentPrompt: 'P', answer: 'ответ', accepted: true });
+    expect(record.attempts).toHaveLength(1);
+    expect(Record.exportRun(record).attempts[0]).toMatchObject({ state: 'done', prompt: 'P', answer: 'ответ', accepted: true });
+  });
+
+  test('4.4 a request over the budget names its size and the budget', async () => {
+    const send = jest.fn();
+    const result = await Engine.run({ task: 'x'.repeat(200), steps: Schema.assemble(schemaOf([round('r1', ['A'])])), send, maxPromptChars: 100 });
+    expect(result.stopReason).toBe('context_full');
+    expect(result.stopDetail).toMatch(/шаг «r1» · модель «A»: запрос \d+ символов, бюджет 100/);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test('4.5 the text sent to a model is kept without a second copy of its request', () => {
+    const record = Record.createRun({ runId: 's', pipelineName: 'P', task: 'T', steps: [{ ref: 'r1', kind: 'round', models: ['A'] }] });
+    const prompt = 'вход '.repeat(4000);
+    const key = { step: 0, ref: 'r1', participant: 'A', model: 'A', visit: 1, attempt: 1 };
+    Record.recordAttempt(record, { ...key, prompt, parts: {} });
+    Record.recordAttempt(record, { ...key, state: 'done', sentPrompt: `${prompt}\n\nПоследней строкой ответа напиши только метку [[AO-x]]`, answer: 'ответ', accepted: true });
+    const stored = Record.serialize(record);
+    expect(Object.values(stored.texts).filter((text) => text.includes('вход вход')).length).toBe(1);
+    expect(Record.exportRun(Record.revive(JSON.parse(JSON.stringify(stored)))).attempts[0].sentPrompt).toBe(`${prompt}\n\nПоследней строкой ответа напиши только метку [[AO-x]]`);
+  });
+
+  test('4.6 a continuation runs the steps the run started with', () => {
+    const record = Record.createRun({ runId: 'c', pipelineName: 'P', task: 'T', steps: [{ ref: 'r1', kind: 'round', models: ['A'] }] });
+    const steps = [{ ref: 'r1', kind: 'round', models: [{ name: 'A', id: 'A', task: 'OLD BASIC TASK' }] }];
+    Record.setSnapshot(record, { schema: { schemaVersion: 1 }, steps, state: { pc: 'r1' } });
+    Record.setSnapshot(record, { schema: { schemaVersion: 1 }, state: { pc: 'r1' } });
+    expect(record.snapshot.steps).toEqual(steps);
   });
 
   test('1.7 another pipeline cannot be opened while a run goes on', async () => {
