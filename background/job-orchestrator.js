@@ -350,6 +350,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     'article_bottom'
   ];
   const skipStrategyIds = new Set(Array.isArray(manualOptions.skipStrategyIds) ? manualOptions.skipStrategyIds.map(String) : []);
+  // "Latest answer" is a position, not a size: the longest candidate of a chat is usually an earlier, longer turn.
+  if (manualOptions.manualLatestRecovery === true) skipStrategyIds.add('longest');
   const skipSelectors = new Set(Array.isArray(manualOptions.skipSelectors) ? manualOptions.skipSelectors.map(String) : []);
   const requestedStrategyId = typeof manualOptions.strategyId === 'string' ? manualOptions.strategyId : '';
   const requestedStrategyIndex = Number.isFinite(Number(manualOptions.strategyIndex)) ? Number(manualOptions.strategyIndex) : 0;

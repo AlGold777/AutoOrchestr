@@ -1372,11 +1372,20 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
     schedule(UNCERTAIN_TERMINAL_POLL_MS);
 };
 
+const manualRecoveryRequested = (meta = {}) => Boolean(
+    meta.manualRecovery?.manualRecovery === true
+    || meta.manualRecovery === true
+    || meta.responseMeta?.manualRecovery === true
+);
+
 const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
     if (message.error || !String(message.answer || '').trim()) return { ok: true, reason: 'non_success_payload' };
     const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
     const authority = getCompletionAuthorityAttempt(llmName);
     const incomingDispatchId = meta.dispatchId || null;
+    // Get It / the indicator double-click read the model's own tab on the user's request. That needs no attempt of this run:
+    // the chat may have been answered before the run started, and nothing else would ever deliver its answer.
+    if (!authority && manualRecoveryRequested(meta)) return { ok: true, reason: 'manual_recovery_explicit' };
     if (!authority) return { ok: false, reason: 'completion_attempt_unregistered' };
     if (authority.dispatchId && !incomingDispatchId) {
         return { ok: false, reason: 'completion_authority_dispatch_missing' };
