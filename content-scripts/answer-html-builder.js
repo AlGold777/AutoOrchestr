@@ -6,7 +6,7 @@
 // pulled html is built by the same code as the live one. Bump BUILDER_VERSION with every change of behaviour.
 (function initAnswerHtmlBuilder(root) {
   'use strict';
-  const BUILDER_VERSION = 1;
+  const BUILDER_VERSION = 2;
   if (root.AnswerHtmlBuilder && Number(root.AnswerHtmlBuilder.version) >= BUILDER_VERSION) return;
   const window = root;
 
@@ -653,7 +653,9 @@
     return false;
   };
   // A turn the page marks explicitly as one assistant answer: the answer never reaches beyond it.
-  const TURN_OWNER_SEL = `${ROLE_ASSISTANT_SEL},[role="article"],[data-testid="assistant-message"],[data-testid$="-assistant-message" i],[data-testid^="assistant-message" i]`;
+  // DeepSeek marks the answer block itself (.ds-assistant-message-main-content): its header "Thought for N seconds" and the
+  // reasoning sit next to it in the same message and are not the answer.
+  const TURN_OWNER_SEL = `${ROLE_ASSISTANT_SEL},[role="article"],[data-testid="assistant-message"],[data-testid$="-assistant-message" i],[data-testid^="assistant-message" i],.ds-assistant-message-main-content`;
   const TURN_BOUNDARY_SEL = `${ROLE_USER_SEL},textarea,[contenteditable="true"],form,nav,h1`;
   const containsBoundary = (el) => Array.from(el.querySelectorAll(TURN_BOUNDARY_SEL)).some((mark) => !(mark.matches('textarea,[contenteditable="true"]') && isEditorInput(mark)));
   const PAGE_CHROME_SEL = 'textarea,[contenteditable="true"],form,nav';
