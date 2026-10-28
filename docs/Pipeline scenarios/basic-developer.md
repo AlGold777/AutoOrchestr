@@ -83,7 +83,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | --- | --- |
 | `tests/custom-engine.test.js` | Движок: шаги, запросы, приём, повторы, бюджет, пауза, вопросы |
 | `tests/custom-engine-flow.test.js` | Линейный прогон раундов и шага User; `gate` и `route` отклоняются до первого запроса |
-| `tests/custom-engine-document.test.js` | Документ для User: чтение по меткам раунда с одной моделью, опросник, ссылка на документ, `invalid_form`, `invalid_document` до окна |
+| `tests/custom-engine-document.test.js` | Документ для User: чтение по меткам раунда с одной моделью, опросник, ссылка на документ, `invalid_form`, `invalid_document` до окна, пропущенный раунд-документ — `missing_input` |
 | `tests/custom-engine-document-versions.test.js` | Документ с версиями: метки и `missing_artifact`, утверждение и новая версия, вход `latest`, продолжение, документ в `json`, отсутствие текста в записи прогона (`invalid_document`) |
 | `tests/custom-run-record.test.js` | Запись о прогоне, хранение через адаптер `chrome.storage` (отказы), экспорт со всеми ссылками, состояние `not_sent` |
 | `tests/custom-extract.test.js` | Разбор прогона Basic в `shared/report-digest.js` (CLI `scripts/summarize-report.js`); на вкладке Disput только экспорт Basic |

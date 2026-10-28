@@ -93,6 +93,18 @@ describe('Custom engine: document for the owner step', () => {
     expect(calls[1].models).toEqual(['A']);
     expect(asked[0].document.form.items[0].id).toBe('b');
   });
+
+  test('6. a document round the owner skipped stops the run with missing_input before the owner window, for read and for form', async () => {
+    for (const output of [READ, { format: 'json', document: 'form' }]) {
+      const { send } = transport({ A: ['без меток', 'без меток'] });
+      const { provideOwnerResult, calls: asked } = owner(['ок']);
+      const decide = async ({ choices }) => (choices.includes('skip') ? 'skip' : 'stop');
+      const result = await Engine.run({ task: 'T', steps: [ROUND({ output }), OWNER_DOC()], send, decide, provideOwnerResult });
+      expect(result.stopReason).toBe('missing_input');
+      expect(result.stopDetail).toContain('шаг «r1» не дал принятого ответа');
+      expect(asked).toEqual([]);
+    }
+  });
 });
 
 describe('Custom engine: format block describes the questionnaire', () => {

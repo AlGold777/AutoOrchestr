@@ -978,8 +978,10 @@
       if (source.models.length !== 1) throw new EngineError('invalid_document', at, 'документ для User даёт одна модель');
       const output = outputOf(source, source.models[0]);
       const kind = output?.document === 'form' ? 'form' : 'read';
+      // A round without an accepted answer (a skipped or a failed one) gives no document: the run stops as on a missing
+      // required input (missing_input), for both kinds. A wrong reference or a lost stored text stays invalid_document.
+      const items = sourceItems([{ step: source.ref, required: true }], step);
       if (kind === 'form') {
-        const items = sourceItems([{ step: source.ref, required: true }], step);
         const answer = items.find((item) => !item.binary);
         if (!answer) throw new EngineError('invalid_document', at, 'у раунда нет принятого ответа');
         const form = Output.parseJsonAnswer(answer.text);
