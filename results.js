@@ -8512,6 +8512,8 @@ document.addEventListener('click', (event) => {
             });
 
             roundCounter = 1;
+            const firstStack = document.getElementById('r1-models');
+            if (firstStack) firstStack.innerHTML = buildPipelineEmptySlotBlocksHtml(getDebateModelSlotCount());
             if (pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'none';
             }
