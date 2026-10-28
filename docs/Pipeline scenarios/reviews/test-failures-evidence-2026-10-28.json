@@ -1,0 +1,442 @@
+{
+  "snapshots": {
+    "before": {
+      "commit": "9c7116df",
+      "version": "2.81.915",
+      "failed": 47,
+      "passed": 200,
+      "total": 247,
+      "rawResult": "/tmp/auto-failures-before-20261028-zmnsNP/results.json"
+    },
+    "after": {
+      "commit": "2050e3ce",
+      "version": "2.81.916",
+      "failed": 47,
+      "passed": 200,
+      "total": 247,
+      "rawResult": "/tmp/auto-failures-after-mdkfBR/results.json"
+    },
+    "current": {
+      "commit": "1a16df4c",
+      "version": "2.81.919",
+      "failed": 47,
+      "passed": 200,
+      "total": 247,
+      "rawResult": "/tmp/auto-failures-current-bsP2Yr/results.json"
+    }
+  },
+  "identicalFailingNames": true,
+  "failures": [
+    {
+      "id": 1,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 1961,
+      "fullName": "Pipeline debate favorites view pipeline runtime snapshot uses R1 Pipeline UI as source of truth",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 1\n\n- Array [\n-   \"Claude\",\n-   \"GPT\",\n- ]\n+ Array []\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:1961:44)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 2,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2026,
+      "fullName": "Pipeline debate favorites view unnamed canvas opens the real Custom editor and saves the Custom runner without a draft flag",
+      "failureExcerpt": "Error: expect(received).toBeDefined()\n\nReceived: undefined\n    at Object.toBeDefined (<snapshot>/tests/results-debate-favorites.test.js:2026:19)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 3,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2061,
+      "fullName": "Pipeline debate favorites view Custom card sends its edited request and length through Run, including retries (saved pipeline)",
+      "failureExcerpt": "Error: expect(received).toBeDefined()\n\nReceived: undefined\n    at toBeDefined (<snapshot>/tests/results-debate-favorites.test.js:2061:19)\n    at Object.<anonymous> (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-each/build/bind.js:81:13)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 4,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2061,
+      "fullName": "Pipeline debate favorites view Custom card sends its edited request and length through Run, including retries (unnamed pipeline)",
+      "failureExcerpt": "Error: expect(received).toBeDefined()\n\nReceived: undefined\n    at toBeDefined (<snapshot>/tests/results-debate-favorites.test.js:2061:19)\n    at Object.<anonymous> (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-each/build/bind.js:81:13)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 5,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2061,
+      "fullName": "Pipeline debate favorites view Custom card sends its edited request and length through Run, including retries (cleared pipeline)",
+      "failureExcerpt": "Error: expect(received).toBeDefined()\n\nReceived: undefined\n    at toBeDefined (<snapshot>/tests/results-debate-favorites.test.js:2061:19)\n    at Object.<anonymous> (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-each/build/bind.js:81:13)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 6,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 389,
+      "fullName": "Pipeline debate favorites view the Custom model card rejects empty requests and invalid lengths; reset and inherited length persist",
+      "failureExcerpt": "TypeError: Cannot read properties of null (reading 'dataset')\n    at customBlockModel (eval at loadResultsScript (<snapshot>/tests/results-debate-favorites.test.js:389:10), <anonymous>:9108:51)\n    at renderCustomBlockInspector (eval at loadResultsScript (<snapshot>/tests/results-debate-favorites.test.js:389:10), <anonymous>:9243:55)\n    at Object.renderCustomBlockInspector (eval at loadResultsScript (<snapshot>/tests/results-debate-favorites.test.js:389:10), <anonymous>:7673:58)\n    at Object.renderCustomBlockInspector (<snapshot>/tests/results-debate-favorites.test.js:2172:17)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 7,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2288,
+      "fullName": "Pipeline debate favorites view Custom stops without dispatch or compaction when the full input overflows",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'stopReason')\n    at <snapshot>/tests/results-debate-favorites.test.js:2288:86",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 8,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2288,
+      "fullName": "Pipeline debate favorites view Custom stops without dispatch or compaction when the full limit overflows",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'stopReason')\n    at <snapshot>/tests/results-debate-favorites.test.js:2288:86",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 9,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2288,
+      "fullName": "Pipeline debate favorites view Custom stops without dispatch or compaction when the full content overflows",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'stopReason')\n    at <snapshot>/tests/results-debate-favorites.test.js:2288:86",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 10,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2288,
+      "fullName": "Pipeline debate favorites view Custom stops without dispatch or compaction when the full delivery overflows",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'stopReason')\n    at <snapshot>/tests/results-debate-favorites.test.js:2288:86",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 11,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2286,
+      "fullName": "Pipeline debate favorites view Custom stops without dispatch or compaction when the full correction overflows",
+      "failureExcerpt": "Error: expect(received).toHaveLength(expected)\n\nExpected length: 1\nReceived length: 0\nReceived array:  []\n    at toHaveLength (<snapshot>/tests/results-debate-favorites.test.js:2286:22)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 12,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2288,
+      "fullName": "Pipeline debate favorites view Custom stops without dispatch or compaction when the full token overflows",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'stopReason')\n    at <snapshot>/tests/results-debate-favorites.test.js:2288:86",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 13,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2390,
+      "fullName": "Pipeline debate favorites view a saved pipeline with an invalid value is not run: Basic names the place and sends nothing",
+      "failureExcerpt": "Error: expect(received).toContain(expected) // indexOf\n\nExpected substring: \"steps[0].models[1].maxWords\"\nReceived string:    \"Basic: схема не запущена. steps[0].models[0].maxWords: ожидается положительное целое число слов\"\n    at Object.toContain (<snapshot>/tests/results-debate-favorites.test.js:2390:75)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 14,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2437,
+      "fullName": "Pipeline debate favorites view a task, a length instruction or content requirements the owner emptied stay empty (not inherited); ↶ gives the inherited value back; delivery and correction are never empty",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:2437:32)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at listOnTimeout (node:internal/timers:549:9)\n    at processTimers (node:internal/timers:523:7)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 15,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2515,
+      "fullName": "Pipeline debate favorites view Custom run: canvas blocks and links follow the engine stages and end done",
+      "failureExcerpt": "TypeError: Cannot read properties of null (reading 'className')\n    at state (<snapshot>/tests/results-debate-favorites.test.js:2515:83)\n    at Object.state (<snapshot>/tests/results-debate-favorites.test.js:2522:14)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at listOnTimeout (node:internal/timers:549:9)\n    at processTimers (node:internal/timers:523:7)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 16,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2558,
+      "fullName": "Pipeline debate favorites view Custom omits owner-question instructions in manual mode, including old saved overrides",
+      "failureExcerpt": "Error: expect(received).toHaveLength(expected)\n\nExpected length: 1\nReceived length: 0\nReceived array:  []\n    at Object.toHaveLength (<snapshot>/tests/results-debate-favorites.test.js:2558:24)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 17,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2575,
+      "fullName": "Pipeline debate favorites view Custom ▶ tasks and discipline reach dispatch in R2+ without copying to models; ▶ has no synthesis task",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  -  1\n+ Received  + 10\n\n- Object {}\n+ Object {\n+   \"r2\": Object {\n+     \"Claude\": Object {\n+       \"name\": \"Claude\",\n+     },\n+     \"GPT\": Object {\n+       \"name\": \"GPT\",\n+     },\n+   },\n+ }\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:2575:79)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 18,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2615,
+      "fullName": "Pipeline debate favorites view Custom ▶ own lines reach every model of every step, before the model's own lines",
+      "failureExcerpt": "Error: expect(received).not.toContain(expected) // indexOf\n\nExpected substring: not \"OWN_LINE\"\nReceived string:        \"Задача:\nINHERITANCE TASK\n\n[RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.\n\nСосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.\n\nSHARED_LINE\n\nOWN_LINE\n\nПоследней строкой ответа напиши только метку [[AO-2vwtma]]\"\n    at Object.toContain (<snapshot>/tests/results-debate-favorites.test.js:2615:50)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at listOnTimeout (node:internal/timers:549:9)\n    at processTimers (node:internal/timers:523:7)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 19,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2654,
+      "fullName": "Pipeline debate favorites view Custom block role reaches its model as extra; the round card sets one role for all blocks after confirmation",
+      "failureExcerpt": "Error: expect(received).toHaveLength(expected)\n\nExpected length: 2\nReceived length: 1\nReceived array:  [{\"attachments\": [], \"forceNewTabs\": true, \"pipelineContext\": {\"custom\": true, \"debateRunId\": \"pipeline-1793213937516-bf9e4320ab27c\", \"forceNewTabs\": true, \"newPagesDispatched\": false, \"participants\": {\"Claude\": {\"attempt\": 1, \"attemptKey\": \"[\\\"r2\\\",\\\"Claude\\\",1,1,\\\"answer\\\"]\", \"newChat\": true, \"participantId\": \"Claude\", \"participantLabel\": \"Claude\", \"phase\": \"answer\", \"stepRef\": \"r2\", \"visit\": 1}, \"GPT\": {\"attempt\": 1, \"attemptKey\": \"[\\\"r2\\\",\\\"GPT\\\",1,1,\\\"answer\\\"]\", \"newChat\": true, \"participantId\": \"GPT\", \"participantLabel\": \"GPT\", \"phase\": \"answer\", \"stepRef\": \"r2\", \"visit\": 1}}, \"pipelineBatchId\": \"pipeline-1793213937516-bf9e4320ab27c:r1:g0\", \"pipelineRoundId\": \"s1\", \"pipelineRunId\": \"pipeline-1793213937516-bf9e4320ab27c\", \"planId\": \"\", \"runMode\": \"auto\", \"sessionId\": \"1\", \"sourceView\": \"pipeline\", \"stageAttemptId\": \"custom:pipeline-1793213937516-bf9e4320ab27c:s1:a1\", \"stageId\": \"custom:pipeline-1793213937516-bf9e4320ab27c:s1\", \"startedAt\": 1793213937516, \"transportRequestIds\": {\"Claude\": \"treq-mvsha1kl-d5ja6u9z\", \"GPT\": \"treq-mvsha1kl-xy0xa95h\"}}, \"prompt\": \"Задача:\nINHERITANCE TASK·\n[RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.·\nСосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.\", \"promptsByModel\": {\"CLAUDE\": \"Задача:\nINHERITANCE TASK·\n[RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.·\nСосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.·\nПоследней строкой ответа напиши только метку [[AO-8924ge]]\", \"GPT\": \"Задача:\nINHERITANCE TASK·\nДополнительно для тебя:\nПроведи экспертный аудит ответов и покажи то, что все пропустили:\n1. Слепые зоны — важные аспекты и следствия, которые никто не назвал.\n2. Ошибки — фактические неточности, логические противоречия, ложные причинно-следственные связи.\n3. Методология — неподходящие критерии и фреймворки, неучтённые ограничения и риски.\nКаждый пункт: конкретный пример → общий паттерн. Без вступлений, сразу к сути.·\n[RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.·\nСосредоточься на ясной ко",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 20,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2704,
+      "fullName": "Pipeline debate favorites view Custom role «Custom» sends the round text to the blocks that chose it; other roles and an empty text stay as they are",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'querySelectorAll')\n    at Object.<anonymous> (<snapshot>/tests/results-debate-favorites.test.js:2704:49)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 21,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2754,
+      "fullName": "Pipeline debate favorites view R1 blocks have a role list; a role on one R1 model reaches only its R1 prompt and is saved and restored",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'querySelector')\n    at Object.<anonymous> (<snapshot>/tests/results-debate-favorites.test.js:2754:45)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 22,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2780,
+      "fullName": "Pipeline debate favorites view a personal request in a Custom block notes that its role is not applied and sends no role text",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:2780:26)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 23,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2799,
+      "fullName": "Pipeline debate favorites view a personal request is reviewed with its warning and upcoming input before the run proceeds",
+      "failureExcerpt": "Error: expect(received).toContain(expected) // indexOf\n\nExpected substring: \"ответы предыдущего шага появятся при запуске\"\nReceived string:    \"Предупреждения\n• r2 · GPT: В запросе нет {задача}: задача пользователя не попадёт в запрос.\n• r2 · GPT: Роль игнорируется при личном запросе.·\n---·\nr2 · GPT\nPERSONAL PREVIEW·\n[RESPONSE_LIMIT] Объём ответа: 250-300 слов, не больше.·\nСосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.\"\n    at Object.toContain (<snapshot>/tests/results-debate-favorites.test.js:2799:37)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 24,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2831,
+      "fullName": "Pipeline debate favorites view Custom ▶ model notes follow every request of their model after the request and before the limit; corrections get none",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:2831:35)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at listOnTimeout (node:internal/timers:549:9)\n    at processTimers (node:internal/timers:523:7)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 25,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2361,
+      "fullName": "Pipeline debate favorites view Custom model overrides, return to common and a typed value equal to ▶ stays explicit",
+      "failureExcerpt": "TypeError: Cannot set properties of null (setting 'value')\n    at edit (<snapshot>/tests/results-debate-favorites.test.js:2361:20)\n    at Object.edit [as model] (<snapshot>/tests/results-debate-favorites.test.js:2369:26)\n    at Object.model (<snapshot>/tests/results-debate-favorites.test.js:2856:15)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 26,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2914,
+      "fullName": "Pipeline debate favorites view Custom ▶ persists in saved configs and export/import; templates and + keep separate session defaults",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:2914:26)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 27,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 3025,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline the saved record holds a valid schema with origin, version and only the owner's values; the earlier members are gone",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n  Object {\n    \"name\": \"GPT\",\n    \"request\": \"OWN REQUEST {задача} {вход}\",\n+   \"role\": \"interaction_critical_audit\",\n  }\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:3025:21)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 28,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 3043,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline after a reload the cards, ▶ and the steps of the run are the same",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:3043:28)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 29,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 3163,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a schema is installed as a pipeline the order of a round and the send marks of its models survive load and a second save",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  -  0\n+ Received  + 32\n\n@@ -5,6 +5,38 @@\n    ],\n    Array [\n      \"Claude\",\n      true,\n    ],\n+   Array [\n+     \"Gemini\",\n+     false,\n+   ],\n+   Array [\n+     \"Grok\",\n+     false,\n+   ],\n+   Array [\n+     \"Le Chat\",\n+     false,\n+   ],\n+   Array [\n+     \"Qwen\",\n+     false,\n+   ],\n+   Array [\n+     \"DeepSeek\",\n+     false,\n+   ],\n+   Array [\n+     \"Perplexity\",\n+     false,\n+   ],\n+   Array [\n+     \"Z.ai\",\n+     false,\n+   ],\n+   Array [\n+     \"Kimi\",\n+     false,\n+   ],\n  ]\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:3163:79)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at processTimers (node:internal/timers:520:9)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 30,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 3306,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a schema is installed as a pipeline a model on the canvas with Send off in every round stays on the canvas: install, save, load again, save (onCanvas)",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  -  0\n+ Received  + 35\n\n@@ -12,6 +12,41 @@\n    Array [\n      \"Grok\",\n      false,\n      \"\",\n    ],\n+   Array [\n+     \"Gemini\",\n+     false,\n+     \"\",\n+   ],\n+   Array [\n+     \"Le Chat\",\n+     false,\n+     \"\",\n+   ],\n+   Array [\n+     \"Qwen\",\n+     false,\n+     \"\",\n+   ],\n+   Array [\n+     \"DeepSeek\",\n+     false,\n+     \"\",\n+   ],\n+   Array [\n+     \"Perplexity\",\n+     false,\n+     \"\",\n+   ],\n+   Array [\n+     \"Z.ai\",\n+     false,\n+     \"\",\n+   ],\n+   Array [\n+     \"Kimi\",\n+     false,\n+     \"\",\n+   ],\n  ]\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:3306:43)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 31,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 3387,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a schema is installed as a pipeline loading a pipeline keeps the Send marks it stores, also for a record saved before the schema",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  -  0\n+ Received  + 32\n\n@@ -5,6 +5,38 @@\n    ],\n    Array [\n      \"GPT\",\n      true,\n    ],\n+   Array [\n+     \"Gemini\",\n+     true,\n+   ],\n+   Array [\n+     \"Grok\",\n+     false,\n+   ],\n+   Array [\n+     \"Le Chat\",\n+     false,\n+   ],\n+   Array [\n+     \"Qwen\",\n+     false,\n+   ],\n+   Array [\n+     \"DeepSeek\",\n+     false,\n+   ],\n+   Array [\n+     \"Perplexity\",\n+     false,\n+   ],\n+   Array [\n+     \"Z.ai\",\n+     false,\n+   ],\n+   Array [\n+     \"Kimi\",\n+     false,\n+   ],\n  ]\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:3387:79)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/",
+      "classification": "unresolved"
+    },
+    {
+      "id": 32,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 3512,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a schema is installed as a pipeline A06: two participants of one model in a step are refused at install with their place, nothing is saved without them",
+      "failureExcerpt": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: false\nReceived: true\n    at Object.toBe (<snapshot>/tests/results-debate-favorites.test.js:3512:30)",
+      "classification": "outdated_expectation"
+    },
+    {
+      "id": 33,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 4245,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a schema is installed as a pipeline the architecture fixture S01–S30 on the page (T17, T18) installs without errors; Save → load from the list → Save gives the fixture steps back",
+      "failureExcerpt": "Error: thrown: \"Exceeded timeout of 240000 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at test (<snapshot>/tests/results-debate-favorites.test.js:4245:7)\n    at _dispatchDescribe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:91:26)\n    at describe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:55:5)\n    at describe (<snapshot>/tests/results-debate-favorites.test.js:4244:5)\n    at _dispatchDescribe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:91:26)\n    at describe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:55:5)\n    at describe (<snapshot>/tests/results-debate-favorites.test.js:3144:5)\n    at _dispatchDescribe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:91:26)\n    at describe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:55:5)\n    at describe (<snapshot>/tests/results-debate-favorites.test.js:2943:3)\n    at _dispatchDescribe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:91:26)\n    at describe (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/index.js:55:5)\n    at Object.describe (<snapshot>/tests/results-debate-favorites.test.js:418:1)\n    at Runtime._execModule (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runtime/build/index.js:1439:24)\n    at Runtime._loadModule (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runtime/build/index.js:1022:12)\n    at Runtime.requireModule (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runtime/build/index.js:882:12)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:77:13)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/",
+      "classification": "timing_sensitive"
+    },
+    {
+      "id": 34,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 4274,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a schema is installed as a pipeline Export and Import of one schema Export gives the bare schema of the canvas; its file name is the pipeline name",
+      "failureExcerpt": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: true\nReceived: false\n    at Object.toBe (<snapshot>/tests/results-debate-favorites.test.js:4274:28)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 35,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 4293,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a schema is installed as a pipeline Export and Import of one schema what Export writes, Import brings back: the same steps and settings under a new name",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 3\n+ Received  + 1\n\n- Array [\n-   \"my-copy\",\n- ]\n+ Array []\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:4293:27)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 36,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2361,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline Save and the card saves derive the record from the schema a card save after a change of the canvas rebuilds the whole record: schema and canvas members agree",
+      "failureExcerpt": "TypeError: Cannot set properties of null (setting 'value')\n    at edit (<snapshot>/tests/results-debate-favorites.test.js:2361:20)\n    at Object.edit [as model] (<snapshot>/tests/results-debate-favorites.test.js:2369:26)\n    at Object.model (<snapshot>/tests/results-debate-favorites.test.js:4748:19)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 37,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 2361,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a value the owner typed stays explicit when it equals the inherited one: the length instruction as its template, the length as a number",
+      "failureExcerpt": "TypeError: Cannot set properties of null (setting 'value')\n    at edit (<snapshot>/tests/results-debate-favorites.test.js:2361:20)\n    at Object.edit [as model] (<snapshot>/tests/results-debate-favorites.test.js:2369:26)\n    at Object.model (<snapshot>/tests/results-debate-favorites.test.js:4765:17)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 38,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 4842,
+      "fullName": "Pipeline debate favorites view Save stores the schema of a Basic pipeline a record saved before the schema still loads and runs as before, and the first card save moves it to a schema",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:4842:28)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at processTimers (node:internal/timers:520:9)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 39,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 4872,
+      "fullName": "Pipeline debate favorites view the round card of Basic: input and task of a round the first round has no input; a later round offers the input and, with an input, the task with the inherited text",
+      "failureExcerpt": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: \"По умолчанию (ответы предыдущего шага)\"\nReceived: \"По умолчанию (ответы последнего этапа с принятым результатом)\"\n    at Object.toBe (<snapshot>/tests/results-debate-favorites.test.js:4872:53)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "outdated_expectation"
+    },
+    {
+      "id": 40,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 4899,
+      "fullName": "Pipeline debate favorites view the round card of Basic: input and task of a round the typed task reaches every model of the round; a model's own task still wins",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:4899:28)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 41,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 4917,
+      "fullName": "Pipeline debate favorites view the round card of Basic: input and task of a round \"Everything accepted\" as the input gives a later round the answers of all earlier steps",
+      "failureExcerpt": "TypeError: Cannot read properties of undefined (reading 'promptsByModel')\n    at Object.promptsByModel (<snapshot>/tests/results-debate-favorites.test.js:4917:28)",
+      "classification": "fixture_or_cascade"
+    },
+    {
+      "id": 42,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 5004,
+      "fullName": "Pipeline debate favorites view the round card of Basic: input and task of a round the input of steps, the owner and the output rounds (the last one of one model with the synthesis role) keep their steps input, owner and output through save, load and a second save; a cleared field stays cleared",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 0\n+ Received  + 1\n\n  Array [\n    true,\n+   false,\n  ]\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:5004:99)\n    at runNextTicks (node:internal/process/task_queues:65:5)\n    at processTimers (node:internal/timers:520:9)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 43,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 5143,
+      "fullName": "Pipeline debate favorites view new empty pipeline resets an inherited round limit to the three-round default",
+      "failureExcerpt": "Error: expect(received).toHaveLength(expected)\n\nExpected length: 3\nReceived length: 2\nReceived object: [<div aria-hidden=\"false\" class=\"model-block inactive pipeline-empty-slot\" data-placeholder=\"true\">\n                    <div class=\"model-header\">\n                        <span aria-hidden=\"true\" class=\"status-indicator\" />\n                        <span class=\"model-slot-placeholder\" />\n                    </div>\n                </div>, <div aria-hidden=\"false\" class=\"model-block inactive pipeline-empty-slot\" data-placeholder=\"true\">\n                    <div class=\"model-header\">\n                        <span aria-hidden=\"true\" class=\"status-indicator\" />\n                        <span class=\"model-slot-placeholder\" />\n                    </div>\n                </div>]\n    at Object.toHaveLength (<snapshot>/tests/results-debate-favorites.test.js:5143:76)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoO",
+      "classification": "unresolved"
+    },
+    {
+      "id": 44,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 5179,
+      "fullName": "Pipeline debate favorites view Universal selection keeps every selected available model",
+      "failureExcerpt": "Error: expect(received).toHaveLength(expected)\n\nExpected length: 4\nReceived length: 10\nReceived object: [<div class=\"model-block active with-role pipeline-run-done\" data-index=\"0\" data-participant-id=\"GPT\" data-participant-label-value=\"GPT\" data-provider-name=\"GPT\" data-tooltip=\"GPT\">\n                    <div … />\n                    <select … />\n                </div>, <div class=\"model-block active with-role pipeline-run-done\" data-index=\"1\" data-participant-id=\"Claude\" data-participant-label-value=\"Claude\" data-provider-name=\"Claude\" data-tooltip=\"Claude\">\n                    <div … />\n                    <select … />\n                </div>, <div class=\"model-block inactive with-role\" data-index=\"2\" data-participant-id=\"Gemini\" data-participant-label-value=\"Gemini\" data-provider-name=\"Gemini\" data-tooltip=\"Gemini\">\n                    <div … />\n                    <select … />\n                </div>, <div class=\"model-block inactive with-role\" data-index=\"3\" data-participant-id=\"Grok\" data-participant-label-value=\"Grok\" data-provider-name=\"Grok\" data-tooltip=\"Grok\">\n                    <div … />\n                    <select … />\n                </div>, <div class=\"model-block inactive with-role\" data-index=\"4\" data-participant-id=\"Le Chat\" data-participant-label-value=\"Le Chat\" data-provider-name=\"Le Chat\" data-tooltip=\"Le Chat\">\n                    <div … />\n                    <select … />\n                </div>, <div class=\"model-block inactive with-role\" data-index=\"5\" data-participant-id=\"Qwen\" data-participant-label-value=\"Qwen\" data-provider-name=\"Qwen\" data-tooltip=\"Qwen\">\n                    <div … />\n                    <select … />\n                </div>, <div class=\"model-block inactive with-role\" data-index=\"6\" data-participant-id=\"DeepSeek\" data-participant-label-value=\"DeepSeek\" data-provider-name=\"DeepSeek\" data-tooltip=\"DeepSeek\">\n                    <div … />\n                    <select … />\n                </div>, <div class=\"model-block inactive with-role\" data-index=\"7\" data-participant-id=\"Perplexity\" data-participant-label-value=\"Perplexity\" data-provider-name=\"Perplexity\" data-tooltip=\"Perplexity\">\n                    <div … />\n        ",
+      "classification": "outdated_expectation"
+    },
+    {
+      "id": 45,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 5189,
+      "fullName": "Pipeline debate favorites view round blocks keep the model order; the canvas has no final synthesis column",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 7\n\n  Array [\n-   \"Claude\",\n    \"GPT\",\n+   \"Claude\",\n    \"Gemini\",\n    \"Grok\",\n+   \"Le Chat\",\n+   \"Qwen\",\n+   \"DeepSeek\",\n+   \"Perplexity\",\n+   \"Z.ai\",\n+   \"Kimi\",\n  ]\n    at toEqual (<snapshot>/tests/results-debate-favorites.test.js:5189:30)\n    at Array.forEach (<anonymous>)\n    at Object.forEach (<snapshot>/tests/results-debate-favorites.test.js:5188:32)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "outdated_expectation"
+    },
+    {
+      "id": 46,
+      "file": "tests/results-debate-favorites.test.js",
+      "line": 5238,
+      "fullName": "Pipeline debate favorites view pipeline R1 mirrors selected top models before run when R1 is still default",
+      "failureExcerpt": "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 2\n+ Received  + 3\n\n  Array [\n-   \"Le Chat\",\n-   \"Perplexity\",\n+   \"GPT\",\n+   \"Claude\",\n+   \"Gemini\",\n  ]\n    at Object.toEqual (<snapshot>/tests/results-debate-favorites.test.js:5238:44)\n    at Promise.then.completed (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:316:40)\n    at _runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:121:9)\n    at run (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/Users/restart/Documents/GitHub/AutoOrchestr/node_modules/jest-runner/build/runTest.js:444:34)",
+      "classification": "unresolved"
+    },
+    {
+      "id": 47,
+      "file": "tests/release-log-regressions.test.js",
+      "line": 525,
+      "fullName": "release log regression guards Pro Disput rounds mirror header-selected models instead of default judge models",
+      "failureExcerpt": "Error: expect(received).toContain(expected) // indexOf\n\nExpected substring: \".filter(({ index }) => !onlyActive || activeSet.has(index))\"\nReceived string:    \"(function initPipelineRuntime(global) {\n    'use strict';·\n    const MODELS = [\n        { name: 'Claude', defaultActive: false },\n        { name: 'GPT', defaultActive: false },\n        { name: 'Gemini', defaultActive: false },\n        { name: 'Grok', defaultActive: false },\n        { name: 'Le Chat', defaultActive: false },\n        { name: 'Qwen', defaultActive: false },\n        { name: 'DeepSeek', defaultActive: false },\n        { name: 'Perplexity', defaultActive: false },\n        { name: 'Z.ai', defaultActive: false },\n        { name: 'Kimi', defaultActive: false }\n    ];·\n    const DEFAULT_MODEL_INDICES = MODELS.reduce((acc, model, index) => {\n        if (model.defaultActive) acc.push(index);\n        return acc;\n    }, []);\n    const DEFAULT_JUDGE_INDICES = MODELS.length > 1 ? [0, 1] : [0];\n    const DEFAULT_LATE_JUDGE_INDICES = [0];\n    const escapeFallback = (value = '') => String(value)\n        .replace(/&/g, '&amp;')\n        .replace(/</g, '&lt;')\n        .replace(/>/g, '&gt;')\n        .replace(/\\\"/g, '&quot;')\n        .replace(/'/g, '&#39;');·\n    const cloneConfig = (config) => {\n        if (!config) return null;\n        try {\n            if (typeof structuredClone === 'function') return structuredClone(config);\n        } catch (_) {}\n        return JSON.parse(JSON.stringify(config));\n    };·\n    const getRoundStage = (roundIndex) => roundIndex === 1 ? 'models' : 'judge';·\n    const buildJudgePromptOptionsHtml = ({ index = 0, orderedPrompts = [], escapeHtml = escapeFallback } = {}) => {\n        const prompts = Array.isArray(orderedPrompts) ? orderedPrompts.filter((prompt) => prompt?.id) : [];\n        if (!prompts.length) return '';\n        const metaPrompt = prompts.find((prompt) => {\n            const id = String(prompt.id || '').toLowerCase();\n            return id.includes('meta_synthesis');\n        }) || prompts.find((prompt) => String(prompt.label || '').toLowerCase().includes('meta'));\n        const primaryPrompt = index > 0 ? (metaPrompt || prompts[0]) : prompts[0];\n        const ordered =",
+      "classification": "outdated_expectation"
+    }
+  ],
+  "classificationCounts": {
+    "fixture_or_cascade": 27,
+    "outdated_expectation": 5,
+    "timing_sensitive": 1,
+    "unresolved": 14
+  },
+  "diagnostics": [
+    {
+      "cases": [
+        18
+      ],
+      "result": "passed with explicit R1/R2 participants and cleared custom session",
+      "path": "/tmp/auto-failures-after-mdkfBR/own-lines-seeded-2.json"
+    },
+    {
+      "cases": [
+        34,
+        35
+      ],
+      "result": "passed with explicit R1/R2 participants and cleared custom session",
+      "path": "/tmp/auto-failures-after-mdkfBR/export-import-seeded.json"
+    },
+    {
+      "cases": [
+        33
+      ],
+      "commit": "a377acb7",
+      "version": "2.81.911",
+      "diagnosticTimeoutMs": 360000,
+      "durationSeconds": 264.62,
+      "passed": 1,
+      "skipped": 206,
+      "path": "/tmp/auto-failures-911-architecture-4Pux3g/results.json"
+    }
+  ]
+}
