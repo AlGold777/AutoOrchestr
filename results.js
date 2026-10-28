@@ -7755,8 +7755,10 @@ document.addEventListener('click', (event) => {
             if (pipelineRemoveRoundBtn) {
                 pipelineRemoveRoundBtn.style.display = 'flex';
             }
-            syncPipelineChromeControls();
-            updatePipelineAll();
+            if (!pipelineApplyingConfig) {
+                syncPipelineChromeControls();
+                updatePipelineAll();
+            }
         };
 
         const removeLastRound = () => {
@@ -7788,8 +7790,10 @@ document.addEventListener('click', (event) => {
                 pipelineRemoveRoundBtn.style.display = 'none';
             }
 
-            syncPipelineChromeControls();
-            updatePipelineAll();
+            if (!pipelineApplyingConfig) {
+                syncPipelineChromeControls();
+                updatePipelineAll();
+            }
         };
 
         const syncPipelineRoundsToDebateLimit = () => {

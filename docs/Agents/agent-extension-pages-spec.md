@@ -47,7 +47,7 @@
 
 | Элемент | Контролы | Поведение и код |
 |---|---|---|
-| Выбор провайдеров | `#llm-gpt`, `#llm-claude`, `#llm-qwen`, `#llm-zai`, `#llm-kimi`, `#llm-gemini`, `#llm-grok`, `#llm-deepseek`, `#llm-lechat`, `#llm-perplexity` | Toggle `.active`; синхронизирует видимость соответствующих `#panel-<model>`, список `ResultsShared.getSelectedLLMs()`, доступные роли и сохранённый выбор текущего view. Не отправляет prompt сам. В `pipeline_panel` также вызывает синхронизацию моделей схемы. |
+| Выбор провайдеров | `#llm-gpt`, `#llm-claude`, `#llm-qwen`, `#llm-zai`, `#llm-kimi`, `#llm-gemini`, `#llm-grok`, `#llm-deepseek`, `#llm-lechat`, `#llm-perplexity` | Toggle `.active`; синхронизирует видимость соответствующих `#panel-<model>`, список `ResultsShared.getSelectedLLMs()`, доступные роли и сохранённый выбор текущего view. Не отправляет prompt сам. В Basic состав участников определяется схемой и кнопками карточек; выбор провайдеров в шапке его не перестраивает. Для прежних режимов вызывается синхронизация моделей раундов. |
 | Выбрать всех / снять всех | двойной клик по кнопке модели | Переключает весь набор моделей. Это отдельное поведение от одиночного toggle. |
 | Выбор шаблона prompt | `#template-select` | `manual` — ручной prompt; `create` открывает форму шаблона. На разметке контейнер скрыт, поэтому проверяйте фактическую видимость. |
 | Notes / Pipeline / Telemetry | `#left-sidebar-toggle`, `#right-sidebar-toggle`, `#pipeline-close-btn`, `#telemetry-toggle-btn` | Открывают/закрывают панели или модалку. Состояние правой панели меняет доступность центральной области. Telemetry лениво загружает `results-devtools.js`. |
