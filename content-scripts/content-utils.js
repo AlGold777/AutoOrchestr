@@ -1370,7 +1370,9 @@
   const ROLE_ASSISTANT_SELECTOR = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
   const ROLE_USER_SELECTOR = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
   // Same rule as the extractor: code-editor inputs inside the answer are not page chrome.
-  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]';
+  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]'
+    // ChatGPT's writing block ("Текст") is the answer itself: its document editor is not the page composer.
+    + ',[data-client-defined-widget],[data-oai-writing-block-surface]';
   const hasPageChrome = (root) => Array.from(root.querySelectorAll('textarea,[contenteditable="true"],form,nav'))
     .some((el) => !(el.matches('textarea,[contenteditable="true"]') && (el.closest(EDITOR_HOST) || el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true')));
   const isWideAnswerContainer = (node) => {

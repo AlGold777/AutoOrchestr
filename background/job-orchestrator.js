@@ -607,7 +607,9 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   const ROLE_ASSISTANT = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
   const ROLE_USER = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
   // Inputs inside a code editor of the answer (Monaco/CodeMirror hidden textarea in a diagram) are not the page composer.
-  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]';
+  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]'
+    // ChatGPT's writing block ("Текст") is the answer itself: its document editor is not the page composer.
+    + ',[data-client-defined-widget],[data-oai-writing-block-surface]';
   const hasPageChrome = (root) => Array.from(root.querySelectorAll('textarea,[contenteditable="true"],form,nav'))
     .some((el) => !(el.matches('textarea,[contenteditable="true"]') && (el.closest(EDITOR_HOST) || el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true')));
   const isWideContainer = (candidate) => {

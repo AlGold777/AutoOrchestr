@@ -661,7 +661,9 @@
   const PAGE_CHROME_SEL = 'textarea,[contenteditable="true"],form,nav';
   // Inputs that belong to a CODE EDITOR inside the answer (Monaco / CodeMirror of a diagram or code block: a hidden <textarea>,
   // a contenteditable layer) are not the page's composer. Only an input outside code blocks, not read-only and not hidden, is page chrome.
-  const EDITOR_HOST_SEL = 'pre, code, [role="code"], .monaco-editor, .cm-editor, .CodeMirror, [class*="monaco" i], [class*="codemirror" i], [class*="code-editor" i], [data-mode-id]';
+  const EDITOR_HOST_SEL = 'pre, code, [role="code"], .monaco-editor, .cm-editor, .CodeMirror, [class*="monaco" i], [class*="codemirror" i], [class*="code-editor" i], [data-mode-id]'
+    // ChatGPT's writing block ("Текст") is the answer itself: its document editor is not the page composer.
+    + ', [data-client-defined-widget], [data-oai-writing-block-surface]';
   const isEditorInput = (el) => {
     if (el.closest(EDITOR_HOST_SEL)) return true;
     if (el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true') return true;
