@@ -5,8 +5,9 @@
 // validate() runs before the first request. Rules: docs/Pipeline scenarios/basic-developer.md,
 // field reference and how to write a schema: docs/Pipeline scenarios/basic-schema-guide.md.
 //
-// Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, defaults?, steps }
+// Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, comment?, defaults?, steps }
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
+//   comment: the text the model wrote around the schema JSON (kept when the schema is pasted); shown under the description, never read by the engine
 //   run: { policy?: 'auto' | 'manual', maxWords?, strictLength? } — the run policy, the shared answer limit and the strict length check
 //   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
@@ -302,8 +303,9 @@
     else if (!SUPPORTED_VERSIONS.includes(schema.schemaVersion)) fail('schemaVersion', `версия формата ${schema.schemaVersion} не поддерживается`);
     oneOf(schema.origin, ORIGINS, 'origin', 'происхождение');
     if (schema.basedOn != null) text(schema.basedOn, 'basedOn');
-    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'description', 'run', 'defaults', 'spec', 'steps'], '');
+    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'description', 'comment', 'run', 'defaults', 'spec', 'steps'], '');
     if ('description' in schema) text(schema.description, 'description');
+    if ('comment' in schema) text(schema.comment, 'comment');
     if ('spec' in schema) {
       if (!isObject(schema.spec)) fail('spec', 'ожидается объект');
       else {

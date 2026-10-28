@@ -6502,6 +6502,7 @@ document.addEventListener('click', (event) => {
             return { schemaVersion, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(sourceSchema && 'spec' in sourceSchema ? { spec: JSON.parse(JSON.stringify(sourceSchema.spec)) } : {}),
                 ...(sourceSchema && typeof sourceSchema.description === 'string' ? { description: sourceSchema.description } : {}),
+                ...(sourceSchema && typeof sourceSchema.comment === 'string' ? { comment: sourceSchema.comment } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
                 ...(Object.keys(defaults).length ? { defaults } : {}), steps: withControls(steps.map(withSpecText)) };
         };
@@ -8913,6 +8914,8 @@ document.addEventListener('click', (event) => {
                     await importBasicCatalog(value, read.notes);
                     return;
                 }
+                // The text around the JSON is the model's comment: it stays with the schema (the schema's own comment wins).
+                if (read.comment && !('comment' in value)) value.comment = read.comment;
                 const built = recordFromSchema('schema', value);
                 if (!built.ok) {
                     showProblems([...read.notes, ...built.errors.map((error) => `${error.path ? `${error.path}: ` : ''}${error.message}`)]);
@@ -8953,6 +8956,7 @@ document.addEventListener('click', (event) => {
                     if (!read?.ok) { showNotification(`Файл не прочитан как схема Basic: ${(read?.errors || ['не JSON']).join(' ')}`, 'error'); return; }
                     parsed = read.value;
                     notes = read.notes || [];
+                    if (read.comment && !('comment' in parsed)) parsed.comment = read.comment;
                 }
                 if ('basicCatalog' in parsed) {
                     await importBasicCatalog(parsed);
@@ -9228,8 +9232,10 @@ document.addEventListener('click', (event) => {
         };
         // The presentation of the pipeline (schema.description): shown in the ▶ card, collapsed to two lines; the engine never reads it.
         const basicDescription = () => String(basicSourceSchema.get(draftPlanStorageKey())?.description || '').trim();
+        // The model's comment (the text around the pasted schema) follows the description in the same block.
+        const basicComment = () => String(basicSourceSchema.get(draftPlanStorageKey())?.comment || '').trim();
         const basicDescriptionBlock = () => `<div class="custom-desc"><div class="custom-desc-head"><strong>Description</strong><button type="button" class="custom-desc-toggle" aria-expanded="false" title="Развернуть на весь экран">⤢</button></div>
-            <div class="custom-desc-text">${basicDescription() ? escapeHtml(basicDescription()) : '<em>Описание не задано.</em>'}</div></div>`;
+            <div class="custom-desc-text">${basicDescription() ? escapeHtml(basicDescription()) : '<em>Описание не задано.</em>'}${basicComment() ? `\n\nКомментарий модели:\n${escapeHtml(basicComment())}` : ''}</div></div>`;
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const participantId = pipelineDefaults ? '' : customBlockParticipantId(block);

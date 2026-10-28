@@ -1103,6 +1103,11 @@ describe('Basic schema: description is the presentation of the pipeline, for the
   test('a description that is not a text is an error with its path', () => {
     expect(errorPaths(base(steps, { description: 5 }))).toEqual(['description']);
   });
+  test('the model comment is a text for the person: valid, it does not change the steps; not a text is an error', () => {
+    expect(Schema.validate(base(steps, { comment: '— ничего\n— не использовал файлы' }))).toEqual([]);
+    expect(Schema.assemble(base(steps, { comment: 'К' }))).toEqual(Schema.assemble(base(steps)));
+    expect(errorPaths(base(steps, { comment: ['x'] }))).toEqual(['comment']);
+  });
 });
 
 describe('Basic schema: artifact description (output.artifacts[].description)', () => {
