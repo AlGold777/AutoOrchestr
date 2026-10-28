@@ -24400,22 +24400,9 @@ function checkCompareButtonState() {
             };
         }
 
-        const lines = text.split('\n');
-        let splitIndex = -1;
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].trim().startsWith('===')) {
-                splitIndex = i;
-                break;
-            }
-        }
-
-        if (splitIndex === -1) {
-            return { promptCore: text.trim(), embeddedResponses: '' };
-        }
-
-        const promptCore = lines.slice(0, splitIndex).join('\n').trim();
-        const embedded = lines.slice(splitIndex).join('\n').trim();
-        return { promptCore, embeddedResponses: embedded };
+        // Plain-text separators belong to the request; only an explicit response tag
+        // identifies a response block when explicitly combining it with responses.
+        return { promptCore: text.trim(), embeddedResponses: '' };
     }
 
     function applySelectedModifiersToPrompt(baseText, options = {}) {
@@ -24423,7 +24410,11 @@ function checkCompareButtonState() {
         const wrapPromptTag = options.wrapPromptTag !== false;
         const prefixParts = [];
         const suffixParts = [];
-        const { promptCore, embeddedResponses } = splitPromptAndEmbeddedResponses(baseText);
+        // Sending/copying the prompt preserves everything the user entered. Response
+        // extraction is only needed when explicitly assembling a bundle with responses.
+        const { promptCore, embeddedResponses } = includeResponses
+            ? splitPromptAndEmbeddedResponses(baseText)
+            : { promptCore: String(baseText || '').trim(), embeddedResponses: '' };
 
         if (selectedModifierIds && selectedModifierIds.length > 0) {
             const selected = selectedModifierIds
