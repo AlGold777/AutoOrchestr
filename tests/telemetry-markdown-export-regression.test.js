@@ -7,9 +7,20 @@ const ROUTER_SRC = fs.readFileSync(path.join(__dirname, '..', 'background', 'mes
 const DEVTOOLS_SRC = fs.readFileSync(path.join(__dirname, '..', 'results-devtools.js'), 'utf8');
 
 describe('telemetry Markdown export regression', () => {
-  test('page reload clears persisted telemetry before the new page session', () => {
-    expect(RESULTS_SRC).toContain('clearTelemetryOnReload()');
-    expect(RESULTS_SRC).toContain("detail: { source: 'page_reload' }");
+  test('page reload does not clear persisted telemetry', () => {
+    const bootUtilsSrc = fs.readFileSync(path.join(__dirname, '..', 'results', 'boot-utils.js'), 'utf8');
+    expect(RESULTS_SRC).not.toContain('clearTelemetryOnReload');
+    expect(bootUtilsSrc).not.toContain('clearTelemetryOnReload');
+    expect(RESULTS_SRC).not.toContain("detail: { source: 'page_reload' }");
+    expect(RESULTS_SRC).not.toContain("reason: 'page_reload'");
+    expect(bootUtilsSrc).not.toContain('CLEAR_DIAG_EVENTS');
+    // Manual clear button stays.
+    expect(RESULTS_SRC).toContain("runtime.sendMessage({ type: 'CLEAR_DIAG_EVENTS' }");
+  });
+
+  test('All Logs export reads up to 5000 persisted events', () => {
+    expect(RESULTS_SRC).toContain("type: 'GET_DIAG_EVENTS', limit: 5000");
+    expect(RESULTS_SRC).not.toContain("type: 'GET_DIAG_EVENTS', limit: 2000");
   });
 
   test('Run Summary alone is sufficient to create the MD export', () => {

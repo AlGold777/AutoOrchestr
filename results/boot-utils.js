@@ -85,31 +85,6 @@
             return false;
         }
     };
-    const clearTelemetryOnReload = () => new Promise((resolve) => {
-        if (!isPageReloadNavigation()) {
-            resolve(false);
-            return;
-        }
-        const runtime = (typeof chrome !== 'undefined' && chrome?.runtime) ? chrome.runtime : null;
-        if (!runtime?.sendMessage) {
-            resolve(false);
-            return;
-        }
-        try {
-            runtime.sendMessage({ type: 'CLEAR_DIAG_EVENTS', reason: 'page_reload' }, () => {
-                if (runtime.lastError) {
-                    console.warn('[results] telemetry reload clear error', runtime.lastError);
-                    resolve(false);
-                } else {
-                    console.info('[RESULTS] telemetry cleared on reload');
-                    resolve(true);
-                }
-            });
-        } catch (err) {
-            console.warn('[results] telemetry reload clear failed', err);
-            resolve(false);
-        }
-    });
     const clearDebateTranscriptOnReload = () => new Promise((resolve) => {
         if (!isPageReloadNavigation()) {
             resolve(false);
@@ -191,7 +166,6 @@
         resetGeometryState,
         recoverUiIfHidden,
         isPageReloadNavigation,
-        clearTelemetryOnReload,
         clearDebateTranscriptOnReload,
         normalizeExternalLinkUrl,
         decorateLinksForNewTab,

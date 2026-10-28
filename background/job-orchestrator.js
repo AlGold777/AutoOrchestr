@@ -5598,7 +5598,17 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
 
   const sessionStartTime = Date.now();
   const telemetrySampled = resolveTelemetrySampling(sessionStartTime);
+  // Waves of one pipeline run share pipelineRunId but get new startTimes; carry
+  // the earlier wave start times over so the run's diagnostics stay exportable.
+  const previousSession = jobState?.session || null;
+  const continuedRunPipelineId = pipelineContext?.pipelineRunId || null;
+  const previousRunSessionIds = previousSession?.pipelineRunId && previousSession.pipelineRunId === continuedRunPipelineId
+    ? (Array.isArray(previousSession.runSessionIds) && previousSession.runSessionIds.length
+      ? previousSession.runSessionIds.slice()
+      : (previousSession.startTime != null ? [previousSession.startTime] : []))
+    : [];
   jobState = self.PipelineRunState.create({
+    previousRunSessionIds,
     prompt,
     selectedModels: Array.isArray(selectedLLMs) ? selectedLLMs : [],
     useApiFallback,

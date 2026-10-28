@@ -10,10 +10,17 @@
   const LEGACY_STORAGE_KEY = 'messageDelivery.journal';
   const MAX_EVENTS = 3000;
   const MAX_BYTES = 3 * 1024 * 1024; // 3 MiB UTF-8 JSON quota
+  // Long-lived compressed copy in chrome.storage.local (survives Reload / browser restart).
+  const LOCAL_MIRROR_KEY = 'messageDelivery.journal.v2.local';
+  const MIRROR_DEBOUNCE_MS = 2000;
+  const MIRROR_MAX_WAIT_MS = 10000; // copy is written at most this long after the first unsaved append
 
   let initialized = false;
   let initPromise = null;
   let opQueue = Promise.resolve();
+  let mirrorTimer = null;
+  let mirrorGen = 0; // bumped by clear() so pending mirror writes become no-ops
+  let mirrorPendingSince = null; // time of the first append not yet mirrored
 
   const events = [];
   const eventIdSet = new Set();
@@ -82,6 +89,55 @@
     }
   }
 
+  function getMirror() {
+    const mirror = root.CompressedStorage || globalThis.CompressedStorage;
+    return mirror && typeof mirror.set === 'function' && typeof mirror.get === 'function' && typeof mirror.remove === 'function'
+      ? mirror
+      : null;
+  }
+
+  const hasEvents = (env) => !!(env && env.version === 2 && Array.isArray(env.events) && env.events.length > 0);
+
+  async function readMirror() {
+    const mirror = getMirror();
+    if (!mirror) return null;
+    try {
+      return await mirror.get(LOCAL_MIRROR_KEY);
+    } catch (err) {
+      console.warn('[MessageDeliveryStore] local mirror read failed', err?.message || err);
+      return null;
+    }
+  }
+
+  // Runs inside the op queue. Errors (including local quota) are logged, never thrown.
+  async function writeMirror() {
+    const mirror = getMirror();
+    if (!mirror) return;
+    try {
+      await mirror.set(LOCAL_MIRROR_KEY, { version: 2, events: events.slice(), collection: { ...collection } });
+    } catch (err) {
+      console.warn('[MessageDeliveryStore] local mirror write failed', err?.message || err);
+    }
+  }
+
+  function scheduleMirror() {
+    if (!getMirror()) return;
+    const now = Date.now();
+    if (mirrorPendingSince === null) mirrorPendingSince = now;
+    clearTimeout(mirrorTimer);
+    const gen = mirrorGen;
+    // Debounce, but never later than MIRROR_MAX_WAIT_MS after the first unsaved append.
+    const delay = Math.max(0, Math.min(MIRROR_DEBOUNCE_MS, mirrorPendingSince + MIRROR_MAX_WAIT_MS - now));
+    mirrorTimer = setTimeout(() => {
+      mirrorTimer = null;
+      enqueue(async () => {
+        if (gen !== mirrorGen) return;
+        mirrorPendingSince = null;
+        await writeMirror();
+      }).catch(() => {});
+    }, delay);
+  }
+
   async function internalInit() {
     if (root.__extensionLifecycleReady && typeof root.__extensionLifecycleReady.then === 'function') {
       try {
@@ -91,7 +147,15 @@
 
     try {
       const data = await callStorage('get', [STORAGE_KEY, LEGACY_STORAGE_KEY]) || {};
-      const envelope = data?.[STORAGE_KEY];
+      let envelope = data?.[STORAGE_KEY];
+      let fromMirror = false;
+      if (!hasEvents(envelope)) {
+        const mirrored = await readMirror();
+        if (hasEvents(mirrored)) {
+          envelope = mirrored;
+          fromMirror = true;
+        }
+      }
       if (envelope && envelope.version === 2 && Array.isArray(envelope.events)) {
         events.length = 0;
         eventIdSet.clear();
@@ -108,6 +172,10 @@
         }
         collection.retained = events.length;
         collection.bytesEstimate = estimateBytes({ version: 2, events, collection });
+        if (fromMirror) {
+          // Session was empty: put the restored journal back into session storage.
+          await persist(events, collection);
+        }
       } else if (Array.isArray(data?.[LEGACY_STORAGE_KEY])) {
         // One-time legacy import if present
         const legacyEvents = data[LEGACY_STORAGE_KEY];
@@ -123,7 +191,7 @@
         collection.totalAppended = events.length;
         collection.overflowOmitted = 0;
         collection.bytesEstimate = estimateBytes({ version: 2, events, collection });
-        await persist();
+        await persist(events, collection);
       } else {
         events.length = 0;
         eventIdSet.clear();
@@ -231,6 +299,7 @@
       eventIdSet.clear();
       events.forEach((e) => { if (e.eventId) eventIdSet.add(e.eventId); });
       Object.assign(collection, candidateCollection);
+      scheduleMirror();
 
       return {
         ok: true,
@@ -253,7 +322,16 @@
   }
 
   async function clear() {
+    // Cancel a pending mirror write now, and make any already-queued one a no-op.
+    mirrorGen += 1;
+    clearTimeout(mirrorTimer);
+    mirrorTimer = null;
+    mirrorPendingSince = null;
     return enqueue(async () => {
+      mirrorGen += 1;
+      clearTimeout(mirrorTimer);
+      mirrorTimer = null;
+      mirrorPendingSince = null;
       events.length = 0;
       eventIdSet.clear();
       collection.retained = 0;
@@ -261,12 +339,24 @@
       collection.overflowOmitted = 0;
       collection.bytesEstimate = 0;
 
-      const storage = getStorage();
-      if (storage) {
-        if (storage.remove) {
-          await callStorage('remove', STORAGE_KEY);
-        } else if (storage.set) {
-          await callStorage('set', { [STORAGE_KEY]: { version: 2, events: [], collection } });
+      try {
+        const storage = getStorage();
+        if (storage) {
+          if (storage.remove) {
+            await callStorage('remove', STORAGE_KEY);
+          } else if (storage.set) {
+            await callStorage('set', { [STORAGE_KEY]: { version: 2, events: [], collection } });
+          }
+        }
+      } finally {
+        // Remove the durable copy even if the session removal failed, so it cannot resurrect cleared events.
+        const mirror = getMirror();
+        if (mirror) {
+          try {
+            await mirror.remove(LOCAL_MIRROR_KEY);
+          } catch (err) {
+            console.warn('[MessageDeliveryStore] local mirror remove failed', err?.message || err);
+          }
         }
       }
 

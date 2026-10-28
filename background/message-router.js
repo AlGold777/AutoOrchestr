@@ -1618,20 +1618,6 @@ const clearDiagnosticsRuntimeLogs = () => {
     return changed;
 };
 
-const clearDiagnosticsStorageOnStartup = () => {
-    writeDiagnosticsEventsToStorage([])
-        .catch((err) => console.warn('[DIAGNOSTICS] startup clear failed', err));
-};
-
-if (typeof chrome !== 'undefined' && chrome?.runtime) {
-    if (typeof chrome.runtime.onStartup?.addListener === 'function') {
-        chrome.runtime.onStartup.addListener(clearDiagnosticsStorageOnStartup);
-    }
-    if (typeof chrome.runtime.onInstalled?.addListener === 'function') {
-        chrome.runtime.onInstalled.addListener(clearDiagnosticsStorageOnStartup);
-    }
-}
-
 const DIAG_PINNED_LABELS = new Set([
     'ATTEMPT_CONTEXT_CAPTURED',
     'COMPLETION_ATTEMPT_ACCEPTED',
@@ -4762,18 +4748,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             arr = arr.filter((e) => set.has(String(e?.platform || 'unknown').toLowerCase()));
                         }
                         // The persisted diagnostics buffer is cleared when a new
-                        // run starts, not when a page reloads. Reloading the
-                        // results page without starting a run therefore re-hydrated
-                        // the previous session, and the page's own
-                        // "current run" resolver — which reads the newest event it
-                        // was given — then presented that stale run as the active
-                        // one. Scope to the current run session (jobState.session.startTime) here so a
-                        // reload cannot resurrect an earlier session. Events that
-                        // carry no run identity (setup/system lines) are kept.
-                        const activeRunSessionId = message?.allRunSessions === true
+                        // pipeline run starts, not on page reload or browser restart.
+                        // A reload must not resurrect an earlier run, so the export is
+                        // scoped to the run's wave start times (session.runSessionIds;
+                        // a single startTime for sessions without the list). Each wave
+                        // of a pipeline run has its own startTime, so all waves stay
+                        // in the export. Events that carry no run identity
+                        // (setup/system lines) are kept.
+                        const sessionForScope = jobState?.session || null;
+                        const activeRunSessionIds = message?.allRunSessions === true
                             ? null
-                            : (jobState?.session?.startTime ?? null);
-                        if (activeRunSessionId !== null && activeRunSessionId !== undefined) {
+                            : (Array.isArray(sessionForScope?.runSessionIds) && sessionForScope.runSessionIds.length
+                                ? sessionForScope.runSessionIds
+                                : (sessionForScope?.startTime != null ? [sessionForScope.startTime] : null));
+                        if (activeRunSessionIds && activeRunSessionIds.length) {
+                            const allowedRunSessionIds = new Set(activeRunSessionIds.map((id) => String(id)));
                             arr = arr.filter((entry) => {
                                 const entryRunSessionId = entry?.meta?.runSessionId
                                     ?? entry?.meta?.sessionId
@@ -4781,7 +4770,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     ?? entry?.sessionId
                                     ?? null;
                                 if (entryRunSessionId === null || entryRunSessionId === undefined) return true;
-                                return String(entryRunSessionId) === String(activeRunSessionId);
+                                return allowedRunSessionIds.has(String(entryRunSessionId));
                             });
                         }
                         const capSize = (limit && Number.isFinite(limit))

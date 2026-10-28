@@ -26,7 +26,7 @@ describe('telemetry retention and serialization', () => {
     expect(TELEMETRY_SRC).toContain('const DIAGNOSTICS_EVENTS_MAX_ITEMS = 4000');
     expect(TELEMETRY_SRC).toContain('const DIAGNOSTICS_EVENTS_MAX_BYTES = 3000000');
     expect(ROUTER_SRC).toContain('const DIAGNOSTICS_EXPORT_MAX_ITEMS = 4000');
-    expect(RESULTS_SRC).toContain("type: 'GET_DIAG_EVENTS', limit: 2000");
+    expect(RESULTS_SRC).toContain("type: 'GET_DIAG_EVENTS', limit: 5000");
   });
 
   test('per-model logs retain critical events and suppress post-terminal layer noise', () => {

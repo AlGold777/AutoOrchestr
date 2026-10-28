@@ -16,7 +16,6 @@ const EXTENSION_VOLATILE_LOCAL_KEYS = [
   'llmTabMap',
   'llmParticipantTabMap',
   'jobState',
-  '__diagnostics_events__',
   'llmComparatorSelectedModelsByView.main',
   'llmComparatorSelectedModelsByView.pipeline',
   'llmComparatorCrossViewUiState',

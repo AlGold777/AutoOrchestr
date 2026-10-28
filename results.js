@@ -62,7 +62,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         resetGeometryState,
         recoverUiIfHidden,
         isPageReloadNavigation,
-        clearTelemetryOnReload,
         clearDebateTranscriptOnReload,
         normalizeExternalLinkUrl,
         decorateLinksForNewTab,
@@ -16384,6 +16383,20 @@ document.addEventListener('click', (event) => {
         }
         return null;
     };
+    const resolveTelemetryPipelineRunId = (event) => {
+        const raw = event?.meta?.pipelineRunId || event?.pipelineRunId || event?.meta?.runId || '';
+        return String(raw || '').trim() || null;
+    };
+    const resolveCurrentPipelineRunId = (events = []) => {
+        const sorted = [...(Array.isArray(events) ? events : [])]
+            .filter(Boolean)
+            .sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
+        for (const event of sorted) {
+            const pipelineRunId = resolveTelemetryPipelineRunId(event);
+            if (pipelineRunId) return pipelineRunId;
+        }
+        return null;
+    };
     const resolveLatestRound0StartTs = (events = []) => {
         return (Array.isArray(events) ? events : [])
             .filter((event) => (
@@ -16427,7 +16440,13 @@ document.addEventListener('click', (event) => {
                 scopeMode: 'cycle'
             };
         }
-        const scoped = source.filter((event) => resolveTelemetryRunSessionId(event) === activeRunSessionId);
+        // Прогон = все волны с одним pipelineRunId; события без pipelineRunId — по runSessionId.
+        const activePipelineRunId = hasRequestedRunSessionId ? null : resolveCurrentPipelineRunId(source);
+        const scoped = source.filter((event) => {
+            const pipelineRunId = resolveTelemetryPipelineRunId(event);
+            if (activePipelineRunId && pipelineRunId) return pipelineRunId === activePipelineRunId;
+            return resolveTelemetryRunSessionId(event) === activeRunSessionId;
+        });
         if (!scoped.length) {
             return {
                 events: [],
@@ -16448,6 +16467,7 @@ document.addEventListener('click', (event) => {
         return {
             events: cycleScoped,
             runSessionId: activeRunSessionId,
+            pipelineRunId: activePipelineRunId,
             minTs,
             maxTs,
             strict: true,
@@ -16465,7 +16485,7 @@ document.addEventListener('click', (event) => {
         }
         return null;
     };
-    const filterDiagnosticsByRunSession = (sources = [], logs = {}, runSessionId = null, minTs = null, maxTs = null) => {
+    const filterDiagnosticsByRunSession = (sources = [], logs = {}, runSessionId = null, minTs = null, maxTs = null, pipelineRunId = null) => {
         const scopedLogs = {};
         const scopedSources = [];
         const lowerTs = Number.isFinite(minTs) ? (minTs - 30000) : null;
@@ -16489,6 +16509,10 @@ document.addEventListener('click', (event) => {
         (sources || []).forEach((name) => {
             const entries = Array.isArray(logs?.[name]) ? logs[name] : [];
             const filtered = entries.filter((entry) => {
+                const entryPipelineRunId = resolveTelemetryPipelineRunId(entry);
+                if (pipelineRunId && entryPipelineRunId) {
+                    return entryPipelineRunId === pipelineRunId;
+                }
                 const entryRun = resolveDiagnosticRunSessionId(entry);
                 if (Number.isFinite(entryRun) && entryRun > 0) {
                     return entryRun === runSessionId;
@@ -16761,7 +16785,8 @@ document.addEventListener('click', (event) => {
             logs,
             runScope.runSessionId,
             runScope.minTs,
-            runScope.maxTs
+            runScope.maxTs,
+            runScope.pipelineRunId
         );
         const telemetrySection = buildTelemetrySectionMarkdown(scopedTelemetryEvents);
         const telemetryRoundsSection = buildTelemetryRoundsMarkdown(scopedTelemetryEvents);
@@ -16852,7 +16877,7 @@ document.addEventListener('click', (event) => {
         };
         const timer = setTimeout(() => finish([]), Math.max(0, timeoutMs));
         try {
-            runtime.sendMessage({ type: 'GET_DIAG_EVENTS', limit: 2000 }, (resp) => {
+            runtime.sendMessage({ type: 'GET_DIAG_EVENTS', limit: 5000 }, (resp) => {
                 if (runtime.lastError) {
                     finish([]);
                     return;
@@ -17477,17 +17502,6 @@ document.addEventListener('click', (event) => {
     document.addEventListener('diagnostics-clear-request', () => {
         clearDiagnosticsView();
     });
-    if (isPageReloadNavigation()) {
-        clearTelemetryOnReload()
-            .then((cleared) => {
-                if (cleared) {
-                    document.dispatchEvent(new CustomEvent('diagnostics-clear-request', {
-                        detail: { source: 'page_reload' }
-                    }));
-                }
-            })
-            .catch((err) => console.warn('[RESULTS] telemetry reload clear failed', err));
-    }
 
     const resetNewPagesCheckboxAfterOpen = () => {
         if (!newPagesCheckbox) return;

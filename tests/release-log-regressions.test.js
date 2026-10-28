@@ -477,7 +477,7 @@ describe('release log regression guards', () => {
     // results.js still wires the extracted helpers and the reload-clear call site.
     expect(source).toContain('} = window.ResultsBootUtils;');
     expect(source).toContain("clearDebateTranscriptOnReload().catch?.((err) => console.warn('[RESULTS] debate transcript reload clear failed', err));");
-    expect(source).toContain('clearTelemetryOnReload()');
+    expect(source).not.toContain('clearTelemetryOnReload()');
     expect(source).toContain('return safeStorageLocalRemove(DebateEngineRuntime.STORAGE_KEY).then(() => false);');
     expect(source).toContain('return DebateEngineRuntime.loadStore()');
   });

@@ -88,6 +88,20 @@
         }
         return null;
     };
+    const resolveEventPipelineRunId = (event) => {
+        const raw = event?.meta?.pipelineRunId || event?.pipelineRunId || event?.meta?.runId || '';
+        return String(raw || '').trim() || null;
+    };
+    const resolveCurrentPipelineRunId = (events = []) => {
+        const sorted = [...(Array.isArray(events) ? events : [])]
+            .filter(Boolean)
+            .sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
+        for (const event of sorted) {
+            const pipelineRunId = resolveEventPipelineRunId(event);
+            if (pipelineRunId) return pipelineRunId;
+        }
+        return null;
+    };
     const resolveLatestRound0StartTs = (events = []) => {
         return (Array.isArray(events) ? events : [])
             .filter((event) => (
@@ -119,7 +133,13 @@
                 scopeMode: 'cycle'
             };
         }
-        const scoped = source.filter((event) => resolveEventRunSessionId(event) === activeRunSessionId);
+        // Прогон = все волны с одним pipelineRunId; события без pipelineRunId — по runSessionId.
+        const activePipelineRunId = hasRequestedRunSessionId ? null : resolveCurrentPipelineRunId(source);
+        const scoped = source.filter((event) => {
+            const pipelineRunId = resolveEventPipelineRunId(event);
+            if (activePipelineRunId && pipelineRunId) return pipelineRunId === activePipelineRunId;
+            return resolveEventRunSessionId(event) === activeRunSessionId;
+        });
         if (!scoped.length) {
             return { events: [], runSessionId: activeRunSessionId, scopeMode: 'run' };
         }

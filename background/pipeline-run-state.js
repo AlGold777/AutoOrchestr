@@ -2,7 +2,7 @@
 (function initPipelineRunState(root) {
   'use strict';
 
-  function create({ prompt = '', selectedModels = [], useApiFallback = true, forceNewTabs = true, attachments = [], sourceView = null, pipelineContext = null, telemetrySampled = false, telemetrySampleRate = null, startedAt = Date.now(), promptsByModel = null } = {}) {
+  function create({ prompt = '', selectedModels = [], useApiFallback = true, forceNewTabs = true, attachments = [], sourceView = null, pipelineContext = null, telemetrySampled = false, telemetrySampleRate = null, startedAt = Date.now(), promptsByModel = null, previousRunSessionIds = [] } = {}) {
     return {
       prompt,
       llms: {},
@@ -11,6 +11,9 @@
       useApiFallback,
       session: {
         startTime: startedAt,
+        // Every wave of one pipeline run gets its own startTime; the list keeps
+        // all of them so diagnostics export can cover the whole run.
+        runSessionIds: [...(Array.isArray(previousRunSessionIds) ? previousRunSessionIds : []), startedAt],
         totalModels: selectedModels.length,
         selectedModels: selectedModels.slice(),
         completed: 0,
