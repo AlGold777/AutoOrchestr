@@ -39,3 +39,25 @@ test('manual result uses one rendering entry point for both card views', () => {
   expect(c.updateDebateModelCardOutput).not.toHaveBeenCalled();
   expect(c.manualPingReveal.has('Grok')).toBe(false);
 });
+
+test('an empty payload from Get It or the indicator double-click keeps the answer the card shows', () => {
+  const output = { textContent: 'Full answer already on the card', dataset: {} };
+  const panel = { querySelector: () => output };
+  const logs = [];
+  const c = vm.createContext({
+    document: { getElementById: () => panel },
+    ingestLogs: (_model, entries) => logs.push(...entries),
+    makeLocalDiagEntry: (label) => ({ label }),
+    sanitizeInlineHtml: () => { throw new Error('rendered'); }
+  });
+  const start = source.indexOf('    function updateLLMPanelOutput');
+  const end = source.indexOf('\n    }\n', start) + 6;
+  vm.runInContext(source.slice(start, end), c);
+  for (const answer of ['', '   ', null, { text: '', html: '' }]) {
+    expect(c.updateLLMPanelOutput('Claude', answer, '', {})).toMatchObject({ updated: false, emptyPayloadIgnored: true });
+  }
+  expect(output.textContent).toBe('Full answer already on the card');
+  expect(logs.map((entry) => entry.label)).toContain('Panel output kept');
+  // A real answer still goes on to render.
+  expect(() => c.updateLLMPanelOutput('Claude', 'New answer', '', {})).toThrow('rendered');
+});

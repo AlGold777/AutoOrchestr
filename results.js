@@ -19677,6 +19677,15 @@ document.addEventListener('click', (event) => {
         })();
         const normalizedText = payload.text || '';
         const rawHtml = payload.html || '';
+        // An empty payload is "nothing collected", not "the answer is empty": Get It and the
+        // status-indicator double-click deliver one when the background keeps the recorded
+        // final. It must not erase the answer the card shows; a new request clears cards
+        // through clearLiveResponseCards.
+        const shownText = String(panel?.querySelector('.output')?.textContent || '').trim();
+        if (!normalizedText.trim() && !rawHtml.trim() && shownText) {
+            ingestLogs(llmName, [makeLocalDiagEntry('Panel output kept', `empty payload ignored, shown=${shownText.length}`, 'info', 'UI')]);
+            return { updated: false, postTerminalRevision: false, emptyPayloadIgnored: true };
+        }
         const sanitizedHtml = sanitizeInlineHtml(rawHtml);
         const richHtml = sanitizedHtml || (looksLikeHtml(normalizedText) ? sanitizeInlineHtml(normalizedText) : '');
         const pendingMarkdown = typeof usableAnswerMarkdown === 'function' ? usableAnswerMarkdown(answerCopyPending[llmName]) : '';
