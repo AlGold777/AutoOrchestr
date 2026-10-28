@@ -21,6 +21,8 @@
   const SELECTOR_MISS_WINDOW_MS = Number(Config.telemetry?.selectorMissWindowMs || 5000);
   const SELECTOR_STATS_WINDOW_MS = Number(Config.telemetry?.selectorStatsWindowMs || SELECTOR_MISS_WINDOW_MS);
   const SELECTOR_STATS_DEDUP_WINDOW_MS = Number(Config.telemetry?.selectorStatsDedupWindowMs || 30000);
+  // Lets the lifecycle detector record its own STALLED before the watcher gives up.
+  const LIFECYCLE_DECISION_MARGIN_MS = 5000;
   const selectorStatsBuckets = new Map();
   const selectorStatsLastEmit = new Map();
   const selectorTargetLastHitAt = new Map();
@@ -305,6 +307,13 @@
       const { soft, hard } = this.timeoutManager.calculateTimeout(currentLength, {
         expectedLength: this.expectedLength
       });
+      // While ResponseLifecycleDetector still tracks this dispatch, only it ends the
+      // wait: its STALLED arrives as a terminal result by this deadline. The
+      // watcher's own soft/hard timeouts apply only when nothing is tracking.
+      const lifecycleWaitMs = Number(
+        (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.() || 0
+      );
+      const lifecycleDeadlineAt = this.startTime + lifecycleWaitMs + LIFECYCLE_DECISION_MARGIN_MS;
       let typingActive = true;
       const growthHistory = [];
 
@@ -526,7 +535,13 @@
           // DOM signals below would otherwise make. Waiting longer is the
           // cheap error; committing an unfinished answer is the expensive one.
           const vetoed = Boolean(evidence?.veto?.active);
-          const expiration = this.timeoutManager.checkExpiration();
+          const lifecycleTracking = lifecycleWaitMs > 0
+            && Date.now() < lifecycleDeadlineAt
+            && !!lifecycle?.getCompletionSnapshot?.({ modelName: this.llmName, dispatchId: this.runDispatchId });
+          const ownExpiration = this.timeoutManager.checkExpiration();
+          const expiration = lifecycleTracking
+            ? { ...ownExpiration, softExpired: false, hardExpired: false }
+            : ownExpiration;
           if (stopVisible) {
             if (expiration.hardExpired) {
               cleanup(this.buildResult('hard_timeout', 0.3, typingActive, getRecentGrowth(), false));

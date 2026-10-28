@@ -10,7 +10,12 @@ describe('streaming watchdog contract', () => {
   test('profile timeouts are not changed by platform speed multipliers', () => {
     expect(source).not.toMatch(/modelSpeedMultiplier/);
     expect(source).toContain('soft: baseTimeouts.soft');
-    expect(source).toContain('hard: baseTimeouts.hard');
+    expect(source).toContain('hard: Math.max(baseTimeouts.hard');
+  });
+
+  test('watchdog never fires before the lifecycle detector decides', () => {
+    expect(source).toContain('completionWaitMs?.()');
+    expect(source).toMatch(/hard: Math\.max\(baseTimeouts\.hard, lifecycleWaitMs \? lifecycleWaitMs \+ COMPLETION_DECISION_MARGIN_MS : 0\)/);
   });
 
   test('hard timeout races both streaming coordination modes', () => {

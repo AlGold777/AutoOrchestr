@@ -94,4 +94,40 @@ describe('false success: watcher completion guards', () => {
     expect(grown.softRemaining).toBe(450000);
     expect(grown.hardRemaining).toBe(450000);
   });
+
+  test('while the lifecycle detector tracks the dispatch, only its terminal result ends the wait', async () => {
+    jest.useFakeTimers();
+    document.body.innerHTML = `
+      <main>
+        <article data-message-author-role="assistant">
+          <div class="prose">Short partial answer.</div>
+        </article>
+      </main>
+    `;
+    let terminal = null;
+    window.ResponseLifecycleDetector = {
+      completionWaitMs: () => 450000,
+      getCompletionSnapshot: () => ({ facts: {} }),
+      getTerminalResult: () => terminal,
+      observeWitness: () => true
+    };
+    try {
+      const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT', expectedLength: 'short' });
+      let settled = null;
+      watcher.waitForCompletion({ container: document.querySelector('main') }).then((r) => { settled = r; });
+
+      // Past the watcher's own short soft (50 s) and hard (100 s) deadlines.
+      for (let i = 0; i < 600; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      expect(settled).toBeNull();
+
+      terminal = { status: 'STALLED', reason: 'timeout_hard' };
+      for (let i = 0; i < 4; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      expect(settled).not.toBeNull();
+      expect(settled.terminalResult).toEqual(terminal);
+      expect(settled.completed).toBe(false);
+    } finally {
+      delete window.ResponseLifecycleDetector;
+      jest.useRealTimers();
+    }
+  });
 });

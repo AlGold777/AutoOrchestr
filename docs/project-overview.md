@@ -386,6 +386,17 @@ Switching:
   serial-debate dispatcher) sets the flag before each turn, since per-turn
   completeness matters most there.
 
+The end of generation is decided by `ResponseLifecycleDetector`
+(`content-utils/response-lifecycle-detector.js`). It waits up to the profile
+`hardMax` from Send (`completionWaitMs()`: 450s Standard / 900s Long) and then
+records STALLED. The page pipeline watchdog and the answer watcher's own
+soft/hard timeouts never end the wait earlier while the detector tracks the
+dispatch: the watchdog is at least `completionWaitMs() + 5s`, and the watcher
+waits for the detector's terminal result. Their size-based timeouts (from the
+prompt length) apply only when no detector is tracking. Before 2.81.914 a short
+prompt gave up after 100s (Standard) / 200s (Long) while the model was still
+answering.
+
 Tune the Long values in the `LONG_OVERRIDES` block of `pipeline-config.js`.
 The legacy input value `short` remains accepted as an alias of Standard.
 The toggle is main-page only; the main page resets it to OFF (Standard) on load.

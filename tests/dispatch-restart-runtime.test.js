@@ -14,7 +14,7 @@ function runtimeSandbox(executeScript) {
   vm.runInContext(router.slice(router.indexOf('const completionRuntimeByTab'), router.indexOf('try {\n    chrome.tabs?.onRemoved')), c);
   return c;
 }
-const healthy = {buildVersion:'test', detectorVersion:'2.3.0', protocolVersion:require('../shared/completion-protocol').version, completionSessionAvailable:true};
+const healthy = {buildVersion:'test', detectorVersion:'2.3.1', protocolVersion:require('../shared/completion-protocol').version, completionSessionAvailable:true};
 
 describe('runtime readiness deadline', () => {
   beforeEach(() => jest.useFakeTimers());

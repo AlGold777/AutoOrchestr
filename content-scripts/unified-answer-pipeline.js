@@ -39,6 +39,8 @@
   // Never silent: a missing engine, a throw or an oversized result yields a
   // whole-answer placeholder and report.complete=false, not an empty field.
   const ANSWER_MARKDOWN_MAX_CHARS = 1000000;
+  // Lets the lifecycle detector record its own STALLED before the page watchdog fires.
+  const COMPLETION_DECISION_MARGIN_MS = 5000;
   const buildFailedCopyReport = (provider, reason) => ({
     version: 1,
     provider: provider || null,
@@ -704,9 +706,14 @@
       this.streamingTimedOut = false;
       //-- 1.1. Адаптивный timeout: учитываем скорость модели --//
 const baseTimeouts = this.adaptiveTimeout.calculateTimeout(this.config.seedContent || '', { expectedLength });
+// The end of generation is decided by ResponseLifecycleDetector, which waits up to
+// the profile hardMax from Send. Giving up before it left only unconfirmed page text.
+const lifecycleWaitMs = Number(
+  (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.() || 0
+);
 const timeouts = {
   soft: baseTimeouts.soft,
-  hard: baseTimeouts.hard
+  hard: Math.max(baseTimeouts.hard, lifecycleWaitMs ? lifecycleWaitMs + COMPLETION_DECISION_MARGIN_MS : 0)
 };
 console.log(`[Pipeline] Timeouts for ${this.platform}: soft=${timeouts.soft}ms, hard=${timeouts.hard}ms`);
 let watchdog = null;

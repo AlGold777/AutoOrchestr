@@ -26,7 +26,7 @@ const completionAuthorityAttempts = self.__completionAuthorityAttempts || new Ma
 self.__completionAuthorityAttempts = completionAuthorityAttempts;
 const completionRuntimeByTab = new Map();
 const completionRuntimeRepairFlights = new Map();
-const EXPECTED_COMPLETION_DETECTOR_VERSION = '2.3.0';
+const EXPECTED_COMPLETION_DETECTOR_VERSION = '2.3.1';
 const EXPECTED_COMPLETION_PROTOCOL_VERSION = '2.3.1';
 
 const expectedCompletionRuntime = () => ({

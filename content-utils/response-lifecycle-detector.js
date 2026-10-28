@@ -1,5 +1,5 @@
 (function initResponseLifecycleDetector() {
-  const VERSION = '2.3.0';
+  const VERSION = '2.3.1';
   const BUILD_VERSION = (() => {
     try { return chrome?.runtime?.getManifest?.()?.version || 'unknown'; } catch (_) { return 'unknown'; }
   })();
@@ -543,6 +543,17 @@
     } catch (_) {
       return null;
     }
+  }
+
+  // How long this observer waits for one answer after Send before it records
+  // STALLED: the active profile hardMax (450 s Standard / 900 s Long). The page
+  // pipeline and its watcher read it so that they never give up earlier and
+  // leave only unconfirmed page text behind.
+  function completionWaitMs(settings = cachedSettings || RESPONSE_LIFECYCLE_DEFAULTS) {
+    return Math.max(
+      Number(settings?.answerCompleteTimeoutMs || 0),
+      Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax || 0)
+    );
   }
 
   async function getSettings() {
@@ -2091,7 +2102,7 @@
       timeouts: {
         progressTimeoutMs: Number(settings.progressTimeoutMs || settings.answerCompleteTimeoutMs),
         producerStuckTimeoutMs: Number(settings.producerStuckTimeoutMs || settings.answerCompleteTimeoutMs),
-        hardAttemptTimeoutMs: Math.max(Number(settings.answerCompleteTimeoutMs || 0), Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax || 0))
+        hardAttemptTimeoutMs: completionWaitMs(settings)
       },
       onTransition: (transition) => emitCompletionTransition(tracker, transition)
     });
@@ -2124,16 +2135,9 @@
         return trackerCancelledResult(tracker);
       }
       tracker.state = 'GENERATING';
-      const pipelineHardMaxMs = Number(
-        window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax
-        || 0
-      );
       return waitForAnswerComplete({
         modelName: tracker.modelName,
-        timeoutMs: Math.max(
-          Number(settings.answerCompleteTimeoutMs || 0),
-          pipelineHardMaxMs
-        ),
+        timeoutMs: completionWaitMs(settings),
         stableMs: settings.stableMs,
         pollIntervalMs: settings.pollIntervalMs,
         traceId: tracker.traceId
@@ -2456,6 +2460,7 @@
     observeWitness,
     getTerminalResult,
     getCompletionSnapshot,
+    completionWaitMs,
     waitForTerminalResult,
     reconcileRecovery,
     schedulePostTerminalObservationWindow,
