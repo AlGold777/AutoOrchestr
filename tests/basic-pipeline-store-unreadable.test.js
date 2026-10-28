@@ -20,4 +20,17 @@ describe('Basic: an unreadable list of pipelines', () => {
     expect((await chrome.storage.local.get('llmComparatorPipelines')).llmComparatorPipelines).toBe(CORRUPTED);
     expect(document.getElementById('notification-message').textContent).toContain('Список pipelines в хранилище не прочитан');
   });
+
+  test('a pasted schema is refused before its name is asked', async () => {
+    const prompt = jest.spyOn(window, 'prompt').mockReturnValue('Asked');
+    document.getElementById('pipeline-profile-btn').click();
+    document.getElementById('schema-paste-text').value = JSON.stringify({ schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] });
+    document.getElementById('schema-paste-apply').click();
+    await delay(20);
+    expect(document.getElementById('prompt-modal')?.classList.contains('show') || prompt.mock.calls.length > 0).toBe(false);
+    expect(document.getElementById('notification-message').textContent).toContain('Список pipelines в хранилище не прочитан');
+    expect((await chrome.storage.local.get('llmComparatorPipelines')).llmComparatorPipelines).toBe(CORRUPTED);
+    prompt.mockRestore();
+    document.getElementById('schema-paste-cancel')?.click();
+  });
 });

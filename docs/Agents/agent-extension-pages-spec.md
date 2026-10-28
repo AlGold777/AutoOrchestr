@@ -85,7 +85,9 @@
 | Очистить ленту | `#debate-session-clear-btn` | Очищает текущий feed/session. Может стирать пользовательские ответы; проверять только в одноразовом тестовом профиле или при гарантированно пустой ленте. |
 | Карточки ответа | `.debate-model-card`, `.debate-model-card-output`, элементы внутри `#debate-model-cards` | Рендерятся по схеме/ответам. Клик/двойной клик и маркеры этапов могут открывать карточку, документ/артефакт или stage dialog. Смотрите `results/debate-renderer.js`, `results/stage-card.js`, `results/pipeline-card-cover.js`. |
 | Панель форматирования prompt | `#debateSelTb` и `.stb[data-cmd]`, `[data-color]`, `[data-block]`, `[data-fav]`, `[data-clear-highlight]`, `[data-more]` | Появляется при выделении текста в composer. Bold/Italic, цвета, align/list/indent, No colour и Favorite форматируют выделение или добавляют фрагмент в избранное. Кнопка More открывает дополнительные действия. |
-| Вопрос User | `#pipeline-stage-dialog`, `[data-stage-close]`, `[data-owner-ask="answer|skip|later"]` | Динамическое окно шага Owner: ответить/продолжить, пропустить или позже. Эти действия изменяют активный прогон; не нажимать в пользовательском/активном запуске без сценария. |
+| Шаг User (Basic) | динамический `dialog.choice-dialog` (`results/choice-dialog.js`): `.choice-dialog-message` («Назначение: …» и задание), поле `.choice-dialog-text` (или `.choice-dialog-document-edit` у документа), `.choice-dialog-choice` «Отправить» (disabled до ввода), `.choice-dialog-cancel` | Окно шага `owner` во время прогона. «Отправить» передаёт ответ и продолжает прогон; не нажимать в пользовательском/активном запуске без сценария. |
+| Вопрос User | `#owner-ask-dialog`, `[data-owner-ask="answer|skip|later"]` | Окно вопросов движка к User: ответить, пропустить или позже. Изменяет активный прогон. |
+| Карточка шага | `#pipeline-stage-dialog`, `[data-stage-close]` | Окно сведений о шаге холста (`openControlCard`); прогон не меняет. |
 
 ### 3.3 Builder/схема справа
 

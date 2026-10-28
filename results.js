@@ -8757,6 +8757,8 @@ document.addEventListener('click', (event) => {
             return name;
         };
         const importBasicSchemaFile = async (schema, suggestedName = '') => {
+            // An unreadable store takes no new pipeline: say so before the name is asked.
+            if (pipelineStoreUnreadable) { showNotification(`Схема не установлена. ${pipelineStoreUnreadable}`, 'error'); return; }
             const wanted = isDefaultPipelineName(suggestedName) ? '' : suggestedName;
             const name = String((await showPrompt('Имя pipeline для схемы:', wanted)) || '').trim();
             if (!name) return;
@@ -10842,7 +10844,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.911';
+            const APP_VERSION = '2.81.912';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
