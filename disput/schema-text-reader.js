@@ -104,8 +104,9 @@
   const SERVICE_LINE = /^\s*(?:\[\[AO-[^\]]*\]\]|\[(?:НЕ\s+)?СКОПИРОВАНО:.*\])\s*$/i;
   const commentOf = (text) => text.replace(/```\w*/g, '').trim();
 
-  // A value that looks like a schema: an object with schemaVersion or steps (a step, an example of a field or a {placeholder} does not).
-  const schemaLike = (value) => isObj(value) && ('schemaVersion' in value || 'steps' in value);
+  // A value that looks like a schema: an object with schemaVersion or steps, or a file of several schemas (a catalog, an old
+  // export with pipelines). A step, an example of a field or a {placeholder} does not.
+  const schemaLike = (value) => isObj(value) && ['schemaVersion', 'steps', 'basicCatalog', 'pipelines'].some((key) => key in value);
   // The value of a JSON object that starts at s[at], strict or softened; null when there is none there.
   function objectAt(s, at) {
     const res = soften(s, at);

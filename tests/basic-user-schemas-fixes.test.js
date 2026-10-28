@@ -275,6 +275,8 @@ describe('Basic: user schemas keep working and keep their data', () => {
     const two = Reader.read(`${schema}\n\nИли так:\n${schema.replace('GPT', 'Claude')}`);
     expect(two.value.steps[0].models[0].name).toBe('GPT');
     expect(two.notes.join(' ')).toContain('больше одной схемы');
+    const catalog = Reader.read(`Каталог:\n{"basicCatalog":1,"schemas":[{"name":"A","schema":${schema}}]}`);
+    expect(catalog.value.basicCatalog).toBe(1);
     const spaces = Reader.read(schema.replace('{"schemaVersion"', '{\u00A0"schemaVersion"').replace(',"origin"', ',\u200B"origin"'));
     expect(spaces.ok).toBe(true);
     expect(spaces.notes.join(' ')).toContain('Неразрывные и невидимые пробелы');

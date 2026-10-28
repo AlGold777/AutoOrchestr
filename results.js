@@ -10842,7 +10842,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.910';
+            const APP_VERSION = '2.81.911';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
