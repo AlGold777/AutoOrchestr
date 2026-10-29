@@ -172,7 +172,7 @@
   };
 
   const claude = {
-    ui: ['.sr-only', '[role="status"]'],
+    ui: ['.sr-only', '[role="status"]', '[class*="group/status"]'],
     answerRoot: (el) => selfOrQuery(el, '.font-claude-response')
   };
 

@@ -39,11 +39,17 @@
   function parseJsonAnswer(raw) {
     const body = String(raw == null ? '' : raw).trim();
     const fenced = JSON_FENCE.exec(body);
+    const text = fenced ? fenced[1] : body;
     let value;
     try {
-      value = JSON.parse(fenced ? fenced[1] : body);
+      value = JSON.parse(text);
     } catch (_) {
-      return null;
+      // A chat page that shows JSON as ordinary text sets typographic quotes (Claude: “items”); they are read as plain ones.
+      try {
+        value = JSON.parse(text.replace(/[\u201C\u201D\u201E\u201F]/g, '"'));
+      } catch (__) {
+        return null;
+      }
     }
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
   }

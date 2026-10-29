@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-10-29 — Claude: ответ берётся из блока div.prose, JSON с типографскими кавычками читается, версия 2.81.933
+
+- Найдено живым прогоном Basic (опросник): шаг получил «нет принятых ответов (не в формате ответа)». В новой разметке Claude (`[data-testid="assistant-message"]`, `data-cds="AssistantMessage"`) прежних селекторов (`div.standard-markdown.grid-cols-1`, `.font-claude-response`) нет, поэтому брался весь контейнер: в текст попадали скрытый заголовок `h3.sr-only` «Claude responded: …» (после срезания слова «Claude» оставалось «responded: …»), копия начала ответа и строка статуса «Expanding the answer…». Ответ — `div.prose` внутри контейнера: селектор добавлен первым в `content-scripts/content-claude.js`, `background/job-orchestrator.js` (снимок страницы) и `selectors/config-bundle.json`; `.sr-only` и `[class*="group/status"]` удаляются из клона при извлечении текста и в правилах Markdown.
+- Страница Claude показывает JSON, написанный обычным текстом, с типографскими кавычками (`{“items”:…`). `BasicOutput.parseJsonAnswer` после неудачного разбора повторяет его, заменив `“ ” „ ‟` на `"`. Тест `tests/claude-assistant-message-prose.test.js`.
+
 ### 2026-10-29 — Запуск после прерванной отправки не считается «уже отправленным», версия 2.81.932
 
 - Найдено живым прогоном Basic: Claude получил схему, вкладка открылась, но запрос в чат не ушёл (`ROUND1_END: dispatch deferred before command`, `PRE_DISPATCH_RECOVERY_SKIPPED: submission_already_confirmed`), прогон ждал подтверждения отправки бесконечно. Причина: `DispatchStateMachine.reset()` по таблице `TRANSITIONS` не мог вернуть машину в IDLE из QUEUED…STREAMING (только из DONE и ERROR), поэтому отправка, брошенная на середине (остановленный прогон, обычная отправка без финала), оставляла модель в WAITING/STREAMING, и следующий запуск видел «отправка подтверждена». Теперь `reset()` принудительно возвращает машину в IDLE из любого состояния; обычные переходы проверяются как раньше. Тест `tests/dispatch-state-machine-reset.test.js`.

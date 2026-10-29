@@ -434,6 +434,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       '.message-content'
     ],
     claude: [
+      // Claude, 2026-10: the answer text is div.prose inside the assistant message (beside h3.sr-only «Claude responded:» and a status row).
+      '[data-testid="assistant-message"] div.prose',
       'div[data-testid="conversation-turn"][data-author-role="assistant"] div.standard-markdown.grid-cols-1',
       'div[data-testid="conversation-turn"][data-role="assistant"] div.standard-markdown.grid-cols-1',
       'div[data-is-response="true"] div.font-claude-response.relative div.standard-markdown.grid-cols-1',

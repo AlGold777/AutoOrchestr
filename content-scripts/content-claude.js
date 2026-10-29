@@ -1238,6 +1238,7 @@ if (typeof window.SelectorFinder === 'undefined') {
 
   const CLAUDE_THINKING_EXCLUDE = ':not([data-testid*="thinking" i]):not([data-testid*="thought" i]):not([data-testid*="reason" i]):not([data-testid*="analysis" i]):not([data-testid*="scratch" i]):not([data-testid*="work" i]):not([data-testid*="step" i]):not([data-testid*="draft" i]):not([data-testid*="trace" i]):not([data-testid*="internal" i]):not([data-testid*="reflection" i])';
   const CLAUDE_ASSISTANT_RESPONSE_SELECTORS = [
+    '[data-testid="assistant-message"] div.prose',
     `div[data-testid="conversation-turn"][data-author-role="assistant"] div.standard-markdown.grid-cols-1`,
     `div[data-testid="conversation-turn"][data-role="assistant"] div.standard-markdown.grid-cols-1`,
     `div[data-is-response="true"] div.font-claude-response.relative div.standard-markdown.grid-cols-1`,
@@ -1719,7 +1720,7 @@ if (typeof window.SelectorFinder === 'undefined') {
     const extractFrom = (node) => {
       const clone = node.cloneNode(true);
       stripClaudeThinkingNodes(clone);
-      clone.querySelectorAll('button, svg, img, [aria-hidden="true"], header, footer, form').forEach(el => el.remove());
+      clone.querySelectorAll('button, svg, img, [aria-hidden="true"], header, footer, form, .sr-only, [class*="group/status"]').forEach(el => el.remove());
       return (clone.textContent || clone.innerText || '').trim();
     };
     let text = extractFrom(container);
