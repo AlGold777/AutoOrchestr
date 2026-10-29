@@ -109,10 +109,12 @@ class DispatchStateMachine {
     }
     const hadError = this.state === DISPATCH_STATES.ERROR;
     const hadSuccess = this.state === DISPATCH_STATES.DONE;
+    // Only DONE and ERROR lead to IDLE in TRANSITIONS; a dispatch abandoned in QUEUED..STREAMING (a stopped run, a
+    // plain send never finished) must still be dropped, or the next run reads that state as «already sent».
     this._transition(DISPATCH_STATES.IDLE, {
       resetAt: Date.now(),
       previousOutcome: hadError ? 'error' : (hadSuccess ? 'success' : 'cancelled')
-    });
+    }, { force: true });
     this.data = {};
   }
 
@@ -173,8 +175,8 @@ class DispatchStateMachine {
     };
   }
 
-  _transition(newState, data = {}) {
-    if (!this._canTransition(newState)) {
+  _transition(newState, data = {}, { force = false } = {}) {
+    if (!force && !this._canTransition(newState)) {
       console.error(`[STATE] Invalid transition: ${this.llmName} ${this.state} -> ${newState}`);
       return false;
     }
