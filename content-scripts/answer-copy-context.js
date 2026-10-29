@@ -162,7 +162,8 @@
     if (ARTIFACT_WORD_RE.test(m)) return 'artifact';
     if (WIDGET_WORD_RE.test(m)) return 'widget';
     const role = n.getAttribute('role');
-    if (role === 'img' || role === 'figure' || role === 'dialog' || tag === 'figure') return 'widget';
+    if (role === 'img') return bigEnough(n) ? 'widget' : null; // иконки (Qwen: span.anticon role=img 16x16) — не блоки
+    if (role === 'figure' || role === 'dialog' || tag === 'figure') return 'widget';
     return null;
   }
   function hintOf(n) {

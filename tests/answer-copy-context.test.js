@@ -134,6 +134,11 @@ describe('синтетика, по известной структуре', () =>
       const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
       expect(c.outsideBlocks.map((b) => b.type)).toEqual(['svg']);
     });
+    test('иконка span role=img 16x16 (Qwen anticon) вне выбранного — не блок', () => {
+      mount('<div id="turn"><div id="m">т</div><span class="anticon" role="img" width="16" height="16"></span></div>');
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks).toEqual([]);
+    });
     test('артефакт, pre вне выбранного, кастомный элемент с shadowRoot', () => {
       mount('<div id="turn"><div id="m">т</div><div data-artifact-card><div class="chart">x</div></div><pre>код</pre><my-w id="w1234567"></my-w></div>');
       document.querySelector('my-w').attachShadow({ mode: 'open' });
