@@ -7258,11 +7258,15 @@ document.addEventListener('click', (event) => {
                             stageAttemptId: `custom:${runContext.pipelineRunId}:s${step + 1}:a${attempt}${waveNo ? `:w${waveNo}` : ''}`,
                             pipelineRoundId: `s${step + 1}`,
                             pipelineBatchId: makePipelineBatchId({ runId: runContext.pipelineRunId, roundIndex: step + 1, groupIndex: waveNo ? `${attempt - 1}w${waveNo}` : attempt - 1 }),
-                            custom: true
+                            custom: true,
+                            // Batches of a run are sent one after another: a batch that returned is settled for the page, so what the
+                            // background still holds of it (a model without a recorded final) must not refuse the next start.
+                            settledBatches: Number(runContext.settledBatches || 0)
                         },
                         generationProfile: 'long'
                     });
                     } finally { if (bindingsWatch) clearInterval(bindingsWatch); }
+                    runContext.settledBatches = Number(runContext.settledBatches || 0) + 1;
                     // The chats as the background bound them (R01), written into the state before the next send.
                     await refreshParticipantChats(runContext.pipelineRunId, wave);
                     const byModel = Object.fromEntries(models.map((model) => {

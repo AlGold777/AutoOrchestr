@@ -47,7 +47,10 @@
     if (options.force === true) return { ok: true };
     // The next batch of a Basic run (pipelineContext.custom) does not wait for the tail of the rounds of the batch before it
     // when all its models have answered: the old rounds stop on their own when the new session starts (isSessionActive).
-    const tailOnly = options.pipelineContext?.custom === true && allModelsFinal(llms);
+    // The page also vouches for the tail when an earlier batch of this same run has returned (settledBatches): its answers were
+    // accepted there, whatever the background still holds (a model whose final was never recorded).
+    const priorSettled = options.pipelineContext?.custom === true && Number(options.pipelineContext?.settledBatches) > 0;
+    const tailOnly = options.pipelineContext?.custom === true && (priorSettled || allModelsFinal(llms));
     if (session?.roundsInProgress && !tailOnly) {
       return {
         ok: false,
@@ -56,7 +59,7 @@
       };
     }
     // New tabs do not share a conversation with a still-generating tab.
-    const generatingModel = options.forceNewTabs === true ? null : findGeneratingModel(llms);
+    const generatingModel = options.forceNewTabs === true || priorSettled ? null : findGeneratingModel(llms);
     if (generatingModel) {
       return {
         ok: false,
