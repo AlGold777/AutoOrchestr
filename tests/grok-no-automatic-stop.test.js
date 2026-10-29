@@ -44,3 +44,16 @@ test.each([false,true])('posted-prompt verification failure leaves generation ru
   expect(c.stopGrokWrongGeneration).not.toHaveBeenCalled();
   expect(events[0].meta.generationStopped).toBe(false);
 });
+
+test('кнопка «Прикрепить» (меню) никогда не нажимается как отправка', async () => {
+  const dom = new JSDOM('<button aria-label="Прикрепить" aria-haspopup="menu" data-testid="attach-button"><svg></svg></button><textarea>prompt</textarea>');
+  const button = dom.window.document.querySelector('button');
+  const click = jest.spyOn(button, 'click');
+  const c = vm.createContext({});
+  const from = source.indexOf('  async function attemptSendViaButton');
+  vm.runInContext(source.slice(from, source.indexOf('  async function attemptSendViaCtrlEnter', from)), c);
+  expect(await c.attemptSendViaButton(button, dom.window.document.querySelector('textarea'))).toBe(false);
+  expect(click).not.toHaveBeenCalled();
+  expect(source).not.toMatch(/fallbackSelectors[\s\S]{0,1200}'button:has\(svg\)'/);
+  dom.window.close();
+});

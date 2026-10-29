@@ -605,8 +605,9 @@
       'button[data-testid*="send"]',
       'div[role="button"][aria-label*="send" i]',
       'div[role="button"][data-testid*="send"]',
-      'button[type="submit"]',
-      'button:has(svg)'
+      'button[data-testid="chat-submit"]',
+      'button[aria-label*="отправ" i]',
+      'button[type="submit"]'
     ];
 
     const containers = [];
@@ -1226,6 +1227,8 @@
     const identity = ['aria-label', 'title', 'data-testid', 'data-state']
       .map(name => sendBtn?.getAttribute?.(name) || '').join(' ')
       + ' ' + String(sendBtn?.textContent || '');
+    // Меню «Прикрепить» (data-testid=attach-button, aria-haspopup=menu) — не кнопка отправки.
+    if (sendBtn?.hasAttribute?.('aria-haspopup') || /attach|прикрепить/i.test(identity)) return false;
     if (!sendBtn?.isConnected || sendBtn.disabled
       || sendBtn.getAttribute('aria-disabled') === 'true'
       || /stop|cancel|останов|прерва|отмен/i.test(identity)
