@@ -2609,7 +2609,13 @@ function isLikelyClaudeModelLabel(text = '') {
                 chrome.runtime.sendMessage({ type: 'MANUAL_PING_RESULT', llmName: MODEL, status: 'unchanged', pingId });
                 return;
               }
-              const latestMarkup = getLatestClaudeResponseMarkup('', null);
+              let latestMarkup = getLatestClaudeResponseMarkup('', null);
+              // The element the copy is taken from must be the one the text came from: without it the copy falls back to
+              // another node and the Basic reply gets the flat text. One short retry while the answer is still rendering.
+              if (!latestMarkup.element) {
+                await sleep(900);
+                latestMarkup = getLatestClaudeResponseMarkup('', null);
+              }
               if (latestMarkup.html) lastResponseHtml = latestMarkup.html;
               if (!answerBodyOf(cleaned)) {
                 emitDiagnostic({

@@ -10,13 +10,22 @@
 })(typeof self !== 'undefined' ? self : (typeof globalThis !== 'undefined' ? globalThis : this), function factory() {
   'use strict';
 
-  const MIN_RATIO = 0.7; // markdown shorter than this share of the plain text (letters and digits) is not a full copy
+  // Markdown shorter than this share of the plain text (letters and digits) is not a full copy. Set to 0.25 (was 0.7):
+  // the plain text can carry text the copy rightly leaves out (a reasoning trace, a copy-button icon label): fixtures
+  // give 0.32 (DeepSeek, trace + answer) and 0.35 (Gemini). Truncation is still caught by the tail check and the report.
+  const MIN_RATIO = 0.25;
   const TAIL_CHARS = 24; // the end of the plain answer must be found in the markdown
   const DELIVERY_MARK = /\[\[AO-[^\]]*\]\]/i;
   const PLACEHOLDER = /^\[НЕ СКОПИРОВАНО/;
 
   // Letters and digits only, lower-cased: whitespace, pipes, fences, emphasis marks do not count.
   const core = (s) => String(s == null ? '' : s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  // A long text without any line break: the paragraphs were joined on extraction (textContent), the structure is lost.
+  const FLAT_MIN_CHARS = 1500;
+  const flattened = (s) => {
+    const t = String(s == null ? '' : s);
+    return t.length > FLAT_MIN_CHARS && !/\n/.test(t);
+  };
 
   function choose({ plain, markdown, report } = {}) {
     const p = String(plain == null ? '' : plain);
@@ -35,5 +44,5 @@
     return { text: m, text_source: 'markdown', reason: 'complete', plainChars: p.length, markdownChars: m.length };
   }
 
-  return { MIN_RATIO, TAIL_CHARS, choose, core };
+  return { MIN_RATIO, TAIL_CHARS, FLAT_MIN_CHARS, choose, core, flattened };
 });
