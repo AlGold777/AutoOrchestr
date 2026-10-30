@@ -1432,6 +1432,49 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
   });
 }
 
+// L-34: скрытая вкладка или заблокированный экран дают ложные отказы. Проверка
+// читает document.visibilityState самой страницы модели; фокус и активацию вкладки
+// не трогаем (наш визит не должен быть сигналом). Не блокирует отправку.
+const TAB_VISIBILITY_PROBE_TIMEOUT_MS = 2000;
+const TAB_HIDDEN_WARNING_TEXT = 'Экран заблокирован или вкладка скрыта: ответы моделей могут не приходить';
+
+async function probeTabVisibility(tabId) {
+  let timer;
+  try {
+    const results = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => ({ visibilityState: document.visibilityState, hidden: document.hidden === true })
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('visibility_probe_timeout')), TAB_VISIBILITY_PROBE_TIMEOUT_MS);
+      })
+    ]);
+    return results?.[0]?.result || null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function checkTabVisibilityForDispatch(llmName, tabId, meta = {}) {
+  probeTabVisibility(tabId).then((state) => {
+    if (!state || state.visibilityState === 'visible') return;
+    emitTelemetry(llmName, 'tab_hidden_detected', {
+      level: 'warning',
+      details: String(state.visibilityState),
+      meta: { ...meta, tabId, visibilityState: state.visibilityState, hidden: state.hidden === true }
+    });
+    broadcastDiagnostic(llmName, {
+      type: 'DISPATCH',
+      label: TAB_HIDDEN_WARNING_TEXT,
+      details: `visibilityState=${state.visibilityState}`,
+      level: 'warning'
+    });
+  }).catch(() => {});
+}
+
 async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], reason = 'auto', options = {}) {
   if (!llmName || !isValidTabId(tabId) || !prompt) return;
   const entry = jobState?.llms?.[llmName];
@@ -1757,6 +1800,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
   emitTelemetry(llmName, 'DISPATCH_START', {
     meta: { ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus, attachmentCount: attachments.length }
   });
+  checkTabVisibilityForDispatch(llmName, tabId, { dispatchId: dispatchIdentityMeta?.dispatchId || null, dispatchReason: reason });
     try {
       if (machine) {
         machine.activate({ tabId });

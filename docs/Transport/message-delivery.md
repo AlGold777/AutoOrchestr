@@ -116,6 +116,10 @@
 
 Копия может прийти позже текста. Путь «Answer updated after ping» (Claude, ручной `getResponses`) отдаёт текст и копию отдельными сообщениями, поэтому `results.js` (`replyCopyFor`) читает копию по `transportRequestId` (`answerCopyByRequest`, заполняется при каждом `LLM_PARTIAL_RESPONSE`/`LLM_FINAL_RESPONSE` с копией). Если текст «слипшийся» (`BasicReplyText.flattened`: больше 1500 знаков и ни одного перевода строки) и копии нет или она неполная, Basic ждёт её до 4 с (опрос раз в 250 мс). В content-скрипте Claude перед сборкой копии элемент ответа перечитывается один раз через 900 мс, если его не нашли. Телеметрия `basic_reply_text` получает `flatText` и `copyWaitMs`. Для разбора «почему плоский текст» событие также несёт `copySource` (`result` — копия из ответа батча, `stash` — из `answerCopyByRequest`, `none` — копии нет), `copyComplete`, `resultHasMarkdown`, `resultStatus`, `requestId`. Если `resultHasMarkdown=false` и `copySource=none`, копия не дошла до `results.js` вовсе (смотреть сообщение финала и путь, которым оно пришло).
 
+## Скрытая вкладка (L-34)
+
+Перед каждой отправкой (`dispatchPromptToTab`, `background/dispatch-coordinator.js`) фон асинхронно читает `document.visibilityState` вкладки модели через `chrome.scripting.executeScript` (таймаут 2 с). Отправка не ждёт результата. Если состояние не `visible`, пишется телеметрия `tab_hidden_detected` (`details` — состояние, `meta.hidden`) и предупреждение в журнале модели: «Экран заблокирован или вкладка скрыта: ответы моделей могут не приходить». Фокус и активация вкладки не меняются. Тесты: `tests/hidden-tab-detection.test.js`.
+
 ## Будущий функционал
 
 - Нет ответа за отведённое время — повторная отправка той же модели.
