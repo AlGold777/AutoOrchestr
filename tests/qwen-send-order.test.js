@@ -130,3 +130,32 @@ test('old conversation answers cannot confirm failed keyboard submission',async(
   expect(c.hasQwenGenerationSignal).not.toHaveBeenCalled();
   expect(c.getAssistantMessages).not.toHaveBeenCalled();
 });
+
+// L-7: a present but disabled Send is waited for, not replaced by Ctrl+Enter that Qwen may ignore.
+test('a disabled visible Send is waited for and clicked, without a Ctrl+Enter', async()=>{
+  jest.useFakeTimers();
+  const {c,button}=setup(true);
+  button.disabled=true;
+  setTimeout(()=>{button.disabled=false;},300);
+  const input={dispatchEvent:jest.fn()};
+  const pending=c.sendComposer(input,{prompt:'8 / 4'});
+  await jest.advanceTimersByTimeAsync(600);
+  await expect(pending).resolves.toBe(true);
+  expect(input.dispatchEvent).not.toHaveBeenCalled();
+  expect(button.click).toHaveBeenCalledTimes(1);
+});
+
+// L-7: the retry click is idempotent: a reply that appears before it stops the second click.
+test('a reply that appears before the retry click is not sent twice', async()=>{
+  jest.useFakeTimers();
+  const {c,button}=setup(false);
+  c.emitDiagnostic=jest.fn();
+  const messages=[];
+  c.getUserMessages=()=>messages;
+  let lookups=0;
+  c.resolveSendButton=jest.fn(async()=>{ lookups+=1; if(lookups===2) messages.push('8 / 4'); return button; });
+  const pending=c.sendComposer({dispatchEvent:jest.fn()},{prompt:'8 / 4'});
+  await jest.advanceTimersByTimeAsync(9000);
+  await expect(pending).resolves.toBe(true);
+  expect(button.click).toHaveBeenCalledTimes(1);
+});
