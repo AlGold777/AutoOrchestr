@@ -13,6 +13,9 @@
   'use strict';
 
   const JOURNAL_KEY = 'messageDelivery.journal.v2';
+  // Characters of a received answer kept in the journal (final events and their raw artifact).
+  // 1200 hid the accepted text from diagnosis of long answers (review C11, L-18).
+  const JOURNAL_ANSWER_LIMIT = 4000;
   // A multi-stage run of ten models produces ~20 events per message.
   const JOURNAL_LIMIT = 3000;
   const EXPECTED_LIMIT = 200;
@@ -288,7 +291,7 @@
       ? String(message.answer.text || message.answer.answer || '')
       : String(message.answer || '');
     const state = inspect(answer, entry.token);
-    const answerArtifacts = { raw: textArtifact(answer, 1200, 'received_with_transport_tags', message.metadata || {}),
+    const answerArtifacts = { raw: textArtifact(answer, JOURNAL_ANSWER_LIMIT, 'received_with_transport_tags', message.metadata || {}),
       cleaned: textArtifact(clean(answer), 0, 'transport_tags_removed', message.metadata || {}), transformation: 'MessageDelivery.clean' };
     if (state === 'foreign') {
       if (!entry.staleLogged) { entry.staleLogged = true; record({ kind: 'stale_dropped', model, token: entry.token, requestId: entry.requestId, chars: answer.length, answer: answer.slice(0, 500) }); }
@@ -340,7 +343,7 @@
       entry.finalKind = kind;
       record({
         kind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
-        answer: answer.slice(0, 1200), answerArtifacts,
+        answer: answer.slice(0, JOURNAL_ANSWER_LIMIT), answerArtifacts,
         status,
         completion: completionOf(status || (answer.trim() ? 'SUCCESS' : 'FAILED'), answer),
         dispatchId: message.dispatchId || metadata.dispatchId || null,

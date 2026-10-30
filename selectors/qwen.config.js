@@ -46,9 +46,7 @@
         '[data-testid="chat-response"] .qwen-markdown, [data-testid="chat-response"] .custom-qwen-markdown, [data-testid="chat-response"] .response-message-content'
       ],
       stabilizationDelayMs: 1800,
-      endGenerationMarkers: [
-        { selector: '[data-testid="chat-loader"]', type: 'disappear' }
-      ]
+      endGenerationMarkers: []
     }
   };
 })();

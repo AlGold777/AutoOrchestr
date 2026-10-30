@@ -313,7 +313,7 @@ describe('prompt and answer text in the journal', () => {
     Delivery.receive({ llmName: 'GPT', transportRequestId: 'treq-p', answer: `${'Ответ '.repeat(400)}\n${tokenOf(prompts.GPT)}`, metadata: { status: 'SUCCESS', terminal: true } }, { final: true });
     const journal = Delivery.journal();
     expect(journal[0].prompt.length).toBeLessThanOrEqual(1500);
-    expect(journal.find((e) => e.kind === 'verified').answer.length).toBeLessThanOrEqual(1200);
+    expect(journal.find((e) => e.kind === 'verified').answer.length).toBeLessThanOrEqual(4000);
     const { sends } = Diagnosis.diagnose(journal);
     expect(sends[0].prompt).toContain('Вопрос');
     expect(sends[0].terminal.answer).toContain('Ответ');

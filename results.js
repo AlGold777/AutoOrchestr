@@ -7191,7 +7191,32 @@ document.addEventListener('click', (event) => {
                 syncDocumentFrames();
                 return writeRecord();
             };
+            // L-20: the card of a participant shows the answer the engine accepted. A rejected answer stays on the card,
+            // marked with the reason, and is not shown as accepted. The engine reports every verdict here (onResponse).
+            const showBasicCardVerdict = (entry) => {
+                const card = window.BasicCardVerdict?.find(debateModelCards, entry);
+                if (!card) return;
+                const answer = String(entry.answer || '').trim();
+                const body = card.querySelector('.debate-model-card-output');
+                if (entry.accepted === true && answer && body && body.textContent.trim() !== answer) {
+                    const roundId = window.BasicCardVerdict.roundIdOf(entry);
+                    updateDebateModelCardOutput(entry.model, answer, '', {
+                        answerRevision: true,
+                        status: 'SUCCESS', source: 'custom',
+                        role: window.StageCard?.feed?.role({ label: entry.label, modelName: entry.model, participantId: entry.participant, visit: entry.visit }) || `Basic · ${entry.label}`,
+                        pipelineRunId: runContext.pipelineRunId,
+                        pipelineRoundId: roundId,
+                        participantId: entry.participant,
+                        stepRef: entry.ref,
+                        visit: entry.visit,
+                        transportRequestId: entry.transportRequestId || '', requestId: entry.transportRequestId || ''
+                    });
+                }
+                const reasonText = window.CustomEngine?.REASON_TEXT?.[entry.reason] || entry.reason || '';
+                window.BasicCardVerdict.mark(debateModelCards, entry, reasonText);
+            };
             const recordAttempt = (entry) => {
+                showBasicCardVerdict(entry);
                 if (!record) return;
                 window.CustomRunRecord.recordAttempt(record, entry);
                 void saveRecord();
