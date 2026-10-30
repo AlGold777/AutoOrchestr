@@ -8,3 +8,4 @@ echo "4. panel tab present / version loaded: $(bash "$T/js.sh" "$T/extension-ver
 echo "5. run state: $(bash "$T/js.sh" "$T/run-state.js" pipeline_panel.html | head -c 160)   (runBtn must not be 'Остановить Basic')"
 echo "6. any modal: $(bash "$T/js.sh" "$T/any-modal.js" pipeline_panel.html)   (must be [])"
 echo "7. Claude tab: $(bash "$T/js.sh" "$T/claude-page-state.js" claude.ai)   (limit false, composer empty: run claude-composer-state.js)"
+echo "8. telemetry window: $(bash "$T/js.sh" "$T/close-devtools-modal.js" pipeline_panel.html)   (closed if it was open)"
