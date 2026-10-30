@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-10-30 — Потолок HumanSession не ниже ожидания завершения: GPT не обрывается через 180 с, версия 2.81.938
+
+- Найдено расследованием экспорта в Basic: страница ChatGPT завершала ожидание ответа ровно через 180 с с ошибкой `hard_timeout`, хотя ответ ещё шёл. Причина: `HumanSessionController` получал конфиг без `streaming.humanSession`, и его жёсткий стоп был 180 с, независимо от `ResponseLifecycleDetector`, который ждёт до `completionWaitMs()` (450 с по умолчанию, до 900 с в long-профиле).
+- `_initHumanSession` подставляет потолок `max(180000, completionWaitMs() + 5000)` в `baseTimeoutMs`, `hardStopMin`, `hardStopMax`, `hardStopAbsoluteMaxMs`. Детектор читается в момент вызова; без него потолок 180 с. Общий конфиг не мутируется. `content-scripts/unified-answer-pipeline.js`.
+- Комментарий у таймера watchdog уточнён: пол относится к нему, HumanSession получает тот же потолок в `_initHumanSession`. Тест `tests/human-session-ceiling.test.js`.
+
 ### 2026-10-30 — Завершение ответа: тишина без метки не конец, полный ручной ответ поверх INTERRUPTED, снимок Claude проверяется, версия 2.81.937
 
 - Найдено живым прогоном Basic: GPT завершался раньше времени (через 30 с без роста текста, даже без метки доставки), а Claude в текст брал сайдбар, меню модели и эхо промпта, когда снимок коммитился по тишине. Рецензент отклонял полный ручной ответ страницы как `completion_terminal_failed`, если внутренняя остановка дала `INTERRUPTED` с пустым текстом.

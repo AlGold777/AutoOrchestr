@@ -408,12 +408,24 @@
 
     _initHumanSession() {
       const self = this;
+      // Потолок HumanSession не ниже ожидания завершения от ResponseLifecycleDetector:
+      // иначе сессия обрывает ожидание на 180 с, пока детектор ещё ждёт конца ответа.
+      // Детектор читается в момент вызова; если его нет, потолок остаётся 180 с.
+      const lifecycleWaitMs = Number(
+        (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.()
+      ) || 0;
+      const ceiling = Math.max(180000, lifecycleWaitMs + COMPLETION_DECISION_MARGIN_MS);
       const cfg = Object.assign({
         onHardStop() {
           self.streamingTimedOut = true;
           self.hardStopTriggered = true;
         }
-      }, this.config.streaming?.humanSession || {});
+      }, this.config.streaming?.humanSession || {}, {
+        baseTimeoutMs: ceiling,
+        hardStopMin: ceiling,
+        hardStopMax: ceiling,
+        hardStopAbsoluteMaxMs: ceiling
+      });
       this.humanSession = new HumanSessionController({
         continuousActivity: this.humanActivity,
         getHumanoid: () => window.Humanoid || null
@@ -708,6 +720,8 @@
 const baseTimeouts = this.adaptiveTimeout.calculateTimeout(this.config.seedContent || '', { expectedLength });
 // The end of generation is decided by ResponseLifecycleDetector, which waits up to
 // the profile hardMax from Send. Giving up before it left only unconfirmed page text.
+// This floor applies to the watchdog below; HumanSession gets the same ceiling in
+// _initHumanSession, so neither stops before the detector decides.
 const lifecycleWaitMs = Number(
   (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.() || 0
 );
