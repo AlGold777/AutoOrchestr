@@ -75,7 +75,8 @@ describe('authoritative answer text linearization', () => {
     const watched = watcher.readAnswerText(node);
     const extracted = pipeline.extractText(node);
 
-    expect(watched).toBe('public answer placeholder code placeholder');
+    // Blocks keep their break (M-6); watcher and extractor still read the same text (next line).
+    expect(watched).toBe('public answer placeholder\n\ncode placeholder');
     expect(extracted).toBe(watched);
     expect(watched).not.toContain('reasoning');
     expect(watched).not.toContain('copy');
@@ -89,7 +90,7 @@ describe('authoritative answer text linearization', () => {
     const latest = document.querySelectorAll('.answer-root')[1];
     expect(watcher.getAnswerElement()).toBe(latest);
     expect(pipeline.getAnswerElement()).toBe(latest);
-    expect(pipeline.extractText(pipeline.getAnswerElement())).toBe('First new paragraph Last new paragraph');
+    expect(pipeline.extractText(pipeline.getAnswerElement())).toBe('First new paragraph\n\nLast new paragraph');
     latest.textContent = '42';
     expect(watcher.getAnswerElement()).toBe(latest);
     expect(pipeline.getAnswerElement()).toBe(latest);

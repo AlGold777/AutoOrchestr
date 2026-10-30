@@ -70,3 +70,26 @@ describe('linearizeText keeps the words the acceptance reads', () => {
     expect(flat('<span>просто</span> <span>текст</span>')).toBe('просто текст');
   });
 });
+
+describe('linearizeText on the provider fixtures (M-6)', () => {
+  const fixture = (name) => fs.readFileSync(path.join(ROOT, 'tests/fixtures/answer-markdown', `${name}.html`), 'utf8');
+
+  test('the GPT table is one line per row: header, then the body row, cells joined by a pipe', () => {
+    document.body.innerHTML = `<div id="a">${fixture('gpt').match(/<table.*<\/table>/)[0]}</div>`;
+    const lines = window.AnswerStructure.linearizeText(document.getElementById('a')).split('\n');
+    expect(lines).toEqual(['Key | Value', 'a | one']);
+  });
+
+  test('the DeepSeek table: header and row on their own lines, code kept inside its cell', () => {
+    document.body.innerHTML = `<div id="a">${fixture('deepseek')}</div>`;
+    const text = window.AnswerStructure.linearizeText(document.getElementById('a'));
+    expect(text.split('\n')).toEqual(expect.arrayContaining(['A | B', 'x y|z | 1']));
+  });
+
+  test('the Qwen table: header and body row are separate lines', () => {
+    document.body.innerHTML = `<div id="a">${fixture('qwen')}</div>`;
+    const lines = window.AnswerStructure.linearizeText(document.getElementById('a')).split('\n');
+    expect(lines).toEqual(expect.arrayContaining(['A', 'x']));
+  });
+
+});
