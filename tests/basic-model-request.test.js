@@ -3,7 +3,7 @@ const path = require('path');
 const Engine = require('../disput/custom-engine');
 const Schema = require('../disput/basic-schema');
 
-const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-model-request.md'), 'utf8');
+const doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Scheme create', 'basic-model-request.md'), 'utf8');
 
 // The request text is the block between the two lines of four backticks.
 function requestText() {
