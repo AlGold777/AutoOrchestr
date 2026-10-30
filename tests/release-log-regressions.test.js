@@ -382,8 +382,8 @@ describe('release log regression guards', () => {
     expect(css).toContain('margin-left: 5px;');
     expect(css).toContain('.pipeline-items {');
     expect(css).toContain('grid-auto-flow: column;');
-    expect(css).toContain('grid-template-rows: repeat(3, max-content);');
-    expect(css).toContain('grid-auto-columns: 170px;');
+    expect(css).toContain('grid-template-rows: repeat(var(--pipeline-rows, 8), max-content);');
+    expect(css).toContain('grid-auto-columns: minmax(0, 1fr);');
     expect(css).toContain('.pipeline-items-row {');
     expect(css).toContain('display: contents;');
     expect(css).toContain('width: 220px;');
@@ -394,7 +394,7 @@ describe('release log regression guards', () => {
     expect(css).toContain('#prompt-modal .modal-buttons {');
     expect(css).toContain('.modal-text-input {');
     expect(css).toContain('margin-left: 5px;');
-    expect(css).toContain('column-gap: 12px;');
+    expect(css).toContain('column-gap: 16px;');
   });
 
   test('pro controls use one msg-header run button and list add action without an Output canvas stage', () => {

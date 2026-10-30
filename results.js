@@ -8415,6 +8415,7 @@ document.addEventListener('click', (event) => {
                 pipelineFragment.appendChild(item);
             });
             pipelineItems.replaceChildren(pipelineFragment);
+            pipelineItems.style.setProperty('--pipeline-rows', String(Math.max(1, Math.ceil(uniqueNames.length / 2))));
             pipelineItems.dataset.pipelineHash = nextHash;
             alignPipelineDeleteColumn();
             setPipelineHeaderName(activeName);
