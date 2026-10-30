@@ -1572,6 +1572,16 @@ async function ensureTabReadyForDispatch(tabId, llmName, { reason = 'unknown', w
     });
     return { ok: false, reason: 'tab_missing', snapshot: initialSnapshot };
   }
+  // A check page in the tab (Google CAPTCHA): the provider's page is not there, so nothing is sent and nothing is waited for.
+  const blockerUrl = self.PageBlockerPolicy?.classifyUrl?.(initialTab.url || '') || null;
+  if (blockerUrl) {
+    emitTelemetry(llmName, 'TAB_READY_FAIL', {
+      details: blockerUrl,
+      level: 'warning',
+      meta: { snapshot: initialSnapshot || null, reason, ...buildTabTimingMeta(initialSnapshot) }
+    });
+    return { ok: false, reason: blockerUrl, snapshot: initialSnapshot };
+  }
   // Same domain, but not a chat page (e.g. Kimi /make3d): never insert or send there.
   // Navigate once to the provider's chat address; if it is still not a chat page, stop.
   const currentUrl = initialTab.url || initialTab.pendingUrl || '';

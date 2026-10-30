@@ -1813,6 +1813,43 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       const tabReadyMs = Date.now() - tabReadyStartedAt;
       let ackWaitMs = 0;
       let noFocusProbeMs = 0;
+      if (!readiness.ok && readiness.reason === 'captcha_required') {
+        // Google's check page: the request is not sent and the attempt ends at once (no retry); the user passes the check in the tab.
+        const captchaPolicy = self.PageBlockerPolicy?.classify
+          ? self.PageBlockerPolicy.classify({ reason: 'captcha_required' })
+          : null;
+        broadcastDiagnostic(llmName, {
+          type: 'DISPATCH',
+          label: 'Page check required for dispatch',
+          details: 'captcha_required',
+          level: 'warning',
+          meta: { dispatchId, dispatchReason: reason, tabId, snapshot: readiness.snapshot || null }
+        });
+        handleLLMResponse(
+          llmName,
+          '',
+          {
+            type: 'user_action_required',
+            message: `${llmName} просит пройти проверку (CAPTCHA) — пройдите её во вкладке`
+          },
+          {
+            dispatchId,
+            sessionId,
+            runSessionId: sessionId,
+            responseMeta: {
+              failureClass: 'page_readiness',
+              blockerPolicy: captchaPolicy,
+              source: 'tab_ready_blocked'
+            }
+          },
+          ''
+        );
+        if (machine) {
+          machine.error({ error: 'captcha_required', code: 'PAGE_NOT_READY' });
+        }
+        reportDispatchPhase(llmName, entry, 'blocked', { reason: 'captcha_required', retryable: false, dispatchId, tabId, dispatchReason: reason });
+        return;
+      }
       if (!readiness.ok) {
         broadcastDiagnostic(llmName, {
           type: 'DISPATCH',

@@ -72,7 +72,8 @@
     invalid_form: 'опросник не по формату',
     missing_field: 'без обязательного поля',
     missing_artifact: 'без объявленного артефакта',
-    usage_limit: 'лимит использования модели'
+    usage_limit: 'лимит использования модели',
+    captcha_required: 'модель просит пройти проверку (CAPTCHA) — пройдите её во вкладке'
   });
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
@@ -203,6 +204,7 @@
     if (!value) {
       const usage = usageLimitOf(result);
       if (usage) return { ok: false, reason: 'usage_limit', detail: usage.detail, text: '' };
+      if (String(result?.reason || '') === 'captcha_required') return { ok: false, reason: 'captcha_required', text: '' };
       return { ok: false, reason: noAnswerReason(result), text: '' };
     }
     const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '', prompt: result?.sentPrompt || '', reason: result?.reason || '' }) || {};
@@ -836,7 +838,7 @@
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
           inFlight = inFlight.filter((item) => item.participantId !== model.id);
           // A usage limit does not clear by a repeat: the round ends without this answer and the owner decides.
-          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN' && verdict.reason !== 'usage_limit') retry.push(model);
+          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN' && verdict.reason !== 'usage_limit' && verdict.reason !== 'captcha_required') retry.push(model);
         };
 
         // The answers read from the page are judged now; a rejected one takes its correction like any other.
