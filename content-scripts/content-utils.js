@@ -725,6 +725,7 @@
       elapsedMs: Number.isFinite(Number(outcome.elapsedMs)) ? Number(outcome.elapsedMs) : null,
       composerVisible: typeof outcome.composerVisible === 'boolean' ? outcome.composerVisible : null,
       composerConnected: typeof outcome.composerConnected === 'boolean' ? outcome.composerConnected : null,
+      diagnostics: outcome.diagnostics && typeof outcome.diagnostics === 'object' ? outcome.diagnostics : null,
       meta: ensureDispatchMeta(meta && typeof meta === 'object' ? meta : {}, llmName) || {}
     });
   };
@@ -791,6 +792,8 @@
         anchorAnswerCount = Math.max(0, Number(lifecycleAnchor));
       }
     } catch (_) {}
+    // Gemini: remember which response nodes exist before Send (node identity proof, turn-resolver preDispatchNodes).
+    try { lifecycle?.recordPreDispatchNodes?.(llmName, meta?.dispatchId || null); } catch (_) {}
     // Prime lifecycle tracking before Send. PROMPT_SUBMITTED is confirmation,
     // not a safe place to establish the old-turn baseline: fast providers may
     // already have inserted their new assistant node by then.

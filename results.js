@@ -7529,6 +7529,13 @@ document.addEventListener('click', (event) => {
                     runMaxWords: built.run.maxWords,
                     // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
                     runStrictLength: built.run.strictLength,
+                    // M-11: before a repeat the page is read again; the background takes the answer of the request's own turn (or says there is none).
+                    reread: async (request) => {
+                        const saved = chatBindings[request.participantId];
+                        const reply = await chrome.runtime.sendMessage({ type: 'BASIC_REREAD_OWN_TURN', llmName: request.modelName,
+                            tabId: saved?.tabId ?? null, sentPrompt: request.sentPrompt, previousText: request.previousText });
+                        return reply || { found: false, reason: 'no_reply' };
+                    },
                     accept: ({ text, completion, status, prompt, reason }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt, reason } }),
                     parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,

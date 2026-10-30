@@ -2660,7 +2660,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         reason: message.reason || null,
                         elapsedMs: Number.isFinite(Number(message.elapsedMs)) ? Number(message.elapsedMs) : null,
                         composerVisible: typeof message.composerVisible === 'boolean' ? message.composerVisible : null,
-                        composerConnected: typeof message.composerConnected === 'boolean' ? message.composerConnected : null
+                        composerConnected: typeof message.composerConnected === 'boolean' ? message.composerConnected : null,
+                        diagnostics: message.diagnostics && typeof message.diagnostics === 'object' ? message.diagnostics : null
                     },
                     force: true
                 });
@@ -5372,6 +5373,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     returnToTabId: isAppUiTab(sender?.tab) ? sender.tab.id : null
                 }).then(sendResponse, err => {
                     sendResponse({ status: 'get_it_failed', error: err?.message || String(err) });
+                });
+                return true;
+            }
+
+            case 'BASIC_REREAD_OWN_TURN': {
+                // M-11: the page is read again before a repeat of a Basic request (see rereadOwnTurnForBasic).
+                Promise.resolve().then(() => self.rereadOwnTurnForBasic(message)).then(sendResponse, err => {
+                    sendResponse({ found: false, reason: err?.message || String(err) });
                 });
                 return true;
             }
