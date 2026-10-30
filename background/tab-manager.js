@@ -619,7 +619,9 @@ async function findReusableTabsForLlm(llmName, options = {}) {
     .filter((tab) => tab && typeof tab.url === 'string' && /^https?:\/\//i.test(tab.url))
     .filter((tab) => !excluded.has(tab.id))
     .filter((tab) => isEligibleTabForLlm(llmName, tab) && (tab.id === boundTabId || matchesQueryPatternUrl(tab.url, llmName)))
-    .sort((a, b) => Number(b.id === boundTabId) - Number(a.id === boundTabId) || compareTabsByOpenRecency(a, b));
+    .sort((a, b) => Number(b.id === boundTabId) - Number(a.id === boundTabId)
+      || Number(isChatPageUrlForLlm(llmName, b.url)) - Number(isChatPageUrlForLlm(llmName, a.url))
+      || compareTabsByOpenRecency(a, b));
 }
 
 function resolveTabForLlmName(llmName, done) {
@@ -668,7 +670,8 @@ function resolveTabForLlmName(llmName, done) {
       done(null);
       return;
     }
-    eligible.sort(compareTabsByOpenRecency);
+    eligible.sort((a, b) => Number(isChatPageUrlForLlm(llmName, b.url)) - Number(isChatPageUrlForLlm(llmName, a.url))
+      || compareTabsByOpenRecency(a, b));
     const selected = eligible[0] || null;
     if (selected?.id) {
       void setTabBinding(llmName, selected.id);
@@ -708,6 +711,21 @@ function getAttachDenyPrefixes(llmName) {
   const entry = LLM_TARGETS[llmName];
   if (!entry || !Array.isArray(entry.attachUrlDenyPrefixes)) return [];
   return entry.attachUrlDenyPrefixes.filter(Boolean);
+}
+
+// True when the tab is on a chat page of the provider. Providers without
+// chatPathPrefixes accept any page of their domain (no path check).
+function isChatPageUrlForLlm(llmName, url) {
+  const prefixes = LLM_TARGETS[llmName]?.chatPathPrefixes;
+  if (!Array.isArray(prefixes) || !prefixes.length || !url) return true;
+  let pathname = '';
+  try {
+    pathname = new URL(url).pathname;
+  } catch (_) {
+    return true;
+  }
+  if (pathname === '/') return true;
+  return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 function isEligibleTabForLlm(llmName, tab) {
@@ -1540,7 +1558,7 @@ function reloadTab(tabId) {
   });
 }
 
-async function ensureTabReadyForDispatch(tabId, llmName, { reason = 'unknown' } = {}) {
+async function ensureTabReadyForDispatch(tabId, llmName, { reason = 'unknown', wrongPageNavigated = false } = {}) {
   const initialTab = await getTabSafe(tabId);
   const initialSnapshot = buildTabSnapshot(initialTab);
   emitTelemetry(llmName, 'TAB_READY_CHECK', {
@@ -1553,6 +1571,36 @@ async function ensureTabReadyForDispatch(tabId, llmName, { reason = 'unknown' } 
       meta: { snapshot: initialSnapshot || null, reason, ...buildTabTimingMeta(initialSnapshot) }
     });
     return { ok: false, reason: 'tab_missing', snapshot: initialSnapshot };
+  }
+  // Same domain, but not a chat page (e.g. Kimi /make3d): never insert or send there.
+  // Navigate once to the provider's chat address; if it is still not a chat page, stop.
+  const currentUrl = initialTab.url || initialTab.pendingUrl || '';
+  if (!isChatPageUrlForLlm(llmName, currentUrl) && isEligibleTabForLlm(llmName, initialTab)) {
+    if (!wrongPageNavigated) {
+      emitTelemetry(llmName, 'TAB_WRONG_PAGE', {
+        level: 'warning',
+        details: currentUrl,
+        meta: { snapshot: initialSnapshot || null, reason, navigateTo: LLM_TARGETS[llmName]?.url || null }
+      });
+      const navigated = await new Promise((resolve) => {
+        chrome.tabs.update(tabId, { url: LLM_TARGETS[llmName].url }, () => resolve(!chrome.runtime.lastError));
+      });
+      if (navigated) {
+        await waitForTabComplete(tabId, TAB_READY_RELOAD_TIMEOUT_MS, { llmName });
+        return ensureTabReadyForDispatch(tabId, llmName, { reason, wrongPageNavigated: true });
+      }
+    }
+    emitTelemetry(llmName, 'TAB_READY_FAIL', {
+      details: 'wrong_page',
+      level: 'warning',
+      meta: { snapshot: initialSnapshot || null, reason, ...buildTabTimingMeta(initialSnapshot) }
+    });
+    return {
+      ok: false,
+      reason: 'wrong_page',
+      message: `Вкладка ${llmName} открыта не на странице чата (${currentUrl}); переход на чат не помог.`,
+      snapshot: initialSnapshot
+    };
   }
   if (!shouldWaitForInitialTabUrl(initialTab) && !isEligibleTabForLlm(llmName, initialTab)) {
     emitTelemetry(llmName, 'TAB_READY_FAIL', {

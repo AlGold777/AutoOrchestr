@@ -59,7 +59,9 @@ const LLM_TARGETS = {
   'Kimi': {
     url: 'https://www.kimi.ai/',
     delay: 3000,
-    queryPatterns: ['https://kimi.ai/*', 'https://www.kimi.ai/*']
+    queryPatterns: ['https://kimi.ai/*', 'https://www.kimi.ai/*'],
+    // Chat pages only: root ("/") or /chat/... . Other kimi.ai products (/make3d, ...) are not chat.
+    chatPathPrefixes: ['/chat']
   }
 };
 
