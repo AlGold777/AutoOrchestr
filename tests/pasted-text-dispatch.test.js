@@ -37,7 +37,7 @@ function setupSend() {
     resetNewPagesCheckboxAfterOpen: jest.fn(),
     getItButton: null
   };
-  new Function(...Object.keys(dependencies), `let lastGenerationWaitProfile;\n${source.slice(start, end)}`)(...Object.values(dependencies));
+  new Function(...Object.keys(dependencies), `let lastGenerationWaitProfile;\nlet mainRunActive = false;\nlet mainRunAction = 0;\nconst setMainRunActive = (active) => { mainRunActive = Boolean(active); };\nconst clearModelStatusMemory = () => {};\nconst markCurrentMainRequestsCancelled = () => {};\nconst replaceCurrentMainRequestIds = () => {};\nconst updateModelStatusUI = () => {};\n${source.slice(start, end)}`)(...Object.values(dependencies));
   return { input, bar, composer, sendToBackground, showNotification, send: button.addEventListener.mock.calls[0][1] };
 }
 

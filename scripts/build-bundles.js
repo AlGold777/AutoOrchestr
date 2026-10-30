@@ -39,7 +39,10 @@ const COMMON_FILES = [
   'content-utils/selector-resolver-v2.js',
   'content-utils/response-lifecycle-detector.js',
   'content-scripts/content-bootstrap.js',
+  'content-scripts/answer-html-builder.js',
+  'shared/answer-materialize-sweep.js',
   'content-scripts/content-utils.js',
+  'content-scripts/attachment-handler.js',
   // answer-pipeline-selectors.js is the selector contract the unified pipeline
   // actually consumes (manifest order). The old platform-selectors.js claimed the
   // same window.AnswerPipelineSelectors namespace with an incompatible contract
@@ -47,6 +50,13 @@ const COMMON_FILES = [
   'content-scripts/answer-pipeline-selectors.js',
   'content-scripts/turn-resolver.js',
   'content-scripts/answer-structure.js',
+  // DOM->Markdown copy (WP1-WP3). Missing files are skipped by readFileSafe;
+  // order mirrors manifest.json: engine, blocks, extras, providers, copy context.
+  'shared/answer-markdown.js',
+  'shared/answer-markdown-blocks.js',
+  'shared/answer-markdown-extras.js',
+  'shared/answer-markdown-providers.js',
+  'content-scripts/answer-copy-context.js',
   'content-scripts/generation-signal.js',
   'shared/secret-redaction.js',
   'content-scripts/dom-skeleton-capture.js',

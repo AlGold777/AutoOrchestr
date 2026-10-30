@@ -36,6 +36,7 @@ beforeEach(() => {
   window.eval(read('content-scripts/answer-structure.js'));
   window.eval(read('content-scripts/turn-resolver.js'));
   window.eval(read('content-scripts/answer-pipeline-selectors.js'));
+  window.eval(read('content-scripts/answer-html-builder.js'));
   window.eval(read('content-scripts/content-utils.js'));
   legacy = new Function('window', 'document', 'buildInlineHtml',
     adapter.slice(extractionStart, extractionEnd) + '\nreturn { getProseNodes, extractResponseText, grabLatestAssistantMarkup };'

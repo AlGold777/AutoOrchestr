@@ -15,6 +15,7 @@ function clonePlainForStateTelemetry(value) {
     };
     redactTextField(clone, 'answer');
     redactTextField(clone, 'answerHtml');
+    redactTextField(clone, 'answerMarkdown');
     redactTextField(clone, 'pendingFinalAnswer');
     return clone;
   } catch (_) {
@@ -248,6 +249,8 @@ function projectModelRunStateToLegacy(llmName, entry = {}, projection = {}, sour
 
   if (has('answer')) entry.answer = projection.answer;
   if (has('answerHtml')) entry.answerHtml = projection.answerHtml;
+  if (has('answerMarkdown')) entry.answerMarkdown = projection.answerMarkdown;
+  if (has('copyReport')) entry.copyReport = projection.copyReport;
   if (has('status')) entry.status = projection.status;
   if (has('statusReason')) entry.statusReason = projection.statusReason;
   if (has('statusData')) entry.statusData = projection.statusData;

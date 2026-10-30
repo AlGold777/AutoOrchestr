@@ -519,4 +519,27 @@ describe('tri-state completion (stop-button)', () => {
     expect(completeEvents()).toHaveLength(0);
     expect(readyEvents()).toHaveLength(0);
   });
+
+  test('C6: the previous answer re-rendered as a new node with identical text is not the start of the new turn', async () => {
+    const detector = window.ResponseLifecycleDetector;
+    const text = 'Previous continued-chat answer, long enough to be a real response and identical after re-render.';
+    const oldAnswer = document.createElement('article');
+    oldAnswer.setAttribute('data-message-author-role', 'assistant');
+    oldAnswer.textContent = text;
+    setRect(oldAnswer, { top: 420, left: 140, width: 720, height: 180 });
+    document.body.appendChild(oldAnswer);
+    detector.registerAnswerCandidate({ modelName: 'GPT', element: oldAnswer, observedAt: Date.now(), traceId: 'c6-guard' });
+    const submittedAt = Date.now();
+    await detector.startResponseLifecycleTracking({ modelName: 'GPT', dispatchId: 'c6-guard', runSessionId: 91, promptSubmittedAt: submittedAt, traceId: 'c6-guard' });
+    const rerendered = document.createElement('article');
+    rerendered.setAttribute('data-message-author-role', 'assistant');
+    rerendered.textContent = text;
+    setRect(rerendered, { top: 540, left: 140, width: 720, height: 180 });
+    oldAnswer.remove();
+    document.body.appendChild(rerendered);
+    detector.registerAnswerCandidate({ modelName: 'GPT', element: rerendered, observedAt: Date.now(), traceId: 'c6-guard' });
+    const start = await detector.waitForAnswerStart({ modelName: 'GPT', promptSubmittedAt: submittedAt, timeoutMs: 120, pollIntervalMs: 10, traceId: 'c6-guard' });
+    expect(start.ok).toBe(false);
+    detector.stopResponseLifecycleTracking({ modelName: 'GPT', reason: 'test_done' });
+  });
 });

@@ -1,5 +1,7 @@
 # Проверка выжимки транспорта
 
+> С 2.81.905 кнопки Extract и экспорта `Disput Flow` в расширении нет. Документ относится к ранее сохранённым файлам `Disput Flow *.json` и CLI `scripts/summarize-report.js`. Для прогона Basic — JSON кнопки Basic и запрос «Прогон Basic» в [queries.md](queries.md).
+
 Схема работы: Disput Flow → Extract в расширении → проверка фактов моделью.
 Расчёты выполняет `shared/report-digest.js`; модель читает готовый результат.
 

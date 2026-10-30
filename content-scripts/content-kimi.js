@@ -57,7 +57,7 @@
     }
   }) : null;
   const sleep = window.ContentUtils?.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   let stopped = false;
   let lastResponse = { text: '', html: '' };
 
@@ -237,9 +237,13 @@
     // states but not reliably once logged in, so try it first (cheap, no
     // debugger banner) and fall through to a real CDP-dispatched click.
     const beforeUserTurns = document.querySelectorAll(USER_TURN_SELECTOR).length;
+    // Review C12: a single 250 ms pause let the click land on a still disabled button.
+    // Wait up to 3 s for the enabled state (poll every 100 ms), then click or fall back.
     let button = findFirst(SEND_SELECTORS);
-    if (button?.classList?.contains('disabled') || button?.disabled) {
-      await sleep(250);
+    const sendDisabled = (el) => Boolean(el?.classList?.contains('disabled') || el?.disabled);
+    const sendReadyDeadline = Date.now() + 3000;
+    while (sendDisabled(button) && Date.now() < sendReadyDeadline) {
+      await sleep(100);
       button = findFirst(SEND_SELECTORS);
     }
     if (button && !button.disabled && !button.classList?.contains('disabled')) {
@@ -313,6 +317,7 @@
     }
     let composer = await waitForFirst(COMPOSER_SELECTORS);
     if (options.attachments?.length) {
+      const attachmentHandler = getAttachmentHandler();
       if (!attachmentHandler?.attach) {
         throw { type: 'attachment_failed', message: 'Kimi confirmed attachment handler unavailable' };
       }
@@ -397,6 +402,8 @@
       return false;
     }
     if (message.type === 'STOP_AND_CLEANUP' || message.type === 'HUMANOID_FORCE_STOP') {
+      if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+          && !window.ContentUtils.isStopCommandCurrent(message)) return false;
       cleanup(message.reason || message.type);
       sendResponse?.({ status: 'stopped', llmName: MODEL });
       return false;

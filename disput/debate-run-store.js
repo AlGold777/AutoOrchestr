@@ -3,7 +3,7 @@
   'use strict';
 
   const VERSION = 6;
-  const STORAGE_KEY = 'llmCodexDebateRun.v1';
+  const STORAGE_KEY = 'aoRunTransport.v1';
   const MAX_EVENTS = 500;
   const TERMINAL = new Set(['completed', 'error', 'cancelled', 'stopped_by_moderator']);
   const EVENTS = Object.freeze({
@@ -58,7 +58,7 @@
     'status', 'activeBatch', 'activeStageId', 'lastDispatchAt', 'lastResponseAt',
     'errorCode', 'reason', 'retryCount'
   ]);
-  const currentVersions = () => root.DebateVersionManifest?.getVersions?.() || { implementation: 'dev', protocol: 5, planSchema: 3, runStoreSchema: VERSION, traceSchema: 3 };
+  const currentVersions = () => root.DebateVersionManifest?.getVersions?.() || { implementation: 'dev', protocol: 5, planSchema: 3, runStoreSchema: VERSION };
   const normalizeTopology = () => 'universal';
   function createState(seed = {}) {
     const state = {

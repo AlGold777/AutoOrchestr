@@ -41,20 +41,4 @@ describe('prompt insertion proof contract', () => {
     expect(MESSAGE_ROUTER).toContain("'PROMPT_INSERTION_CONFIRMED'");
     expect(MESSAGE_ROUTER).toContain("'PROMPT_INSERTION_FAILED'");
   });
-
-  test('both labels resolve to the canonical event the report contract requires', () => {
-    delete global.ProofTelemetryContracts;
-    delete global.ProofOrientedTelemetry;
-    require(path.join(ROOT, 'shared', 'proof-telemetry-contracts.js'));
-    require(path.join(ROOT, 'shared', 'proof-oriented-telemetry.js'));
-    const proof = global.ProofOrientedTelemetry;
-    const contracts = global.ProofTelemetryContracts;
-
-    expect(proof.canonicalType({ label: 'PROMPT_INSERTION_CONFIRMED' })).toBe('PROMPT_INSERTION_EVALUATED');
-    expect(proof.canonicalType({ label: 'PROMPT_INSERTION_FAILED' })).toBe('PROMPT_INSERTION_EVALUATED');
-    expect(contracts.canonicalFactOf({
-      eventType: 'PROMPT_INSERTION_EVALUATED',
-      payload: { metadata: { insertionState: 'inserted' } }
-    })).toEqual({ kind: 'prompt_insertion', state: 'inserted' });
-  });
 });

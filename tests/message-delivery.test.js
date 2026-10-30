@@ -35,6 +35,28 @@ describe('message delivery', () => {
     expect(kinds).toEqual(['prepared', 'stale_dropped', 'first_text', 'verified', 'prepared', 'first_text', 'missing_token']);
   });
 
+  test('the current request end marker survives cleaning even before a terminal status', () => {
+    const prompts = Delivery.prepare({ prompt: 'Q', models: ['GPT'], requestIds: { GPT: 'request-1' } });
+    const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.GPT)[0];
+    const message = (answer) => Delivery.receive({ llmName: 'GPT', transportRequestId: 'request-1', answer });
+    expect(message(`Quoted ${token}\n${'Still generating. '.repeat(10)}`).metadata.answerEndMarkerSeen).toBe(false);
+    expect(message(token).metadata.answerEndMarkerSeen).toBe(false);
+    expect(message('Incomplete answer').metadata.answerEndMarkerSeen).toBe(false);
+    expect(message(`Full answer\n${token}`).metadata.answerEndMarkerSeen).toBe(true);
+  });
+
+  test('completion stays fixed through repeated cleaning and late updates of the same request', () => {
+    const prompts = Delivery.prepare({ prompt: 'Q', models: ['GPT'], requestIds: { GPT: 'request-1' } });
+    const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.GPT)[0];
+    const completed = Delivery.receive({ llmName: 'GPT', transportRequestId: 'request-1', answer: `Full answer\n${token}` });
+    expect(Delivery.receive(completed).metadata).toMatchObject({ answerEndMarkerSeen: true, terminal: true, status: 'SUCCESS' });
+    expect(Delivery.receive({ llmName: 'GPT', transportRequestId: 'request-1', answer: 'Late partial', metadata: { status: 'ERROR' } }).metadata)
+      .toMatchObject({ answerEndMarkerSeen: true, terminal: true, status: 'SUCCESS' });
+    expect(Delivery.receive({ llmName: 'GPT', transportRequestId: 'request-1', answer: 'Foreign [[AO-zzzzzz]]' })).toBeNull();
+    Delivery.prepare({ prompt: 'Next', models: ['GPT'], requestIds: { GPT: 'request-2' } });
+    expect(Delivery.receive({ llmName: 'GPT', transportRequestId: 'request-2', answer: 'Incomplete' }).metadata.answerEndMarkerSeen).toBe(false);
+  });
+
   test('partial answers are cleaned but never marked', () => {
     Delivery.prepare({ prompt: 'Q', models: ['GPT'] });
     const partial = Delivery.receive({ llmName: 'GPT', answer: 'Печатает…' }, { final: false });
@@ -155,4 +177,31 @@ test('submission identity requires a submitted command hash with the same normal
   Delivery.observeRuntime({type:'TRANSPORT_DISPATCH_PHASE',phase:'submitted',llmName:'GPT',transportRequestId:'q-sub',dispatchId:'d1',promptHash:artifact.normalizedHash,promptNormalizationVersion:'other'});
   Delivery.observeRuntime({type:'TRANSPORT_DISPATCH_PHASE',phase:'submitted',at:1,llmName:'GPT',transportRequestId:'q-sub',dispatchId:'d1',promptHash:artifact.normalizedHash,promptNormalizationVersion:artifact.normalizationVersion,promptProofScope:'dispatch_command'});
   expect(Delivery.journal().filter(e=>e.kind==='dispatch').map(e=>e.promptIdentityProven)).toEqual([false,true]);
+});
+
+describe('C3: one delivery-token predicate (token at the tail, at most 40 characters after it)', () => {
+  const Proof = require('../shared/answer-proof-normalization.js');
+  const tag = '[[AO-abc234]]';
+
+  test('the shared predicate', () => {
+    expect(Proof.hasDeliveryTokenTail(`Ответ\n${tag}`, tag)).toBe(true);
+    expect(Proof.hasDeliveryTokenTail(`Ответ\n${tag} 8:55pm`, tag)).toBe(true);
+    expect(Proof.hasDeliveryTokenTail(`Ответ ${tag} ${'x'.repeat(39)}`, tag)).toBe(true);
+    expect(Proof.hasDeliveryTokenTail(`Ответ ${tag} ${'x'.repeat(40)}`, tag)).toBe(false);
+    expect(Proof.hasDeliveryTokenTail(`${tag} ${'x'.repeat(200)}`, tag)).toBe(false);
+    expect(Proof.hasDeliveryTokenTail('', tag)).toBe(false);
+  });
+
+  test('inspect() verifies only a token at the tail; a token mid-text is not verified', () => {
+    Delivery.reset();
+    const prompts = Delivery.prepare({ prompt: 'T', models: ['GPT'] });
+    const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.GPT)[0];
+    Delivery.receive({ llmName: 'GPT', answer: `Answer\n${token}` }, { final: true });
+    expect(Delivery.journal().at(-1).kind).toBe('verified');
+    Delivery.reset();
+    const again = Delivery.prepare({ prompt: 'T', models: ['GPT'] });
+    const token2 = /\[\[AO-[a-z0-9]{6}\]\]/.exec(again.GPT)[0];
+    Delivery.receive({ llmName: 'GPT', answer: `${token2} ${'continued text '.repeat(20)}` }, { final: true });
+    expect(Delivery.journal().at(-1).kind).not.toBe('verified');
+  });
 });

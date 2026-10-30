@@ -100,3 +100,16 @@ describe('ResultsAttachments.extractFilesFromTransfer / tryAddTransferAttachment
     expect(api.tryAddTransferAttachments({ files: [] })).toBe(false);
   });
 });
+
+test('nine files totaling 193 kB are serialized completely before background dispatch', async () => {
+  const { api } = makeAttach();
+  const batch = Array.from({ length: 9 }, (_, index) => txtFile(`document-${index}.txt`, 'x'.repeat(index === 8 ? 21000 : 21500)));
+  api.addPromptAttachments(batch);
+  const payload = await api.buildAttachmentPayload();
+  expect(payload).toHaveLength(9);
+  expect(payload.reduce((sum, item) => sum + item.size, 0)).toBe(193000);
+  payload.forEach((item, index) => {
+    expect(item.name).toBe(batch[index].name);
+    expect(Buffer.from(item.base64.split(',')[1], 'base64').length).toBe(batch[index].size);
+  });
+});

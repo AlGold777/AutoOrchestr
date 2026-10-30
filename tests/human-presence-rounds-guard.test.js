@@ -91,6 +91,129 @@ describe('human presence yields to the dispatch rounds', () => {
     jest.useRealTimers();
   });
 
+  test('card completion is irreversible for this request, while other models remain pending', async () => {
+    const { context, jobState, visited } = createSandbox();
+    jobState.llms.GPT.cardAnswerComplete = true;
+    expect(context.hasPendingHumanVisits()).toBe(true);
+    context.scheduleHumanPresenceLoop(true);
+    await pumpLoop();
+    expect(visited).not.toContain(101);
+    jobState.llms.Claude.cardAnswerComplete = true;
+    expect(context.hasPendingHumanVisits()).toBe(false);
+    context.stopHumanPresenceLoop();
+    const count = visited.length;
+    await pumpLoop();
+    expect(visited).toHaveLength(count);
+    jobState.llms.GPT = { status: 'GENERATING', humanVisitDurations: [] };
+    expect(context.hasPendingHumanVisits()).toBe(true);
+  });
+
+  test('a stopped activity cannot resume from DOM stability, while the next request can scroll', async () => {
+    class ScrollElement {
+      constructor() {
+        this.scrollHeight = 1800;
+        this.clientHeight = 800;
+        this.scrollTop = 0;
+        this.scrollCalls = [];
+        this.parentElement = null;
+      }
+
+      scrollTo(options) {
+        this.scrollCalls.push(options);
+        this.scrollTop = Number(options?.top || 0);
+      }
+    }
+
+    const observers = [];
+    class ControlledMutationObserver {
+      constructor(callback) {
+        this.callback = callback;
+        this.active = false;
+        observers.push(this);
+      }
+
+      observe() { this.active = true; }
+      disconnect() { this.active = false; }
+      trigger() { if (this.active) this.callback([]); }
+    }
+
+    const scrollRoot = new ScrollElement();
+    const page = {
+      __LLMScrollStopEpoch: 0, __LLMScrollHardStop: false,
+      innerHeight: 800, innerWidth: 1200, scrollY: 0, scrollTo: jest.fn(),
+      dispatchEvent: jest.fn()
+    };
+    const document = {
+      body: scrollRoot,
+      documentElement: scrollRoot,
+      scrollingElement: scrollRoot,
+      querySelectorAll: () => [],
+      querySelector: () => null
+    };
+    const context = {
+      window: page,
+      document,
+      performance: { now: () => Date.now() },
+      Number, String, Boolean, Math, Promise, Set, Array,
+      Element: ScrollElement,
+      MutationObserver: ControlledMutationObserver,
+      getComputedStyle: () => ({ overflowY: 'auto' }),
+      Event: class Event {},
+      MouseEvent: class MouseEvent {},
+      setTimeout, clearTimeout, console
+    };
+    vm.createContext(context);
+    const start = HUMAN_PRESENCE_SOURCE.indexOf('async function simulateHumanActivityInPage');
+    const end = HUMAN_PRESENCE_SOURCE.indexOf('function clearDeferredAnswerTimer', start);
+    vm.runInContext(HUMAN_PRESENCE_SOURCE.slice(start, end), context);
+
+    const flushPromises = async () => {
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+    };
+    const advanceUntil = async (condition, maxSteps = 60) => {
+      for (let i = 0; i < maxSteps && !condition(); i++) {
+        jest.advanceTimersByTime(100);
+        await flushPromises();
+      }
+      expect(condition()).toBe(true);
+    };
+
+    const staleActivity = context.simulateHumanActivityInPage({ llmName: 'Claude', scrollDuration: 1000 });
+    expect(page.scrollTo).toHaveBeenCalledTimes(1);
+    await advanceUntil(() => observers.length === 1 && observers[0].active);
+    // The visit continues scrolling until it reaches the pending DOM-stability wait.
+    expect(page.scrollTo.mock.calls.length).toBeGreaterThan(1);
+
+    observers[0].trigger();
+    page.__LLMScrollHardStop = true;
+    page.__LLMScrollStopEpoch += 1;
+    page.__LLMScrollHardStop = false;
+    jest.advanceTimersByTime(250);
+    await flushPromises();
+    jest.advanceTimersByTime(500);
+    await flushPromises();
+    await staleActivity;
+    expect(scrollRoot.scrollCalls).toEqual([]);
+
+    const nextActivity = context.simulateHumanActivityInPage({ llmName: 'Claude', scrollDuration: 1000 });
+    expect(page.scrollTo.mock.calls.length).toBeGreaterThan(2);
+    await advanceUntil(() => observers.length === 2 && observers[1].active);
+    observers[1].trigger();
+    jest.advanceTimersByTime(250);
+    await flushPromises();
+    expect(scrollRoot.scrollCalls.length).toBeGreaterThan(0);
+    let nextActivityFinished = false;
+    nextActivity.then(() => { nextActivityFinished = true; });
+    await advanceUntil(() => nextActivityFinished, 40);
+    await nextActivity;
+  });
+
+  test('a missing entry cannot keep the visit loop alive', () => {
+    const { context, jobState } = createSandbox();
+    jobState.llms = {};
+    expect(context.hasPendingHumanVisits()).toBe(false);
+  });
+
   test('the loop is not scheduled while rounds are running', () => {
     const { context, jobState } = createSandbox();
     jobState.session.roundsInProgress = true;

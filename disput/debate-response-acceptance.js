@@ -1,6 +1,7 @@
 (function initDebateResponseAcceptance(root) {
   'use strict';
   const ENDING = /[.?!)»"'\]]$/;
+  const UNPROVEN_STATUSES = new Set(['EXTRACT_FAILED', 'FAILED', 'UNCERTAIN', 'INTERRUPTED', 'TIMEOUT', 'NO_SEND']);
   const words = (value) => String(value || '').trim().match(/[\p{L}\p{N}]+(?:[-'][\p{L}\p{N}]+)*/gu) || [];
   const requiredSectionMisses = (value, sections = []) => (Array.isArray(sections) ? sections : [])
     .filter((section) => !new RegExp(`(?:^|\\n)#{1,6}\\s*${String(section).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\n|$)`, 'i').test(value));
@@ -17,14 +18,21 @@
   function evaluate({ text, meta = {} } = {}) {
     const value = String(text == null ? '' : text).trim();
     if (!value) return { ok: false, reason: 'empty', details: {} };
-    // UNCERTAIN: the transport could not prove the generation ended (e.g. Stop stayed visible). Text is kept, but not accepted.
-    if (String(meta.status || '').toUpperCase() === 'UNCERTAIN') return { ok: false, reason: 'unproven_status', details: {} };
     if (typeof meta.isErrorOutput === 'function' && meta.isErrorOutput(value)) return { ok: false, reason: 'error_output', details: {} };
+    // A transport status that says the answer did not finish (or never reached the model) is not an answer,
+    // whatever text the page left behind: only SUCCESS or a transport-proven completion is accepted.
+    // PARTIAL is judged below (partial_unproven); absent status keeps the old checks.
+    const transportStatus = String(meta.status || '').toUpperCase();
+    const transportComplete = String(meta.completion || '').toLowerCase() === 'complete';
+    if (!transportComplete && UNPROVEN_STATUSES.has(transportStatus)) return { ok: false, reason: 'unproven_status', details: { status: transportStatus } };
     const taskClass = String(meta.taskClass || '').toLowerCase();
     const outputKind = String(meta.outputKind || '').toLowerCase();
     const allowShort = meta.allowShort === true || taskClass === 'direct_answer';
     const minChars = Number(meta.minChars == null ? (allowShort ? 1 : outputKind === 'json' ? 2 : 1) : meta.minChars);
     if (value.length < minChars) return { ok: false, reason: 'too_short', details: { minChars, actualChars: value.length } };
+    // The answer that repeats the start of its request (the page echoes the prompt) is not an answer.
+    const promptHead = String(meta.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (promptHead.length === 60 && value.replace(/\s+/g, ' ').includes(promptHead)) return { ok: false, reason: 'prompt_echo', details: {} };
     const maxWords = Number(meta.maxWords || 0);
     const wordCount = words(value).length;
     if (Number.isFinite(maxWords) && maxWords > 0 && wordCount > maxWords) return { ok: false, reason: 'too_long', details: { maxWords, actualWords: wordCount } };
@@ -43,6 +51,10 @@
     // A transport-complete answer (the delivery token proves it ended) is not "cut off" because
     // its last line is not a sentence: the ending heuristic is only for answers without proof.
     const provenComplete = String(meta.completion || '').toLowerCase() === 'complete';
+    // A transport answer that ended without proof (PARTIAL) and is only a few words is the model's status line («Проверяя
+    // архитектуру», «Запуск интерпретатора кода…») taken for text, not an answer.
+    // Without that proof a PARTIAL answer is not an answer at any length: a status line, a cut-off text or the page's own text.
+    if (!allowShort && !provenComplete && outputKind !== 'json' && String(meta.status || '').toUpperCase() === 'PARTIAL') return { ok: false, reason: 'partial_unproven', details: { words: wordCount } };
     if (!allowShort && !provenComplete && outputKind !== 'json' && !ENDING.test(value) && !/^\s*(?:[-*]|\d+[.)]|#)/.test(lastLine) && lastLine.split(/\s+/).length > 3) return { ok: false, reason: 'incomplete_ending', details: { lastLine } };
     return { ok: true, reason: '', details: { chars: value.length, words: wordCount } };
   }

@@ -60,6 +60,8 @@
             if (!container) return;
             const safe = typeof sanitizeHTML === 'function' ? sanitizeHTML(String(html || '')) : String(html || '');
             container.replaceChildren(createHtmlFragment(container, safe));
+            // Code blocks get their header and Copy button (DOM code, after the sanitizer); idempotent.
+            if (root.ResultsCodeBlocks) root.ResultsCodeBlocks.decorateCodeBlocks(container);
         };
 
         const incrementalRenderQueue = [];

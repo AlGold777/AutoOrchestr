@@ -1,0 +1,167 @@
+/** @jest-environment jsdom */
+const fs = require('fs');
+const path = require('path');
+const { collect } = require('../content-scripts/answer-copy-context.js');
+
+function mount(html) { document.body.innerHTML = html; return document.body; }
+function skeleton(name) {
+  const f = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/live-answer-skeletons', name + '.json'), 'utf8'));
+  return f.capture.html;
+}
+
+describe('реальные скелеты', () => {
+  test('claude.json: data-is-streaming=false → не генерация, нет усечения', () => {
+    const b = mount(skeleton('claude'));
+    const c = collect(b.querySelector('[data-is-streaming]'));
+    expect(c).toMatchObject({ generating: false, truncated: false, version: null, regenerated: false, continuationParts: 0 });
+  });
+  test('gemini.json: aria-busy=false, regenerate-кнопка не даёт версии', () => {
+    const b = mount(skeleton('gemini'));
+    const c = collect(b.firstElementChild, { turn: b.firstElementChild });
+    expect(c.generating).toBe(false);
+    expect(c.version).toBeNull();
+  });
+  test.each(['chatgpt', 'grok', 'perplexity', 'qwen', 'deepseek', 'lechat', 'zai'])('%s: скелет завершённого ответа не помечается неполным', (n) => {
+    const b = mount(skeleton(n));
+    const c = collect(b.firstElementChild);
+    expect(c.generating).toBe(false);
+    expect(c.truncated).toBe(false);
+  });
+  test('claude.json с подменой data-is-streaming=true → generating', () => {
+    const b = mount(skeleton('claude'));
+    b.querySelector('[data-is-streaming]').setAttribute('data-is-streaming', 'true');
+    expect(collect(b.querySelector('[data-is-streaming]')).generating).toBe(true);
+  });
+});
+
+describe('синтетика, по известной структуре', () => {
+  test('генерация: aria-busy и кнопка Stop только для последнего ответа', () => {
+    mount('<div id="m" aria-busy="true">x</div>');
+    expect(collect(document.getElementById('m')).generating).toBe(true);
+    mount('<div id="m">x</div><button aria-label="Stop generating"></button>');
+    const m = document.getElementById('m');
+    expect(collect(m, { document, isLatest: false }).generating).toBe(false);
+    expect(collect(m, { document, isLatest: true }).generating).toBe(true);
+  });
+  test('Continue generating → truncated', () => {
+    mount('<div id="m">x<button>Continue generating</button></div>');
+    const c = collect(document.getElementById('m'));
+    expect(c.truncated).toBe(true);
+    expect(c.notes.join()).toMatch(/оборван/);
+  });
+  test('переключатель 1/3 фиксирует версию; 1/1 не считается', () => {
+    mount('<div id="t"><div id="m">x</div><div><button>‹</button><span>2/3</span><button>›</button></div></div>');
+    const c = collect(document.getElementById('m'), { turn: document.getElementById('t') });
+    expect(c).toMatchObject({ version: '2/3', regenerated: true });
+    expect(c.versionInfo).toMatchObject({ index: 2, total: 3 });
+    mount('<div id="m">x<span>1/1</span></div>');
+    expect(collect(document.getElementById('m')).version).toBeNull();
+  });
+  test('продолжения: ассистентские сообщения до следующего пользовательского', () => {
+    mount(`<div id="a" data-message-author-role="assistant">1</div>
+      <div data-message-author-role="assistant" id="b">2</div><div data-message-author-role="assistant" id="c">3</div>
+      <div data-message-author-role="user">q</div><div data-message-author-role="assistant">other</div>`);
+    const c = collect(document.getElementById('a'));
+    expect(c.continuationParts).toBe(2);
+    expect(c.parts.map((p) => p.id)).toEqual(['b', 'c']);
+    expect(JSON.parse(JSON.stringify(c)).parts).toBeUndefined();
+  });
+  test('свёрнутое: по умолчанию только пометка, ничего не меняется', () => {
+    mount('<div id="m"><details><summary>s</summary>t</details><button aria-expanded="false" aria-controls="p">x</button><div id="p" hidden>y</div><button>Show more</button><button aria-expanded="false">menu</button></div>');
+    const c = collect(document.getElementById('m'));
+    expect(c.collapsed).toBe(3); // details, aria-controls внутри, Show more; «menu» без controls — не блок
+    expect(document.querySelector('details').open).toBe(false);
+  });
+  test('options.expand раскрывает details и кликает кнопки; остаток считается', () => {
+    mount('<div id="m"><details><summary>s</summary>t</details><button id="b">Show more</button></div>');
+    let clicked = 0;
+    document.getElementById('b').addEventListener('click', () => { clicked += 1; });
+    const c = collect(document.getElementById('m'), { expand: true });
+    expect(document.querySelector('details').open).toBe(true);
+    expect(clicked).toBe(1);
+    expect(c.collapsed).toBe(1); // кнопка остаётся: результат клика не проверен
+    expect(c.notes.join()).toMatch(/раскрыто/);
+  });
+  test('виртуализация: частично вне скроллера → lazy (прямоугольники подменены)', () => {
+    mount('<div id="s"></div><div id="m">x</div>');
+    const rect = (top, bottom) => ({ top, bottom, height: bottom - top });
+    document.getElementById('s').getBoundingClientRect = () => rect(0, 500);
+    document.getElementById('m').getBoundingClientRect = () => rect(-80, 200);
+    const c = collect(document.getElementById('m'), { scroller: document.getElementById('s') });
+    expect(c.lazy).toBe(true);
+    expect(c.notes.join()).toMatch(/виртуализац/);
+    document.getElementById('m').getBoundingClientRect = () => rect(10, 200);
+    expect(collect(document.getElementById('m'), { scroller: document.getElementById('s') }).lazy).toBe(false);
+  });
+  test('нет элемента → безопасный объект с пометкой', () => {
+    expect(collect(null).notes.length).toBe(1);
+  });
+  // синтетика, по известной структуре; селекторы артефактов не проверены вживую
+  test('артефакт: ссылка в сообщении + панель рядом → панель найдена, не сериализуется', () => {
+    mount('<div id="m">Текст<button data-testid="artifact-card">Схема</button></div><aside data-artifact data-artifact-title="Схема"><pre>x</pre></aside>');
+    const c = collect(document.getElementById('m'), { document });
+    expect(c).toMatchObject({ artifactRefs: 1, artifactPanels: 1 });
+    expect(c.artifactPanelEls[0].tagName).toBe('ASIDE');
+    expect(JSON.parse(JSON.stringify(c)).artifactPanelEls).toBeUndefined();
+  });
+  test('артефакт упомянут, панели нет → пометка в notes', () => {
+    mount('<div id="m"><button aria-label="Open artifact">x</button></div>');
+    const c = collect(document.getElementById('m'), { document });
+    expect(c.artifactRefs).toBe(1);
+    expect(c.artifactPanels).toBe(0);
+    expect(c.notes.join()).toMatch(/панель не найдена/);
+  });
+  test('встроенные блоки считаются', () => {
+    mount('<div id="m"><iframe></iframe><object></object></div>');
+    expect(collect(document.getElementById('m')).embeds).toBe(2);
+  });
+
+  describe('блоки хода вне выбранного элемента (синтетика, по общим признакам; не проверено вживую)', () => {
+    const SVG = '<svg viewBox="0 0 200 100"><rect width="50" height="20"/><rect x="60" width="50" height="20"/><path d="M1 1L2 2"/><path d="M1 1L5 5"/><text>A</text></svg>';
+    test('диаграмма-сестра после текстового сегмента', () => {
+      mount(`<main><div data-role="user">q</div><div id="turn"><div id="m" data-role="assistant">текст</div><div data-testid="diagram-block">${SVG}</div></div></main>`);
+      const c = collect(document.getElementById('m'));
+      expect(c.outsideBlocks).toEqual([{ type: 'widget', tag: 'div', hint: 'div data-testid=diagram-block', position: 1, beforeSelected: false }]);
+      expect(c.turnEl.id).toBe('turn');
+    });
+    test('виджет между сегментами: перед и после', () => {
+      mount('<div id="turn"><div id="a"><iframe></iframe></div><div id="m">т</div><canvas width="300" height="200"></canvas></div>');
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks.map((b) => [b.type, b.beforeSelected, b.position])).toEqual([['embed', true, 1], ['canvas', false, 2]]);
+    });
+    test('svg вне выбранного, в обёртке button; иконка и маленькое img — нет', () => {
+      mount(`<div id="turn"><div id="m">т</div><div role="button">${SVG}</div><button><svg viewBox="0 0 24 24"><path d="M1 1"/></svg></button><img width="16" height="16"></div>`);
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks.map((b) => b.type)).toEqual(['svg']);
+    });
+    test('иконка span role=img 16x16 (Qwen anticon) вне выбранного — не блок', () => {
+      mount('<div id="turn"><div id="m">т</div><span class="anticon" role="img" width="16" height="16"></span></div>');
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks).toEqual([]);
+    });
+    test('артефакт, pre вне выбранного, кастомный элемент с shadowRoot', () => {
+      mount('<div id="turn"><div id="m">т</div><div data-artifact-card><div class="chart">x</div></div><pre>код</pre><my-w id="w1234567"></my-w></div>');
+      document.querySelector('my-w').attachShadow({ mode: 'open' });
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks.map((b) => b.type)).toEqual(['artifact', 'code', 'widget']);
+      expect(c.outsideBlocks[2].hint).toBe('my-w #w0');
+    });
+    test('ничего вне: пусто; хода нет: пометка', () => {
+      mount('<div id="turn"><div id="m"><svg viewBox="0 0 200 100"><text>внутри</text></svg>т</div></div>');
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks).toEqual([]);
+      mount('<div id="m">т</div>');
+      const d = collect(document.getElementById('m'));
+      expect(d.notes).toContain('контейнер хода не определён');
+      expect(d.outsideBlocks).toEqual([]);
+    });
+    test('автоопределение хода останавливается перед пользовательским сообщением и композером; лимит 50', () => {
+      mount('<main><div data-role="user">q</div><div id="m" data-role="assistant">т</div><textarea></textarea></main>');
+      expect(collect(document.getElementById('m')).notes).toContain('контейнер хода не определён');
+      mount(`<div id="turn"><div id="m">т</div>${'<canvas width="99" height="99"></canvas>'.repeat(53)}</div>`);
+      const c = collect(document.getElementById('m'), { turn: document.getElementById('turn') });
+      expect(c.outsideBlocks).toHaveLength(50);
+      expect(c.outsideBlocksTruncated).toBe(3);
+    });
+  });
+});

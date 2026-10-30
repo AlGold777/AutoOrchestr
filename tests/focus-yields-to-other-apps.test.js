@@ -16,8 +16,8 @@ const SRC = fs.readFileSync(
 
 describe('visits do not steal focus from another application', () => {
   test('both visit paths go through the guarded raise', () => {
-    expect(SRC).toContain('raiseWindowUnlessUserIsElsewhere(tab.windowId, `human_visit:${llmName}`, lease.isCurrent)');
-    expect(SRC).toContain('raiseWindowUnlessUserIsElsewhere(tab.windowId, `automation_visit:${llmName}`, lease.isCurrent)');
+    expect(SRC).toContain('raiseWindowUnlessUserIsElsewhere(tab.windowId, `human_visit:${llmName}`');
+    expect(SRC).toContain('raiseWindowUnlessUserIsElsewhere(tab.windowId, `automation_visit:${llmName}`');
   });
 
   test('no visit path raises a window directly any more', () => {

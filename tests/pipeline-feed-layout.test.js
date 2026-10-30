@@ -10,7 +10,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 // Same loader-aware CSS resolution as the debate tests.
 const readResolvedCss = () => {
   const loader = read('styles.css');
-  const modules = [...loader.matchAll(/@import url\("(styles\/[^"]+\.css)"\)/g)].map((m) => read(m[1]));
+  const modules = [...loader.matchAll(/@import url\("(styles\/[^"]+\.css)(?:\?[^"]+)?"\)/g)].map((m) => read(m[1]));
   return [loader, ...modules].join('\n');
 };
 

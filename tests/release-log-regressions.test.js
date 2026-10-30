@@ -33,34 +33,41 @@ describe('release log regression guards', () => {
     expect(source).toContain("if (!pipelinePanel.classList.contains('is-collapsed')) {");
   });
 
-  test('Favourite card exposes TXT export immediately after its HTML export', () => {
+  test('Favourite card exposes Markdown export immediately after its HTML export', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     const htmlButtonIndex = source.indexOf('class="panel-action-btn panel-export-html-btn favorite-export-btn"');
-    const txtButtonIndex = source.indexOf('id="favorite-export-txt-btn"');
+    const mdButtonIndex = source.indexOf('id="favorite-export-md-btn"');
     const clearButtonIndex = source.indexOf('class="panel-action-btn panel-clear-response-btn favorite-clear-btn"');
 
     expect(htmlButtonIndex).toBeGreaterThan(-1);
-    expect(txtButtonIndex).toBeGreaterThan(htmlButtonIndex);
-    expect(clearButtonIndex).toBeGreaterThan(txtButtonIndex);
-    expect(source).toContain("event.target.closest('#favorite-export-txt-btn')");
-    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'txt', now);");
-    expect(source).toContain('const textContent = `=== Favourite ===\\n${favoriteText}`;');
+    expect(mdButtonIndex).toBeGreaterThan(htmlButtonIndex);
+    expect(clearButtonIndex).toBeGreaterThan(mdButtonIndex);
+    expect(source).toContain("event.target.closest('#favorite-export-md-btn')");
+    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'md', now);");
+    expect(source).toContain('const textContent = `# Favourite\\n\\n${favoriteText}\\n`;');
   });
 
-  test('TXT export sits after the all-responses HTML export and downloads plain text', () => {
+  test('Markdown export sits after the all-responses HTML export and downloads GFM', () => {
     const html = fs.readFileSync(path.join(__dirname, '..', 'result_new.html'), 'utf8');
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     const htmlButtonIndex = html.indexOf('id="export-html-btn"');
-    const txtButtonIndex = html.indexOf('id="export-txt-btn"');
+    const mdButtonIndex = html.indexOf('id="export-md-btn"');
     const copyButtonIndex = html.indexOf('id="copy-all-btn"');
 
     expect(htmlButtonIndex).toBeGreaterThan(-1);
-    expect(txtButtonIndex).toBeGreaterThan(htmlButtonIndex);
-    expect(copyButtonIndex).toBeGreaterThan(txtButtonIndex);
-    expect(html).toContain('aria-label="Export all responses as TXT">txt</button>');
-    expect(source).toContain("event.target.closest('#export-txt-btn')");
-    expect(source).toContain("type: 'text/plain;charset=utf-8'");
-    expect(source).toContain("buildResponseExportFilename(null, 'txt', now)");
+    expect(mdButtonIndex).toBeGreaterThan(htmlButtonIndex);
+    expect(copyButtonIndex).toBeGreaterThan(mdButtonIndex);
+    expect(html).toContain('aria-label="Export all responses as Markdown">md</button>');
+    expect(html).toContain('class="panel-action-btn panel-export-md-btn"');
+    expect(source).toContain("event.target.closest('#export-md-btn')");
+    expect(source).toContain("event.target.closest('.panel-export-md-btn')");
+    expect(source).toContain('function buildAllResponsesExportMarkdown()');
+    expect(source).toContain('function buildSingleResponseExportMarkdown(outputEl, modelName)');
+    expect(source).toContain('outputElement.__answerMarkdown = pendingMarkdown ||');
+    expect(source).toContain('String(outputEl?.__answerMarkdown ||');
+    expect(source).toContain("type: 'text/markdown;charset=utf-8'");
+    expect(source).toContain("buildResponseExportFilename(null, 'md', now)");
+    expect(source).toContain("buildSingleCardExportFilename(modelName, 'md')");
   });
 
   test('response selection toolbar also works inside the Favourite card', () => {
@@ -113,25 +120,6 @@ describe('release log regression guards', () => {
     expect(debateCss).toContain('order: initial;');
     expect(debateCss).toContain('flex-wrap: nowrap;');
     expect(css).not.toContain('order: 3;\n        width: 100%;');
-  });
-
-  test('state map actions use icon buttons and keep Case before Export', () => {
-    const htmlFiles = ['pipeline_panel.html', 'result_new.html'];
-    htmlFiles.forEach((file) => {
-      const html = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-      const history = html.indexOf('data-map-mode="history"');
-      const caseExport = html.indexOf('data-case-export');
-      const mapExport = html.indexOf('data-map-export');
-      expect(history).toBeGreaterThan(-1);
-      expect(caseExport).toBeGreaterThan(history);
-      expect(mapExport).toBeGreaterThan(caseExport);
-      expect(html).toContain('data-map-mode="history" title="История" aria-label="История"><i class="ti ti-history"');
-      expect(html).toContain('data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder"');
-      expect(html).toContain('data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download"');
-      expect(html).not.toContain('data-map-mode="history">История</button>');
-      expect(html).not.toContain('data-case-export title="Экспорт дела">Case</button>');
-      expect(html).not.toContain('data-map-export title="Экспорт карты">Export</button>');
-    });
   });
 
   test('telemetry export accentuates the active Generation Wait Profile', () => {
@@ -203,8 +191,9 @@ describe('release log regression guards', () => {
       expect(html.indexOf('id="telemetry-tab"')).toBeLessThan(html.indexOf('id="disput-tab"'));
       expect(html.indexOf('id="disput-tab"')).toBeLessThan(html.indexOf('id="selectors0-tab"'));
       expect(html).toContain('id="disput-tabpanel"');
-      expect(html).toContain('id="disput-export-md"');
-      expect(html).toContain('id="disput-export-json"');
+      // The Disput trace and its exports (JSON, MD, Extract) are gone: Basic is the one export of the tab.
+      expect(html).toContain('id="disput-basic"');
+      ['disput-export-md', 'disput-export-json', 'disput-extract', 'disput-extract-type'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
       expect(html).toContain('id="telemetry-export-json-btn"');
       expect(html.indexOf('id="telemetry-export-json-btn"')).toBeLessThan(html.indexOf('id="export-all-logs-md-telemetry"'));
       expect(html).not.toContain('id="telemetry-disput-btn"');
@@ -215,16 +204,14 @@ describe('release log regression guards', () => {
       const disputEnd = html.indexOf('id="selectors0-tabpanel"', disputStart);
       const disputBlock = disputStart >= 0 && disputEnd >= 0 ? html.slice(disputStart, disputEnd) : '';
       expect(telemetryBlock).toContain('All platforms');
-      expect(telemetryBlock).toContain('All tasks');
+      expect(telemetryBlock).not.toContain('All tasks');
       expect(telemetryBlock).not.toContain('All types');
       expect(telemetryBlock).not.toContain('Presets');
       expect(disputBlock).not.toContain('All platforms');
       expect(disputBlock).not.toContain('All types');
       expect(disputBlock).not.toContain('All tasks');
       expect(disputBlock).not.toContain('Presets');
-      expect(disputBlock.indexOf('id="disput-export-json"')).toBeLessThan(disputBlock.indexOf('id="disput-export-md"'));
-      expect(disputBlock).toContain('class="ti ti-download"');
-      expect(disputBlock).toContain('>MD</button>');
+      expect(disputBlock).not.toContain('>MD</button>');
       expect(disputBlock).not.toContain('>Json</button>');
       const actionsBlock = telemetryBlock;
       expect(actionsBlock).not.toContain('id="telemetry-refresh-btn"');
@@ -234,31 +221,21 @@ describe('release log regression guards', () => {
       expect(actionsBlock).not.toContain('↻</button>');
       expect(actionsBlock).not.toContain('🗑</button>');
     });
-    expect(source).toContain('function buildDisputTelemetryMarkdown(telemetryEvents = [])');
-    expect(source).toContain('function buildDisputProtocolTheoryMarkdown()');
-    expect(source).toContain('## Execution Plan');
-    expect(source).not.toContain('B0 | Model B silent init | no | no | openingStatementB');
-    expect(source).toContain('window.DebateTraceProjections.buildReport');
-    expect(source).toContain('function normalizeTelemetryDisputRows(events = [])');
-    expect(source).toContain("'PROMPT_SUBMITTED_ACCEPTED'");
-    expect(source).toContain("'MODEL_FINAL'");
-    expect(source).toContain("'PIPELINE_ERROR'");
-    expect(source).toContain("event.target.closest('#disput-export-md')");
-    expect(source).toContain("event.target.closest('#disput-export-json')");
-    expect(source).toContain('function buildDisputExportPayload(telemetryEvents = [])');
-    // The Disput Flow export also carries the delivery section (formerly the Automation tab).
-    expect(source).toContain("downloadDiagnosticsMarkdown('Disput Flow', deliveryMarkdown ? `${markdown}\\n\\n${deliveryMarkdown}` : markdown, disputBtn);");
-    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
+    ['buildDisputTelemetryMarkdown', 'buildDisputProtocolTheoryMarkdown', 'buildDisputExportPayload', 'normalizeTelemetryDisputRows',
+      'DebateTraceProjections', 'DebateTraceStore', 'appendDebateDiagnosticTrace', "'#disput-export-md'", "'#disput-export-json'", "'#disput-extract'"]
+      .forEach((name) => expect(source).not.toContain(name));
+    expect(source).toContain("event.target.closest('#disput-basic')");
     [pipelineHtml, resultHtml].forEach((html) => {
-      expect(html).toContain('id="disput-health-summary"');
-      expect(html).toContain('id="disput-problems"');
-      expect(html).toContain('id="disput-raw-events"');
+      ['disput-health-summary', 'disput-problems', 'disput-raw-events'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
       // Cards of the planned-topology Disput: no plan, no barriers in the universal engine.
       ['disput-plan-actual', 'disput-participants', 'disput-critical-path'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
       // One display toggle; drill-down is done on the complete export by scripts/summarize-report.js.
       ['disput-stage-filter', 'disput-model-filter', 'disput-type-filter', 'disput-severity-filter'].forEach((id) => expect(html).not.toContain(`id="${id}"`));
-      expect(html).toContain('id="disput-only-problems"');
     });
+    // The delivery cards and their display toggle / Clear live in the pipeline panel only.
+    expect(pipelineHtml).toContain('id="disput-only-problems"');
+    expect(pipelineHtml).toContain('id="delivery-health"');
+    expect(resultHtml).not.toContain('id="disput-only-problems"');
   });
 
   test('collapsible setup covers both Telemetry and Disput cards', () => {
@@ -277,7 +254,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('const targetRounds = Math.max(1, Math.min(50, Number(roundLimit) || 1));');
     expect(source).toContain('while (roundCounter < targetRounds) {\n                addRound();\n            }');
     expect(source).not.toContain('while (roundCounter <= targetRounds)');
-    expect(source).toContain('syncPipelineRoundModelsFromSelectedLLMs({ force: true });\n            syncPipelineRoundsToDebateLimit();\n            if (window.__pendingPipelineSynthesizer !== undefined) {\n                const restoredPlan = draftPlanForCanvas(getActiveDraftPlan());\n                persistActiveDraftPlan(restoredPlan, { applied: true });\n                delete window.__pendingPipelineSynthesizer;\n            }\n            window.syncDebateSchemeUi?.();');
+    expect(source).toContain('syncPipelineRoundModelsFromSelectedLLMs({ force: true });\n            Object.entries(modelStacks).forEach(([stackId, state]) => orderModelStackBlocks(stackId, state));\n            syncPipelineRoundsToDebateLimit();\n            window.syncDebateSchemeUi?.();');
     expect(source).toContain('syncDebateRoundStepperUi();\n            syncDebateAutoPauseButton();\n            syncDebateAutoToggleButton();\n            if (typeof syncAutoToggleState === \'function\') syncAutoToggleState();\n            syncPipelineChromeControls();\n            updatePipelineAll();');
     expect(source).toContain('syncPipelineRoundsToDebateLimit();\n            updateDebateButtonsUi();');
     expect(source).toContain('syncDebateRoundStepperUi();\n            syncDebateApprovalControls();\n            syncPipelineRoundsToDebateLimit();\n            updateDebateButtonsUi();');
@@ -290,18 +267,14 @@ describe('release log regression guards', () => {
 
     expect(source).toContain('&& !models.some((model) => opened?.has?.(model));');
     expect(source).toContain('activePipelineRunContext.newPagesDispatched = true;');
-    expect(source).toContain("pipelinePanel?.addEventListener('dblclick', (event) => {");
-    expect(source).toContain('void toggleIntermediateSynthesis(insert);');
-    expect(source).toContain('planned-working-synthesis-after-${afterPlannedStageId}');
-    expect(source).not.toContain('pipeline-stage-insert-menu');
-    expect(source).not.toContain('pipeline-stage-synthesis-select');
-    expect(css).toContain('.pipeline-stage-insert.has-intermediate-synthesis');
-    expect(css).toContain('background: var(--pipeline-blue);');
-    expect(css).toContain('box-shadow: none;');
-    expect(source).toContain('const hasSelectedPipelineModels = () => getSelectedLLMs().length > 0;');
-    expect(source).toContain('if (!hasSelectedPipelineModels()) return false;');
-    expect(source).toContain('currentFlowSelect.disabled = runActive || !shouldRenderSynthesisStage || !hasActivePipelineModels;');
-    expect(source).toContain("targetMode: 'synthesis'");
+    expect(source).toContain("pipelinePanel.addEventListener('dblclick', (event) => {");
+    // A synthesis is a round of one model with a role: no insert between rounds, no final synthesis column.
+    expect(source).not.toContain('__toggleIntermediateSynthesis');
+    expect(source).not.toContain('planned-working-synthesis-after-');
+    expect(source).not.toContain('pipeline-stage-insert');
+    expect(source).not.toContain("targetMode: 'synthesis'");
+    expect(css).not.toContain('.pipeline-stage-insert');
+    expect(css).not.toContain('#synthesisColumn');
     expect(source).toContain("class=\"connector-line ${activePath ? colorClass : 'inactive'}${activePath ? ' flow-anim' : ''}\"");
     expect(html).not.toContain('class="pipeline-item active" data-name="Universal"');
     expect(source).toContain('void startManualModeratorDispatch();');
@@ -315,7 +288,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('scheduleCrossViewUiStatePersist();');
     expect(source).toContain("const DISPUT_RESPONSE_LIMIT_MARKER = '[RESPONSE_LIMIT]';");
     expect(source).toContain('if (context?.pipelineRunId && !context.custom) {\n                prompt = ensureDisputResponseLimit(prompt);');
-    expect(source).toContain("const contentScopeKey = `${modelKey}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${requestId || 'unscoped'}`;");
+    expect(source).toContain("const contentScopeKey = `${modelKey}:${meta.participantId || ''}:${meta.pipelineRunId}:${meta.pipelineRoundId}:${meta.visit || ''}:${requestId || 'unscoped'}`;");
     expect(source).toContain("card.dataset.turnClosed = isFinal ? 'true' : 'false';");
     expect(html).not.toContain('<option value="inf">∞</option>');
   });
@@ -331,12 +304,13 @@ describe('release log regression guards', () => {
     expect(html.indexOf('id="debate-round-limit-select"')).toBeLessThan(html.indexOf('id="debate-length-select"'));
     expect(html.indexOf('id="debate-round-limit-select"')).toBeGreaterThan(-1);
     expect(html).toContain('id="pipeline-export-btn"');
-    expect(html).toContain('title="Export schema"');
+    expect(html).toContain('title="Экспорт схемы"');
     expect(html).toContain('<i class="ti ti-download" aria-hidden="true"></i>');
     expect(html).toContain('id="pipeline-import-btn"');
-    expect(html).toContain('title="Import schema"');
+    expect(html).toContain('title="Импорт схемы"');
     expect(html).toContain('<i class="ti ti-upload" aria-hidden="true"></i>');
-    expect(html).toContain('aria-label="Add stage after R2"');
+    expect(html).not.toContain('pipeline-stage-insert');
+    expect(html).not.toContain('id="synthesisColumn"');
     expect(html).not.toContain('R2 Disput');
     expect(css).toContain('.pipeline-page .llm-controls {');
     expect(css).toContain('margin-top: 15px;');
@@ -344,8 +318,6 @@ describe('release log regression guards', () => {
     expect(css).toContain('.debate-select-wrap::after {');
     expect(css).toContain('.debate-select {');
     expect(css).toContain('.stage-header-row .stage-label {');
-    expect(css).toContain('.pipeline-stage-insert::before,');
-    expect(css).toContain('.pipeline-stage-insert::after {');
     expect(html).not.toContain('id="connectorToOutput"');
     expect(html).not.toContain('id="outputColumn"');
     expect(css).not.toContain('#connectorToOutput');
@@ -394,13 +366,13 @@ describe('release log regression guards', () => {
     expect(css).toContain('#debate-round-limit-select {');
     expect(css).toContain('width: 86px;');
     expect(css).toContain('padding-right: 24px;');
-    expect(css).toContain('.msg-head-right-top > .debate-btn {');
+    expect(css).toContain('.msg-head-right-top > .debate-btn,');
     expect(css).toContain('.msg-head-right-top > .prompt-mode-btn {');
     expect(css).toContain('.pipeline-modifiers-section {');
     expect(css).toContain('.pipeline-modifiers-container {');
     expect(css).toContain('.pipeline-page .prompt-group:has(.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed)) {');
     expect(css).toContain('margin-top: clamp(0px, calc((100dvh - 322px) / 2 - 3px), 360px);');
-    expect(css).toContain('padding: 2.5px 9px 0;');
+    expect(css).toContain('padding: 3.5px 10px 0;');
     expect(css).toContain('font-size: 16px;');
     expect(css).toContain('line-height: 1.45;');
     expect(css).toContain('gap: 4px;');
@@ -410,8 +382,8 @@ describe('release log regression guards', () => {
     expect(css).toContain('margin-left: 5px;');
     expect(css).toContain('.pipeline-items {');
     expect(css).toContain('grid-auto-flow: column;');
-    expect(css).toContain('grid-template-rows: repeat(3, max-content);');
-    expect(css).toContain('grid-auto-columns: 170px;');
+    expect(css).toContain('grid-template-rows: repeat(var(--pipeline-rows, 8), max-content);');
+    expect(css).toContain('grid-auto-columns: minmax(0, 1fr);');
     expect(css).toContain('.pipeline-items-row {');
     expect(css).toContain('display: contents;');
     expect(css).toContain('width: 220px;');
@@ -422,7 +394,7 @@ describe('release log regression guards', () => {
     expect(css).toContain('#prompt-modal .modal-buttons {');
     expect(css).toContain('.modal-text-input {');
     expect(css).toContain('margin-left: 5px;');
-    expect(css).toContain('column-gap: 12px;');
+    expect(css).toContain('column-gap: 16px;');
   });
 
   test('pro controls use one msg-header run button and list add action without an Output canvas stage', () => {
@@ -475,10 +447,9 @@ describe('release log regression guards', () => {
     expect(source).toContain('const PIPELINE_HEADER_DISPLAY_LIMIT = 18;');
     expect(source).toContain('fullName.length > PIPELINE_HEADER_DISPLAY_LIMIT');
     expect(source).toContain('fullName.slice(0, PIPELINE_HEADER_DISPLAY_LIMIT - 1)}…');
-    expect(source).toContain("delete pipelineStore.draftPlans['Unsaved Pipeline'];");
-    expect(source).toContain("window.__pendingPipelineSynthesizer = defaultSynthesizer;");
+    expect(source).toContain('delete pipelineStore.draftPlans[name];');
+    expect(source).not.toContain('__pendingPipelineSynthesizer');
     expect(source).toContain("if (isDefaultPipelineName(key)) return '';");
-    expect(source).toContain('block.classList.toggle(\'inactive\', !isActive);');
     expect(css).toContain('margin-left: auto;');
     expect(css).not.toContain('.output-column-hidden');
     expect(css).toContain('min-height: 0;');
@@ -487,7 +458,7 @@ describe('release log regression guards', () => {
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
     expect(source).not.toContain('getPipelineOutputSelection');
     expect(source).not.toContain('handleDebateTerminalOutputs');
-    expect(source).toContain("const DEBATE_AUTO_MODE_STORAGE_KEY = 'llmDisputAutoMode.v1';");
+    expect(source).toContain("const DEBATE_AUTO_MODE_STORAGE_KEY = 'aoAutoMode.v1';");
     expect(source).toContain('const restoreDebateAutoMode = async () => {');
     expect(source).toContain('persistDebateAutoMode(autoMode);');
     expect(source).not.toContain('autoCheckbox.checked = false;');
@@ -499,14 +470,14 @@ describe('release log regression guards', () => {
     // Boot/reload helpers were extracted to results/boot-utils.js (self-refactor).
     const bootUtils = fs.readFileSync(path.join(__dirname, '..', 'results', 'boot-utils.js'), 'utf8');
 
-    expect(bootUtils).toContain("const DEBATE_TRANSCRIPT_STORAGE_KEY = 'llmCortexDebateEngineState.v1';");
+    expect(bootUtils).toContain("const DEBATE_TRANSCRIPT_STORAGE_KEY = 'aoEngineState.v1';");
     expect(bootUtils).toContain('const clearDebateTranscriptOnReload = () => new Promise((resolve) => {');
     expect(bootUtils).toContain('if (!isPageReloadNavigation()) {');
     expect(bootUtils).toContain('storage.remove(DEBATE_TRANSCRIPT_STORAGE_KEY');
     // results.js still wires the extracted helpers and the reload-clear call site.
     expect(source).toContain('} = window.ResultsBootUtils;');
     expect(source).toContain("clearDebateTranscriptOnReload().catch?.((err) => console.warn('[RESULTS] debate transcript reload clear failed', err));");
-    expect(source).toContain('clearTelemetryOnReload()');
+    expect(source).not.toContain('clearTelemetryOnReload()');
     expect(source).toContain('return safeStorageLocalRemove(DebateEngineRuntime.STORAGE_KEY).then(() => false);');
     expect(source).toContain('return DebateEngineRuntime.loadStore()');
   });
@@ -551,7 +522,26 @@ describe('release log regression guards', () => {
     expect(source).toContain('const buildSelectedRoundModelBlocksHtml = (withRole = true) => {');
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
     expect(runtime).toContain('onlyActive = false,');
-    expect(runtime).toContain('.filter(({ index }) => !onlyActive || activeSet.has(index))');
+    // Explicit schema participants are authoritative and remain visible even when
+    // inactive; legacy provider stacks still use activeIndices as their filter.
+    window.eval(runtime);
+    const runtimeApi = window.PipelineRuntime;
+    const schemaStack = document.createElement('div');
+    runtimeApi.renderModelStack(schemaStack, {
+      items: [
+        { name: 'GPT', id: 'gpt-primary', label: 'Primary', send: true },
+        { name: 'GPT', id: 'gpt-backup', label: 'Backup', send: false }
+      ],
+      activeIndices: [],
+      onlyActive: true
+    });
+    const schemaBlocks = [...schemaStack.querySelectorAll('.model-block')];
+    expect(schemaBlocks.map((block) => block.dataset.participantId)).toEqual(['gpt-primary', 'gpt-backup']);
+    expect(schemaBlocks.map((block) => block.querySelector('.model-input-checkbox').checked)).toEqual([true, false]);
+
+    const legacyStack = document.createElement('div');
+    runtimeApi.renderModelStack(legacyStack, { activeIndices: [1], onlyActive: true });
+    expect([...legacyStack.querySelectorAll('.model-block .model-name')].map((node) => node.textContent.trim())).toEqual(['GPT']);
     expect(runtime).toContain('renderModelStack(r1Stack, { activeIndices: [], withRole: true, onlyActive: true');
     expect(runtime).toContain('activeIndices: [], withRole: true, onlyActive: true');
     expect(source).toContain("pipelineCanvas?.classList.remove('pipeline-canvas-empty');");
@@ -627,7 +617,8 @@ describe('release log regression guards', () => {
     const css = readResolvedCss();
 
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-header {\n    flex: 0 0 auto;\n    align-items: center;\n    grid-template-columns: auto minmax(0, 1fr) auto;');
-    expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    gap: 4px;\n    justify-content: flex-end;\n    overflow: visible;');
+    expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    overflow: visible;');
+    expect(css).toContain('.pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    gap: 0;\n    justify-content: flex-end;');
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center {\n    min-width: 0;\n    max-width: 100%;\n    transform: none;');
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right {\n    width: auto;\n    min-width: 0;\n    max-width: 100%;');
   });

@@ -153,6 +153,16 @@
     return true;
   };
 
+  const acceptsAttachmentFiles = (input, files) => {
+    if (!input || input.disabled || (files.length > 1 && !input.multiple)) return false;
+    const accepted = String(input.getAttribute('accept') || '').toLowerCase().split(',').map(value => value.trim()).filter(Boolean);
+    return files.every(file => !accepted.length || accepted.some(rule =>
+      rule === '*/*' || rule === '*' || (rule.startsWith('.')
+        ? String(file.name || '').toLowerCase().endsWith(rule)
+        : rule.endsWith('/*') ? String(file.type || '').toLowerCase().startsWith(rule.slice(0, -1))
+          : String(file.type || '').toLowerCase() === rule)));
+  };
+
   window.addEventListener('EXT_ATTACH', (ev) => {
     try {
       if (!isTrustedBridgeEvent(ev)) return;
@@ -179,8 +189,10 @@
       const tryInput = () => {
         const attachBtn = findFirst(d.attachSelectors || [], shadowRoots);
         if (attachBtn) { try { attachBtn.click(); } catch (_) {} }
-        const fileInput = findFirst(d.inputSelectors || [], shadowRoots)
-          || querySelectorDeep('input[type="file"]', shadowRoots);
+        const fileInput = [document, ...shadowRoots].flatMap(root =>
+          (d.inputSelectors || []).concat('input[type="file"]').flatMap(selector =>
+            Array.from(root.querySelectorAll(selector))))
+          .find(input => acceptsAttachmentFiles(input, files));
         if (!fileInput) return false;
         try { fileInput.files = dt.files; } catch (_) {}
         try {

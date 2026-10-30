@@ -1,0 +1,14 @@
+<!-- синтетика, по известной структуре: tests/fixtures/live-answer-skeletons/qwen.json
+     (таблица: div.qwen-markdown-table-wrapper > div.qwen-markdown-table-header (кнопка-действие в span.ant-dropdown-trigger)
+      + div.qwen-markdown-table-scroll-wrapper > table.qwen-markdown-table; корень ответа .custom-qwen-markdown > .qwen-markdown).
+      Блок кода в скелете отсутствует — разметка не подтверждена, фикстура ниже — общая эвристика <pre><code class="language-x">. -->
+<section data-case="table">
+<div class="qwen-markdown-table-wrapper"><div class="qwen-markdown-table-header"><span class="ant-dropdown-trigger"><div class="qwen-markdown-table-header-action-item"><span role="img" aria-label="more" class="anticon"><svg aria-hidden="true"><use></use></svg></span></div></span></div><div class="qwen-markdown-table-scroll-wrapper"><table class="qwen-markdown-table"><thead class="qwen-markdown-table-thead"><tr><th><div class="qwen-markdown-table-thead-tr-th-col"><span class="qwen-markdown-text">A</span></div></th></tr></thead><tbody><tr><td><div class="qwen-markdown-table-tbody-tr-td-col"><code class="qwen-markdown-codespan">x</code></div></td></tr></tbody></table></div></div>
+</section>
+<section data-case="answer-root">
+<div class="qwen-chat-message qwen-chat-message-assistant"><div class="qwen-chat-thinking-tool-status-card-wraper"><div class="qwen-chat-tool-status-card">Thought</div></div><div class="custom-qwen-markdown"><div class="qwen-markdown qwen-markdown-loose"><p>answer</p></div></div></div>
+</section>
+<section data-case="code-generic-unverified">
+<pre><code class="language-python">x = 1
+</code></pre>
+</section>

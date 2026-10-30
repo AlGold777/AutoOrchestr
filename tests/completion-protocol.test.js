@@ -215,3 +215,32 @@ describe('Completion protocol components', () => {
     }).accepted).toBe(false);
   });
 });
+
+describe('C1: a stop does not close an answer the page still holds', () => {
+  const make = () => new Protocol.CompletionSession({ dispatchId: 'd', promptSubmittedAt: 0 });
+
+  test('INTERRUPTED with text and unconfirmed ownership is deferred as CONTEXT_LOST', () => {
+    const session = make();
+    session.observe({ type: 'USER_INTERRUPTED', observedAt: 1, source: 'w', payload: { reason: 'hard_stop', textLength: 15741, hardStopSetBy: 'background_stop' } });
+    expect(session.facts.interrupted).toBe(false);
+    expect(session.facts.contextLost).toBe(true);
+    expect(session.evaluate(2).status).toBe('CONTEXT_LOST');
+  });
+
+  test('INTERRUPTED with text stays INTERRUPTED once ownership is confirmed', () => {
+    const session = make();
+    session.confirmOwnership({ status: 'CONFIRMED', verifiedAt: 1 });
+    session.observe({ type: 'USER_INTERRUPTED', observedAt: 2, source: 'w', payload: { reason: 'hard_stop', textLength: 500 } });
+    expect(session.evaluate(3).status).toBe('INTERRUPTED');
+  });
+
+  test('INTERRUPTED with empty text keeps the existing INTERRUPTED verdict and reports the setter', () => {
+    const transitions = [];
+    const session = new Protocol.CompletionSession({ dispatchId: 'd', promptSubmittedAt: 0 }, { onTransition: (t) => transitions.push(t) });
+    session.observe({ type: 'USER_INTERRUPTED', observedAt: 1, source: 'w', payload: { reason: 'hard_stop', textLength: 0, hardStopSetBy: 'session_expired' } });
+    expect(session.evaluate(2).status).toBe('INTERRUPTED');
+    const decision = transitions.find((t) => t.type === 'TERMINAL_DECISION');
+    expect(decision.hardStopSetBy).toBe('session_expired');
+    expect(decision.interruptTextLength).toBe(0);
+  });
+});

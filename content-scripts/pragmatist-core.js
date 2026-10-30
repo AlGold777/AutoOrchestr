@@ -395,6 +395,8 @@
           if (Array.isArray(cmd.platforms) && this.platform && !cmd.platforms.includes(this.platform)) {
             return;
           }
+          if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+              && !window.ContentUtils.isStopCommandCurrent(cmd, { requireKnownIdentity: true })) return;
           this.onStopAll?.();
         }
       }

@@ -31,3 +31,13 @@ describe('manual ping no force-success (P0.5)', () => {
     expect(force(false, false, 'x'.repeat(300), prompt)).toBe(false);    // not requested -> no force
   });
 });
+
+describe('C5: a forced SUCCESS needs delivery proof', () => {
+  test('force requires the delivery token or a verified answer; otherwise the text is PARTIAL', () => {
+    expect(ORCH_SRC).toContain('const deliveryProven = Boolean(');
+    expect(ORCH_SRC).toContain("incomingResponseMeta.answerVerification?.verified === true");
+    expect(ORCH_SRC).toContain('answerHasDeliveryToken(llmName, incomingText)');
+    expect(ORCH_SRC).toContain('forceTerminalRequested && candidateTerminalEligible && deliveryProven');
+    expect(ORCH_SRC).toContain('partial: Boolean(incomingResponseMeta.partial || isSnapshotPartial || forceWithoutProof)');
+  });
+});

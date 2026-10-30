@@ -16,6 +16,7 @@ var lastHealthCheckReportAtByTabId = new Map();
 
 function isTerminalHealthEntry(entry) {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState?.(entry)) return true;
   const status = String(entry.status || entry.finalStatus || '').toUpperCase();
   return Boolean(entry.finalStatusRecorded || entry.finalStatus || TERMINAL_STATUSES.includes(status));

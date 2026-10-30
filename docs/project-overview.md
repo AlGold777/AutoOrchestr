@@ -202,7 +202,6 @@ profile ladder is affected.
 
 ```bash
 npm test -- --runInBand
-npm run test:telemetry
 npm run test:qwen
 npm run auth:models
 npm run build:bundles
@@ -212,7 +211,6 @@ npm run scroll:stress
 | Script | Purpose |
 |---|---|
 | `npm test -- --runInBand` | Full Jest suite with serialized execution |
-| `npm run test:telemetry` | DevTools / telemetry diagnostic check |
 | `npm run test:qwen` | Provider-specific Qwen Playwright check |
 | `npm run auth:models` | Manual real-page login/composer readiness smoke |
 | `npm run build:bundles` | Builds adapter bundles into `dist/` |
@@ -388,6 +386,17 @@ Switching:
   serial-debate dispatcher) sets the flag before each turn, since per-turn
   completeness matters most there.
 
+The end of generation is decided by `ResponseLifecycleDetector`
+(`content-utils/response-lifecycle-detector.js`). It waits up to the profile
+`hardMax` from Send (`completionWaitMs()`: 450s Standard / 900s Long) and then
+records STALLED. The page pipeline watchdog and the answer watcher's own
+soft/hard timeouts never end the wait earlier while the detector tracks the
+dispatch: the watchdog is at least `completionWaitMs() + 5s`, and the watcher
+waits for the detector's terminal result. Their size-based timeouts (from the
+prompt length) apply only when no detector is tracking. Before 2.81.914 a short
+prompt gave up after 100s (Standard) / 200s (Long) while the model was still
+answering.
+
 Tune the Long values in the `LONG_OVERRIDES` block of `pipeline-config.js`.
 The legacy input value `short` remains accepted as an alias of Standard.
 The toggle is main-page only; the main page resets it to OFF (Standard) on load.
@@ -474,11 +483,12 @@ Telemetry exposes exactly two filters: Platform and Tasks. It has no
 `Only problems` mode. A selected Task exports an incident-scoped,
 proof-preserving projection from the single canonical ledger; All tasks exports
 the shared ledger plus all diagnostic projections without parallel recording.
-Disput keeps at most two traces in page memory and does not persist or restore run history. Late events of a retained inactive run do not activate it. Legacy trace snapshots are deleted on initialization; reload releases all traces. Extract downloads the original report, structured JSON tables/counters and separate Markdown using the same snapshot.
-The Disput tab is a live overview of the active trace: Run Health Summary, Problems &
-Recovery, the delivery cards and the raw trace/journal. Its only display toggle
-is `Only problems`; it never filters the JSON/MD export, which is always
-complete. Drill-down by request, stage or model is done on the export with
+The Disput tab holds the delivery cards (health, batches, problems, message
+timeline, raw journal) with the `Only problems` display toggle and the
+clear-journal button, and one export: **Basic**, the JSON of one Basic run
+(`basic-telemetry/3`, see `docs/Telemetry/telemetry.md`). The Disput trace
+(run health, problems & recovery, raw trace, JSON/MD/Extract) was removed in
+2.81.905; older `Disput Flow` files can still be read with
 `scripts/summarize-report.js`.
 
 ## Basic Pipeline
@@ -561,26 +571,7 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   `[[VERDICT: pass|issues_found]]` (blocking remarks or not; informational,
   shown at the pause). A marker is a line of its own; text in code fences and
   quotes is ignored. See the automation behavior described in this section; implementation history: `docs/CHANGELOG.md`, version 2.81.529.
-- **Research** template: 15 stages (12 model stages, three gates G1–G3) from
-  `ResearchFramework` (`disput/research-framework.js`), reached like the
-  Architecture template through the registry `disput/stage-templates.js`. What is
-  implemented and what of `docs/Pipeline scenarios/research-2.0.md` is not:
-  `docs/Pipeline scenarios/research-template.md`.
-- **Architecture** template («Разработка архитектуры»): the 30-stage
-  Product→Architecture Framework as 30 canvas rounds (round number = framework
-  stage number; stages 13, 17, 22, 30 are moderator gates without models). Run
-  it semi-automatically: Auto off, models chosen in the header (3 recommended).
-  Click a round badge to open the stage card (what the stage is for, who works,
-  inputs, what is forbidden, the brief the model gets, run status). The stage
-  text comes from `disput/architecture-framework.js`, generated from
-  `docs/Automation/Automation GPT комплект Документов/process/stages.json`
-  (`node scripts/build-architecture-framework.js`). Semi-automatic and manual
-  runs get no automatic page visits; Get it pulls answers, "next" closes a stage
-  with what is there (text without a final is adopted as incomplete).
-- Run a template stage by stage: switch **Auto** off (the choice outranks the
-  template's default policy, also when a template is selected afterwards) and
-  pick a template, e.g. **Test** (two stages). Auto off without a template is a
-  single moderator dispatch without stages.
+- The one built-in template is **Default** (the Basic engine, `disput/pipeline-presets.js`); the templates Polishing, Delta, Test, Research and Architecture were removed on 14.10.2026 and are to be rebuilt as Basic schemas. Run stage by stage: switch **Auto** off (the choice outranks the template's default policy) and pick a pipeline. Auto off without a pipeline is a single moderator dispatch without stages.
 
 Preset naming rule: built-in presets with the same suffix should be comparable.
 `Verdict` means a standard quick-to-final-answer budget across Duel, Triad, and
@@ -739,3 +730,12 @@ This project is currently marked `private` in `package.json`. Define license, di
 На странице Pipeline panel расстояние между верхней панелью и composer формируется несколькими отступами. `main-controls-wrapper` уменьшен до 5 px, а верхний padding секции — до 2.5 px; в замере при 900 px высоты окна итоговый просвет сокращается с 19 px до 9.5 px. В режиме ленты свободная высота отдана `.debate-model-cards`, а `margin-top: auto` у `.moderator-input` отключён, чтобы он не создавал зазор вместо ленты. Общие стили остальных страниц не меняются.
 
 В списке `pipeline-items` предустановка `Universal` больше не отображается, включая ранее сохранённый порядок списка.
+
+
+## Завершение запроса на главной странице
+
+«Пуск» после отправки запроса становится «Стоп». Нажатие «Стоп» принудительно прекращает автоматизацию на страницах моделей, включая ожидание неполных ответов, и возвращает кнопку «Пуск». Вкладки и уже показанные ответы остаются доступны; следующий запрос можно отправить сразу.
+
+После метки окончания текущего запроса индикатор становится зелёным и не меняется от поздних статусов до нового запроса. Метка в отрисованной карточке окончательно исключает модель из автоматических посещений и повторных проверок. Когда метки получены во всех карточках, запрос главной страницы завершается и автоматизация останавливается с сохранением результатов. Запоздалые сообщения старого запроса не завершают новый. В pipeline метка завершает запрос к конкретной модели; следующие этапы запускают новые запросы.
+
+Пока ответ не признан полным, имитация активности и прокрутка продолжаются. Они прекращаются после метки или принудительного нажатия «Стоп». Уже ожидающие фоновые команды и прокрутка отменённого запроса не возобновляются при следующем запуске. Фоновая синхронизация состояния сохраняет «Стоп» до завершения или отмены текущего запроса.

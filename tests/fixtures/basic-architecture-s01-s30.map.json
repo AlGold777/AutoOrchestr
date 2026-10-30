@@ -1,0 +1,412 @@
+{
+  "description": "Таблица соответствия S01–S30 → технические ref (ТЗ 10, T18). Схема линейна: проверок (gate) и развилок (route) в Basic нет. Проверки G1–G4 — раунды из одной модели с критериями в task; синтезы — раунды из одной модели с ролью; выборы User (CHG13, CHG17, CHG18, CHG25, исход S29) — шаги owner; синтетические условия возвратов (Q10) убраны.",
+  "stages": [
+    {
+      "stage": "S01",
+      "name": "Product Idea & Decision Policy",
+      "phase": "product",
+      "roles": "Producer + Owner",
+      "refs": [
+        "r1",
+        "owner:s01"
+      ],
+      "participants": 1,
+      "notes": "Producer (r1) затем Owner: text owner step (owner:s01); User получает ответ Producer (input: r1) и утверждает Decision Policy.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S02",
+      "name": "Independent Concept / Functional Expansion",
+      "phase": "product",
+      "roles": "Producer ∥ (≥2)",
+      "refs": [
+        "r2"
+      ],
+      "participants": 2,
+      "notes": "Два независимых участника, chat new; раунд ждёт ответов обоих.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S03",
+      "name": "Decision Closure Review",
+      "phase": "product",
+      "roles": "Synthesizer + Decision Closer",
+      "refs": [
+        "r3",
+        "r4"
+      ],
+      "participants": 2,
+      "notes": "Synthesizer — r3; Decision Closer — отдельный раунд (вход r3). Decision Closer (r4) получает и Decision Policy (owner:s01): вход S03 в документе — proposal sets и Decision Policy.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S04",
+      "name": "Product Concept Synthesis",
+      "phase": "product",
+      "roles": "Synthesizer",
+      "refs": [
+        "r5"
+      ],
+      "participants": 1,
+      "notes": "",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S05",
+      "name": "Adversarial Concept Review",
+      "phase": "product",
+      "roles": "Reviewer ∥ (≥2)",
+      "refs": [
+        "r6"
+      ],
+      "participants": 2,
+      "notes": "Два независимых рецензента; раунд ждёт ответов обоих. В документе у S05 только эскалация User: подтверждение User не задано.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S06",
+      "name": "Delta Decision Closure",
+      "phase": "product",
+      "roles": "Decision Closer",
+      "refs": [
+        "r7"
+      ],
+      "participants": 1,
+      "notes": "",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S07",
+      "name": "Functional Map Draft",
+      "phase": "product",
+      "roles": "Producer",
+      "refs": [
+        "r8"
+      ],
+      "participants": 1,
+      "notes": "Артефакт map (линия S07).",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S08",
+      "name": "Functional Map Audit",
+      "phase": "product",
+      "roles": "Reviewer + Producer",
+      "refs": [
+        "r9",
+        "r10"
+      ],
+      "participants": 2,
+      "notes": "Reviewer — артефакт findings; Producer — map с revisionOf (линия S07). S10 получает только findings.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S09",
+      "name": "Scenario / Prototype Validation",
+      "phase": "product",
+      "roles": "Reviewer + Verifier",
+      "refs": [
+        "r11",
+        "r12"
+      ],
+      "participants": 2,
+      "notes": "Вход Reviewer — только map (latest) и product concept.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S10",
+      "name": "Delta Decision Closure",
+      "phase": "product",
+      "roles": "Decision Closer",
+      "refs": [
+        "r13"
+      ],
+      "participants": 1,
+      "notes": "Вход — findings (артефакт S08) и findings S09; возврат S12→S10 ведёт сюда (maxLoops 2).",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S11",
+      "name": "Functional Specification",
+      "phase": "product",
+      "roles": "Producer",
+      "refs": [
+        "r14"
+      ],
+      "participants": 1,
+      "notes": "Артефакт spec.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S12",
+      "name": "Functional Specification Audit",
+      "phase": "product",
+      "roles": "Reviewer + Producer",
+      "refs": [
+        "r15",
+        "r16"
+      ],
+      "participants": 2,
+      "notes": "Возврат S12→S10 убран: схема линейна.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S13",
+      "name": "Product Functional Baseline",
+      "phase": "product",
+      "roles": "Decision Closer + Owner",
+      "refs": [
+        "r17",
+        "r18",
+        "owner:chg13"
+      ],
+      "participants": 2,
+      "notes": "owner: approve; проверка G1 — раунд r18 (одна модель, критерии в task); CHG13 — шаг User owner:chg13: продолжить или остановить прогон.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S14",
+      "name": "Independent Constraint Discovery",
+      "phase": "discovery",
+      "roles": "Producer ∥ (≥2)",
+      "refs": [
+        "r19"
+      ],
+      "participants": 2,
+      "notes": "Два независимых участника, chat new; раунд ждёт ответов обоих.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S15",
+      "name": "Constraint Synthesis & Normalization",
+      "phase": "discovery",
+      "roles": "Synthesizer",
+      "refs": [
+        "r20"
+      ],
+      "participants": 1,
+      "notes": "",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S16",
+      "name": "Fact Verification / Validation Registry",
+      "phase": "discovery",
+      "roles": "Verifier",
+      "refs": [
+        "r21"
+      ],
+      "participants": 1,
+      "notes": "",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S17",
+      "name": "Architecture Input Package",
+      "phase": "discovery",
+      "roles": "Synthesizer + Decision Closer",
+      "refs": [
+        "r22",
+        "r23",
+        "r24",
+        "owner:chg17"
+      ],
+      "participants": 3,
+      "notes": "Артефакт aip; проверка G2 — раунд r24 (одна модель, критерии в task); CHG17 — шаг User owner:chg17.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S18",
+      "name": "Independent Architecture Proposals",
+      "phase": "generation",
+      "roles": "Producer ∥ (≥2)",
+      "refs": [
+        "r25",
+        "owner:chg18"
+      ],
+      "participants": 2,
+      "notes": "Два независимых участника (Claude S18-a, GPT S18-b), chat new. Два ID одной модели в шаге страница не устанавливает (A06), это проверяется engine-тестом. CHG18 — шаг User owner:chg18: получает r17, r23, r25 (required) и решает, продолжать ли.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S19",
+      "name": "Independent Candidate Review",
+      "phase": "generation",
+      "roles": "Reviewer ∥ (≥2)",
+      "refs": [
+        "r26"
+      ],
+      "participants": 2,
+      "notes": "Каждый рецензент видит кандидата другого участника (адресный вход участника).",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S20",
+      "name": "Cross-Critique & Candidate Revision",
+      "phase": "generation",
+      "roles": "Reviewer + Producer",
+      "refs": [
+        "r27",
+        "r28",
+        "r29"
+      ],
+      "participants": 4,
+      "notes": "Критика ∥; ревизия каждым автором своего кандидата (revisionOf, chat continue). Ревизии — отдельные раунды (revisionOf step-level).",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S21",
+      "name": "Architecture Comparison",
+      "phase": "generation",
+      "roles": "Synthesizer + Reviewer",
+      "refs": [
+        "r30",
+        "r31"
+      ],
+      "participants": 2,
+      "notes": "",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S22",
+      "name": "Architecture Direction Decision",
+      "phase": "generation",
+      "roles": "Decision Closer + Owner",
+      "refs": [
+        "r32",
+        "r33"
+      ],
+      "participants": 2,
+      "notes": "owner: approve; проверка G3 — раунд r33 (одна модель, критерии в task).",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S23",
+      "name": "Preliminary Conceptual Architecture",
+      "phase": "generation",
+      "roles": "Synthesizer",
+      "refs": [
+        "r34"
+      ],
+      "participants": 1,
+      "notes": "Раунд из одной модели. Артефакт pca.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S24",
+      "name": "Decision & Verification Backlog",
+      "phase": "evidence",
+      "roles": "Synthesizer",
+      "refs": [
+        "r35"
+      ],
+      "participants": 1,
+      "notes": "Выражено раундом (см. S23). Цель возврата S27→S24.",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S25",
+      "name": "Spikes / Platform Verification / Technology Research",
+      "phase": "evidence",
+      "roles": "Verifier (шаг User)",
+      "refs": [
+        "owner:s25",
+        "owner:chg25"
+      ],
+      "participants": 0,
+      "notes": "owner:s25 — текст User. CHG25 — шаг User owner:chg25: возврат к AIP (S16) — новым прогоном.",
+      "mechanics": "ждёт бизнес-решения",
+      "mechanicsNote": "Возврат CHG25 → AIP (S16) в схеме не выражается. Состав пересчёта S24 (r35) до ввода User ТЗ не задаёт: без него r36 останавливается missing_input (остановка доказана, продолжение нет)."
+    },
+    {
+      "stage": "S26",
+      "name": "Close Architecture-Blocking Decisions",
+      "phase": "evidence",
+      "roles": "Decision Closer",
+      "refs": [
+        "r36"
+      ],
+      "participants": 1,
+      "notes": "Ветки directionBroken → S22 в схеме нет: схема линейна.",
+      "mechanics": "ждёт бизнес-решения",
+      "mechanicsNote": "Повторный G3 при сломанном направлении ТЗ не задаёт (Q10)."
+    },
+    {
+      "stage": "S27",
+      "name": "Premortem / Missed-Failure Search",
+      "phase": "evidence",
+      "roles": "Reviewer ∥ (≥2)",
+      "refs": [
+        "r37"
+      ],
+      "participants": 2,
+      "notes": "Ветки requiresVerification → S24 в схеме нет: схема линейна.",
+      "mechanics": "ждёт бизнес-решения",
+      "mechanicsNote": "Условие Q10, тип находки и состав пересчёта не заданы."
+    },
+    {
+      "stage": "S28",
+      "name": "Conceptual Architecture Revision",
+      "phase": "evidence",
+      "roles": "Producer",
+      "refs": [
+        "r38"
+      ],
+      "participants": 1,
+      "notes": "Вход — только закрытые решения (S26) и findings (S27); revisionOf линии S23 pca. Отдельного CHG-механизма нет: см. раздел «невыражаемое».",
+      "mechanics": "доказана"
+    },
+    {
+      "stage": "S29",
+      "name": "ADR + Consistency + Traceability Audit",
+      "phase": "evidence",
+      "roles": "Reviewer + Verifier",
+      "refs": [
+        "r39",
+        "r40",
+        "owner:s29"
+      ],
+      "participants": 2,
+      "notes": "Исход close / revise / baseline читает User на шаге owner:s29 и решает, продолжать ли к S30.",
+      "mechanics": "ждёт бизнес-решения",
+      "mechanicsNote": "Ветки S26 и S28 в схеме не выражаются: схема линейна, User читает исход и останавливает прогон. Условие Q10."
+    },
+    {
+      "stage": "S30",
+      "name": "Conceptual Architecture Baseline",
+      "phase": "evidence",
+      "roles": "Decision Closer + Owner",
+      "refs": [
+        "r41",
+        "r42"
+      ],
+      "participants": 2,
+      "notes": "owner: approve; проверка G4 — раунд r42 (одна модель, критерии в task).",
+      "mechanics": "доказана"
+    }
+  ],
+  "ownerChoices": [
+    "owner:chg13",
+    "owner:chg17",
+    "owner:chg18",
+    "owner:chg25",
+    "owner:s29"
+  ],
+  "summary": {
+    "businessStages": 30,
+    "technicalSteps": 49,
+    "rounds": 42,
+    "owners": 7,
+    "ownerApprovals": 3,
+    "participantsTotal": 49,
+    "controlSteps": [
+      "owner:s01",
+      "owner:chg13",
+      "owner:chg17",
+      "owner:chg18",
+      "owner:s25",
+      "owner:chg25",
+      "owner:s29"
+    ]
+  }
+}

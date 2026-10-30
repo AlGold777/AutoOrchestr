@@ -58,6 +58,37 @@ test('orphan page reloads once at its current address and waits for the actual l
   expect(c.chrome.tabs.reload).toHaveBeenCalledWith(12,{},expect.any(Function));
   expect(c.chrome.tabs.sendMessage.mock.calls.every(([,msg]) => msg.type === 'HEALTH_CHECK_PING')).toBe(true);
 });
+test.each(['empty', 'closed_port'])('a settled page with %s health response restores its removed provider immediately', async mode => {
+  const {c,run}=setup();
+  c.chrome.tabs.sendMessage.mockImplementation((_id,_msg,cb) => {
+    if (c.chrome.tabs.reload.mock.calls.length) {
+      cb({type:'HEALTH_CHECK_PONG',llmName:'Claude'});
+      return;
+    }
+    if (mode === 'closed_port') {
+      c.chrome.runtime.lastError={message:'The message port closed before a response was received.'};
+    }
+    cb(undefined);delete c.chrome.runtime.lastError;
+  });
+  const pending=run();await jest.advanceTimersByTimeAsync(21000);
+  expect(await pending).toMatchObject({ok:true,reloaded:true});
+  expect(c.chrome.tabs.reload).toHaveBeenCalledTimes(1);
+  expect(c.emitTelemetry.mock.calls.at(-1)[2].meta.durationMs).toBeLessThan(2000);
+});
+test('a loading page with only shared listeners waits for its provider without reloading', async () => {
+  const {c,run}=setup(['empty','ready']);
+  c.getTabSafe.mockResolvedValue({status:'loading'});
+  const pending=run();await jest.advanceTimersByTimeAsync(300);
+  expect(await pending).toMatchObject({ok:true,reloaded:false});
+  expect(c.chrome.tabs.reload).not.toHaveBeenCalled();
+});
+test('another model health reply cannot trigger a reload or prove readiness', async () => {
+  const {c,run}=setup();
+  c.chrome.tabs.sendMessage.mockImplementation((_id,_msg,cb) => cb({type:'HEALTH_CHECK_PONG',llmName:'GPT'}));
+  const pending=run();await jest.advanceTimersByTimeAsync(21000);
+  expect(await pending).toMatchObject({ok:false,reason:'receiver_timeout'});
+  expect(c.chrome.tabs.reload).not.toHaveBeenCalled();
+});
 test('slow startup beyond the old 1.8s cutoff still becomes ready before dispatch', async () => {
   const {run}=setup([...Array(16).fill('missing'),'ready']);
   const pending=run();await jest.advanceTimersByTimeAsync(5000);

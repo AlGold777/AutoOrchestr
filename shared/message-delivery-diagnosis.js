@@ -72,7 +72,11 @@
         out.push(send);
         return;
       }
-      const send = (event.requestId && byRequest.get(event.requestId)) || (event.token && byToken.get(event.token)) || null;
+      let send = (event.requestId && byRequest.get(event.requestId)) || (event.token && byToken.get(event.token)) || null;
+      if (!send && event.model) {
+        const matches = out.filter((s) => s.model === event.model);
+        if (matches.length === 1) send = matches[0];
+      }
       // batch_start follows 'prepared': it links the requests to their batch.
       if (event.kind === 'batch_start' && event.requestIds) {
         Object.values(event.requestIds).forEach((id) => { const linked = byRequest.get(id); if (linked && !linked.batchId) linked.batchId = event.batchId || ''; });

@@ -79,3 +79,14 @@ test('a filename arriving between vectors is still compared to the original base
   await jest.advanceTimersByTimeAsync(10000);
   expect((await pending).success).toBe(true);
 });
+
+test('nine selector matches for one file cannot confirm a nine-file batch', async () => {
+  const batch = Array.from({ length: 9 }, (_, index) => file(`batch-${index}.txt`));
+  const c = setup('', body => { body.innerText = 'batch-0.txt'; });
+  c.document.querySelectorAll = selector => selector === '.file-chip' ? Array.from({ length: 9 }, () => ({})) : [];
+  const pending = c.AttachmentHandler.attach('GPT', batch, {
+    ...options, confirmSelectors: ['.file-chip'], scaleTimeoutByFileCount: false
+  });
+  await jest.advanceTimersByTimeAsync(10000);
+  expect((await pending).success).toBe(false);
+});

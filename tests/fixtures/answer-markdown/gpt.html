@@ -1,0 +1,22 @@
+<!-- синтетика, по известной структуре: tests/fixtures/live-answer-skeletons/chatgpt.json
+     (блок кода: <pre> > ... #code-block-viewer.cm-editor > .cm-scroller > pre.cm-content > code > span;
+      заголовок с подписью языка: .select-none.sticky > div[cursor-default] с текстом; кнопка копирования — <button>;
+      таблица: div[class*=tableContainer] > div[class*=tableWrapper] > table + div.relative.h-0 с кнопкой). Тексты придуманы. -->
+<section data-case="code-labelled">
+<pre class="overflow-visible! px-0!"><div class="relative w-full mt-4 mb-1"><div class=""><div class="contents"><div class="border"><div class="relative h-full w-full"><div class="select-none sticky z-2 top-(--sticky-padding-top)"><div class="flex w-full items-center justify-between py-1.5"><div class="flex max-w-[75%] min-w-0 cursor-default items-center text-sm font-medium"><svg aria-hidden="true"><use></use></svg>Python</div><div class="flex flex-row items-center gap-0.5"><button aria-label="Copy"><svg aria-hidden="true"><use></use></svg>Copy</button></div></div></div><div class="relative"><div id="code-block-viewer" class="q9tKkq_viewer cm-editor"><div class="cm-scroller"><pre class="cm-content q9tKkq_readonly m-0"><code><span class="ͼm">def</span><span> f(x):
+    if x:
+
+        return "a&#9;b"   
+    return None</span></code></pre></div></div></div></div></div></div></div></pre>
+</section>
+<section data-case="code-unlabelled">
+<pre class="overflow-visible! px-0!"><div class="relative w-full mt-4 mb-1"><div class="relative"><div class="pointer-events-none absolute end-1.5 top-1"><button aria-label="Copy"><svg aria-hidden="true"><use></use></svg></button></div><div class="relative"><div class="pe-11 pt-3"><div id="code-block-viewer" class="cm-editor"><div class="cm-scroller"><pre class="cm-content q9tKkq_readonly m-0"><code><span>├── src
+│   └── a.js
+└── b.txt&nbsp;x</span></code></pre></div></div></div></div></div></pre>
+</section>
+<section data-case="table">
+<div class="TyagGW_tableContainer"><div class="group TyagGW_tableWrapper flex flex-col-reverse w-fit"><table class="w-fit min-w-(--thread-content-width)"><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody><tr><td><code>a</code></td><td>one</td></tr></tbody></table><div class="relative h-0 self-end select-none"><div class="absolute end-0 flex items-end"><span class=""><button aria-label="Copy table"><svg aria-hidden="true"><use></use></svg></button></span></div></div></div></div>
+</section>
+<section data-case="answer-root">
+<div data-message-author-role="assistant"><div class="flex w-full flex-col gap-1 empty:hidden"><div class="markdown prose"><p>text</p></div></div></div>
+</section>

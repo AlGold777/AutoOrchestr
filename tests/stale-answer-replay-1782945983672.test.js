@@ -23,7 +23,7 @@ describe('stale cached answer replay guard (run 1782945983672)', () => {
   test('stale cached signature is excluded from the inline live scan candidates', () => {
     expect(ORCH_SRC).toContain('const staleSignature = normalizeAnswerSignatureBg(cached.text);');
     expect(ORCH_SRC).toContain('base.excludeTextSignatures = existingSignatures;');
-    expect(ORCH_SRC).toContain('runInlineLateExtract({ tabId, llmName, minChars, manualRecovery: inlineScanOptions })');
+    expect(ORCH_SRC).toContain('runInlineLateExtract({ tabId, llmName, minChars, manualRecovery: inlineScanOptions, enrich: !passiveFrame })');
   });
 
   test('manual latest recovery may replace a terminal answer with a shorter different candidate', () => {

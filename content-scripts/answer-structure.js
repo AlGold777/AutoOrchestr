@@ -56,7 +56,8 @@
       node.getAttribute?.('aria-label')
     ].filter(Boolean).join(' ').toLowerCase();
     if (/(thinking|thought|reasoning|analysis|scratch|trace|internal|reflection)/.test(semanticMarker)) return true;
-    return /(?:^|[\s_-])(thinking|thought|reasoning|scratchpad|chain-of-thought)(?:$|[\s_-])/.test(structuralMarker);
+    // a state flag (has-thoughts, no-thinking) is not a reasoning block
+    return /(?:^|[\s_-])(?<!(?:has|have|with|no|is|show|hide|toggle)[_-])(think|thinking|thought|thoughts|reasoning|cot|scratchpad|chain-of-thought)(?:$|[\s_-])/.test(structuralMarker);
   }
 
   // Providers with typed message parts explicitly separate public answers from
@@ -112,7 +113,14 @@
       .join(' '));
   }
 
+  // An open shadow root that holds a picture (a diagram rendered into a shadow host) makes its host a block:
+  // the light DOM of such a host is empty, the picture is not seen by querySelectorAll.
+  function hasShadowMedia(node) {
+    try { return Boolean(node?.shadowRoot?.querySelector?.('svg, img, canvas, video')); } catch (_) { return false; }
+  }
+
   function hasNonTextContent(node) {
+    if (hasShadowMedia(node)) return true;
     const tag = String(node?.tagName || '').toUpperCase();
     if (tag === 'SVG') {
       return node.getAttribute?.('role') === 'img'
@@ -147,6 +155,12 @@
       if (semantic && (ownText || media || children.length === 0)) {
         const descriptor = describe(node);
         if (descriptor.length > 0 || descriptor.nonText) blocks.push(descriptor);
+        return;
+      }
+
+      if (hasShadowMedia(node)) {
+        // The host is the block (it is what the page shows as the picture); its shadow content is not walked again.
+        blocks.push(describe(node));
         return;
       }
 
