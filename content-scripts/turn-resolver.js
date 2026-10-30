@@ -114,6 +114,23 @@
     return entries.length ? entries[entries.length - 1].node : null;
   }
 
+  // New ChatGPT markup: the turn is the last div[data-turn-key] that holds an answer candidate. Its state
+  // (data-talvt-turn-state) is `complete` when the turn is finished; any other state means it is still written.
+  function pickChatGptTurn(deepQuery, newMarkup, candidates) {
+    if (!newMarkup?.turnSelector || !candidates.length) return null;
+    let turns = [];
+    try { turns = sortDocumentOrder(deepQuery.all(newMarkup.turnSelector)); } catch (_) { return null; }
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      const turn = turns[i];
+      if (!candidates.some((node) => turn.contains(node))) continue;
+      let stateNode = null;
+      try { stateNode = turn.querySelector(newMarkup.turnStateSelector || '[data-talvt-turn-state]'); } catch (_) {}
+      const state = stateNode ? String(stateNode.getAttribute('data-talvt-turn-state') || '') : null;
+      return { turn, state, generating: state !== null && state !== (newMarkup.completeState || 'complete') };
+    }
+    return null;
+  }
+
   function resolveTurn(options = {}) {
     const selectors = options.selectors || {};
     const deepQuery = createDeepQuery(options.document || root.document);
@@ -182,7 +199,7 @@
     // An anchor is a hard boundary, not a preference. If the current candidate
     // count has not exceeded it, the new-turn pool is empty; falling back to
     // the full list here reclassifies a previous answer as the current turn.
-    const pool = anchor > 0 ? sorted.slice(anchor) : sorted;
+    let pool = anchor > 0 ? sorted.slice(anchor) : sorted;
     let answerNode = null;
     let chatGptAwaitingFinal = false;
     const minimumTextLength = Number(options.minimumTextLength || 1);
@@ -206,7 +223,12 @@
       }
       return false;
     };
+    let chatGptTurn = null;
     if (String(options.platform || '').toLowerCase() === 'chatgpt') {
+      // New markup: only the nodes of the last turn may be answer candidates.
+      chatGptTurn = pickChatGptTurn(deepQuery, selectors.newMarkup, pool);
+      if (chatGptTurn) pool = pool.filter((node) => chatGptTurn.turn.contains(node));
+      const chatGptStopVisible = options.stopVisible === true || chatGptTurn?.generating === true;
       const entries = [];
       pool.forEach((node, index) => {
         const text = String(readNodeText(node) || '').trim();
@@ -217,9 +239,9 @@
         }
         entries.push({ node, text });
       });
-      answerNode = pickChatGptAnswerNode(entries, { stopVisible: options.stopVisible === true });
-      // Stop visible and no block with the delivery token yet: the generic fallback below must not pick a preamble.
-      if (!answerNode && options.stopVisible === true) chatGptAwaitingFinal = true;
+      answerNode = pickChatGptAnswerNode(entries, { stopVisible: chatGptStopVisible });
+      // Stop visible (or turn not complete) and no block with the delivery token yet: the generic fallback below must not pick a preamble.
+      if (!answerNode && chatGptStopVisible) chatGptAwaitingFinal = true;
     }
     for (let index = (answerNode || chatGptAwaitingFinal) ? -1 : pool.length - 1; index >= 0; index -= 1) {
       const node = pool[index];
@@ -325,13 +347,14 @@
       selectorTier: selectorSourceKind === 'primary' ? 'platform_primary'
         : (selectorSourceKind === 'secondary' ? 'configured_fallback' : 'container_fallback'),
       positionalFiltered: pool !== sorted,
+      chatGptTurnState: chatGptTurn ? chatGptTurn.state : null,
       metadataByElement,
       matchedIndices,
       candidateSelectors
     };
   }
 
-  const api = Object.freeze({ selectorList, sortDocumentOrder, createDeepQuery, resolveTurn, pickChatGptAnswerNode, isChatGptProgressLine });
+  const api = Object.freeze({ selectorList, sortDocumentOrder, createDeepQuery, resolveTurn, pickChatGptAnswerNode, pickChatGptTurn, isChatGptProgressLine });
   root.TurnResolver = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -68,7 +68,15 @@
         'button[aria-label*=\"Send\" i]:not([disabled]):not([aria-disabled=\"true\"])'
       ],
       stopButton: 'button[aria-label*=\"Stop\" i], button[data-testid=\"stop-button\"], button[data-testid*=\"stop\"]',
-      copyButton: COPY_BUTTON_SELECTORS
+      copyButton: COPY_BUTTON_SELECTORS,
+      // New ChatGPT markup (M-16, 2026-10-30): no data-message-author-role; the turn is a div[data-turn-key]
+      // whose state sits in data-talvt-turn-state. Additional path: the old selectors above stay in use.
+      newMarkup: {
+        turnSelector: 'div[data-turn-key]',
+        turnStateSelector: '[data-talvt-turn-state]',
+        completeState: 'complete',
+        answerSelector: 'div[data-markdown-text-style="assistant-message"]'
+      }
     },
     claude: {
       messageRoot: 'div[data-is-streaming], div[data-testid="conversation-turn"][data-author-role="assistant"], div[data-testid="conversation-turn"][data-role="assistant"], div[data-is-response="true"], [data-testid="assistant-message"], [data-testid="assistant-response"]',
