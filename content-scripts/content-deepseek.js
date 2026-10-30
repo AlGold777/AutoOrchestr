@@ -959,7 +959,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       try { input.focus?.(); } catch (_) {}
     }
     if ('value' in input) {
-      input.value = String(prompt ?? '');
+      // React keeps its own copy of the textarea value: a plain assignment never
+      // reaches its state, so Send stays disabled and Enter submits nothing.
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')?.set;
+      if (setter) setter.call(input, String(prompt ?? ''));
+      else input.value = String(prompt ?? '');
     } else {
       input.textContent = String(prompt ?? '');
     }
@@ -1021,7 +1025,9 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     const confirmDeepSeekSend = async (timeout = 2000) => {
       const deadline = Date.now() + timeout;
       while (Date.now() < deadline) {
-        const typing = document.querySelector('[aria-busy="true"], .loading, .spinner, [data-streaming="true"]');
+        // Only the streaming signals of the answer count. A page-wide .loading/.spinner
+        // (sidebar, history) was read as "sent" even when the composer still held the prompt.
+        const typing = document.querySelector('[data-role="assistant"] [aria-busy="true"], [data-streaming="true"]');
         if (typing) return true;
         // The first message of a new chat moves the page to /a/chat/s/<id> and replaces the
         // composer: the old input is detached and keeps its text, so "composer is empty" never

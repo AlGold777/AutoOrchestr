@@ -515,7 +515,9 @@ function grabLatestAssistantMarkup() {
       const nodes = Array.from(document.querySelectorAll(sel));
       for (let i = nodes.length - 1; i >= 0; i--) {
         const node = nodes[i];
-        if (!node) continue;
+        // The generic fallbacks (.prose, article) also match the user's own bubble:
+        // without this skip the prompt itself was returned as the answer (prompt_echo).
+        if (!node || node.closest?.(PERPLEXITY_USER_TURN_SELECTORS.join(','))) continue;
         const html = buildInlineHtml(node);
         const text = (node.innerText || node.textContent || '').trim();
         if (html || text) return { html, text, node };
