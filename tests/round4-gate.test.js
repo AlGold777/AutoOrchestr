@@ -161,7 +161,8 @@ describe('round4 gate force-final idempotency', () => {
     { dispatchState: 'SUBMITTING' },
     { status: 'RECEIVING' },
     { lastRuntimeActivityAt: Date.now() - 1000 },
-    { lastDispatchAt: Date.now() - 179000 }
+    // Computed at collection time: keep a wide margin under the 180 s protection window.
+    { lastDispatchAt: Date.now() - 170000 }
   ])('active or recent unconfirmed work is protected (%j)', overrides => {
     const now = Date.now();
     const { context } = createSandbox({ llms: { Gemini: {
