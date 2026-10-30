@@ -1790,6 +1790,8 @@ if (typeof window.SelectorFinder === 'undefined') {
   // Delivery tag ([[AO-xxxxxx]]) of the request in flight, lower-cased. Set by injectAndGetResponse.
   let claudeDeliveryTag = '';
   const deliveryTagOf = (text = '') => String(text || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0].toLowerCase() || '';
+  // Answer body without the delivery tag: a tag alone is not an answer (review C4).
+  const answerBodyOf = (text) => String(text || '').replace(/\[\[AO-[a-z0-9]{6}\]\]/gi, '').trim();
   // Stop is matched in RU and EN; "тановить" covers both "Остановить" and "остановить".
   const CLAUDE_STOP_SELECTOR = 'button[aria-label*="Stop" i], button[aria-label*="тановить"], button[data-testid*="stop"]';
   const CLAUDE_RETRY_SELECTOR = 'button[aria-label*="Retry" i], button[aria-label*="Regenerate" i], button[aria-label*="вторить"], button[data-testid*="retry"], button[data-testid*="regenerate"]';
@@ -2271,8 +2273,8 @@ function isLikelyClaudeModelLabel(text = '') {
         }
         
         let cleanedResponse = contentCleaner.clean(response, { maxLength: 200000 });
-        if (!String(cleanedResponse || '').trim()) {
-          throw new Error('Empty answer after cleaning');
+        if (!answerBodyOf(cleanedResponse)) {
+          throw { type: 'extract_failed', message: 'Empty answer after cleaning' };
         }
 
         // A fresh non-echo answer after the pre-send assistant anchor is stronger
@@ -2451,7 +2453,7 @@ function isLikelyClaudeModelLabel(text = '') {
             }
             // An empty text is an extraction failure, never a success (review C4): the
             // catch below reports it with the error type the background maps to EXTRACT_FAILED.
-            if (!String(resp?.text || '').trim()) {
+            if (!answerBodyOf(resp?.text)) {
               throw { type: 'extract_failed', message: 'Claude answer text is empty after extraction' };
             }
 
@@ -2548,7 +2550,7 @@ function isLikelyClaudeModelLabel(text = '') {
               }
               const latestMarkup = getLatestClaudeResponseMarkup('', null);
               if (latestMarkup.html) lastResponseHtml = latestMarkup.html;
-              if (!cleaned) {
+              if (!answerBodyOf(cleaned)) {
                 emitDiagnostic({
                   type: 'PING',
                   label: 'Retry extraction failed',

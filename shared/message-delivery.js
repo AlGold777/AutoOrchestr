@@ -317,10 +317,12 @@
     }
     if (final && !entry.final) {
       entry.final = true;
-      const kind = !answer.trim() ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
+      // A final that holds only transport marks (the tag, the instruction) is empty too.
+      const bodyEmpty = !clean(answer);
+      const kind = bodyEmpty ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
       // An empty final is a failure whatever status the adapter reported: the journal
       // must not say "success" next to chars=0 (review C4).
-      const status = !answer.trim() ? 'FAILED' : String(message.status || metadata.status || metadata.finalStatus || '');
+      const status = bodyEmpty ? 'FAILED' : String(message.status || metadata.status || metadata.finalStatus || '');
       entry.finalKind = kind;
       record({
         kind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
@@ -332,7 +334,7 @@
         reason: String(metadata.reason || metadata.completionReason || metadata.failureClass || metadata.hardStopReason || ''),
         detail: [metadata.errorType, metadata.errorMessage].filter(Boolean).join(': ') || null
       });
-    } else if (final && entry.final && entry.finalKind === 'empty_answer' && answer.trim()) {
+    } else if (final && entry.final && entry.finalKind === 'empty_answer' && clean(answer)) {
       // A usable answer upgraded an earlier empty/failed terminal of the same request.
       const status = String(message.status || metadata.status || metadata.finalStatus || '');
       entry.finalKind = state === 'verified' ? 'verified' : 'missing_token';
@@ -348,7 +350,13 @@
       metadata.attributionState = 'unproven';
       metadata.attributionLabel = 'Без метки доставки';
     }
-    return cleanMessage(message, metadata);
+    const out = cleanMessage(message, metadata);
+    // The panel must not show an empty final as a success whatever status arrived with it.
+    if (final && !clean(answer)) {
+      out.status = 'FAILED';
+      out.metadata = { ...(out.metadata || {}), status: 'FAILED' };
+    }
+    return out;
   }
 
   // Runtime facts the background already broadcasts: model statuses, opened tabs,
