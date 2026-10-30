@@ -1,5 +1,16 @@
 # CHANGELOG — Project
 
+### 2026-10-30 — INTERRUPTED не стирает растущий ответ, единый предикат метки, force только с меткой, строки прогресса ChatGPT, версия 2.81.943
+
+- Раздел C ревью прогона Remote Viewfinder (`docs/pipelines/Remote_Viewfinder_2026-10-30/notes/review.md`).
+- C1: остановка с текстом на странице и без подтверждённого владения даёт `CONTEXT_LOST` (отложенный финал), а не `INTERRUPTED` с пустым текстом. Флаг `window.__LLMScrollHardStop` сбрасывается новым `GET_ANSWER` (другой `runSessionId`/`dispatchId`), кроме выключателя; установщик флага пишется в `hardStopSetBy` (`content-scripts/content-utils.js`, `content-bootstrap.js`, `pipeline-modules.js`, `unified-answer-watcher.js`, `shared/completion-protocol.js`). Тесты: `tests/completion-protocol.test.js`, `tests/content-stop-runtime.test.js`.
+- C2, C7: русские строки прогресса («Проектир…», «Уточнил…», «Проверю», «Думаю», «Поиск выполнен», «Проверяю», «Проведён») короче 200 символов без метки — не ответ; префикс «<Модель> сказал:» срезается; эхо промпта ищется по голове (80 символов) в любой позиции длинного текста (`shared/answer-content-classifier.js`). Тесты: `tests/answer-content-classifier.test.js`. Выбор блока ChatGPT по «более длинный блок позже» не менялся.
+- C3: один предикат метки доставки — метка в хвосте, не более 40 символов после неё (`shared/answer-proof-normalization.js`, `hasDeliveryTokenTail`); `inspect()` и `answerHasDeliveryToken` его используют. Тесты: `tests/message-delivery.test.js`.
+- C5: `forceTerminalSuccess` без метки или `answerVerification.verified` не выдаётся, текст уходит `PARTIAL` (`background/job-orchestrator.js`, гейт перед фиксацией). Тест: `tests/manual-ping-no-force-success.test.js`.
+- C6: текст, равный последнему ответу до отправки, не может быть началом нового ответа (`content-utils/response-lifecycle-detector.js`). Тест: `tests/lifecycle-tristate-completion.test.js`.
+- C10: `[data-testid="chat-loader"]` убран из `endGenerationMarkers` Claude и Qwen в `selectors/config-bundle.js` (рантайм) и `selectors/config-bundle.json`. Тест: `tests/claude-latest-response.test.js`.
+- Не сделано в этой версии: C4, C8, C9, C11, C12 (вне задания); выбор блока ChatGPT по длине (C2, вторая часть) не менялся; `selectors/claude.config.js` и `selectors/qwen.config.js` содержат тот же маркер, но не загружаются манифестом.
+
 ### 2026-10-30 — Окна не зависают (Escape, подложка), понятные подписи кнопок, версия 2.81.942
 
 - Найдено ревью прогона Remote Viewfinder (`docs/pipelines/Remote_Viewfinder_2026-10-30/notes/review.md`, B1–B4, B9): Escape в «Вопрос User» закрывал окно без ответа; клик по подложке окна подтверждения оставлял решение висеть; подтверждения удаления и замены схемы показывали «Save»; «Отмена» в окнах User и «Неизвестный запрос» останавливала прогон.

@@ -8,6 +8,8 @@ const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 function loadModules() {
   delete window.MessageDelivery;
   delete window.MessageDeliveryDiagnosis;
+  // The delivery token predicate lives in answer-proof-normalization.js, loaded before message-delivery.js in the pages.
+  window.eval(read('shared/answer-proof-normalization.js'));
   window.eval(read('shared/message-delivery.js'));
   window.eval(read('shared/message-delivery-diagnosis.js'));
   return { Delivery: window.MessageDelivery, Diagnosis: window.MessageDeliveryDiagnosis };
@@ -570,6 +572,7 @@ describe('forced commit shape, stale background, skipped nudges', () => {
     const end = coordinator.indexOf('function scheduleDispatchRetry(');
     const timers = [];
     const context = {
+      self: { AnswerProofNormalization: require('../shared/answer-proof-normalization.js') },
       jobState: { session: { startTime: 5 }, llms: {} },
       handleLLMResponse: jest.fn(),
       reportDispatchPhase: jest.fn(),
@@ -700,7 +703,7 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
     const end = coordinator.indexOf('function scheduleDispatchRetry(');
     const timers = [];
     const context = {
-      self: { TransportPolicy },
+      self: { TransportPolicy, AnswerProofNormalization: require('../shared/answer-proof-normalization.js') },
       jobState: { session: { startTime: 5, promptsByModel }, llms: {} },
       handleLLMResponse: jest.fn(), reportDispatchPhase: jest.fn(),
       setTimeout: (fn) => { timers.push(fn); return timers.length; }

@@ -84,10 +84,12 @@
   }
 
   function inspect(text, token) {
-    const found = String(text || '').match(TOKEN_RE) || [];
     if (!token) return 'untracked';
-    if (found.some((value) => value.toLowerCase() === tag(token).toLowerCase())) return 'verified';
-    return found.length ? 'foreign' : 'missing';
+    if (proof?.hasDeliveryTokenTail?.(text, tag(token))) return 'verified';
+    // Our token elsewhere in the text is a quoted instruction or an echo, not the end of the answer.
+    const ours = tag(token).toLowerCase();
+    const found = String(text || '').match(TOKEN_RE) || [];
+    return found.some((value) => value.toLowerCase() !== ours) ? 'foreign' : 'missing';
   }
 
   function scheduleAppend() {

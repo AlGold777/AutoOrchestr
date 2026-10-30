@@ -113,12 +113,7 @@
         "[data-testid=\"chat-response\"]:not([data-testid*=\"thinking\" i]):not([data-testid*=\"thought\" i]):not([data-testid*=\"reason\" i]):not([data-testid*=\"analysis\" i]):not([data-testid*=\"scratch\" i]):not([data-testid*=\"work\" i]):not([data-testid*=\"step\" i]):not([data-testid*=\"draft\" i]):not([data-testid*=\"trace\" i]):not([data-testid*=\"internal\" i]):not([data-testid*=\"reflection\" i])"
       ],
       "stabilizationDelayMs": 1800,
-      "endGenerationMarkers": [
-        {
-          "selector": "[data-testid=\"chat-loader\"]",
-          "type": "disappear"
-        }
-      ]
+      "endGenerationMarkers": []
     }
   },
   "Gemini": {
@@ -729,12 +724,7 @@
         ".prose"
       ],
       "stabilizationDelayMs": 1800,
-      "endGenerationMarkers": [
-        {
-          "selector": "[data-testid=\"chat-loader\"]",
-          "type": "disappear"
-        }
-      ]
+      "endGenerationMarkers": []
     }
   },
   "Kimi": {

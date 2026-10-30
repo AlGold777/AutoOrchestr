@@ -383,7 +383,11 @@
       const updateHandle = setInterval(() => {
         const hardStopped = window.__LLMScrollHardStop || this.humanSession?.getState?.() === 'HARD_STOP';
         if (hardStopped) {
-          this.emitWitness('USER_INTERRUPTED', { reason: 'hard_stop' }, null);
+          this.emitWitness('USER_INTERRUPTED', {
+            reason: 'hard_stop',
+            textLength: this.maxObservedTextLength,
+            hardStopSetBy: window.__LLMScrollHardStopSetBy?.source || null
+          }, null);
           cleanup(this.buildResult('hard_stop', 0, typingActive, getRecentGrowth(), false));
           return;
         }

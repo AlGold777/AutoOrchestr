@@ -648,7 +648,8 @@ describe('early terminal success guard', () => {
     const { context, stateUpdates, partialMessages } = createSandbox();
     const entry = context.jobState.llms.Qwen;
     entry.status = 'RECOVERABLE_ERROR';
-    const answer = 'recovered qwen answer '.repeat(190);
+    const { token } = addCurrentDeliveryToken(context, 'Qwen');
+    const answer = `${'recovered qwen answer '.repeat(190)}${token}`;
 
     const accepted = context.acceptLateCollectResult('Qwen', {
       ok: true,
@@ -700,7 +701,8 @@ describe('early terminal success guard', () => {
     entry.finalizedAt = Date.now();
     entry.answer = 'short terminal answer '.repeat(20);
     const previousLength = entry.answer.trim().length;
-    const improved = 'longer terminal answer from manual late collect '.repeat(120);
+    const { token: improvedToken } = addCurrentDeliveryToken(context, 'Qwen');
+    const improved = `${'longer terminal answer from manual late collect '.repeat(120)}${improvedToken}`;
 
     const accepted = context.acceptLateCollectResult('Qwen', {
       ok: true,
@@ -769,7 +771,8 @@ describe('early terminal success guard', () => {
     expect(entry.promptSubmittedAt).toBeFalsy();
     expect(entry.answer || '').toBe('');
 
-    const answer = 'late recovered qwen answer '.repeat(120);
+    const { token: lateToken } = addCurrentDeliveryToken(context, 'Qwen');
+    const answer = `${'late recovered qwen answer '.repeat(120)}${lateToken}`;
     const accepted = context.acceptLateCollectResult('Qwen', {
       ok: true,
       status: 'success',
@@ -890,7 +893,8 @@ describe('early terminal success guard', () => {
       finalizedAt: Date.now(),
       answer: 'Error: Grok submission was not confirmed'
     };
-    const answer = 'fresh grok answer recovered by status indicator double click '.repeat(80);
+    const { token: grokToken } = addCurrentDeliveryToken(context, 'Grok');
+    const answer = `${'fresh grok answer recovered by status indicator double click '.repeat(80)}${grokToken}`;
 
     const accepted = context.acceptLateCollectResult('Grok', {
       ok: true,
@@ -1623,4 +1627,34 @@ test('manual GPT numeric answer remains available for the recovery result payloa
   // The same selection feeds MANUAL_PING_RESULT and therefore the results card.
   expect(String(entry.answer || result.text || '')).toBe(answer);
   expect(entry.finalStatus).toBe('NO_SEND'); // Collection alone does not prove completion.
+});
+
+test('C5: a forced success without the delivery token or a verified answer is PARTIAL, not SUCCESS', async () => {
+  const { context } = createSandbox();
+  const entry = context.jobState.llms.Qwen;
+  entry.status = 'RECOVERABLE_ERROR';
+  const answer = 'recovered qwen answer without any delivery token '.repeat(20);
+  const accepted = context.acceptLateCollectResult('Qwen', {
+    ok: true,
+    status: 'success',
+    text: answer,
+    html: '<p>recovered qwen answer</p>',
+    source: 'inline_executeScript',
+    candidateCount: 2
+  }, {
+    source: 'collect_responses_staged_late_collect',
+    dispatchId: 'dispatch-qwen',
+    responseMeta: {
+      source: 'collect_responses_staged_late_collect',
+      manualRecovery: true,
+      completionReason: 'user_collect_late_collect',
+      lateCollectFinal: true,
+      forceTerminalSuccess: true
+    }
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(accepted).toBe(true);
+  expect(entry.finalStatus).toBe('PARTIAL');
 });

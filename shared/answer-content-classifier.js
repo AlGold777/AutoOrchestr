@@ -67,8 +67,26 @@
   // after the label. A short text that ends with the label holds only the thinking.
   const GEMINI_THINKING_ONLY = /^(?:.{0,120}\s)?(?:Ответ Gemini|Gemini said:?)$/i;
 
+  // Progress lines of a thinking/agent block ("Проектируя архитектуру…", "Уточнил риски…").
+  // They are not answers while they are short and carry no delivery token (see TOKEN_RE).
+  const PROGRESS_LINE_PATTERNS = [
+    /^(?:проектир|уточнил|проверю|проверяю|думаю|поиск выполнен|проведён|проведен)/i
+  ];
+  const PROGRESS_LINE_MAX_LENGTH = 200;
+  const DELIVERY_TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/i;
+
+  // "ChatGPT сказал:" / "Claude said:" is the page's accessibility label of the answer block, not text of the answer.
+  const MODEL_SAID_PREFIX_RE = /^\s*(?:ChatGPT|Claude|Gemini|Grok|Qwen|DeepSeek|Perplexity|Le ?Chat|Mistral|Kimi|Z\.?ai)\s+(?:сказал|said)\s*:\s*/i;
+  // Only the head of a prompt identifies its echo; shorter prompts would match ordinary answers.
+  const PROMPT_ECHO_HEAD_LENGTH = 80;
+  const PROMPT_ECHO_MIN_CANDIDATE = 200;
+
   function normalize(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function stripModelSaidPrefix(text) {
+    return String(text || '').replace(MODEL_SAID_PREFIX_RE, '');
   }
 
   function isPromptEcho(normCandidate, normPrompt) {
@@ -78,6 +96,9 @@
     if (c === p) return true;
     // Candidate is essentially the prompt with negligible extra text.
     if (c.includes(p) && c.length <= p.length * 1.15) return true;
+    // A long candidate that quotes the prompt's head anywhere (after UI chrome or a label) is an echo too.
+    if (c.length > PROMPT_ECHO_MIN_CANDIDATE && p.length >= PROMPT_ECHO_HEAD_LENGTH
+      && c.includes(p.slice(0, PROMPT_ECHO_HEAD_LENGTH))) return true;
     return false;
   }
 
@@ -95,7 +116,7 @@
 
   function classify(text, options = {}) {
     const minValid = Number(options.minValid || DEFAULT_MIN_VALID);
-    const norm = normalize(text);
+    const norm = normalize(stripModelSaidPrefix(text));
     const prompt = normalize(options.prompt || '');
 
     if (!norm) {
@@ -115,6 +136,10 @@
     }
     if (GEMINI_THINKING_ONLY.test(norm)) {
       return decide(CLASSES.UI_NOISE, norm, { reason: 'gemini_thinking_only' });
+    }
+    if (norm.length < PROGRESS_LINE_MAX_LENGTH && !DELIVERY_TOKEN_RE.test(norm)
+      && PROGRESS_LINE_PATTERNS.some((re) => re.test(norm))) {
+      return decide(CLASSES.UI_NOISE, norm, { reason: 'progress_line_without_token' });
     }
     if (norm.length < minValid) {
       // Short: either UI noise or a genuinely short answer ("Yes.", "Готово.").
@@ -143,7 +168,7 @@
     return classify(text, options).terminalEligible;
   }
 
-  const api = Object.freeze({ CLASSES, classify, isTerminalEligible, TERMINAL_ELIGIBLE });
+  const api = Object.freeze({ CLASSES, classify, isTerminalEligible, TERMINAL_ELIGIBLE, stripModelSaidPrefix });
   root.AnswerContentClassifier = api;
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

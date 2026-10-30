@@ -141,4 +141,23 @@ describe('content Stop runtime delivery', () => {
     expect(navigationStart).not.toHaveBeenCalled();
     expect(broadcastStart).not.toHaveBeenCalled();
   });
+
+  test('C1: a new GET_ANSWER run clears a stale hard-stop from an earlier run, never a kill switch', () => {
+    const send = (message) => runtimeListeners.forEach((listener) => listener(message, {}, () => {}));
+    send({ type: 'STOP_AND_CLEANUP', meta: { runSessionId: 'run-1', dispatchId: 'dispatch-1' } });
+    expect(window.__LLMScrollHardStop).toBe(true);
+    expect(window.__LLMScrollHardStopSetBy).toMatchObject({ source: 'background_stop', runSessionId: 'run-1' });
+
+    send({ type: 'GET_ANSWER', prompt: 'next', meta: { runSessionId: 'run-1', dispatchId: 'dispatch-1' } });
+    expect(window.__LLMScrollHardStop).toBe(true);
+
+    send({ type: 'GET_ANSWER', prompt: 'next', meta: { runSessionId: 'run-2', dispatchId: 'dispatch-2' } });
+    expect(window.__LLMScrollHardStop).toBe(false);
+    expect(window.__LLMScrollHardStopSetBy).toBeNull();
+
+    window.__LLMScrollHardStop = true;
+    window.__LLMScrollHardStopSetBy = { source: 'kill_switch', runSessionId: null, dispatchId: null, ts: 1 };
+    send({ type: 'GET_ANSWER', prompt: 'next', meta: { runSessionId: 'run-3', dispatchId: 'dispatch-3' } });
+    expect(window.__LLMScrollHardStop).toBe(true);
+  });
 });

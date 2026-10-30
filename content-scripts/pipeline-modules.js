@@ -1140,6 +1140,7 @@
         if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
             && !window.ContentUtils.isStopCommandCurrent(message)) return false;
         window.__LLMScrollHardStop = true;
+        window.__LLMScrollHardStopSetBy = { source: 'hard_stop_restore', runSessionId: null, dispatchId: null, ts: Date.now() };
         if (window.__ScrollGatekeeper) {
           window.__ScrollGatekeeper.engageHardStop();
         }

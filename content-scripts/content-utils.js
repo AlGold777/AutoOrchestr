@@ -915,6 +915,7 @@
     } catch (_) {}
     try {
       window.__LLMScrollHardStop = true;
+      window.__LLMScrollHardStopSetBy = { source: 'session_expired', runSessionId: null, dispatchId: null, ts: Date.now() };
     } catch (_) {}
     console.warn('[ContentUtils] Session expired locally', payload);
     return true;
@@ -975,6 +976,7 @@
       };
       try {
         window.__LLMScrollHardStop = true;
+        window.__LLMScrollHardStopSetBy = { source: 'background_stop', runSessionId: stoppedDispatchMeta.runSessionId, dispatchId: stoppedDispatchMeta.dispatchId, ts: Date.now() };
         window.__LLMScrollStopEpoch = Number(window.__LLMScrollStopEpoch || 0) + 1;
       } catch (_) {}
       try {
@@ -991,19 +993,23 @@
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== 'GET_ANSWER') return false;
       if (!String(message.prompt || '').trim()) return false;
-      if (!stoppedDispatchMeta) return false;
+      // The flag may have been set by a stop, a session switch or a restore whose
+      // run is not in stoppedDispatchMeta. A user kill switch is never cleared here.
+      const setBy = window.__LLMScrollHardStopSetBy || null;
+      const basis = stoppedDispatchMeta || (setBy && setBy.source !== 'kill_switch' ? setBy : null);
+      if (!basis) return false;
 
       const incomingMeta = message.meta && typeof message.meta === 'object' ? message.meta : {};
       const incomingRunSessionId = incomingMeta.runSessionId || incomingMeta.sessionId
         || message.runSessionId || message.sessionId || null;
       const incomingDispatchId = incomingMeta.dispatchId || message.dispatchId || null;
-      const hasNewRun = Boolean(incomingRunSessionId && stoppedDispatchMeta.runSessionId
-        && String(incomingRunSessionId) !== String(stoppedDispatchMeta.runSessionId));
-      const hasNewDispatch = Boolean(incomingDispatchId && stoppedDispatchMeta.dispatchId
-        && String(incomingDispatchId) !== String(stoppedDispatchMeta.dispatchId));
+      const hasNewRun = Boolean(incomingRunSessionId && basis.runSessionId
+        && String(incomingRunSessionId) !== String(basis.runSessionId));
+      const hasNewDispatch = Boolean(incomingDispatchId && basis.dispatchId
+        && String(incomingDispatchId) !== String(basis.dispatchId));
       if (!hasNewRun && !hasNewDispatch) return false;
 
-      try { window.__LLMScrollHardStop = false; } catch (_) {}
+      try { window.__LLMScrollHardStop = false; window.__LLMScrollHardStopSetBy = null; } catch (_) {}
       stoppedDispatchMeta = null;
       return false;
     });

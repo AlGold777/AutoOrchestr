@@ -66,7 +66,19 @@
       : { status: 'mismatched', reason: 'normalized_hash_mismatch' };
   }
 
-  const api = Object.freeze({ VERSION, normalizeText, hashNormalizedText, hashText, evidence, compare });
+  // The request's delivery token ([[AO-xxxxxx]]) proves the model finished only as the answer's
+  // last line: at most this many characters may follow it (provider chrome such as a time).
+  const DELIVERY_TAIL_CHARS = 40;
+  // The single predicate for "this answer carries its own delivery token at the end".
+  function hasDeliveryTokenTail(text = '', tag = '') {
+    const token = String(tag || '').toLowerCase();
+    if (!token) return false;
+    const body = String(text || '').toLowerCase();
+    const at = body.lastIndexOf(token);
+    return at >= 0 && body.length - (at + token.length) <= DELIVERY_TAIL_CHARS;
+  }
+
+  const api = Object.freeze({ VERSION, normalizeText, hashNormalizedText, hashText, evidence, compare, hasDeliveryTokenTail, DELIVERY_TAIL_CHARS });
   root.AnswerProofNormalization = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

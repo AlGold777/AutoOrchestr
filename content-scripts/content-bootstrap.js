@@ -133,6 +133,7 @@
             root.humanSessionController._hardStop('kill-switch');
           }
           root.__LLMScrollHardStop = true;
+          root.__LLMScrollHardStopSetBy = { source: 'kill_switch', runSessionId: null, dispatchId: null, ts: Date.now() };
         } catch (_) {}
       }
     });

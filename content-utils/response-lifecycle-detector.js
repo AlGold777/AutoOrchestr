@@ -1311,7 +1311,12 @@
         || indicators.hasLoadingIndicator
         || indicators.hasStreamingCursor
         || indicators.hasProgressbar;
-      const hasStarted = (textLength >= 1 && (newAnswerElement || firstAnswerElement || baselineElementChanged)) || generationSignal;
+      // The text that was the last answer before the send cannot be the start of the new one (a continued chat
+      // shows it again when the node is re-rendered or identity is missing).
+      const repeatsBaselineAnswer = Boolean(tracker.baselineTextHash && tracker.baselineTextLength > 0
+        && snapshotHash === tracker.baselineTextHash);
+      const hasStarted = !repeatsBaselineAnswer
+        && ((textLength >= 1 && (newAnswerElement || firstAnswerElement || baselineElementChanged)) || generationSignal);
       if (hasStarted) {
         const answerStartedAt = Date.now();
         tracker.answerStartedAt = answerStartedAt;

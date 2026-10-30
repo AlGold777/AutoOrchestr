@@ -1606,7 +1606,14 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
     && incomingText.length >= DOM_SNAPSHOT_RECOVERY_MIN_CHARS
     && !isPromptEchoAnswerCandidate(incomingText, jobState?.prompt || '')
   );
-  const forceTerminalSuccess = Boolean(!isSnapshotPartial && forceTerminalRequested && candidateTerminalEligible);
+  // A forced SUCCESS needs proof that the model finished: its own delivery token at the end of the
+  // text, or a verified answer. Without it the text is a PARTIAL answer, whatever the caller asked.
+  const deliveryProven = Boolean(
+    incomingResponseMeta.answerVerification?.verified === true
+    || (typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, incomingText))
+  );
+  const forceWithoutProof = Boolean(forceTerminalRequested && candidateTerminalEligible && !deliveryProven);
+  const forceTerminalSuccess = Boolean(!isSnapshotPartial && forceTerminalRequested && candidateTerminalEligible && deliveryProven);
   if (forceTerminalRequested && !candidateTerminalEligible) {
     appendLogEntry(llmName, {
       type: 'RESPONSE',
@@ -1697,7 +1704,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
         sanityConfidence: typeof incomingResponseMeta.sanityConfidence === 'number'
           ? incomingResponseMeta.sanityConfidence
           : (isSnapshotPartial ? 0.72 : 0.84),
-        partial: Boolean(incomingResponseMeta.partial || isSnapshotPartial),
+        partial: Boolean(incomingResponseMeta.partial || isSnapshotPartial || forceWithoutProof),
         lateCollectFinal: Boolean(incomingResponseMeta.lateCollectFinal || forceTerminalSuccess),
         forceTerminalSuccess,
         manualRecovery,

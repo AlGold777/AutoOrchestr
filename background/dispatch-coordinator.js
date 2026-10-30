@@ -451,9 +451,7 @@ function answerHasDeliveryToken(llmName, text) {
   // The token is the LAST line of the answer (provider chrome such as a time may follow,
   // see TAIL_AFTER_TOKEN_RE in message-delivery.js). The same text earlier in the page
   // is a quoted instruction or a prompt echo, not proof that the model finished.
-  const body = String(text || '').toLowerCase();
-  const at = body.lastIndexOf(token.toLowerCase());
-  return at >= 0 && body.length - (at + token.length) <= 40;
+  return Boolean(self.AnswerProofNormalization?.hasDeliveryTokenTail?.(text, token));
 }
 
 // Commit the text the model already produced as an incomplete answer ("неполный"),
