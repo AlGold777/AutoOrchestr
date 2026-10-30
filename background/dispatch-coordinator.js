@@ -532,6 +532,10 @@ function commitIncompleteAnswer(llmName, entry, { text, html = '', source, compl
   return true;
 }
 
+// Longest extra wait after the fixed post-send slot while the page reports its send in flight (L-6).
+// Ends as soon as the provider reports send_action_completed or send_action_failed.
+const SEND_IN_FLIGHT_EXTENSION_MS = 15000;
+
 function scheduleDispatchRetry(entry, llmName, error) {
   if (!entry) return;
   const attempt = Number(entry.dispatchAttempts || 0);
@@ -1388,8 +1392,19 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     // seconds after the upload/send stage, while Round 1 still owns the queue.
     const leaveAt = (hasAttachments ? Date.now() : commandAt) + Number(options.postSendMs ?? 5000);
     await pause(Math.max(0, leaveAt - Date.now()));
+    // L-6: the page may still be sending (DeepSeek needs up to ~12 s). While it reports
+    // send_action_requested without a completion or failure, keep the visit open, up to
+    // SEND_IN_FLIGHT_EXTENSION_MS. The fixed slot alone closed visits mid-send: in the
+    // exports every `submitted` lands at exactly +5 s after command_accepted.
+    const sendInFlightCapAt = leaveAt + SEND_IN_FLIGHT_EXTENSION_MS;
+    const sendInFlight = () => entry.providerDispatchStageDispatchId === meta.dispatchId
+      && entry.providerDispatchStage === 'send_action_requested';
+    while (current() && sendInFlight() && Date.now() < sendInFlightCapAt) {
+      await pause(Math.min(100, sendInFlightCapAt - Date.now()));
+    }
     if (!current()) return {ok: false, reason: 'session_changed'};
-    const attempted = Boolean(sendObserved());
+    // A send that the page reported as failed is not submitted, even though its request was seen.
+    const attempted = Boolean(sendObserved()) && !failed();
     const outcome = attempted ? 'send_attempt_observed' : (deliveryError || (failed() ? 'provider_failed' : 'send_unconfirmed'));
     if (!entry.promptSubmittedAt) {
       entry.awaitingSubmitConfirmation = true;
