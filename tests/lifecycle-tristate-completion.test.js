@@ -469,7 +469,8 @@ describe('tri-state completion (stop-button)', () => {
 
     const reasoning = document.createElement('article');
     reasoning.className = 'thinking-panel';
-    reasoning.textContent = 'Reasoning in progress with enough meaningful content to pass the generic content classifier.';
+    // Not a progress line («Reasoning in progress…» is one now): the text must pass the content classifier.
+    reasoning.textContent = 'Notes on the draft: the answer depends on the latency limit and the reconnect rule, enough meaningful content to pass the generic content classifier.';
     setRect(reasoning, { top: 560, left: 140, width: 720, height: 160 });
     document.body.appendChild(reasoning);
     detector.registerAnswerCandidate({ modelName: 'Qwen', element: reasoning, traceId: 'qwen-phase' });

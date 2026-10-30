@@ -1,6 +1,9 @@
 (function initDebateResponseAcceptance(root) {
   'use strict';
   const ENDING = /[.?!)»"'\]]$/;
+  // A SUCCESS text shorter than this must be a finished answer: a progress line or a text without an end is refused.
+  const SHORT_ANSWER_CHARS = 150;
+  const classifier = () => root.AnswerContentClassifier || (typeof require === 'function' ? require('../shared/answer-content-classifier') : null);
   const UNPROVEN_STATUSES = new Set(['EXTRACT_FAILED', 'FAILED', 'UNCERTAIN', 'INTERRUPTED', 'TIMEOUT', 'NO_SEND']);
   const words = (value) => String(value || '').trim().match(/[\p{L}\p{N}]+(?:[-'][\p{L}\p{N}]+)*/gu) || [];
   const requiredSectionMisses = (value, sections = []) => (Array.isArray(sections) ? sections : [])
@@ -56,6 +59,14 @@
     // Without that proof a PARTIAL answer is not an answer at any length: a status line, a cut-off text or the page's own text.
     if (!allowShort && !provenComplete && outputKind !== 'json' && String(meta.status || '').toUpperCase() === 'PARTIAL') return { ok: false, reason: 'partial_unproven', details: { words: wordCount } };
     if (!allowShort && !provenComplete && outputKind !== 'json' && !ENDING.test(value) && !/^\s*(?:[-*]|\d+[.)]|#)/.test(lastLine) && lastLine.split(/\s+/).length > 3) return { ok: false, reason: 'incomplete_ending', details: { lastLine } };
+    // Proof of completion does not cover a status line: the transport can report «complete» for a text that
+    // is only the model's progress («Проверил и уточнил технические риски»). A progress line is never a short
+    // answer; a short text without proof of its end must be a finished statement (ending sign or verdict).
+    const C = classifier();
+    const shortUnfinished = C && (C.isProgressLine(value) || (!provenComplete && !C.isMeaningfulShort(value)));
+    if (!allowShort && outputKind !== 'json' && value.length < SHORT_ANSWER_CHARS && shortUnfinished) {
+      return { ok: false, reason: 'too_short', details: { minChars: SHORT_ANSWER_CHARS, actualChars: value.length, progressLine: C.isProgressLine(value) } };
+    }
     return { ok: true, reason: '', details: { chars: value.length, words: wordCount } };
   }
   const api = Object.freeze({ evaluate, parseAuditVerdict, countWords: (value) => words(value).length, requiredSectionMisses });

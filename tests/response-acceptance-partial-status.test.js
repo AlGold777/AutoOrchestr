@@ -16,8 +16,8 @@ describe('an answer that ended without proof (PARTIAL)', () => {
     expect(A.evaluate({ text: long, meta: { completion: 'complete', status: 'PARTIAL' } }).ok).toBe(true);
   });
 
-  test('a short answer proven complete, or with another status, is accepted', () => {
+  test('a short answer proven complete is accepted; a progress line is not an answer whatever the status', () => {
     expect(A.evaluate({ text: 'Да.', meta: { completion: 'complete', status: 'SUCCESS' } }).ok).toBe(true);
-    expect(A.evaluate({ text: 'Проверяя архитектуру', meta: { status: 'SUCCESS' } }).ok).toBe(true);
+    expect(A.evaluate({ text: 'Проверяя архитектуру', meta: { status: 'SUCCESS' } }).reason).toBe('too_short');
   });
 });
