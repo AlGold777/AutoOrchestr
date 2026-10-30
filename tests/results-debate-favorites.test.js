@@ -3234,7 +3234,8 @@ describe('Pipeline debate favorites view', () => {
           expect(await h.debug.installBasicSchema('Ordered', schema)).toEqual({ ok: true, errors: [] });
           select('Ordered');
           await settleCustomCard();
-          const inactiveProviders = window.PipelineRuntime.MODELS.map((model) => model.name).filter((name) => !['GPT', 'Claude'].includes(name));
+          // A Basic stack lists only the schema's participants: no project model is padded in as an empty block.
+          const inactiveProviders = [];
           expectDeclaredStack('r1-models', ['GPT', 'Claude'], [['GPT', true, ''], ['Claude', true, '']], inactiveProviders);
           expectDeclaredStack('r2-models', ['GPT', 'Claude'], [['GPT', true, ''], ['Claude', false, '']], inactiveProviders);
           const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
@@ -3377,7 +3378,7 @@ describe('Pipeline debate favorites view', () => {
           expect(await h.debug.installBasicSchema('Off on canvas', schema)).toEqual({ ok: true, errors: [] });
           select('Off on canvas');
           await settleCustomCard();
-          const inactiveProviders = window.PipelineRuntime.MODELS.map((model) => model.name).filter((name) => !['GPT', 'Claude', 'Grok'].includes(name));
+          const inactiveProviders = [];
           // Grok is on the canvas (in the header and in every round) with Send off, and its settings came along.
           expect(h.debug.getPipelineStoreSnapshot().pipelines['Off on canvas'].protocol.selectedModels.slice().sort()).toEqual(['Claude', 'GPT', 'Grok']);
           expectDeclaredStack('r1-models', ['GPT', 'Claude', 'Grok'], [['GPT', true, ''], ['Claude', true, ''], ['Grok', false, '']], inactiveProviders);

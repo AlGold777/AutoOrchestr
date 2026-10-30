@@ -4937,7 +4937,9 @@ document.addEventListener('click', (event) => {
             try { steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []; } catch (_) { steps = []; }
             const stepOf = (ref) => steps.find((step) => step.ref === ref) || null;
             pipelinePanel.querySelectorAll('.entry-badge').forEach((badge) => setCanvasTooltip(badge, 'In'));
-            setCanvasTooltip(pipelinePanel.querySelector('#entryPoint'), '▶ Общие значения', basicDescription());
+            // A failing text read must not cut the rest of the sync: the tooltip is left empty instead.
+            const safeRead = (read, fallback) => { try { return read() ?? fallback; } catch (_) { return fallback; } };
+            setCanvasTooltip(pipelinePanel.querySelector('#entryPoint'), '▶ Общие значения', safeRead(() => basicDescription(), ''));
             pipelinePanel.querySelectorAll('.stage-column[data-round] .round-badge').forEach((badge) => {
                 const round = badge.closest('.stage-column')?.dataset.round;
                 const step = stepOf(`r${round}`);
@@ -4951,7 +4953,7 @@ document.addEventListener('click', (event) => {
             });
             pipelinePanel.querySelectorAll('.model-input-checkbox').forEach((box) => setCanvasTooltip(box, 'Участие в раунде', 'Флажок включает модель в раунд; снятый — модель в раунд не входит (в схеме enabled: false).'));
             pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
-                const step = getCustomControls().map((item) => item.step).find((item) => item?.ref === card.dataset.controlCard) || {};
+                const step = safeRead(() => getCustomControls().map((item) => item.step).find((item) => item?.ref === card.dataset.controlCard), null) || {};
                 const name = `User · ${card.dataset.controlCard}${step.title ? ` · ${step.title}` : ''}`;
                 const note = step.goal || step.task;
                 setCanvasTooltip(card, name, note);
@@ -7928,13 +7930,10 @@ document.addEventListener('click', (event) => {
             const modelStacks = schemaCanvas && !schemaCanvas.errors?.length
                 ? schemaCanvas.stacks
                 : (incomingSchema ? schemaStacksFallback : (config.modelStacks && typeof config.modelStacks === 'object' ? config.modelStacks : {}));
+            // A Basic stack lists exactly the participants of its schema: no model of the project is padded in as an empty block.
             if (incomingSchema) {
                 Object.values(modelStacks).forEach((state) => {
-                    const items = Array.isArray(state?.items) ? state.items : (state.items = []);
-                    const known = new Set(items.map((item) => item.id || item.name));
-                    (PipelineRuntime?.MODELS || []).forEach((model) => {
-                        if (!known.has(model.name)) items.push({ name: model.name, id: model.name, label: model.name, input: false, send: false, role: null });
-                    });
+                    if (state && !Array.isArray(state.items)) state.items = [];
                 });
             }
             const targetRounds = Math.max(1, Number(schemaCanvas?.roundCounter || config.roundCounter) || 1);
@@ -7950,7 +7949,7 @@ document.addEventListener('click', (event) => {
             // canvas before) sends nobody, so the run never takes models the schema does not have.
             if (incomingSchema && !schemaCanvas?.errors?.length) {
                 for (let round = 1; round <= roundCounter; round += 1) {
-                    if (!modelStacks[`r${round}-models`]) modelStacks[`r${round}-models`] = { items: (PipelineRuntime?.MODELS || []).map((model) => ({ name: model.name, id: model.name, label: model.name, input: false, send: false, role: null })) };
+                    if (!modelStacks[`r${round}-models`]) modelStacks[`r${round}-models`] = { items: [] };
                 }
             }
             const sendOverrides = config.version >= 2 ? null : buildSendOverridesFromLegacy(config);
