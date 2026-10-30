@@ -720,6 +720,8 @@ class ContentCleaner {
         const parser = new DOMParser();
         const doc = parser.parseFromString(content, 'text/html');
         doc.querySelectorAll('script,style,svg,canvas,noscript,header,footer,nav,aside,[aria-hidden="true"]').forEach(el => el.remove());
+        // textContent drops cell boundaries: tables become markdown first (shared/answer-markdown-providers.js).
+        window.AnswerMarkdownProviders?.replaceTablesWithMarkdown?.(doc.body);
         textContent = doc.body?.textContent || '';
       } catch (err) {
         console.warn('[ContentCleaner] DOMParser failed in Perplexity cleaner, falling back to textContent', err);
