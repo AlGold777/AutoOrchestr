@@ -34,6 +34,8 @@
     const minChars = Number(meta.minChars == null ? (allowShort ? 1 : outputKind === 'json' ? 2 : 1) : meta.minChars);
     // The delivery layer marks a marker that follows only a progress line (review L-2): not an answer.
     if (String(meta.reason || '') === 'progress_only') return { ok: false, reason: 'progress_only', details: {} };
+    // The text the delivery layer committed at the time limit without its delivery token (review L-17): unproven, at any length and for any task class.
+    if (String(meta.reason || '') === 'capped_unproven') return { ok: false, reason: 'capped_unproven', details: {} };
     if (value.length < minChars) return { ok: false, reason: 'too_short', details: { minChars, actualChars: value.length } };
     // The answer that repeats the start of its request (the page echoes the prompt) is not an answer.
     const promptHead = String(meta.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 60);
