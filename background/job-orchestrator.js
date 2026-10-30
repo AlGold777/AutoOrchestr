@@ -9364,7 +9364,8 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     normalizedHtml = typeof answerHtml === 'string' ? answerHtml : '';
   }
   let trimmedAnswer = String(normalizedAnswer || '').trim();
-  if (!error && !trimmedAnswer) {
+  // The delivery tag ([[AO-xxxxxx]]) is a transport mark: an answer that holds only the tag is empty (review C4).
+  if (!error && !trimmedAnswer.replace(/\[\[AO-[a-z0-9]{6}\]\]/gi, '').trim()) {
     error = { type: 'empty_answer', message: 'Empty answer received from content script' };
     normalizedAnswer = '';
     trimmedAnswer = '';

@@ -74,6 +74,7 @@
   ];
   const PROGRESS_LINE_MAX_LENGTH = 200;
   const DELIVERY_TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/i;
+  const DELIVERY_TOKEN_GLOBAL_RE = /\[\[AO-[a-z0-9]{6}\]\]/gi;
 
   // "ChatGPT сказал:" / "Claude said:" is the page's accessibility label of the answer block, not text of the answer.
   const MODEL_SAID_PREFIX_RE = /^\s*(?:ChatGPT|Claude|Gemini|Grok|Qwen|DeepSeek|Perplexity|Le ?Chat|Mistral|Kimi|Z\.?ai)\s+(?:сказал|said)\s*:\s*/i;
@@ -119,7 +120,9 @@
     const norm = normalize(stripModelSaidPrefix(text));
     const prompt = normalize(options.prompt || '');
 
-    if (!norm) {
+    // The delivery tag is a transport mark, not answer text: a message that holds only the tag is empty.
+    const body = normalize(stripModelSaidPrefix(String(text || '').replace(DELIVERY_TOKEN_GLOBAL_RE, '')));
+    if (!norm || !body) {
       return decide(CLASSES.EMPTY, norm, { reason: 'empty' });
     }
     if (isPromptEcho(norm, prompt)) {
