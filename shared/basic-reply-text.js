@@ -36,7 +36,7 @@
     if (PLACEHOLDER.test(m.trim())) return keep('placeholder');
     if (!report || report.complete !== true) return keep('incomplete_copy');
     const pc = core(p);
-    const mc = core(m);
+    const mc = core(String(m).replace(/^(\s*(?:```|~~~)+)[^\n`]*$/gm, '$1'));
     if (mc.length < MIN_RATIO * pc.length) return keep('short_markdown');
     if (DELIVERY_MARK.test(p) && !DELIVERY_MARK.test(m)) return keep('marker_missing');
     const tail = pc.slice(-TAIL_CHARS);
@@ -65,8 +65,8 @@
     if (pickedMarkdown) return pickedReport && pickedReport.complete === true ? null : 'incomplete_copy';
     if (copyImpossible(ownReport)) return 'source_without_dom_copy';
     if (!ownMarkdown && !ownReport) return 'result_without_copy';
-    if (!ownMarkdown) return 'result_empty_copy';
     if (requestId && !stashHit) return 'stash_miss';
+    if (!ownMarkdown && !requestId) return 'result_empty_copy';
     return 'copy_not_arrived';
   }
 

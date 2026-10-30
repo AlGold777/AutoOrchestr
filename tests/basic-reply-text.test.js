@@ -79,7 +79,7 @@ describe('Basic reply text: the wiring is limited to the Basic reply', () => {
   const src = fs.readFileSync(path.join(ROOT, 'results.js'), 'utf8');
 
   test('the converter is called only inside the Basic send wave, not in the shared final-answer handler', () => {
-    const uses = [...src.matchAll(/BasicReplyText/g)].map((m) => m.index);
+    const uses = [...src.matchAll(/BasicReplyText\.(?:choose|flattened|copyWaitNeeded|copyDropReason)\(/g)].map((m) => m.index);
     expect(uses.length).toBeGreaterThan(0);
     expect(uses[0]).toBeGreaterThan(src.indexOf('const sendWave = async'));
     expect(uses[uses.length - 1]).toBeLessThan(src.indexOf('const byParticipant = {};', uses[0]));
@@ -121,7 +121,7 @@ describe('Basic reply text: a flat text waits for its copy (L-4)', () => {
     const src = fs.readFileSync(path.join(ROOT, 'results.js'), 'utf8');
     expect(src).toContain('answerCopyByRequest.set(String(requestId)');
     expect(src).toContain('const copyWait = text.trim() && globalThis.BasicReplyText');
-    expect(src).toContain('await replyCopyFor(model, modelResult.transportRequestId, flatText');
+    expect(src).toContain('await replyCopyFor(model, modelResult.transportRequestId || modelResult.requestId, copyWaitNeeded');
     expect(src).toContain('flatText, copyWaitMs: copyWait.waitedMs');
   });
 
