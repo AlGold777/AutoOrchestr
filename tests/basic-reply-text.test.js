@@ -93,3 +93,28 @@ describe('Basic reply text: the wiring is limited to the Basic reply', () => {
     }
   });
 });
+
+describe('Basic reply text: a flat text waits for its copy (L-4)', () => {
+  const FLAT = 'абв '.repeat(600); // 2400 characters, no line break: the paragraphs were joined on extraction
+
+  test('flattened() marks a long text without a line break only', () => {
+    expect(BasicReplyText.flattened(FLAT)).toBe(true);
+    expect(BasicReplyText.flattened(`${FLAT}\n${FLAT}`)).toBe(false);
+    expect(BasicReplyText.flattened('короткий ответ')).toBe(false);
+    expect(BasicReplyText.flattened('')).toBe(false);
+  });
+
+  test('the results page reads the copy by transport request and waits for a flat text', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'results.js'), 'utf8');
+    expect(src).toContain('answerCopyByRequest.set(String(requestId)');
+    expect(src).toContain('const copyWait = text.trim() && globalThis.BasicReplyText');
+    expect(src).toContain('await replyCopyFor(model, modelResult.transportRequestId, flatText');
+    expect(src).toContain('flatText, copyWaitMs: copyWait.waitedMs');
+  });
+
+  test('the Claude ping path retries the element the copy comes from before it sends the copy', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'content-scripts/content-claude.js'), 'utf8');
+    expect(src).toContain("let latestMarkup = getLatestClaudeResponseMarkup('', null);");
+    expect(src).toContain('await sleep(900);\n                latestMarkup = getLatestClaudeResponseMarkup');
+  });
+});

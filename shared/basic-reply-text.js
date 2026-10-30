@@ -17,6 +17,12 @@
 
   // Letters and digits only, lower-cased: whitespace, pipes, fences, emphasis marks do not count.
   const core = (s) => String(s == null ? '' : s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  // A long text without any line break: the paragraphs were joined on extraction (textContent), the structure is lost.
+  const FLAT_MIN_CHARS = 1500;
+  const flattened = (s) => {
+    const t = String(s == null ? '' : s);
+    return t.length > FLAT_MIN_CHARS && !/\n/.test(t);
+  };
 
   function choose({ plain, markdown, report } = {}) {
     const p = String(plain == null ? '' : plain);
@@ -35,5 +41,5 @@
     return { text: m, text_source: 'markdown', reason: 'complete', plainChars: p.length, markdownChars: m.length };
   }
 
-  return { MIN_RATIO, TAIL_CHARS, choose, core };
+  return { MIN_RATIO, TAIL_CHARS, FLAT_MIN_CHARS, choose, core, flattened };
 });
