@@ -298,7 +298,7 @@ async function waitForScriptReady(tabId, llmName, { timeoutMs = READY_WAIT_TIMEO
     return false;
   }
 
-async function reinjectScript(tabId, llmName) {
+async function reinjectScript(tabId, llmName, options = {}) {
   const scriptFile = SCRIPT_MAP[llmName];
   if (!scriptFile) {
     console.error(`[BACKGROUND] No script mapping for ${llmName}`);
@@ -310,7 +310,8 @@ async function reinjectScript(tabId, llmName) {
     && !isTerminalHealthEntry(entry)
     && (entry.promptSubmittedAt || entry.confirmedDispatchId || entry.submitSource === 'content')
   );
-  if (confirmedActiveRun) {
+  // M-4: an orphaned page (extension reloaded) has nothing to preserve; the recovery opts in.
+  if (confirmedActiveRun && options.allowActiveRun !== true) {
     emitTelemetry(llmName, 'SCRIPT_REINJECT_SKIPPED_ACTIVE_RUN', {
       level: 'warning',
       details: 'preserve_confirmed_provider_page',
@@ -409,4 +410,20 @@ self.checkScriptHealth = checkScriptHealth;
 self.requestFreshScriptReady = requestFreshScriptReady;
 self.waitForScriptReady = waitForScriptReady;
 self.reinjectScript = reinjectScript;
+
+// M-4: the provider tab outlived an extension reload, so its content script is dead
+// (`Extension context invalidated`) and cannot finish a confirmed answer. Reload the same
+// chat (the answer stays on the page) and re-inject the provider script; the caller then
+// reads the page through Get It. Returns true when the script is back.
+async function recoverOrphanedProviderTab(tabId, llmName) {
+  const ok = await reinjectScript(tabId, llmName, { allowActiveRun: true });
+  emitTelemetry(llmName, 'CONTEXT_LOST_TAB_RECOVERED', {
+    level: ok ? 'info' : 'warning',
+    details: ok ? 'script_restored' : 'recovery_failed',
+    meta: { tabId, ok },
+    force: true
+  });
+  return ok;
+}
+self.recoverOrphanedProviderTab = recoverOrphanedProviderTab;
 self.prepareTabForUse = prepareTabForUse;
