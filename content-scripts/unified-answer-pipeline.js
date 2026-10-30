@@ -736,8 +736,11 @@ const timeouts = {
 console.log(`[Pipeline] Timeouts for ${this.platform}: soft=${timeouts.soft}ms, hard=${timeouts.hard}ms`);
 let watchdog = null;
 const hardTimeoutPromise = new Promise((_, reject) => {
+  const hardTimerStartedAt = Date.now();
   watchdog = setTimeout(() => {
     this.streamingTimedOut = true;
+    // Which timer ended the wait and its limit: PIPELINE_ERROR hard_timeout carries both (review C11).
+    this.hardTimerInfo = { timeoutMs: timeouts.hard, startedAt: hardTimerStartedAt };
     reject(new Error('hard_timeout'));
   }, timeouts.hard);
 });
@@ -1622,7 +1625,14 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         : null;
       this.emitPipelineTelemetry('PIPELINE_ERROR', {
         level: 'error',
-        meta: { phase, message: payload.error.message, visibilityState, hasFocus }
+        meta: {
+          phase,
+          message: payload.error.message,
+          visibilityState,
+          hasFocus,
+          timeoutMs: this.hardTimerInfo?.timeoutMs ?? null,
+          startedAt: this.hardTimerInfo?.startedAt ?? null
+        }
       });
       return payload;
     }

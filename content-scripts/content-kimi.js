@@ -237,9 +237,13 @@
     // states but not reliably once logged in, so try it first (cheap, no
     // debugger banner) and fall through to a real CDP-dispatched click.
     const beforeUserTurns = document.querySelectorAll(USER_TURN_SELECTOR).length;
+    // Review C12: a single 250 ms pause let the click land on a still disabled button.
+    // Wait up to 3 s for the enabled state (poll every 100 ms), then click or fall back.
     let button = findFirst(SEND_SELECTORS);
-    if (button?.classList?.contains('disabled') || button?.disabled) {
-      await sleep(250);
+    const sendDisabled = (el) => Boolean(el?.classList?.contains('disabled') || el?.disabled);
+    const sendReadyDeadline = Date.now() + 3000;
+    while (sendDisabled(button) && Date.now() < sendReadyDeadline) {
+      await sleep(100);
       button = findFirst(SEND_SELECTORS);
     }
     if (button && !button.disabled && !button.classList?.contains('disabled')) {

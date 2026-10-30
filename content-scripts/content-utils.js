@@ -38,6 +38,11 @@
         || finalization.answerVerification
         || pipelineMeta.answerVerification
         || null,
+      // Timer limits, the hard-stop flag and a stall diagnosis of the streaming wait (review C9, C11):
+      // the background writes them into MODEL_FINAL, so an expired timer is visible in the telemetry.
+      timers: pipelineMeta.answer?.timers || null,
+      flags: pipelineMeta.answer?.flags || null,
+      stopStalled: pipelineMeta.answer?.stopStalled || null,
       // The typed run result has to survive the trip to the background, or the
       // strength of the claim is lost exactly where the answer is accepted:
       // AnswerEvidence reads responseMeta.runResult, and without this line it

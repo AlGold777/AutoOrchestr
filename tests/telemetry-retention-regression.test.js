@@ -30,7 +30,7 @@ describe('telemetry retention and serialization', () => {
   });
 
   test('per-model logs retain critical events and suppress post-terminal layer noise', () => {
-    expect(TELEMETRY_SRC).toContain('const MAX_LOG_ENTRIES = 120');
+    expect(TELEMETRY_SRC).toContain('const MAX_LOG_ENTRIES = 360');
     expect(TELEMETRY_SRC).toContain('buffer.findIndex((item) => !isPinnedTelemetryEvent(item))');
     expect(TELEMETRY_SRC).toContain("label.startsWith('ANSWER: LAYER ')");
   });

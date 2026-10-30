@@ -9,7 +9,8 @@ const PLATFORM_DEGRADED_COOLDOWN_MS = 15 * 60 * 1000;
 const PLATFORM_DEGRADED_HOURLY_THRESHOLD = 0.7;
 const PLATFORM_DEGRADED_HOURLY_COOLDOWN_MS = 60 * 60 * 1000;
 const PLATFORM_HISTORY_MAX = 50;
-const MAX_LOG_ENTRIES = 120;
+// Review C11: 120 evicted the early events of a 40-minute run. x3 keeps them (the global cap is 4000 items).
+const MAX_LOG_ENTRIES = 360;
 const DIAG_KEY = '__diagnostics_events__';
 const DIAGNOSTICS_EVENTS_MAX_ITEMS = 4000;
 const DIAGNOSTICS_EVENTS_MAX_BYTES = 3000000;
