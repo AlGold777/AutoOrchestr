@@ -209,6 +209,7 @@
 | `token_only` | без текста | ответ пуст, но транспорт подтвердил ответ (`status` `SUCCESS`, `attribution` `verified`) (`judge`) |
 | `truncation_marker` | оборван | в тексте `[...truncated]`, незакрытый блок кода или многоточие без завершения (`evaluate`) |
 | `incomplete_ending` | оборван на середине | последняя строка длиннее трёх слов, без знака конца, не список и не заголовок, и `completion` не `complete` (`evaluate`) |
+| `partial_short` | не завершён: только строка состояния модели | статус транспорта `PARTIAL`, `completion` не `complete` и меньше 30 слов (например «Проверяя архитектуру»); повторяется как другие причины (`evaluate`) |
 | `closed_by_owner` | раунд закрыт User | транспорт закрыт User (`closeReason: moderator_closed`) и текста нет (движок) |
 | `too_long` | длиннее допустимого (с числом слов) | `output.strictLength: true` или `run.strictLength: true` (для шага без своего `strictLength`): слов больше предела модели, а без него — общего `run.maxWords` (`BasicOutput.checkAnswer`) |
 | `missing_section` | не содержит раздел (с названием раздела) | заголовок из `output.sections` не найден ни в одной строке ответа; регистр не важен |

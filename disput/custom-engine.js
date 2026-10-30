@@ -51,6 +51,7 @@
     too_short: 'слишком короткий',
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
+    partial_short: 'не завершён: только строка состояния модели',
     error_output: 'ошибка вместо ответа',
     closed_by_owner: 'раунд закрыт User',
     too_long: 'длиннее допустимого',

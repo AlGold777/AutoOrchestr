@@ -41,6 +41,9 @@
     // A transport-complete answer (the delivery token proves it ended) is not "cut off" because
     // its last line is not a sentence: the ending heuristic is only for answers without proof.
     const provenComplete = String(meta.completion || '').toLowerCase() === 'complete';
+    // A transport answer that ended without proof (PARTIAL) and is only a few words is the model's status line («Проверяя
+    // архитектуру», «Запуск интерпретатора кода…») taken for text, not an answer.
+    if (!allowShort && !provenComplete && outputKind !== 'json' && String(meta.status || '').toUpperCase() === 'PARTIAL' && wordCount < 30) return { ok: false, reason: 'partial_short', details: { words: wordCount } };
     if (!allowShort && !provenComplete && outputKind !== 'json' && !ENDING.test(value) && !/^\s*(?:[-*]|\d+[.)]|#)/.test(lastLine) && lastLine.split(/\s+/).length > 3) return { ok: false, reason: 'incomplete_ending', details: { lastLine } };
     return { ok: true, reason: '', details: { chars: value.length, words: wordCount } };
   }
