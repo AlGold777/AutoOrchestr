@@ -267,6 +267,16 @@
     return cleaned;
   }
 
+  // A body that is only a progress or noise line: short, no content, a progress verb without a verdict.
+  // The classifier is the same one that judges the answer (shared/answer-content-classifier.js).
+  function isProgressOnlyBody(body) {
+    const text = String(body || '').trim();
+    if (!text || text.length >= 300) return false;
+    const classifier = root.AnswerContentClassifier
+      || (typeof module !== 'undefined' && module.exports ? require('./answer-content-classifier.js') : null);
+    return Boolean(classifier && classifier.isProgressLine(text));
+  }
+
   // Incoming: returns null when the message must be dropped (stale answer),
   // otherwise the message with cleaned text/html and attribution metadata.
   function receive(message, { final = false } = {}) {
@@ -292,11 +302,17 @@
     const endMarkerSeen = state === 'verified'
       && tokenAt >= 0 && answer.length - tokenAt - tag(entry.token).length <= 40
       && Boolean(clean(answer));
-    if (endMarkerSeen) entry.answerEndMarkerSeen = true;
+    // A marker after a progress line («Проверю…») is not the end of the answer (review L-2).
+    const progressOnly = endMarkerSeen && isProgressOnlyBody(clean(answer));
+    if (endMarkerSeen && !progressOnly) entry.answerEndMarkerSeen = true;
     metadata.answerEndMarkerSeen = entry.answerEndMarkerSeen === true;
     if (metadata.answerEndMarkerSeen) {
       metadata.terminal = true;
       metadata.status = 'SUCCESS';
+    }
+    if (progressOnly) {
+      metadata.status = 'PARTIAL';
+      metadata.reason = 'progress_only';
     }
     if (!final && entry.final && entry.finalKind === 'empty_answer' && answer.trim() && !entry.lateTextLogged) {
       entry.lateTextLogged = true;
@@ -643,7 +659,7 @@
     } catch (_) { /* ignore */ }
   }
 
-  const api = Object.freeze({ JOURNAL_KEY, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, snapshot, clearJournal, reset, collection: () => ({ ...collection, retained: journal.length }), journal: () => journal.slice() });
+  const api = Object.freeze({ JOURNAL_KEY, isProgressOnlyBody, makeToken, wrap, clean, cleanHtml, inspect, prepare, receive, observeRuntime, closeBatch, batchEvent, record, snapshot, clearJournal, reset, collection: () => ({ ...collection, retained: journal.length }), journal: () => journal.slice() });
   root.MessageDelivery = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

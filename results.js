@@ -2842,12 +2842,42 @@ document.addEventListener('click', (event) => {
     // script). The message handler stashes it per model; the card that renders that
     // answer takes it. Copy / TXT / hand-off use it when present, else the old text.
     const answerCopyPending = {};
+    // The same copies by transport request, kept after the card took its own: a Basic reply reads them
+    // (replyCopyFor) when the copy comes in a message after the batch has already settled.
+    const answerCopyByRequest = new Map();
     const stashAnswerCopy = (llmName, source, requestId = '') => {
         const markdown = typeof source?.answerMarkdown === 'string' ? source.answerMarkdown : '';
         const report = source?.copyReport && typeof source.copyReport === 'object' ? source.copyReport : null;
         if (!llmName) return;
         if (!markdown && !report) { delete answerCopyPending[llmName]; return; }
         answerCopyPending[llmName] = { markdown, report, requestId: String(requestId || '') };
+        if (requestId) {
+            answerCopyByRequest.delete(String(requestId));
+            answerCopyByRequest.set(String(requestId), { llmName, markdown, report });
+            if (answerCopyByRequest.size > 200) answerCopyByRequest.delete(answerCopyByRequest.keys().next().value);
+        }
+    };
+    // The DOM->Markdown copy a Basic reply should take (shared/basic-reply-text.js). A flat plain text with a missing or
+    // incomplete copy waits a few seconds: the Claude ping path sends the text first and the copy in a later message.
+    const REPLY_COPY_WAIT_MS = 4000;
+    const REPLY_COPY_POLL_MS = 250;
+    const replyCopyFor = async (llmName, requestId, flat, own) => {
+        const rid = String(requestId || '');
+        const hasCopy = (copy) => Boolean(copy && copy.markdown && copy.report && copy.report.complete === true);
+        const latest = () => {
+            const hit = rid ? answerCopyByRequest.get(rid) : null;
+            return hit && hit.llmName === llmName ? hit : null;
+        };
+        const pick = () => (hasCopy(own) ? own : (hasCopy(latest()) ? latest() : (latest() || own || {})));
+        let waitedMs = 0;
+        if (flat && !hasCopy(pick())) {
+            const deadline = Date.now() + REPLY_COPY_WAIT_MS;
+            while (!hasCopy(pick()) && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, REPLY_COPY_POLL_MS));
+                waitedMs += REPLY_COPY_POLL_MS;
+            }
+        }
+        return { copy: pick(), waitedMs };
     };
     const describeCopyReport = (report) => {
         if (!report || report.complete !== false) return '';
@@ -7349,14 +7379,19 @@ document.addEventListener('click', (event) => {
                     runContext.settledBatches = Number(runContext.settledBatches || 0) + 1;
                     // The chats as the background bound them (R01), written into the state before the next send.
                     await refreshParticipantChats(runContext.pipelineRunId, wave);
-                    const byModel = Object.fromEntries(models.map((model) => {
+                    const byModel = Object.fromEntries(await Promise.all(models.map(async (model) => {
                         const modelResult = batch?.results?.[model] || {};
                         const text = String(batch?.responses?.[model] || '');
                         // The reply text: the markdown copy when complete and matching the plain answer (shared/basic-reply-text.js).
+                        // A flat text waits for its copy first (replyCopyFor); the copy read here is the one the reply is chosen from.
+                        const flatText = Boolean(text.trim() && globalThis.BasicReplyText?.flattened(text));
+                        const copyWait = text.trim() && globalThis.BasicReplyText
+                            ? await replyCopyFor(model, modelResult.transportRequestId, flatText, { markdown: modelResult.answerMarkdown, report: modelResult.copyReport })
+                            : { copy: {}, waitedMs: 0 };
                         const replyChoice = text.trim() && globalThis.BasicReplyText
-                            ? globalThis.BasicReplyText.choose({ plain: text, markdown: modelResult.answerMarkdown, report: modelResult.copyReport })
+                            ? globalThis.BasicReplyText.choose({ plain: text, markdown: copyWait.copy.markdown, report: copyWait.copy.report })
                             : { text, text_source: 'plain', reason: 'no_converter' };
-                        globalThis.MessageDelivery?.batchEvent?.('basic_reply_text', { model, text_source: replyChoice.text_source, reason: replyChoice.reason, plainChars: text.length, markdownChars: replyChoice.markdownChars || 0 });
+                        globalThis.MessageDelivery?.batchEvent?.('basic_reply_text', { model, text_source: replyChoice.text_source, reason: replyChoice.reason, plainChars: text.length, markdownChars: replyChoice.markdownChars || 0, flatText, copyWaitMs: copyWait.waitedMs });
                         if (!text.trim() && String(modelResult.status || '').toUpperCase() === 'USER_ACTION_REQUIRED') {
                             // A participant request refused before the send (R01, R06): the reason is said, nothing is sent.
                             const code = Object.values(window.RunError?.CODES || {}).find((item) => String(modelResult.reason || '').includes(item)) || '';
@@ -7389,7 +7424,7 @@ document.addEventListener('click', (event) => {
                             // The transport reason (usage_limit or usage_limit:HH:MM) and its text: the engine reads them for a usage limit.
                             reason: modelResult.reason || ''
                         }];
-                    }));
+                    })));
                     const byParticipant = {};
                     wave.forEach((request) => {
                         const reply = byModel[request.modelName];

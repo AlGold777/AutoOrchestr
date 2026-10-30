@@ -234,7 +234,9 @@
   };
 
   const perplexity = {
-    ui: ['.citation-nbsp'],
+    // `a svg`: the favicon/icon inside a source chip (a.inline-flex > span > span > svg). The chip is already a link
+    // in the copy; its icon is not a diagram, so it must not count as an unhandled svg (that made every cited answer incomplete).
+    ui: ['.citation-nbsp', 'a svg'],
     answerRoot: (el) => selfOrQuery(el, '[id^="markdown-content-"]')
   };
 
