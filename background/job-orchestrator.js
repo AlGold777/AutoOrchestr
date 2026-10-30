@@ -6102,7 +6102,7 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
       try {
         const returnTab = Number.isInteger(options.returnToTabId) ? await getTabSafe(options.returnToTabId) : null;
         if (isAppUiTab(returnTab)) {
-          await chrome.tabs.update(returnTab.id, { active: true });
+          if (!returnTab.active) await chrome.tabs.update(returnTab.id, { active: true });
           await chrome.windows.update(returnTab.windowId, { focused: true });
         }
       } catch (err) {
@@ -10250,7 +10250,7 @@ async function collectFailedGetItPages(selectedModels, options) {
     try {
       const tab = isSessionActive(sessionId) ? await getTabSafe(options.returnToTabId) : null;
       if (isAppUiTab(tab)) {
-        await chrome.tabs.update(tab.id, {active:true});
+        if (!tab.active) await chrome.tabs.update(tab.id, {active:true});
         await chrome.windows.update(tab.windowId, {focused:true});
       } else if (options.automatic && isSessionActive(sessionId)) {
         await openOrFocusResultsTab();

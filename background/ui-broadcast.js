@@ -137,7 +137,7 @@ function focusResultsTab() {
       if (chrome.runtime.lastError) {
         console.warn('[BACKGROUND] Failed to focus results window:', chrome.runtime.lastError.message);
       }
-      chrome.tabs.update(resultsTabId, { active: true });
+      if (!tab.active) chrome.tabs.update(resultsTabId, { active: true });
     });
   });
 }

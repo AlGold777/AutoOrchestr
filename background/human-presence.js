@@ -570,6 +570,34 @@ function consumeProgrammaticTabFocus(tabId, now = Date.now()) {
   return entry;
 }
 
+// Visit-driven switches (human and automation visits) keep this pause between
+// two switches to different model tabs. It equals the minimum visit dwell, so a
+// normal visit is not delayed; only back-to-back switches are spaced. Dispatch
+// activation is not paused.
+const VISIT_TAB_SWITCH_MIN_GAP_MS = HUMAN_VISIT_DWELL_MS;
+let lastVisitTabSwitchAt = 0;
+
+// Brings a model tab forward for a visit. A tab that is already active gets no
+// tabs.update, no programmatic-focus mark and no focus event: the visit still
+// dwells on it, but the switch count does not grow. Calls back with false only
+// when the activation itself failed.
+function activateTabForVisit(tabId, source, llmName, callback) {
+  const done = (ok) => { try { callback(ok); } catch (_) { /* noop */ } };
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab) { done(false); return; }
+    if (tab.active) { done(true); return; }
+    const waitMs = Math.max(0, lastVisitTabSwitchAt + VISIT_TAB_SWITCH_MIN_GAP_MS - Date.now());
+    setTimeout(() => {
+      markProgrammaticTabFocus(tabId, source, { llmName });
+      chrome.tabs.update(tabId, { active: true }, () => {
+        if (chrome.runtime.lastError) { done(false); return; }
+        lastVisitTabSwitchAt = Date.now();
+        done(true);
+      });
+    }, waitMs);
+  });
+}
+
 function clearFocusStuckTimer(reason = 'unknown') {
   if (focusStuckTimer) {
     clearTimeout(focusStuckTimer);
@@ -1241,9 +1269,8 @@ function visitTabWithHumanity(llmName, tabId) {
           finalizeVisit();
           return;
         }
-        markProgrammaticTabFocus(tabId, 'human_visit_activate', { llmName });
-        chrome.tabs.update(tabId, { active: true }, () => {
-          if (chrome.runtime.lastError) {
+        activateTabForVisit(tabId, 'human_visit_activate', llmName, (ok) => {
+          if (!ok) {
             finalizeVisit();
             return;
           }
@@ -1383,9 +1410,8 @@ function visitTabWithAutomation(llmName, tabId, options = {}) {
             finalizeVisit('automation_session_stale');
             return;
           }
-          markProgrammaticTabFocus(tabId, 'automation_visit_activate', { llmName });
-          chrome.tabs.update(tabId, { active: true }, () => {
-            if (chrome.runtime.lastError) {
+          activateTabForVisit(tabId, 'automation_visit_activate', llmName, (ok) => {
+            if (!ok) {
               finalizeVisit('automation_tab_update_failed');
               return;
             }
