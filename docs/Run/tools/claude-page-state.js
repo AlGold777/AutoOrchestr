@@ -1,0 +1,1 @@
+(function(){var t=document.body.innerText;return JSON.stringify({url:location.href,limit:/лимит использования|usage limit|reached your limit/i.test(t),input:!!document.querySelector('div[contenteditable="true"],textarea'),title:document.title})})()
