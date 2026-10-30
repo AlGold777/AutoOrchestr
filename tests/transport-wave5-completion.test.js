@@ -71,7 +71,7 @@ describe('C4: Claude completion and empty answers', () => {
 
 describe('C8: repeat send checks the page for an own turn', () => {
   const dispatchSource = read('background', 'dispatch-coordinator.js');
-  const probeMatch = dispatchSource.match(/const OWN_PROMPT_TURN_PROBE = (\(tag\) => \{[\s\S]*?\n\});/);
+  const probeMatch = dispatchSource.match(/const OWN_PROMPT_TURN_PROBE = (\(tag(?:, newMarkup = null)?\) => \{[\s\S]*?\n\});/);
 
   test('the probe sees an own user turn with the tag', () => {
     expect(probeMatch).not.toBeNull();

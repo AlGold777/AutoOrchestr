@@ -101,7 +101,7 @@ describe('background: runInlineLateExtract', () => {
       withLateCollectExecutionLock: async (fn) => fn(), withLateCollectTimeout: (p) => p,
       LATE_COLLECT_EXECUTE_TIMEOUT_MS: 1000, DOM_SNAPSHOT_RECOVERY_MIN_CHARS: 80,
       extractLatestAssistantSnapshotInPage: () => ({}),
-      chrome: { scripting: { executeScript: jest.fn(async () => [{ result: executeResult }]) } }
+      chrome: { scripting: { executeScript: jest.fn(async () => [{ result: executeResult }]) } }, self: {}
     };
     vm.createContext(c);
     vm.runInContext(sliceFunction(ORCH, 'async function runInlineLateExtract('), c);

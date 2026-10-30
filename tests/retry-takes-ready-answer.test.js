@@ -90,7 +90,7 @@ describe('M-18: the host and the background take the answer of any request of th
     const job = read('background/job-orchestrator.js');
     const fn = job.slice(job.indexOf('async function rereadOwnTurnForBasic'), job.indexOf('function collectGetItBatch('));
     expect(fn).toContain('message.sentPrompts');
-    expect(fn).toMatch(/for \(const prompt of roundPrompts\)[\s\S]*?pageHoldsOwnPromptTurn\(tabId, prompt\)/);
+    expect(fn).toMatch(/for \(const prompt of roundPrompts\)[\s\S]*?pageHoldsOwnPromptTurn\(tabId, prompt(?:, llmName)?\)/);
     expect(fn).toMatch(/roundTags\.some\(\(tag\) => answerHasDeliveryToken\(llmName, text, tag\)\)/);
     expect(fn).toMatch(/text === previousText/);
   });
