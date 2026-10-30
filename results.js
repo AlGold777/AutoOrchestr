@@ -3246,7 +3246,9 @@ document.addEventListener('click', (event) => {
                         completion: PIPELINE_TRANSPORT.classifyCompletion(status, text),
                         attribution: 'verified',
                         replacedUnproven: true,
-                        text
+                        text,
+                        answerMarkdown: typeof envelope.answerMarkdown === 'string' ? envelope.answerMarkdown : '',
+                        copyReport: envelope.copyReport && typeof envelope.copyReport === 'object' ? envelope.copyReport : null
                     };
                     globalThis.MessageDelivery?.batchEvent?.('unproven_replaced', {
                         model: llmName, requestId: envelope.transportRequestId || null, chars: text.length, previousChars: String(kept.text || '').length
@@ -3268,7 +3270,10 @@ document.addEventListener('click', (event) => {
                 completion: PIPELINE_TRANSPORT.classifyCompletion(status, text),
                 reason: envelope.metadata?.reason || envelope.metadata?.completionReason || null,
                 attribution: envelope.metadata?.attributionState === 'unproven' ? 'unproven' : 'verified',
-                text
+                text,
+                // DOM->Markdown copy of this answer: a Basic reply takes it when it matches the text (shared/basic-reply-text.js).
+                answerMarkdown: typeof envelope.answerMarkdown === 'string' ? envelope.answerMarkdown : '',
+                copyReport: envelope.copyReport && typeof envelope.copyReport === 'object' ? envelope.copyReport : null
             };
             batch.results[llmName] = result;
             if (hasText) {
@@ -7340,6 +7345,11 @@ document.addEventListener('click', (event) => {
                     const byModel = Object.fromEntries(models.map((model) => {
                         const modelResult = batch?.results?.[model] || {};
                         const text = String(batch?.responses?.[model] || '');
+                        // The reply text: the markdown copy when complete and matching the plain answer (shared/basic-reply-text.js).
+                        const replyChoice = text.trim() && globalThis.BasicReplyText
+                            ? globalThis.BasicReplyText.choose({ plain: text, markdown: modelResult.answerMarkdown, report: modelResult.copyReport })
+                            : { text, text_source: 'plain', reason: 'no_converter' };
+                        globalThis.MessageDelivery?.batchEvent?.('basic_reply_text', { model, text_source: replyChoice.text_source, reason: replyChoice.reason, plainChars: text.length, markdownChars: replyChoice.markdownChars || 0 });
                         if (!text.trim() && String(modelResult.status || '').toUpperCase() === 'USER_ACTION_REQUIRED') {
                             // A participant request refused before the send (R01, R06): the reason is said, nothing is sent.
                             const code = Object.values(window.RunError?.CODES || {}).find((item) => String(modelResult.reason || '').includes(item)) || '';
@@ -7363,7 +7373,7 @@ document.addEventListener('click', (event) => {
                             });
                         }
                         return [model, {
-                            text, status: modelResult.status || '', completion: modelResult.completion || '',
+                            text: replyChoice.text, status: modelResult.status || '', completion: modelResult.completion || '',
                             // The prompt exactly as the transport dispatched it (token and limit included).
                             sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
                             attribution: modelResult.attribution || '',

@@ -39,4 +39,56 @@
 
 ## Stop без роста текста
 
-Если к дедлайну кнопка «Стоп» провайдера всё ещё видна, а текст ответа не растёт, протокол завершения даёт `STALLED` с причиной `stop_stalled` (вместо `timeout_progress` / `timeout_hard`). Это не «таймаут потока» и не успех: на пути `LLM_COMPLETION_TERMINAL` фон принимает ответ как ошибку `uncertain` с причиной `stop_stalled`, сохраняет собранный текст (`meta.answerText` из последнего прочитанного текста вкладки) и выставляет финальный статус `UNCERTAIN`. Журнал получает `completion_terminal` со статусом `STALLED` и причиной `stop_stalled`. Приёмка Basic (`DebateResponseAcceptance.evaluate`, `meta.status`) отклоняет `UNCERTAIN` как `unproven_status`; дальше действует обычный путь отказа (коррекция, затем пауза этапа, где пользователь решает о повторе). Пока текст растёт, дедлайн `PROGRESS` не срабатывает и ожидание продолжается (жёсткий лимит попытки работает по-прежнему независимо от роста).
+Текст, который модель уже выдала, фиксируется как неполный ответ в той же форме, что и дедлайн автоматизации для ожидающего ответа (`lastResortTerminal`, `lateCollectFinal`). `forceTerminalSuccess` ставится только для полного ответа (с меткой): неполный остаётся открытым для проверок ответа. Итог журналируется: `incomplete_answer_committed` или `commit_not_final` (со статусом модели). Каждая фаза отправки несёт версию фона (`bg`); если она не совпадает с версией панели, диагностика показывает `stale_background` — перезагрузите расширение.
+
+## Наблюдатель за неизменным текстом
+
+На всё время запуска работает проверка раз в 3 с: если у отправленной, но не завершённой модели текст ответа не менялся, то с меткой доставки этого запроса — через 5 с он фиксируется как полный ответ; без метки — через 15 с выполняется один Get it, через 30 с текст фиксируется как неполный (`static_text_watch`, `bottom_nudge` с причиной `static_text_watch`). Для Claude текст без метки не фиксируется никогда: в его тексте попадает чужой интерфейс (сайдбар, меню модели, эхо промпта), наблюдение продолжается. Прогрессом считается только текст; активность вкладки (визиты, фокус, скролл) не в счёт. Отложенный неопределённый финал сохраняет собственную обработку до своего конца. Метка ищется в промпте через `TransportPolicy.resolvePromptForModel`: карта промптов в сессии ключуется по имени модели в верхнем регистре.
+
+## Визиты на вкладки
+
+Периодические визиты на вкладки ищут ответ, но сами ответом не являются: активность от визитов в прогресс не засчитывается. Визиты отслеживают только текст ответа. Если текст есть и не изменился с прошлого визита, вместо очередного обычного визита страница один раз на отправку передёргивается к концу беседы (`bottom_nudge`, причина `static_text`). После 6 визитов (порог тревоги) цикл останавливается; перед решением страница передёргивается к концу беседы (как при двойном клике), и если текст вырос — визиты продолжаются, если пришёл финал — ничего не фиксируется; если у модели есть текст и он не менялся между визитами, он фиксируется как неполный ответ (`static_answer_committed`, пометка «неполный»). Если пользователь видит, что модель дописала, двойной клик по индикатору статуса модели (также в Pipeline) снова запрашивает у неё последний ответ; поздний ответ приходит ревизией.
+
+## Карточки ответов
+
+- **«неполный»** — серая пометка справа от имени модели, если генерация завершилась не чисто (`PARTIAL`, `STREAM_TIMEOUT`, …). Только информирует: принять такой ответ галочкой можно (полуавтоматический режим).
+- **Галочка подтверждения** одновременно «проверяет» ответ без метки доставки: у неё подсказка «Verify and approve this answer», а принятие заменяет плашку «Без метки доставки» решением пользователя (`attributionState: user_verified`).
+
+## Окно телеметрии → Disput, раздел «Доставка» (бывшая вкладка Automation)
+
+С 2.81.563 отдельной вкладки Automation нет: её карточки стоят во вкладке Disput. С 2.81.569 фильтра модели нет, а «Only problems» влияет только на отображение карточек. Кнопка очистки (`Clear delivery journal`) стирает журнал доставки. С 2.81.905 других карточек и экспорта JSON/MD у вкладки нет: журнал доставки прогона Basic и его вердикт (`delivery.journal`, `delivery.diagnosis`) входят в JSON кнопки Basic ([телеметрия](../Telemetry/telemetry.md), раздел «Basic: JSON прогона»).
+
+Журнал (`chrome.storage.session`, до 3000 событий, живёт до перезагрузки страницы) собирает факты трёх источников:
+
+| Источник | События |
+| --- | --- |
+| Панель | `batch_start` (модели, `transportRequestId`, срок, этап, профиль), `start_refused` (код, причина, модель, которая ещё генерирует), `start_accepted` / `start_unconfirmed`, `batch_end` (`settled` / `timeout` / `cancelled` / `rejected`, длительность, без ответа, завершённость по моделям), `prepared`, `identity_rejected` (ответ не принят: `no_request_id`, `unknown_request`, `model_mismatch`, `batch_settled`, `duplicate_terminal`, `revision_after_terminal`), `cancelled`, `no_answer` |
+| Фон (`TRANSPORT_DISPATCH_PHASE`) | `dispatch` с фазой: `dispatch_started`, `command_accepted`, `submitted`, `submit_unconfirmed`, `command_not_delivered`, `terminal_deferred` (неопределённый финал протокола отложен), `terminal_deferral_ended`, `blocked` (`circuit_open`, `tab_not_ready`, `ack_timeout`, `page_not_ready`, `focus_unavailable`, …) — с `dispatchId`, вкладкой и временем от подготовки |
+| Ответы и вкладка | `first_text`, `verified` / `missing_token` / `empty_answer` (статус, `completion`, `dispatchId`, источник `live` или `GLOBAL_STATE_ANSWER_RECOVERY`), `revision`, `late_text` (текст после пустого финала), `stale_dropped`, `status`, `tab`, `provider_stop` (результат нажатия «Стоп» у провайдера), `focus` (программное переключение на вкладку модели: источник — диспетчеризация, визит человека, восстановление; до 30 событий на запрос, точный счёт сохраняется в `focus_count`), `text_progress` (рост текста ответа, не чаще раза в 10 с), `completion_terminal` (решение протокола завершения во вкладке: статус и причина), `navigation` (переход SPA во вкладке: путь до и после). Финал ошибки несёт конкретную причину (`errorType: errorMessage`) |
+
+Для полуавтоматики (2.81.525) панель пишет ещё:
+
+- `displayed` — текст выведен в карточку из глобального состояния фона: источник (`global_state_hydrate`), размер, был ли финал, принял ли его открытый этап (`acceptedByWait`) и почему нет (`rejectReason`: `not_final`, `no_request_id`, `unknown_request`, `model_mismatch`, `batch_settled`). Показано, но не принято — проблема `display_desync`.
+- `batch_start.runMode` (`auto`, `semi_auto`, `manual_dispatch`) и `template`; ручная отправка модератора идёт в пакете `manual:aN`.
+- Действия модератора: `moderator_get_it` и `get_it_result` по моделям, `moderator_stage_close` (кто ответил, кто пропущен), `moderator_close_refused`, `moderator_approve`; исход пакета `moderator_closed` (не таймаут).
+
+Карточки доставки:
+
+- **Delivery Health** — по моделям: отправлено, доставлено, неполные, без метки, пустые, нет ответа, не отправлено, нет вкладки, ошибки, отменено, отклонено по принадлежности, устаревшие; медианы времени до отправки и до ответа.
+- **Delivery Batches** — каждый пакет: этап, модели, отказы старта с причиной, время до старта, исход, длительность и срок, модели без ответа, завершённость по моделям.
+- **Delivery Problems** — проблемы с пояснением и что делать: `premature_terminal` (запрос закрыт без текста, а модель продолжила отвечать — с причиной: решение протокола, навигация, поздний текст), `not_submitted` и `no_tab` с причиной блокировки, `stuck_waiting` (текст пошёл, а финала нет больше 2 минут), `focus_churn` (6 и более переключений фокуса), `partial`, `identity`, `stop_unconfirmed`, `start_refused` / `start_rejected`, `batch_timeout` и прежние коды.
+- **Message Timeline** — каждое сообщение: `transportRequestId` и номера отправок, путь (вкладка → фазы отправки → статусы → первый текст → остановка), итог (время, размер, статус, завершённость, источник, ревизии, отклонённые ответы).
+- **Raw Delivery Events**. Отчёт — раздел `delivery` в экспорте Disput (с версией транспортного контракта).
+
+Код: `shared/transport-contract.js`, `shared/message-delivery.js`, `shared/message-delivery-diagnosis.js`, `shared/message-delivery-view.js`, точки подключения в `results.js` (`pipelineWaiter`, `runModelBatch`, обработчик сообщений, `syncStatusFromGlobalState`), `background/job-orchestrator.js` (`transportIdentityFor`), `background/dispatch-coordinator.js`, `content-scripts/content-utils.js`.
+
+## Текст ответа для Basic
+
+Ответ модели, который Basic передаёт дальше (следующий раунд, артефакт), берётся из DOM→Markdown копии (`answerMarkdown`), если она полная (`copyReport.complete`) и совпадает с плоским текстом (`answer`). Таблицы выходят pipe-таблицами, код и Mermaid блоками ```…``` (исходник Mermaid). Правило — `shared/basic-reply-text.js` (`BasicReplyText.choose`), вызов — `results.js`, `sendWave`; `answer` остаётся для приёмки и подтверждения окончания. Иначе берётся плоский текст, и причина пишется в телеметрию: событие `basic_reply_text` (`text_source` markdown|plain, `reason`: complete, incomplete_copy, no_markdown, placeholder, short_markdown, tail_missing, marker_missing, empty_plain). Метка `[[AO-…]]` и маркеры `[[DOC]]` срезаются в `disput/basic-output.js` (`cleanAnswer`) и для markdown-текста.
+
+## Будущий функционал
+
+- Нет ответа за отведённое время — повторная отправка той же модели.
+- Повтор не помог — передача сообщения другой выбранной модели.
+
+«Only problems» выключен по умолчанию. Кнопка Extract (выжимка `extract_transport_*.md` и `Disput Flow *.json`) удалена в 2.81.905; ранее сохранённые файлы `Disput Flow` читает CLI `scripts/summarize-report.js`.
