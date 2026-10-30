@@ -7416,7 +7416,10 @@ document.addEventListener('click', (event) => {
                         const replyChoice = text.trim() && globalThis.BasicReplyText
                             ? globalThis.BasicReplyText.choose({ plain: text, markdown: copyWait.copy.markdown, report: copyWait.copy.report })
                             : { text, text_source: 'plain', reason: 'no_converter' };
-                        globalThis.MessageDelivery?.batchEvent?.('basic_reply_text', { model, text_source: replyChoice.text_source, reason: replyChoice.reason, plainChars: text.length, markdownChars: replyChoice.markdownChars || 0, flatText, copyWaitMs: copyWait.waitedMs });
+                        // Diagnostics for L-23: where the copy came from (the result of the batch, the copy stash by request, or none),
+                        // and whether the terminal message carried a copy at all.
+                        const copySource = !copyWait.copy.markdown ? 'none' : (copyWait.copy.markdown === modelResult.answerMarkdown ? 'result' : 'stash');
+                        globalThis.MessageDelivery?.batchEvent?.('basic_reply_text', { model, text_source: replyChoice.text_source, reason: replyChoice.reason, plainChars: text.length, markdownChars: replyChoice.markdownChars || 0, flatText, copyWaitMs: copyWait.waitedMs, copySource, copyComplete: copyWait.copy.report?.complete === true, resultHasMarkdown: typeof modelResult.answerMarkdown === 'string' && modelResult.answerMarkdown.length > 0, resultStatus: modelResult.status || null, requestId: modelResult.transportRequestId || null });
                         if (!text.trim() && String(modelResult.status || '').toUpperCase() === 'USER_ACTION_REQUIRED') {
                             // A participant request refused before the send (R01, R06): the reason is said, nothing is sent.
                             const code = Object.values(window.RunError?.CODES || {}).find((item) => String(modelResult.reason || '').includes(item)) || '';

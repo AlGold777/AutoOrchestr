@@ -2373,7 +2373,16 @@ function isLikelyClaudeModelLabel(text = '') {
         activity.heartbeat(0.9, { phase: 'response-processed' });
         console.log(`[content-claude] Process completed. Response length: ${cleanedResponse.length}`);
         if (!pipelineAnswer || response !== String(pipelineAnswer || '').trim()) {
-          responseMeta = window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback', answerVerification: await fallbackVerifier?.(cleanedResponse) }) || null;
+          // The DOM->Markdown copy comes from the element the fallback text was read from (same selection as
+          // extractClaudeResponseFromDOM). Without it the Basic reply falls back to the flat text (L-23).
+          const copyElement = getLatestClaudeResponseMarkup(prompt, baselineElement).element;
+          const fallbackCopy = copyElement ? (window.ContentUtils?.buildLatestAnswerCopy?.(undefined, copyElement) || {}) : {};
+          responseMeta = window.ContentUtils?.buildResponseMeta?.(null, {
+            source: 'dom_fallback',
+            answerVerification: await fallbackVerifier?.(cleanedResponse),
+            answerMarkdown: fallbackCopy.answerMarkdown,
+            copyReport: fallbackCopy.copyReport
+          }) || null;
         }
         activity.stop({ status: 'success', answerLength: cleanedResponse.length });
         if (sendConfirmationRecovered) {
