@@ -33,3 +33,18 @@
 5. Известные сбои и как они выглядят в экспорте.
 6. Не проверено.
 7. Наблюдения (журнал по датам, шаблон выше).
+
+## Указатель по провайдерам
+
+| Провайдер | Файл | Главные ловушки |
+|---|---|---|
+| ChatGPT (GPT) | [chatgpt.md](chatgpt.md) | Ход — цепочка блоков; итог по метке `[[AO-…]]`, а не по кнопкам; строки «Проверил…» принимались за ответ; текст без переводов строк и без markdown-копии (L-31) |
+| Claude | [claude.md](claude.md) | Запрос ~16 тыс. симв. не принимается (кнопка disabled); лимит аккаунта «Сброс в HH:MM»; Retry прошлых ходов не финал; плоский текст через «Answer updated after ping» |
+| Gemini | [gemini.md](gemini.md) | Ответ не привязан к ходу (`answer_node_unresolved`, M-12); Ctrl+Enter первой стратегией; пустые попытки при заблокированном экране (M-13) |
+| DeepSeek | [deepseek.md](deepseek.md) | Бюджет отправки 12 с; ложные отказы при скрытой вкладке; возможный дубль от humanoid-клика (L-33); DeepThink/Search не подтверждено |
+| Perplexity | [perplexity.md](perplexity.md) | Исследовательский режим идёт минуты (окна 240/540 с); эхо запроса как ответ (`prompt_echo`); вложенные `.prose`; копия не приходит (L-31) |
+| Qwen | [qwen.md](qwen.md) | Ctrl+Enter только без видимой кнопки; ожидание неактивной кнопки 1,5 с; частичные ответы без конца (`partial_unproven`) |
+| Kimi | [kimi.md](kimi.md) | Кнопка `.send-button-container` должна включиться (до 3 с); поздний клик не дублировать; в экспортах Kimi нет |
+| Grok | [grok.md](grok.md) | На macOS отправка через Cmd+Return, не Ctrl+Enter; гейт кнопки с 2.81.950; в экспортах Grok нет |
+| Le Chat | [lechat.md](lechat.md) | Ctrl+Enter первой; `data-testid="code-block"` стоит на inline `<code>`; в экспортах Le Chat нет |
+| Z.ai | [zai.md](zai.md) | Отправка через кнопку, иначе `requestSubmit` или Enter; `.animate-pulse` как маркер генерации (риск); в экспортах Z.ai нет |
