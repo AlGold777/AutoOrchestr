@@ -1,5 +1,13 @@
 # CHANGELOG — Project
 
+### 2026-10-30 — Таблицы Claude сохраняются markdown, маркеры DOC не попадают в артефакт, завершение Claude по Stop и Retry в своём ходе, STOP_STALLED, таймеры в телеметрии, версия 2.81.946
+
+- Basic: таблицы в ответе Claude сохраняются markdown-таблицами (раньше ячейки склеивались в одну строку, `shared/answer-markdown-providers.js` `tableToMarkdown`); метки `[[DOC: id]]` / `[[/DOC]]` срезаются из текста документа, который показывается владельцу и сохраняется в запись и файл (`disput/basic-output.js`).
+- Транспорт: завершение Claude — нет Stop (RU/EN) и Retry в ходе с меткой текущего запроса; пустой ответ Claude — ошибка `extract_failed`, журнал FAILED (`content-scripts/content-claude.js`, `shared/message-delivery.js`).
+- Транспорт: повтор отправки после `command_not_delivered` сначала проверяет свою реплику на странице (`OWN_PROMPT_TURN_PROBE`, `DISPATCH_DELIVERY_VERIFIED_ON_PAGE`); видимый Stop без роста текста 120 с пишется как `STOP_STALLED`.
+- Телеметрия: в MODEL_FINAL и PIPELINE_ERROR — `timers`, `flags`, `timeoutMs`, `startedAt`; буфер журнала прогона 120 → 360 событий; Kimi ждёт включённую кнопку отправки до 3 с.
+- Тесты: `tests/answer-markdown-claude-table.test.js`, `tests/basic-output-doc-marks.test.js`, `tests/transport-wave5-completion.test.js`; обновлены `tests/adapter-response-meta-contract.test.js`, `tests/telemetry-retention-regression.test.js`.
+
 ### 2026-10-30 — Запрос моделям согласован с проверкой схемы, приёмка не берёт статус-строки и эхо, неполный раунд не теряет ответы, версия 2.81.945
 
 - Basic: запрос моделям согласован с проверкой схемы (допустимые maxWords, предупреждения о task и description, исключение revisionOf); `validate`: ошибка для required-входа на выключенного участника и для `run.maxWords` вне 300/500/700/1000.
