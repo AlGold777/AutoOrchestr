@@ -30,16 +30,21 @@ describe('attachment smoke run 1782940321214 regressions', () => {
     scripts.forEach((name) => {
       const src = read('content-scripts', name);
       if (!src.includes('attachmentHandler')) return;
-      expect({ name, declared: src.includes('attachmentHandler = window.AttachmentHandler || null') })
-        .toEqual({ name, declared: true });
+      // Declared either directly or through the lazy getter every adapter now uses
+      // (`getAttachmentHandler`), which reads window.AttachmentHandler at call time.
+      const declared = src.includes('attachmentHandler = window.AttachmentHandler || null')
+        || (src.includes('getAttachmentHandler = () => window.AttachmentHandler || null')
+          && src.includes('attachmentHandler = getAttachmentHandler()'));
+      expect({ name, declared }).toEqual({ name, declared: true });
     });
   });
 
   test('DeepSeek and Le Chat explicitly declare the attachment handler', () => {
-    expect(read('content-scripts', 'content-deepseek.js'))
-      .toContain('const attachmentHandler = window.AttachmentHandler || null;');
-    expect(read('content-scripts', 'content-lechat.js'))
-      .toContain('const attachmentHandler = window.AttachmentHandler || null;');
+    ['content-deepseek.js', 'content-lechat.js'].forEach((name) => {
+      const src = read('content-scripts', name);
+      expect(src).toContain('const getAttachmentHandler = () => window.AttachmentHandler || null;');
+      expect(src).toContain('const attachmentHandler = getAttachmentHandler();');
+    });
   });
 
   test('Grok preserves the prompt in the composer when attachment confirm fails', () => {

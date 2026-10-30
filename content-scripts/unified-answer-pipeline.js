@@ -35,6 +35,124 @@
 
   const clone = (obj) => JSON.parse(JSON.stringify(obj || {}));
 
+  // DOM -> Markdown copy (AnswerMarkdown, see docs/Architecture/answer-markdown-spec.md).
+  // Never silent: a missing engine, a throw or an oversized result yields a
+  // whole-answer placeholder and report.complete=false, not an empty field.
+  const ANSWER_MARKDOWN_MAX_CHARS = 1000000;
+  // Lets the lifecycle detector record its own STALLED before the page watchdog fires.
+  const COMPLETION_DECISION_MARGIN_MS = 5000;
+  // Ожидание завершения ответа: детектор жизненного цикла, без него — профильный hardMax.
+  // Фолбэк на 180 с обрывал ответ раньше детектора.
+  const completionWaitMsForCeiling = () => {
+    const detector = window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector;
+    return Number(detector?.completionWaitMs?.()) || Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax) || 0;
+  };
+  const buildFailedCopyReport = (provider, reason) => ({
+    version: 1,
+    provider: provider || null,
+    found: {},
+    copied: {},
+    placeholders: [{ type: 'answer', reason, position: 1 }],
+    mismatches: [],
+    flags: {},
+    complete: false
+  });
+  // Artifact / Canvas panels live outside the message element: they are converted with the same engine
+  // and appended ("Артефакт: название, тип" + content), counted in the report. The same code is in
+  // background/job-orchestrator.js (extractLatestAssistantSnapshotInPage); tests keep both equal.
+  const artifactPanelsMarkdown = (engine, context, provider) => {
+    const all = context && context.artifactPanelEls ? Array.from(context.artifactPanelEls) : [];
+    // Nested matches of the loose panel selector are one panel.
+    const panels = all.filter((panel) => !all.some((other) => other !== panel && other.contains(panel)));
+    const parts = [];
+    const sum = { found: {}, copied: {}, placeholders: [], mismatches: [], complete: true };
+    panels.forEach((panel, index) => {
+      const title = String(panel.getAttribute('aria-label') || panel.getAttribute('data-title')
+        || panel.querySelector('h1, h2, h3')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'без названия';
+      const kind = String(panel.getAttribute('data-artifact-type') || panel.getAttribute('data-type') || '').trim().slice(0, 40);
+      const heading = `### Артефакт: ${title}${kind ? `, ${kind}` : ''}`;
+      try {
+        const converted = engine.convert(panel, { provider: provider || null });
+        const body = String(converted?.markdown ?? '').trim();
+        const rep = converted?.report && typeof converted.report === 'object' ? converted.report : null;
+        if (!rep || !body) throw new Error(!rep ? 'движок не вернул отчёт' : 'панель пуста');
+        parts.push(`${heading}\n\n${body}`);
+        Object.entries(rep.found || {}).forEach(([k, v]) => { sum.found[k] = (sum.found[k] || 0) + v; });
+        Object.entries(rep.copied || {}).forEach(([k, v]) => { sum.copied[k] = (sum.copied[k] || 0) + v; });
+        sum.placeholders.push(...(rep.placeholders || []));
+        sum.mismatches.push(...(rep.mismatches || []));
+        if (rep.complete === false) sum.complete = false;
+      } catch (err) {
+        const reason = `панель артефакта не прочитана: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`;
+        parts.push(`${heading}\n\n[НЕ СКОПИРОВАНО: тип=artifact, причина=${reason}, позиция=${index + 1}]`);
+        sum.placeholders.push({ type: 'artifact', reason, position: index + 1 });
+        sum.complete = false;
+      }
+    });
+    return { markdown: parts.join('\n\n'), sum, panels: panels.length };
+  };
+  const mergeArtifactPanels = (markdown, report, panelsResult, context) => {
+    let outMarkdown = markdown;
+    let outReport = report;
+    if (panelsResult.panels) {
+      outMarkdown = `${markdown}\n\n${panelsResult.markdown}`;
+      const merge = (a, b) => { const out = { ...a }; Object.entries(b).forEach(([k, v]) => { out[k] = (out[k] || 0) + v; }); return out; };
+      outReport = {
+        ...report,
+        found: merge(report.found || {}, panelsResult.sum.found),
+        copied: merge(report.copied || {}, panelsResult.sum.copied),
+        placeholders: [...(report.placeholders || []), ...panelsResult.sum.placeholders],
+        mismatches: [...(report.mismatches || []), ...panelsResult.sum.mismatches],
+        complete: report.complete !== false && panelsResult.sum.complete
+      };
+    } else if (context && context.artifactRefs > 0 && !(report.placeholders || []).some((item) => item.type === 'artifact')) {
+      // The message points at an artifact whose panel is not on the page.
+      outReport = {
+        ...report,
+        placeholders: [...(report.placeholders || []), { type: 'artifact', reason: 'панель артефакта не найдена: содержимое не прочитано', position: 0 }],
+        complete: false
+      };
+    }
+    return { markdown: outMarkdown, report: outReport };
+  };
+  const buildAnswerMarkdownFields = (element, provider) => {
+    const stub = (reason) => ({
+      answerMarkdown: `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`,
+      copyReport: buildFailedCopyReport(provider, reason)
+    });
+    const engine = (typeof window !== 'undefined' && window.AnswerMarkdown) || null;
+    if (!engine || typeof engine.convert !== 'function') return stub('движок недоступен');
+    if (!element) return stub('элемент ответа не найден');
+    try {
+      let context;
+      const ctxModule = window.AnswerCopyContext;
+      if (ctxModule) {
+        const fn = ['collect', 'capture', 'build'].find((name) => typeof ctxModule[name] === 'function');
+        if (fn) {
+          try { context = ctxModule[fn](element, { provider, isLatest: true, document: element.ownerDocument }); } catch (_) { context = undefined; }
+        }
+      }
+      const result = engine.convert(element, { provider: provider || null, context });
+      const markdown = String(result?.markdown ?? '');
+      const report = result?.report && typeof result.report === 'object' ? result.report : null;
+      if (!report) return stub('движок не вернул отчёт');
+      if (markdown.length > ANSWER_MARKDOWN_MAX_CHARS) {
+        const out = stub(`markdown длиннее ${ANSWER_MARKDOWN_MAX_CHARS} знаков`);
+        out.copyReport = { ...report, placeholders: [...(report.placeholders || []), ...out.copyReport.placeholders], complete: false };
+        return out;
+      }
+      const merged = mergeArtifactPanels(markdown, report, artifactPanelsMarkdown(engine, context, provider), context);
+      if (merged.markdown.length > ANSWER_MARKDOWN_MAX_CHARS) {
+        const out = stub(`markdown длиннее ${ANSWER_MARKDOWN_MAX_CHARS} знаков`);
+        out.copyReport = { ...merged.report, placeholders: [...(merged.report.placeholders || []), ...out.copyReport.placeholders], complete: false };
+        return out;
+      }
+      return { answerMarkdown: merged.markdown, copyReport: merged.report };
+    } catch (err) {
+      return stub(`исключение: ${String(err?.message || err).slice(0, 120)}`);
+    }
+  };
+
   const deepMerge = (target, source) => {
     if (!source) return target;
     Object.keys(source).forEach((key) => {
@@ -296,12 +414,24 @@
 
     _initHumanSession() {
       const self = this;
+      // Потолок HumanSession не ниже ожидания завершения от ResponseLifecycleDetector:
+      // иначе сессия обрывает ожидание на 180 с, пока детектор ещё ждёт конца ответа.
+      // Детектор читается в момент вызова; если его нет, берётся профильный hardMax.
+      const lifecycleWaitMs = completionWaitMsForCeiling();
+      const ceiling = Math.max(180000, lifecycleWaitMs + COMPLETION_DECISION_MARGIN_MS);
       const cfg = Object.assign({
         onHardStop() {
           self.streamingTimedOut = true;
           self.hardStopTriggered = true;
         }
-      }, this.config.streaming?.humanSession || {});
+      }, this.config.streaming?.humanSession || {}, {
+        baseTimeoutMs: ceiling,
+        // Потолок — нижняя граница решения: джиттер ±20% укорачивал бы сессию до 364 с.
+        jitterPct: 0,
+        hardStopMin: ceiling,
+        hardStopMax: ceiling,
+        hardStopAbsoluteMaxMs: ceiling
+      });
       this.humanSession = new HumanSessionController({
         continuousActivity: this.humanActivity,
         getHumanoid: () => window.Humanoid || null
@@ -420,6 +550,8 @@
           success: true,
           answer: finalization.answer,
           answerHtml: finalization.answerHtml,
+          answerMarkdown: finalization.answerMarkdown,
+          copyReport: finalization.copyReport,
           metadata: {
             traceId: report.traceId,
             platform: this.platform,
@@ -434,6 +566,8 @@
             finalization: finalization,
             sanityCheck: finalization.sanityCheck,
             answerHtml: finalization.answerHtml,
+            answerMarkdown: finalization.answerMarkdown,
+            copyReport: finalization.copyReport,
             runResult: finalization.runResult || null
           }
         };
@@ -590,15 +724,23 @@
       this.streamingTimedOut = false;
       //-- 1.1. Адаптивный timeout: учитываем скорость модели --//
 const baseTimeouts = this.adaptiveTimeout.calculateTimeout(this.config.seedContent || '', { expectedLength });
+// The end of generation is decided by ResponseLifecycleDetector, which waits up to
+// the profile hardMax from Send. Giving up before it left only unconfirmed page text.
+// This floor applies to the watchdog below; HumanSession gets the same ceiling in
+// _initHumanSession, so neither stops before the detector decides.
+const lifecycleWaitMs = completionWaitMsForCeiling();
 const timeouts = {
   soft: baseTimeouts.soft,
-  hard: baseTimeouts.hard
+  hard: Math.max(baseTimeouts.hard, lifecycleWaitMs ? lifecycleWaitMs + COMPLETION_DECISION_MARGIN_MS : 0)
 };
 console.log(`[Pipeline] Timeouts for ${this.platform}: soft=${timeouts.soft}ms, hard=${timeouts.hard}ms`);
 let watchdog = null;
 const hardTimeoutPromise = new Promise((_, reject) => {
+  const hardTimerStartedAt = Date.now();
   watchdog = setTimeout(() => {
     this.streamingTimedOut = true;
+    // Which timer ended the wait and its limit: PIPELINE_ERROR hard_timeout carries both (review C11).
+    this.hardTimerInfo = { timeoutMs: timeouts.hard, startedAt: hardTimerStartedAt };
     reject(new Error('hard_timeout'));
   }, timeouts.hard);
 });
@@ -894,11 +1036,13 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
       }
       let answer = authoritySnapshot?.text;
       let answerHtml = authoritySnapshot?.html || '';
+      let markdownFields = null;
       if (!authoritySnapshot) {
         try {
           const extracted = await this.extractAnswerWithHtml();
           answer = extracted.text;
           answerHtml = extracted.html;
+          markdownFields = { answerMarkdown: extracted.answerMarkdown, copyReport: extracted.copyReport };
         } catch (err) {
           const message = err?.message || String(err) || 'answer_extract_failed';
           this.telemetry.logPhase('finalization_extract_failed', { message });
@@ -906,6 +1050,10 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         }
       }
 
+      if (!markdownFields) {
+        // Frozen authority snapshot carries text/html only: convert from the live element.
+        markdownFields = this.extractAnswerMarkdown(this.getAnswerElement({ reportHealth: false }));
+      }
       if (!String(answer || '').trim()) {
         this.telemetry.logPhase('finalization_empty_answer', { platform: this.platform });
         return { success: false, error: 'empty_answer' };
@@ -956,7 +1104,9 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
       const selectorTier = this.lastAnswerSelectorTier || 'unknown';
       const runResult = this.buildFinalRunResult(answer);
       this.state.finalizationResult = {
-        success: true, duration, answer, answerHtml, sanityCheck, stable,
+        success: true, duration, answer, answerHtml,
+        answerMarkdown: markdownFields.answerMarkdown, copyReport: markdownFields.copyReport,
+        sanityCheck, stable,
         selectorTier, selectorUsed: this.lastAnswerSelector || null,
         answerVerification: this.lastAnswerVerification || null,
         terminalResult: this.state.answerResult?.terminalResult || null,
@@ -1351,7 +1501,22 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         text = this.extractText(element);
       }
       const html = this.extractHtml(element);
-      return { text, html };
+      const fields = this.extractAnswerMarkdown(element);
+      // Diagrams the HTML copy could not keep (size) are reported, not dropped silently.
+      const htmlNotes = window.ContentUtils?.getLastInlineHtmlNotes?.() || [];
+      if (htmlNotes.length && fields.copyReport) {
+        fields.copyReport = {
+          ...fields.copyReport,
+          placeholders: [...(fields.copyReport.placeholders || []), ...htmlNotes],
+          complete: false
+        };
+      }
+      return { text, html, ...fields };
+    }
+
+    extractAnswerMarkdown(element) {
+      const provider = this.llmName || resolveLlmName(this.config?.llmName || this.platform || window.__PragmatistAdapter?.adapter?.name) || null;
+      return buildAnswerMarkdownFields(element, provider);
     }
 
     extractHtml(element) {
@@ -1460,11 +1625,19 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         : null;
       this.emitPipelineTelemetry('PIPELINE_ERROR', {
         level: 'error',
-        meta: { phase, message: payload.error.message, visibilityState, hasFocus }
+        meta: {
+          phase,
+          message: payload.error.message,
+          visibilityState,
+          hasFocus,
+          timeoutMs: this.hardTimerInfo?.timeoutMs ?? null,
+          startedAt: this.hardTimerInfo?.startedAt ?? null
+        }
       });
       return payload;
     }
   }
 
+  UnifiedAnswerPipeline.buildAnswerMarkdownFields = buildAnswerMarkdownFields;
   window.UnifiedAnswerPipeline = UnifiedAnswerPipeline;
 })();

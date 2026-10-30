@@ -13,6 +13,7 @@ beforeEach(() => {
   window.eval(read('content-scripts/answer-structure.js'));
   window.eval(read('content-scripts/turn-resolver.js'));
   window.eval(read('content-scripts/answer-pipeline-selectors.js'));
+  window.eval(read('content-scripts/answer-html-builder.js'));
   window.eval(read('content-scripts/content-utils.js'));
   const src = read('background/job-orchestrator.js');
   inline = new Function('window', 'document', src.slice(
@@ -186,11 +187,13 @@ test.each(['Ответ Gemini', 'Анализирую русский запро�
   const append = new Function('debateModelCards', 'resolveDebateFeedMeta', 'cleanFeedText', 'cleanFeedHtml', 'sanitizeInlineHtml',
     'isFinalResponseMeta', 'debateRenderedPlainText', 'renderedAnswerPlainText', 'setDebateCardRound', 'applyPartialMarker',
     'renderDebateResponseBody', 'appendDebateResponseGrowth', 'syncDebateCardOutputLayout', 'patchDebateCardMessage', 'ensurePostTerminalBadge',
+    'looselySameAnswer', 'upgradeFlatCard',
     fn + '\nreturn appendPostTerminalAnswerRevision;')(
     cards, x => x, x => x, x => x, x => x, () => true, node => node.textContent, text => text,
     () => {}, () => {}, (node, text) => { node.textContent = text; },
     (node, text) => { node.textContent = text; }, () => {}, patched,
-    () => { throw new Error('answer incorrectly routed into Δ'); });
+    () => { throw new Error('answer incorrectly routed into Δ'); },
+    () => false, () => false);
   const answer = 'Ответ Gemini Настоящий ответ со всеми абзацами.';
   expect(append({ id: 's1' }, 'Gemini', answer, '', { requestId: 'r1', status: 'SUCCESS' })).toBe(true);
   expect(output.textContent).toBe(answer);

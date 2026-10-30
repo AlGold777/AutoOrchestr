@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Прототип холста Basic</title>
+    <!-- Настоящие стили страницы pipeline (pipeline_panel.html); styles.css сам подключает Tabler Icons и styles/*.css. -->
+    <link rel="stylesheet" href="../../../styles.css">
+    <link rel="stylesheet" href="../../../styles/pipeline-card-cover.css">
+    <style>
+        /* Список шаблонов стенда: три колонки по 15 элементов; элемент шире колонки переносится в следующую, без наложения. */
+        #pipelineItems.pipeline-items {
+            width: calc(100% - 20px);   /* margin-left 20px из pipeline.css */
+            box-sizing: border-box;
+            justify-content: stretch;
+            grid-template-rows: repeat(15, max-content);
+            grid-auto-columns: minmax(0, 1fr);
+            column-gap: 16px;
+        }
+        #pipelineItems .pipeline-item { width: 100%; max-width: none; flex: none; min-width: 0; box-sizing: border-box; }
+        #pipelineItems .pipeline-item-main { min-width: 0; }
+        #pipelineItems .pipeline-item-name { max-width: 100%; min-width: 0; }
+        /* Подсказка на каждом элементе списка: полное имя и число этапов (стиль читается при любом фоне). */
+        .entry-point-tooltip {
+            position: fixed;
+            z-index: 10000;
+            box-sizing: border-box;
+            width: max-content;
+            max-width: min(540px, calc(100vw - 32px));
+            max-height: min(48vh, 360px);
+            overflow: auto;
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            border-radius: 8px;
+            background: #1e40af;
+            color: #fff;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, 4px);
+            transition: opacity 0.12s ease, transform 0.12s ease;
+        }
+        .entry-point-tooltip-name, .entry-point-tooltip-desc { display: block; }
+        .entry-point-tooltip-name { font-weight: 700; }
+        .entry-point-tooltip-desc { font-weight: 400; margin-top: 4px; }
+        .entry-point-tooltip.is-visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+        /* Только элементы прототипа: верхняя строка и «булочки» артефактов. */
+        .proto-shell { max-width: var(--center-max-width); margin: 0 auto; padding: 12px 16px 24px; }
+        .proto-top-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 4px 10px; }
+        .proto-top-bar .llm-buttons { gap: 14px; }
+        /* Артефакты: зона над блоками моделей, под бейджем этапа; одинаковой высоты во всех колонках, чтобы потоки не съезжали. */
+        #pipelineFlow { position: relative; transition: padding-top 0.45s ease; }
+        #pipelineFlow .connector-group { padding-top: calc(26px + var(--proto-art-zone, 0px)); }
+        .entry-column { position: relative; }
+        .proto-arrows-toggle {
+            position: absolute; left: -36px; top: 0; width: 26px; height: 24px; padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            border: none; border-radius: 6px; background: transparent; color: #475569; cursor: pointer;
+        }
+        .proto-arrows-toggle svg { width: 16px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+        .proto-arrows-toggle[aria-pressed="false"] { color: #94a3b8; }
+        .proto-art-zone { width: 139px; height: var(--proto-art-zone, 0px); display: flex; flex-direction: row; align-items: flex-end; gap: 4px; padding-bottom: 8px; box-sizing: border-box; }
+        .proto-art {
+            flex: 1 1 0; min-width: 0;
+            display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 24px;
+            box-sizing: border-box; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 6px;
+            background: #f8fafc; color: #475569; font-size: 11px; cursor: pointer; user-select: none;
+        }
+        .proto-art-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .proto-art-version { flex: 0 0 auto; font-weight: 600; color: #94a3b8; }
+        .proto-art-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
+        .proto-art-line { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-linejoin: round; }
+        /* Блок человека (owner, form): зелёная рамка и бейдж. Селектор длиннее .model-block.inactive из styles/pipeline.css. */
+        .model-block.inactive.proto-human { border: 3px solid #16a34a; background: #f0fdf4; opacity: 1; }
+        .round-badge.proto-stand-kind.proto-human-kind { background: #dcfce7; color: #166534; }
+    </style>
+</head>
+<body class="pipeline-page">
+<div class="proto-shell">
+    <div class="proto-top-bar">
+        <div class="llm-selection-bar models-row models-row-header">
+            <div class="llm-buttons" id="protoModelButtons">
+                <button type="button" class="llm-button" data-model="Claude" title="Claude">
+                    <img class="llm-button-icon" src="../../../icons/models/claude.svg" alt="Claude icon">
+                    <span class="llm-button-label">Claude</span>
+                </button>
+                <button type="button" class="llm-button" data-model="GPT" title="GPT">
+                    <img class="llm-button-icon" src="../../../icons/models/openai.svg" alt="GPT icon">
+                    <span class="llm-button-label">GPT</span>
+                </button>
+                <button type="button" class="llm-button" data-model="Gemini" title="Gemini">
+                    <img class="llm-button-icon" src="../../../icons/models/gemini.svg" alt="Gemini icon">
+                    <span class="llm-button-label">Gemini</span>
+                </button>
+            </div>
+        </div>
+        <label class="debate-auto-toggle" title="Debate auto mode">
+            <input type="checkbox" id="debate-auto-toggle-btn" class="pipeline-radio debate-auto-radio" aria-label="Auto mode">
+            <span>Auto</span>
+        </label>
+    </div>
+
+    <div class="llm-controls">
+        <div class="control-buttons">
+            <div class="pipeline-panel pipeline-panel-inline has-custom-pipeline" id="pipeline-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <div class="pipeline-name" id="currentPipelineName">Default</div>
+                    </div>
+                    <div class="panel-header-actions">
+                        <div class="debate-round-control" title="Debate rounds" aria-label="Debate rounds">
+                            <button type="button" class="debate-round-stepper-btn" id="debate-round-minus-btn" aria-label="Decrease rounds">−</button>
+                            <input type="number" class="debate-round-value" id="debate-round-value" min="1" max="50" step="1" value="2" inputmode="numeric" aria-label="Debate rounds" readonly>
+                            <span class="debate-round-unit" id="debate-round-unit">rounds</span>
+                            <button type="button" class="debate-round-stepper-btn pipeline-add-round-btn" id="pipeline-add-round-btn" title="Increase rounds" aria-label="Increase rounds">+</button>
+                        </div>
+                        <label class="debate-select-wrap" title="Debate length">
+                            <select id="debate-length-select" class="mod-select mod-select-compact debate-select" aria-label="Debate length">
+                                <option value="300">300</option>
+                                <option value="500">500</option>
+                                <option value="700">700</option>
+                                <option value="1000">1000</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="pipeline-list-header-actions" aria-label="Pipeline actions">
+                        <button type="button" class="btn btn-icon" id="pipeline-add-btn" title="New empty pipeline flow" aria-label="New empty pipeline flow">+</button>
+                        <button type="button" class="btn btn-icon" id="pipeline-save-btn" title="Save current pipeline as user pipeline" aria-label="Save current pipeline as user pipeline"><i class="ti ti-device-floppy" aria-hidden="true"></i></button>
+                        <button type="button" class="btn" id="pipeline-export-btn" title="Export schema" aria-label="Export schema"><i class="ti ti-download" aria-hidden="true"></i></button>
+                        <button type="button" class="btn" id="pipeline-import-btn" title="Import schema" aria-label="Import schema"><i class="ti ti-upload" aria-hidden="true"></i></button>
+                        <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Pipeline profiles" aria-label="Pipeline profiles"><svg viewBox="96 64 320 384" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="256" cy="112" r="42"/><path d="M206 196C218 184 236 176 254 176C278 176 294 190 294 214L294 354C294 372 302 382 320 389C331 393 339 400 339 409C339 419 330 426 317 426H194C181 426 172 419 172 409C172 400 180 393 191 389C209 382 217 372 217 354V232C217 221 212 216 202 216H194C184 216 178 211 178 203C178 196 183 190 190 190C196 190 201 192 206 196Z"/></svg></button>
+                        <input type="file" id="proto-import-input" accept="application/json" hidden>
+                    </div>
+                </div>
+                <div class="pipeline-canvas">
+                    <!-- Колонки строит canvas.js из ProtoState. -->
+                    <div class="pipeline-flow" id="pipelineFlow"></div>
+                </div>
+                <div class="pipeline-list">
+                    <div class="pipeline-list-header">
+                        <h3>Pipelines</h3>
+                    </div>
+                    <div class="pipeline-items" id="pipelineItems">
+                        <div class="pipeline-item" data-name="Default"><input type="radio" name="pipeline" class="pipeline-radio" checked><span class="pipeline-item-name" title="Default">Default</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="state.js"></script>
+<script src="cards.js"></script>
+<script src="canvas.js"></script>
+<script src="../../../disput/basic-output.js"></script>
+<script src="../../../disput/basic-artifacts.js"></script>
+<script src="../../../disput/custom-engine.js"></script>
+<script src="../../../disput/basic-schema.js"></script>
+<script src="basic-export.js"></script>
+<script src="stand.js"></script>
+</body>
+</html>

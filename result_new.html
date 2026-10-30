@@ -5,6 +5,8 @@
     <title>LLM Comparison</title>
     <link rel="stylesheet" href="styles.css?v=2.81.622">
     <link rel="stylesheet" href="styles/response-card-cover.css?v=2.81.622">
+    <link rel="stylesheet" href="styles/basic-input-files.css">
+    <link rel="stylesheet" href="styles/basic-input-canvas.css">
 </head>
 <body>
     <div class="app-shell">
@@ -121,23 +123,22 @@
                         </div>
                     </div>
                     <div class="top-bar-right">
+                        <div class="sidebar-toggle-stack">
                         <button type="button" class="sidebar-toggle-btn right-sidebar-toggle-btn" id="right-sidebar-toggle" aria-pressed="false" aria-controls="pipeline-sidebar" data-tooltip="Pipeline panel" aria-label="Pipeline">
-                            <svg class="sidebar-toggle-icon sidebar-toggle-icon-branch-v3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="6" cy="3" r="2"></circle>
-                                <line x1="6" y1="5" x2="6" y2="10"></line>
-                                <circle cx="6" cy="12" r="2"></circle>
-                                <line x1="6" y1="14" x2="6" y2="17"></line>
-                                <circle cx="6" cy="19" r="2"></circle>
-                                <circle cx="18" cy="3" r="2"></circle>
-                                <path d="M8 12 C18 12 18 8 18 5"></path>
+                            <svg class="sidebar-toggle-icon sidebar-toggle-icon-branch-v3" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.688" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="13" cy="12" r="7"></circle>
+                                <circle cx="13" cy="52" r="7"></circle>
+                                <circle cx="51" cy="32" r="7"></circle>
+                                <path d="M 17.5 17.35 C 24 27.5, 33 32, 44 32"></path>
+                                <path d="M 17.5 46.65 C 24 36.5, 33 32, 44 32"></path>
                             </svg>
                             <span class="sr-only">Pipeline</span>
                         </button>
                         <button type="button" class="sidebar-toggle-btn telemetry-toggle-btn" id="telemetry-toggle-btn" aria-label="Telemetry" data-tooltip="Telemetry">
-                            <i class="ti ti-settings telemetry-toggle-icon" aria-hidden="true"></i>
+                            <span class="telemetry-toggle-bar" aria-hidden="true"></span>
                             <span class="sr-only">Telemetry</span>
                         </button>
-
+                        </div>
                     </div>
                 </div>
         <div class="container">
@@ -258,7 +259,7 @@
                     <div class="llm-header-right">
                         <div class="toolbar-cluster">
                             <button id="export-html-btn" class="control-icon-btn" data-format="html" data-label="⬆ HTML" title="Export all responses as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                            <button type="button" id="export-txt-btn" class="control-icon-btn export-txt-btn" data-format="txt" title="Export all responses as TXT" aria-label="Export all responses as TXT">txt</button>
+                            <button type="button" id="export-md-btn" class="control-icon-btn export-md-btn" data-format="md" title="Export all responses as Markdown" aria-label="Export all responses as Markdown">md</button>
                             <button type="button" id="copy-all-btn" class="control-icon-btn" title="Copy all responses" aria-label="Copy all responses"><i class="ti ti-copy" aria-hidden="true"></i></button>
                             <button id="clear-all-btn" class="panel-action-btn panel-clear-response-btn clear-all-btn" title="Clear all responses" aria-label="Clear all responses"><i class="ti ti-trash" aria-hidden="true"></i></button>
                         </div>
@@ -281,7 +282,7 @@
                 <button class="panel-action-btn panel-clear-response-btn" data-target="comparison-output" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
                 <button class="copy-btn" data-target="comparison-output" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
                 <button class="panel-action-btn panel-export-html-btn" data-target="comparison-output" data-name="Comparative Analysis" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-                <button class="panel-action-btn panel-export-txt-btn" data-target="comparison-output" data-name="Comparative Analysis" data-label="txt" title="Export this response as TXT">txt</button>
+                <button class="panel-action-btn panel-export-md-btn" data-target="comparison-output" data-name="Comparative Analysis" data-label="md" title="Export this response as Markdown">md</button>
                 <button id="close-comparison-btn" class="panel-action-btn" title="Close panel" aria-label="Close panel"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>
         </div>
@@ -303,7 +304,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-gpt" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-gpt" data-name="GPT" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-gpt" data-name="GPT" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-gpt" data-name="GPT" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-gpt" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -321,7 +322,7 @@
   <div class="header-right">
     <button class="copy-btn" data-target="output-claude" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-claude" data-name="Claude" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-claude" data-name="Claude" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-claude" data-name="Claude" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-claude" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -341,7 +342,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-qwen" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-qwen" data-name="Qwen" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-qwen" data-name="Qwen" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-qwen" data-name="Qwen" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-qwen" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -358,7 +359,7 @@
         <div class="header-right">
           <button class="copy-btn" data-target="output-zai" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
           <button class="panel-action-btn panel-export-html-btn" data-target="output-zai" data-name="Z.ai" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-          <button class="panel-action-btn panel-export-txt-btn" data-target="output-zai" data-name="Z.ai" data-label="txt" title="Export this response as TXT">txt</button>
+          <button class="panel-action-btn panel-export-md-btn" data-target="output-zai" data-name="Z.ai" data-label="md" title="Export this response as Markdown">md</button>
           <button class="panel-action-btn panel-clear-response-btn" data-target="output-zai" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -372,7 +373,7 @@
         <div class="header-right">
           <button class="copy-btn" data-target="output-kimi" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
           <button class="panel-action-btn panel-export-html-btn" data-target="output-kimi" data-name="Kimi" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-          <button class="panel-action-btn panel-export-txt-btn" data-target="output-kimi" data-name="Kimi" data-label="txt" title="Export this response as TXT">txt</button>
+          <button class="panel-action-btn panel-export-md-btn" data-target="output-kimi" data-name="Kimi" data-label="md" title="Export this response as Markdown">md</button>
           <button class="panel-action-btn panel-clear-response-btn" data-target="output-kimi" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>
       </div>
@@ -389,7 +390,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-gemini" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-gemini" data-name="Gemini" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-gemini" data-name="Gemini" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-gemini" data-name="Gemini" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-gemini" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -409,7 +410,7 @@
   <div class="header-right">
     <button class="copy-btn" data-target="output-grok" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-grok" data-name="Grok" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-grok" data-name="Grok" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-grok" data-name="Grok" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-grok" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -429,7 +430,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-deepseek" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-deepseek" data-name="DeepSeek" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-deepseek" data-name="DeepSeek" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-deepseek" data-name="DeepSeek" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-deepseek" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -449,7 +450,7 @@
   <div class="header-right">
     <button class="copy-btn" data-target="output-lechat" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-lechat" data-name="Le Chat" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-lechat" data-name="Le Chat" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-lechat" data-name="Le Chat" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-lechat" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -469,7 +470,7 @@
   <div class="header-right">
      <button class="copy-btn" data-target="output-perplexity" title="Copy response"><i class="ti ti-copy" aria-hidden="true"></i></button>
     <button class="panel-action-btn panel-export-html-btn" data-target="output-perplexity" data-name="Perplexity" data-label="⬆" title="Export this response as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
-    <button class="panel-action-btn panel-export-txt-btn" data-target="output-perplexity" data-name="Perplexity" data-label="txt" title="Export this response as TXT">txt</button>
+    <button class="panel-action-btn panel-export-md-btn" data-target="output-perplexity" data-name="Perplexity" data-label="md" title="Export this response as Markdown">md</button>
      <button class="panel-action-btn panel-clear-response-btn" data-target="output-perplexity" title="Clear response" aria-label="Clear response"><i class="ti ti-trash" aria-hidden="true"></i></button>
 
 </div>
@@ -557,6 +558,7 @@
                 <div class="modal-buttons">
                     <button id="cancel-confirm" class="modal-button">Cancel</button>
                     <button id="retry-confirm" class="modal-button hidden" hidden>Повторить ещё раз</button>
+                    <button id="skip-step-confirm" class="modal-button hidden" hidden>Пропустить шаг целиком</button>
                     <button id="delete-confirm" class="modal-button">Save</button>
                 </div>
             </div>
@@ -611,24 +613,15 @@
                                         <select id="telemetry-platform-select" class="devtools-select" style="min-width:160px;">
                                             <option value="all">All platforms</option>
                                         </select>
-                                        <label class="sr-only" for="telemetry-task-select">Tasks</label>
-                                        <select id="telemetry-task-select" class="devtools-select" style="min-width:170px;">
-                                            <option value="all">All tasks</option>
-                                            <option value="cutted" title="Почему зафиксирован SUCCESS, а текст явно неполный?">Cutted</option>
-                                            <option value="false-success" title="Почему система решила «готово», а ответ продолжил расти?">False success</option>
-                                            <option value="old-answer" title="Почему принят текст от предыдущего запроса?">Old answer</option>
-                                            <option value="no-delivery" title="Почему материализованный ответ текущего запроса не оказался в правильной карточке?">No delivery</option>
-                                            <option value="prompt-not-inserted" title="Почему prompt не вставился в поле ввода?">Prompt not inserted</option>
-                                            <option value="prompt-not-sent" title="Почему модель не получила запрос?">Prompt not sent</option>
-                                            <option value="late-end" title="Текст давно стабилен — почему система ждала ещё N секунд?">Late end</option>
-                                        </select>
                                     </div>
                                     <div class="telemetry-actions">
-                                        <label class="sr-only" for="telemetry-export-format-select">Telemetry export format</label>
-                                        <select id="telemetry-export-format-select" class="devtools-select" title="Choose Digest, Canonical evidence, or Full forensic JSON">
-                                            <option value="digest" selected>Digest</option>
-                                            <option value="canonical-evidence">Canonical evidence</option>
-                                            <option value="full-forensic">Full forensic</option>
+                                        <label class="sr-only" for="telemetry-export-profile-select">Telemetry export profile</label>
+                                        <select id="telemetry-export-profile-select" class="devtools-select" title="Export: all raw events, or only what one kind of problem needs">
+                                            <option value="raw" selected>Raw (all)</option>
+                                            <option value="send">Prompt not sent</option>
+                                            <option value="completion">End of generation</option>
+                                            <option value="lastAnswer">Which answer is last</option>
+                                            <option value="truncated">Truncated answer</option>
                                         </select>
                                         <button type="button" class="diag-icon-btn" id="telemetry-export-json-btn" title="Export telemetry as JSON" aria-label="Export telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
                                         <button type="button" class="diag-icon-btn diag-export-all-logs-btn" id="export-all-logs-md-telemetry" aria-label="Export diagnostics and telemetry as Markdown" title="Export All Logs">MD</button>
@@ -718,36 +711,10 @@
                         <section class="devtools-tabpanel is-active" id="disput-tabpanel" role="tabpanel" aria-labelledby="disput-tab" tabindex="0">
                             <div class="devtools-toolbar">
                                 <div class="devtools-toolbar-actions">
-                                    <div class="telemetry-filters disput-trace-filters">
-                                        <label class="disput-only-problems-label" title="Display filter only; JSON and MD exports are always complete"><input type="checkbox" id="disput-only-problems"> Only problems</label>
-                                    </div>
-                                        <div class="disput-extract-controls">
-                                            <button type="button" class="devtools-pill-btn" id="disput-extract" title="Download the full report, transport JSON and Markdown">Extract</button>
-                                            <select id="disput-extract-type" class="devtools-select" aria-label="Extract type"><option value="transport">transport</option></select>
-                                        </div>
-                                    <div class="telemetry-actions">
-                                        <button type="button" class="diag-icon-btn" id="disput-clear-trace" title="Clear Disput trace" aria-label="Clear Disput trace"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                                        <button type="button" class="diag-icon-btn" id="disput-export-json" title="Export Disput telemetry as JSON" aria-label="Export Disput telemetry as JSON"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                        <button type="button" class="diag-icon-btn diag-export-all-logs-btn" id="disput-export-md" aria-label="Export Disput telemetry as Markdown" title="Export Disput telemetry as Markdown">MD</button>
+                                    <div class="disput-extract-controls">
+                                        <button type="button" class="devtools-pill-btn" id="disput-basic" title="Export Basic run, model routing and transport telemetry as JSON">Basic</button>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="devtools-card-grid">
-                                <article class="devtools-card telemetry-rounds-card" data-collapsible="disput-health">
-                                    <div class="devtools-card-header">
-                                        <h2>Run Health Summary</h2>
-                                        <span class="devtools-meta" id="disput-trace-status"></span>
-                                    </div>
-                                    <div class="devtools-card-body"><div id="disput-health-summary"><p class="diag-empty">Waiting for a Debate run…</p></div></div>
-                                </article>
-                                <article class="devtools-card telemetry-card" data-collapsible="disput-problems">
-                                    <div class="devtools-card-header"><h2>Problems &amp; Recovery</h2></div>
-                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-problems"><p class="diag-empty">No diagnoses yet.</p></div></div>
-                                </article>
-                                <article class="devtools-card telemetry-card is-collapsed" data-collapsible="disput-raw">
-                                    <div class="devtools-card-header"><h2>Raw Trace Events</h2></div>
-                                    <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper" id="disput-raw-events"><p class="diag-empty">No trace events.</p></div></div>
-                                </article>
                             </div>
                         </section>
 
@@ -974,8 +941,9 @@
                             <button type="button" class="btn btn-icon" id="pipeline-add-btn" title="New empty pipeline flow" aria-label="New empty pipeline flow">+</button>
                             <button type="button" class="btn btn-icon" id="pipeline-save-btn" title="Save current pipeline as user pipeline" aria-label="Save current pipeline as user pipeline"><i class="ti ti-device-floppy" aria-hidden="true"></i></button>
                             <button type="button" class="btn" id="pipeline-export-btn" title="Export schema" aria-label="Export schema"><i class="ti ti-download" aria-hidden="true"></i></button>
+                            <button type="button" class="btn" id="pipeline-export-all-btn" title="Export all schemas" aria-label="Export all schemas"><i class="ti ti-package-export" aria-hidden="true"></i></button>
                             <button type="button" class="btn" id="pipeline-import-btn" title="Import schema" aria-label="Import schema"><i class="ti ti-upload" aria-hidden="true"></i></button>
-                            <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Pipeline profiles" aria-label="Pipeline profiles"><i class="ti ti-settings" aria-hidden="true"></i></button>
+                            <button type="button" class="btn btn-icon" id="pipeline-profile-btn" title="Вставить схему" aria-label="Вставить схему"><i class="ti ti-clipboard-text" aria-hidden="true"></i></button>
                         </div>
                         <label class="debate-turn-limit hidden" title="Serial debate round limit">
                             <select id="debate-round-limit-select" aria-label="Debate rounds">
@@ -988,152 +956,49 @@
                         </label>
                     </div>
                     <div class="pipeline-items" id="pipelineItems">
-                        <div class="pipeline-item" data-name="Basic">
+                        <div class="pipeline-item" data-name="Default">
                             <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Basic">Basic</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Polishing">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Polishing">Polishing</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Delta">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Delta">Delta</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Test">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Test">Test</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Research">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Research">Research</span>
-                        </div>
-                        <div class="pipeline-item" data-name="Architecture">
-                            <input type="radio" name="pipeline" class="pipeline-radio">
-                            <span class="pipeline-item-name" title="Architecture">Architecture</span>
+                            <span class="pipeline-item-name" title="Default">Default</span>
                         </div>
                     </div>
                     <div class="pipeline-items-divider" aria-hidden="true"></div>
                     <div class="customer-pipeline-items" id="customerPipelineItems"></div>
-                    <section class="disput-state-map-panel" id="disput-state-map-panel" data-status="not_ready">
-                        <button type="button" class="disput-state-map-toggle" data-map-collapse aria-expanded="false">
-                            <span><strong data-map-title>Карта состояния</strong><small data-map-summary>Нет активного дела</small></span><span aria-hidden="true">▼</span>
-                        </button>
-                        <div class="disput-state-map-workspace" hidden>
-                        <header class="disput-state-map-header">
-                                <div><strong>Карта состояния</strong><span data-map-summary></span></div><select data-map-run aria-label="Сохранённое дело"><option value="">Текущее дело</option></select>
-                                <div class="disput-state-map-actions">
-                                    <button type="button" data-map-mode="structure" class="is-active">Структура</button>
-                                    <button type="button" data-map-mode="graf">Graf</button>
-                                    <button type="button" class="disput-map-icon-action" data-map-mode="history" title="История" aria-label="История"><i class="ti ti-history" aria-hidden="true"></i></button>
-                                    <button type="button" class="disput-map-icon-action" data-case-export title="Экспорт дела" aria-label="Экспорт дела"><i class="ti ti-folder" aria-hidden="true"></i></button>
-                                    <button type="button" class="disput-map-icon-action" data-map-export title="Экспорт карты" aria-label="Экспорт карты"><i class="ti ti-download" aria-hidden="true"></i></button>
-                                    <button type="button" data-case-import-action title="Импорт дела" aria-label="Импорт дела"><i class="ti ti-upload" aria-hidden="true"></i></button><button type="button" data-case-delete title="Удалить выбранное дело" aria-label="Удалить выбранное дело"><i class="ti ti-trash" aria-hidden="true"></i></button><input type="file" accept="application/json" data-case-import hidden>
-                                    <button type="button" data-map-close aria-label="Закрыть карту">×</button>
-                                </div>
-                            </header>
-                            <div class="disput-state-map-toolbar">
-                                <div class="disput-map-segments" aria-label="Фильтр карты">
-                                    <button type="button" data-map-filter="all" class="is-active">Все</button><button type="button" data-map-filter="open">Открытые</button><button type="button" data-map-filter="blocking">Blocking</button><button type="button" data-map-filter="dissent">Dissent</button>
-                                </div>
-                                <input type="search" data-map-search placeholder="Поиск по карте…" aria-label="Поиск по карте состояния">
-                                <div class="disput-map-compare" aria-label="Сравнение снимков">
-                                    <select data-map-compare-a aria-label="Исходный снимок"></select><span>→</span><select data-map-compare-b aria-label="Сравниваемый снимок"></select><button type="button" data-map-compare>Сравнить</button>
-                                </div>
-                                <div class="disput-map-zoom" aria-label="Масштаб Graf"><button type="button" data-map-zoom="out" aria-label="Уменьшить">−</button><button type="button" data-map-zoom="reset">100%</button><button type="button" data-map-zoom="in" aria-label="Увеличить">+</button></div>
-                            </div>
-                            <div class="disput-state-map-content" data-map-content></div>
-                            <aside class="disput-map-drawer" data-map-drawer hidden aria-label="Подробности элемента карты"></aside>
-                        </div>
-                    </section>
-                    <dialog class="pipeline-profile-dialog" id="pipeline-profile-dialog">
-                        <header><strong>Pipeline profiles</strong><button type="button" data-profile-close aria-label="Закрыть">×</button></header>
-                        <select data-profile-select aria-label="Профиль pipeline"></select>
-                        <textarea data-profile-editor spellcheck="false" aria-label="JSON профиля"></textarea>
-                        <div class="pipeline-profile-actions"><button type="button" data-profile-action="apply">Применить</button><button type="button" data-profile-action="validate">Проверить</button><button type="button" data-profile-action="copy">Создать копию</button><button type="button" data-profile-action="save">Сохранить</button><button type="button" data-profile-action="import">Импорт</button><button type="button" data-profile-action="export">Экспорт</button></div>
-                        <input type="file" accept="application/json" data-profile-import hidden><p data-profile-status aria-live="polite"></p>
-                    </dialog>
                 </div>
             </div>
         </aside>
     </div>
     <script src="lib/purify.min.js"></script>
     <script src="utils/sanitize.js"></script>
+    <script src="shared/markdown-to-html.js"></script>
     <script src="shared/status-contract.js"></script>
     <script src="shared/problem-context-filter.js"></script>
     <script src="shared/telemetry-meta-delta.js"></script>
+    <script src="shared/telemetry-views.js"></script>
     <script src="shared/answer-proof-normalization.js"></script>
-    <script src="shared/proof-telemetry-contracts.js"></script>
-    <script src="shared/proof-telemetry-inventory.js"></script>
-    <script src="shared/proof-telemetry-clock.js"></script>
-    <script src="shared/proof-telemetry-incidents.js"></script>
-    <script src="shared/proof-telemetry-policy.js"></script>
-    <script src="shared/proof-oriented-telemetry.js"></script>
-    <script src="shared/proof-telemetry-audit.js"></script>
-    <script src="shared/proof-telemetry-presentations.js"></script>
-    <script src="shared/telemetry-digest.js"></script>
     <script src="shared/secret-redaction.js"></script>
-    <script src="shared/telemetry-export-runtime.js"></script>
     <script src="shared/transport-policy.js"></script>
     <script src="shared/transport-contract.js"></script>
-    <script src="shared/debate-schema.js"></script>
-    <script src="disput/debate-artifact-definitions.js"></script>
-    <script src="disput/debate-contracts.js"></script>
-    <script src="disput/debate-context-broker.js"></script>
-    <script src="disput/debate-capability-registry.js"></script>
     <script src="disput/debate-prompt-pack.js"></script>
-    <script src="disput/debate-prompt-compiler.js"></script>
     <script src="disput/debate-response-acceptance.js"></script>
-    <script src="disput/debate-problem-spec.js"></script>
-    <script src="disput/debate-epistemic-outcome.js"></script>
-    <script src="disput/debate-service-roles.js"></script>
-    <script src="disput/debate-stagnation-warning.js"></script>
-    <script src="disput/debate-anonymization.js"></script>
-    <script src="disput/debate-process-audit.js"></script>
-    <script src="disput/debate-correlation-guard.js"></script>
-    <script src="disput/debate-convergence.js"></script>
     <script src="disput/debate-prompt-catalog.js"></script>
     <script src="disput/debate-engine.js"></script>
     <script src="disput/debate-runtime.js"></script>
-    <script src="disput/debate-rule-engine.js"></script>
-    <script src="disput/debate-decision-request.js"></script>
-    <script src="disput/debate-model-signal.js"></script>
-    <script src="disput/debate-protocols.js"></script>
     <script src="disput/debate-version-manifest.js"></script>
     <script src="disput/debate-context-budget.js"></script>
     <script src="disput/debate-run-store.js"></script>
-    <script src="disput/debate-protocol-transition-service.js"></script>
-    <script src="disput/debate-rule-history.js"></script>
-    <script src="disput/debate-case-schema.js"></script>
-    <script src="disput/debate-storage-migrations.js"></script>
-    <script src="disput/debate-state-delta.js"></script>
-    <script src="disput/debate-case-store.js"></script>
-    <script src="disput/debate-trace-schema.js"></script>
-    <script src="disput/debate-trace-store.js"></script>
-    <script src="disput/debate-trace-projections.js"></script>
-    <script src="disput/debate-execution-context.js"></script>
-    <script src="disput/debate-stage-types.js"></script>
-    <script src="disput/debate-policies.js"></script>
     <script src="disput/debate-draft-plan.js"></script>
-    <script src="disput/debate-plan-revision.js"></script>
-    <script src="disput/debate-planner.js"></script>
-    <script src="disput/debate-participant-registry.js"></script>
-    <script src="disput/debate-stage-executor.js"></script>
-    <script src="disput/debate-orchestrator.js"></script>
-    <script src="disput/debate-orchestrator-persistence.js"></script>
-    <script src="disput/debate-state-map.js"></script>
-    <script src="disput/debate-artifact-pipeline.js"></script>
-    <script src="disput/debate-application.js"></script>
     <script src="disput/debate-projections.js"></script>
     <script src="disput/debate-profile-schema.js"></script>
-    <script src="disput/pipeline-profile-store.js"></script>
     <script src="disput/pipeline-presets.js"></script>
+    <script src="disput/basic-artifacts.js"></script>
+    <script src="disput/basic-output.js"></script>
     <script src="disput/custom-engine.js"></script>
     <script src="disput/basic-schema.js"></script>
+    <script src="disput/basic-input-files.js"></script>
+    <script src="disput/basic-file-delivery.js"></script>
+    <script src="disput/schema-text-reader.js"></script>
+    <script src="disput/basic-spec.js"></script>
     <script src="disput/custom-run-record.js"></script>
-    <script src="disput/polishing-pipeline.js"></script>
-    <script src="disput/delta-pipeline.js"></script>
-    <script src="results/debate-plan-view-model.js"></script>
     <script src="shared/run-error.js"></script>
     <script src="shared/judge-prompt-builder.js"></script>
     <script src="shared/message-delivery.js"></script>
@@ -1144,9 +1009,13 @@
     <script src="pipeline/pipeline-runtime.js"></script>
     <script src="tos-consent.js"></script>
     <script src="new-pages-default.js?v=2.80.38"></script>
+    <script src="shared/storage-key-migration.js"></script>
     <script src="results/boot-utils.js"></script>
     <script src="results/dom-utils.js"></script>
+    <script src="results/code-blocks.js"></script>
     <script src="results/attachments.js"></script>
+    <script src="results/input-files.js"></script>
+    <script src="results/basic-input-canvas.js"></script>
     <script src="results/pasted-text.js"></script>
     <script src="results/tooltips.js"></script>
     <script src="results/debate-ui.js"></script>
@@ -1156,11 +1025,7 @@
     <script src="results/debate-sessions-store.js"></script>
     <script src="results/debate-export.js"></script>
     <script src="results/response-find-replace.js"></script>
-    <script src="results/debate-telemetry-view.js"></script>
-    <script src="results/disput-state-map-view.js"></script>
-    <script src="results/pipeline-profile-view.js"></script>
-    <script src="results-telemetry-export-bootstrap.js"></script>
-    <script src="shared/report-digest.js"></script>
+    <script src="shared/basic-telemetry.js"></script>
     <script src="utils/selection-block-format.js"></script>
     <script src="results/response-card-cover.js"></script>
     <script src="results.js"></script>

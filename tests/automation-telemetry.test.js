@@ -8,6 +8,8 @@ const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 function loadModules() {
   delete window.MessageDelivery;
   delete window.MessageDeliveryDiagnosis;
+  // The delivery token predicate lives in answer-proof-normalization.js, loaded before message-delivery.js in the pages.
+  window.eval(read('shared/answer-proof-normalization.js'));
   window.eval(read('shared/message-delivery.js'));
   window.eval(read('shared/message-delivery-diagnosis.js'));
   return { Delivery: window.MessageDelivery, Diagnosis: window.MessageDeliveryDiagnosis };
@@ -141,16 +143,6 @@ describe('Delivery cards in the Disput tab (formerly the Automation tab)', () =>
       expect(text).toContain('отправка');
       expect(text).toContain('неполный');
       expect(document.querySelector('#delivery-health th:nth-child(4)').textContent).toBe('Partial');
-
-      // The Disput export embeds the delivery report and a Markdown section.
-      const report = await window.MessageDeliveryView.buildReport();
-      expect(report.report).toBe('message-delivery');
-      expect(report.diagnosis.batches[0].waitId).toBe('wait-9');
-      expect(report.journal.length).toBe(journal.length);
-      const md = window.MessageDeliveryView.buildMarkdown(report);
-      expect(md).toContain('## Delivery');
-      expect(md).toContain('| wait-9 | S:a1 |');
-      expect(md).toContain('### Sends');
     } finally {
       window.chrome = originalChrome;
     }
@@ -165,10 +157,11 @@ describe('Delivery cards in the Disput tab (formerly the Automation tab)', () =>
       .forEach((id) => expect(disput).toContain(`id="${id}"`));
   });
 
-  test('the Disput JSON and MD exports carry the delivery section', () => {
+  test('the Disput Flow JSON/MD exports are gone; the Basic export reads the delivery journal; a remembered Automation tab opens Disput', () => {
     const source = read('results.js');
-    expect(source).toContain("downloadDiagnosticsJson('Disput Flow', { ...(payload || {}), delivery, ...(customRun ? { customRun } : {}) }, disputBtn);");
-    expect(source).toContain('window.MessageDeliveryView?.buildMarkdown?.(');
+    expect(source).not.toContain("downloadDiagnosticsJson('Disput Flow'");
+    expect(source).not.toContain("downloadDiagnosticsMarkdown('Disput Flow'");
+    expect(source).toContain('window.MessageDelivery?.snapshot');
     // A remembered Automation tab opens Disput.
     expect(source).toContain("storedTabId === 'automation-tabpanel' ? 'disput-tabpanel' : storedTabId");
   });
@@ -253,7 +246,7 @@ describe('transport fixes behind the field report', () => {
     expect(finalize).not.toHaveBeenCalled();
   });
 
-  test('tab activity that does not grow the answer (visits, probes) does not postpone the terminal', () => {
+  test('tab activity that does not grow the answer (visits, probes) does not postpone the cap', () => {
     const entry = { promptSubmittedAt: Date.now() - 120000, pendingFinalAnswer: 'complete text', lastRuntimeActivityAt: 0, lastDispatchMeta: { dispatchId: 'X:1:1' } };
     const jobState = { session: { startTime: 1 }, llms: { X: entry } };
     const { deferUncertainCompletionTerminal, timers, context } = loadDeferral({ entry, jobState });
@@ -263,7 +256,7 @@ describe('transport fixes behind the field report', () => {
     try {
       // Fresh runtime activity on every poll, but the text is unchanged.
       let offset = 0;
-      for (let i = 0; i < 12 && !finalize.mock.calls.length; i += 1) {
+      for (let i = 0; i < 40 && !finalize.mock.calls.length; i += 1) {
         offset += 5000;
         Date.now = () => realNow() + offset;
         entry.lastRuntimeActivityAt = Date.now();
@@ -273,7 +266,7 @@ describe('transport fixes behind the field report', () => {
       Date.now = realNow;
     }
     expect(finalize).toHaveBeenCalledTimes(1);
-    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferral_ended', expect.objectContaining({ reason: 'answer_quiet', answerChars: 13 }));
+    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferral_ended', expect.objectContaining({ reason: 'max_defer_reached', answerChars: 13 }));
   });
 
   test('the deferral is capped even while the answer keeps changing', () => {
@@ -340,7 +333,7 @@ describe('card marks: incomplete and verify', () => {
     return document.querySelector('.debate-model-card');
   };
 
-  test('a cut-off answer gets a gray mark next to the model name; a complete one does not', () => {
+  test('a cut-off answer gets an inline mark next to the model name; a complete one does not', () => {
     const { applyAttributionMarker } = loadMarkers();
     const el = card();
     applyAttributionMarker(el, { status: 'STREAM_TIMEOUT' });
@@ -356,7 +349,7 @@ describe('card marks: incomplete and verify', () => {
     const { applyAttributionMarker } = loadMarkers();
     const el = card();
     applyAttributionMarker(el, { status: 'SUCCESS', attributionState: 'unproven', attributionLabel: 'Без метки доставки' });
-    expect(el.querySelector('.attribution-unproven-banner').textContent).toBe('Без метки доставки');
+    expect(el.querySelector('.attribution-unproven-banner')).toBeNull();
     expect(el.querySelector('.debate-approval-check').title).toBe('Verify and approve this answer');
     // Approval marks the answer verified by the user; later updates do not bring the banner back.
     el.dataset.attributionState = 'user_verified';
@@ -579,6 +572,7 @@ describe('forced commit shape, stale background, skipped nudges', () => {
     const end = coordinator.indexOf('function scheduleDispatchRetry(');
     const timers = [];
     const context = {
+      self: { AnswerProofNormalization: require('../shared/answer-proof-normalization.js') },
       jobState: { session: { startTime: 5 }, llms: {} },
       handleLLMResponse: jest.fn(),
       reportDispatchPhase: jest.fn(),
@@ -599,7 +593,7 @@ describe('forced commit shape, stale background, skipped nudges', () => {
     expect(error).toBeNull();
     expect(meta).toMatchObject({
       dispatchId: 'X:1:1', lastResortTerminal: true, preTerminalMaterializeFinal: true, finalizationDeferredCheck: true,
-      responseMeta: { partial: true, lateCollectFinal: true, forceTerminalSuccess: true, source: 'deferred_terminal_snapshot' }
+      responseMeta: { partial: true, lateCollectFinal: true, forceTerminalSuccess: false, source: 'deferred_terminal_snapshot' }
     });
     // The gates turned it back into an open request: the report says so.
     timers.shift()();
@@ -709,7 +703,7 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
     const end = coordinator.indexOf('function scheduleDispatchRetry(');
     const timers = [];
     const context = {
-      self: { TransportPolicy },
+      self: { TransportPolicy, AnswerProofNormalization: require('../shared/answer-proof-normalization.js') },
       jobState: { session: { startTime: 5, promptsByModel }, llms: {} },
       handleLLMResponse: jest.fn(), reportDispatchPhase: jest.fn(),
       setTimeout: (fn) => { timers.push(fn); return timers.length; }
@@ -741,7 +735,7 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
   test('the deferral and the visits act on the token without waiting for the page', () => {
     const router = read('background/message-router.js');
     expect(router).toContain('const UNCERTAIN_TERMINAL_TOKEN_QUIET_MS = 5000;');
-    expect(router).toContain("(tokenSeen ? 'delivery_token_seen' : 'answer_quiet')");
+    expect(router).toContain("reason: tokenSeen && quiet ? 'delivery_token_seen' : 'max_defer_reached'");
     const presence = read('background/human-presence.js');
     expect(presence).toContain("completionReason: 'static_text_with_delivery_token'");
   });

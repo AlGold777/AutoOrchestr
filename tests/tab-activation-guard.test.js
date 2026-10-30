@@ -118,7 +118,8 @@ describe('activateTabForDispatch', () => {
       setTimeout, clearTimeout, console,
       isValidTabId: (id) => Number.isInteger(id) && id > 0,
       self: { markProgrammaticTabFocus: (tabId, source) => { marks.push({ tabId, source }); return true; } },
-      knownActiveTab: known
+      knownActiveTab: known,
+      jobState: { llms: {} }
     };
     vm.createContext(ctx);
     vm.runInContext(src + '\nglobalThis.activateTabForDispatch = activateTabForDispatch;', ctx);

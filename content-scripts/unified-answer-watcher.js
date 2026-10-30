@@ -21,6 +21,10 @@
   const SELECTOR_MISS_WINDOW_MS = Number(Config.telemetry?.selectorMissWindowMs || 5000);
   const SELECTOR_STATS_WINDOW_MS = Number(Config.telemetry?.selectorStatsWindowMs || SELECTOR_MISS_WINDOW_MS);
   const SELECTOR_STATS_DEDUP_WINDOW_MS = Number(Config.telemetry?.selectorStatsDedupWindowMs || 30000);
+  // Lets the lifecycle detector record its own STALLED before the watcher gives up.
+  const LIFECYCLE_DECISION_MARGIN_MS = 5000;
+  // Stop visible and no text growth for this long: diagnosed once as STOP_STALLED (review C9).
+  const STOP_STALL_MS = 120000;
   const selectorStatsBuckets = new Map();
   const selectorStatsLastEmit = new Map();
   const selectorTargetLastHitAt = new Map();
@@ -254,6 +258,19 @@
       });
     }
 
+    // Timer limits, which of them expired, the hard-stop flag and a stall diagnosis of this run:
+    // carried into the terminal telemetry (review C11, C9).
+    runTelemetryExtras() {
+      const config = this.timerConfig || null;
+      return {
+        timers: config
+          ? { ...config, generalExpired: Date.now() >= config.generalDeadlineAt, timeoutStatus: this.timeoutManager.getStatus() }
+          : null,
+        flags: { hardStopSetBy: window.__LLMScrollHardStopSetBy?.source || null },
+        stopStalled: this.stopStalled || null
+      };
+    }
+
     buildAuthorityResult(terminalResult, recentGrowth = 0) {
       const lifecycle = window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector;
       const snapshot = lifecycle?.getCompletionSnapshot?.({ modelName: this.llmName, dispatchId: this.runDispatchId }) || null;
@@ -268,7 +285,8 @@
         indicators: { streaming: terminalResult == null },
         scrollGrowthInLast2s: recentGrowth,
         diagnosticConfidence: this.calculateScore(),
-        criteriaMet: this.criteria.metCount()
+        criteriaMet: this.criteria.metCount(),
+        ...this.runTelemetryExtras()
       };
     }
 
@@ -305,6 +323,31 @@
       const { soft, hard } = this.timeoutManager.calculateTimeout(currentLength, {
         expectedLength: this.expectedLength
       });
+      // While ResponseLifecycleDetector still tracks this dispatch, only it ends the
+      // wait: its STALLED arrives as a terminal result by this deadline. The
+      // watcher's own soft/hard timeouts apply only when nothing is tracking.
+      const lifecycleWaitMs = Number(
+        (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.() || 0
+      );
+      const lifecycleDeadlineAt = this.startTime + lifecycleWaitMs + LIFECYCLE_DECISION_MARGIN_MS;
+      // General limit while Stop is visible: the lifecycle wait, or without a detector the profile hardMax.
+      const profileHardMaxMs = Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax) || 0;
+      const generalWaitMs = lifecycleWaitMs || profileHardMaxMs;
+      const generalDeadlineAt = this.startTime + generalWaitMs + LIFECYCLE_DECISION_MARGIN_MS;
+      // Timer limits of this run, written to the terminal telemetry (review C11).
+      this.timerConfig = {
+        startedAt: this.startTime,
+        softTimeoutMs: soft,
+        hardTimeoutMs: hard,
+        lifecycleWaitMs,
+        generalWaitMs,
+        ceilingMs: generalWaitMs,
+        generalDeadlineAt
+      };
+      this.stopStalled = null;
+      this.stopStallLength = -1;
+      this.stopStallSince = 0;
+      this.stopStallReported = false;
       let typingActive = true;
       const growthHistory = [];
 
@@ -329,6 +372,8 @@
       const mutationOptions = { childList: true, subtree: true, characterData: true, attributes: true };
       const stopObserve = window.ContentUtils?.observeMutations
         ? window.ContentUtils.observeMutations(this.container, mutationOptions, (mutations) => {
+          // Our own materialization sweep (shared/answer-materialize-sweep.js) is not the model's activity.
+          if (globalThis.__AO_SWEEP_ACTIVE === true) return;
           const answerRoot = this.currentAnswerElement;
           const currentText = answerRoot ? this.readAnswerText(answerRoot) : '';
           const currentHash = this.hashString(currentText);
@@ -368,7 +413,11 @@
       const updateHandle = setInterval(() => {
         const hardStopped = window.__LLMScrollHardStop || this.humanSession?.getState?.() === 'HARD_STOP';
         if (hardStopped) {
-          this.emitWitness('USER_INTERRUPTED', { reason: 'hard_stop' }, null);
+          this.emitWitness('USER_INTERRUPTED', {
+            reason: 'hard_stop',
+            textLength: this.maxObservedTextLength,
+            hardStopSetBy: window.__LLMScrollHardStopSetBy?.source || null
+          }, null);
           cleanup(this.buildResult('hard_stop', 0, typingActive, getRecentGrowth(), false));
           return;
         }
@@ -524,9 +573,40 @@
           // DOM signals below would otherwise make. Waiting longer is the
           // cheap error; committing an unfinished answer is the expensive one.
           const vetoed = Boolean(evidence?.veto?.active);
-          const expiration = this.timeoutManager.checkExpiration();
+          const lifecycleTracking = lifecycleWaitMs > 0
+            && Date.now() < lifecycleDeadlineAt
+            && !!lifecycle?.getCompletionSnapshot?.({ modelName: this.llmName, dispatchId: this.runDispatchId });
+          const ownExpiration = this.timeoutManager.checkExpiration();
+          const expiration = lifecycleTracking
+            ? { ...ownExpiration, softExpired: false, hardExpired: false }
+            : ownExpiration;
           if (stopVisible) {
-            if (expiration.hardExpired) {
+            // Stop visible with no text growth for STOP_STALL_MS: a stall is diagnosed once (review C9).
+            // The wait goes on, but the run is UNCERTAIN with a reason, never a silent success.
+            const stallLength = this.latestContentLength;
+            if (stallLength !== this.stopStallLength || !this.stopStallSince) {
+              this.stopStallLength = stallLength;
+              this.stopStallSince = Date.now();
+              this.stopStallReported = false;
+            }
+            const silentMs = Date.now() - this.stopStallSince;
+            if (silentMs >= STOP_STALL_MS && !this.stopStallReported) {
+              this.stopStallReported = true;
+              this.stopStalled = {
+                status: 'UNCERTAIN',
+                reason: 'stop_visible_text_silent',
+                silentMs,
+                textLength: stallLength,
+                stopVisibleSinceMs: this.firstStopSeenAt ? Date.now() - this.firstStopSeenAt : null
+              };
+              this.emitDetectorEvent('STOP_STALLED', this.stopStalled);
+            }
+            // Generation indicator (Stop) is visible: silence and the soft/own hard timers do not end the wait.
+            // Only the general limit does (lifecycle wait or profile hardMax, plus margin; the own hard timer if neither is known).
+            const generalLimitReached = generalWaitMs > 0
+              ? Date.now() >= generalDeadlineAt
+              : ownExpiration.hardExpired;
+            if (generalLimitReached) {
               cleanup(this.buildResult('hard_timeout', 0.3, typingActive, getRecentGrowth(), false));
             }
             return;
@@ -849,7 +929,11 @@
         completed: !!result?.completed,
         confidence: typeof result?.confidence === 'number' ? result.confidence : null,
         stableChecksUsed: this.contentStableStreak || 0,
-        lastChangeMsAgo
+        lastChangeMsAgo,
+        // Timer limits, the flag that set a hard stop, and a stall diagnosis (review C9, C11).
+        timers: result?.timers || null,
+        flags: result?.flags || null,
+        stopStalled: result?.stopStalled || null
       }, snapshot || {}));
     }
 
@@ -1564,6 +1648,7 @@
         scrollGrowthInLast2s: recentGrowth,
         criteriaMet: this.criteria.metCount(),
         score: this.calculateScore(),
+        ...this.runTelemetryExtras(),
         metrics: {
           scrollHeightHistory: this.scrollHeightHistory.slice(-20),
           timeoutStatus: this.timeoutManager.getStatus(),

@@ -23,7 +23,7 @@ const tableFirstColumn = (text) => text.split('\n').filter((line) => /^\| `/.tes
 
 describe('Basic schema guide stays true to the code', () => {
   test('it names the format version of the code', () => {
-    expect(guide).toContain(`Версия формата схемы: **${Schema.SCHEMA_VERSION}**`);
+    expect(guide).toContain(`Поддерживаются форматы схемы **1** и **${Schema.SCHEMA_VERSION}**`);
   });
 
   test('every JSON example passes the check, shows on the canvas and assembles', () => {
@@ -48,10 +48,11 @@ describe('Basic schema guide stays true to the code', () => {
   });
 
   test('the defaults of the guide are the defaults of Basic', () => {
-    [Schema.DEFAULTS.roundTask, Schema.DEFAULTS.synthesisTask, Schema.DEFAULTS.discipline.limit, Schema.DEFAULTS.discipline.content,
+    [Schema.DEFAULTS.roundTask, Schema.DEFAULTS.discipline.limit, Schema.DEFAULTS.discipline.content,
       Schema.DEFAULTS.discipline.delivery, Schema.DEFAULTS.discipline.correction].forEach((text) => expect(section('4')).toContain(text));
     expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.policy}\``);
     expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.maxWords}\``);
+    expect(section('4')).toContain(`\`${Schema.DEFAULTS.run.strictLength}\``);
   });
 
   test('the allowed shared limits are the ones of the length select', () => {
@@ -80,10 +81,59 @@ describe('Basic schema guide stays true to the code', () => {
 
   test('the step names the guide teaches are the ones the code checks', () => {
     const bad = (steps) => Schema.toCanvas({ schemaVersion: 1, origin: 'user', steps }, { models: runtimeModels }).errors.length;
-    const round = (ref) => ({ ref, kind: 'round', models: [{ name: 'GPT' }] });
-    const synth = (ref) => ({ ref, kind: 'synthesis', models: [{ name: 'GPT' }] });
-    expect(bad([round('r1'), synth('synth:mid'), round('r2'), synth('final')])).toBe(0);
-    expect(bad([round('r1'), synth('synth:проверка'), round('r2')])).toBeGreaterThan(0);
+    const round = (ref, models = [{ name: 'GPT' }]) => ({ ref, kind: 'round', models });
+    // A synthesis is a round of one model with a role: its ref is the number of the round, as any round.
+    expect(bad([round('r1'), round('r2', [{ name: 'Claude', role: 'interaction_meta_synthesis' }])])).toBe(0);
+    expect(bad([round('r1'), round('final', [{ name: 'Claude', role: 'interaction_meta_synthesis' }])])).toBeGreaterThan(0);
     expect(bad([round('r2')])).toBeGreaterThan(0);
+    expect(Schema.validate({ schemaVersion: 1, origin: 'user', steps: [round('r1'), { ref: 'final', kind: 'synthesis', models: [{ name: 'GPT' }] }] }))
+      .toEqual([{ path: 'steps[1].kind', message: 'тип шага: допустимо round, owner; синтез — роль: раунд из одной модели с role' }]);
+  });
+});
+
+// A template is a working scenario, not only a valid JSON: each one runs on a fake transport to the end. The transport answers
+// in the form the output of the step asks for (a document between its marks, a questionnaire, JSON fields); the owner sends
+// the document back with an edit, so a later step that takes the latest version must get the owner's edit.
+describe('Basic schema guide: every template runs to the end', () => {
+  const FORM = JSON.stringify({ items: [{ id: 'q', type: 'one', question: 'Что важнее', options: ['а', 'б'] }] });
+  const answerFor = (step, model) => {
+    const output = model.output ?? step.output;
+    if (output?.document === 'form') return FORM;
+    if (output?.format === 'json') {
+      const value = {};
+      [...(output.requiredFields || []), ...(output.artifacts || []).map((item) => item.pointer)].forEach((pointer) => {
+        const keys = pointer.split('/').slice(1);
+        let at = value;
+        keys.slice(0, -1).forEach((key) => { at = at[key] = at[key] || {}; });
+        at[keys[keys.length - 1]] = `ПОЛЕ-${step.ref}-${keys.join('.')}`;
+      });
+      return JSON.stringify(value);
+    }
+    if (output?.document === 'read') return `Пояснение.\n[[DOC: ${output.artifacts[0].id}]]\nДОК-${step.ref}-${output.artifacts[0].id}\n[[/DOC]]`;
+    return `ОТВЕТ-${step.ref}-${model.id}`;
+  };
+  const examples = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map((match) => JSON.parse(match[1]));
+
+  test.each(examples.map((schema, index) => [index + 1, schema]))('example %i', async (number, schema) => {
+    const steps = Schema.assemble(schema, { roleText: () => 'ROLE' });
+    const prompts = {};
+    const send = async (models, promptsByModel, meta) => {
+      const step = steps.find((item) => item.ref === meta.stepRef);
+      prompts[meta.stepRef] = { ...(prompts[meta.stepRef] || {}), ...promptsByModel };
+      return { byModel: Object.fromEntries(models.map((name) => [name, { text: answerFor(step, step.models.find((model) => model.name === name)), status: 'SUCCESS' }])), closedByOwner: false };
+    };
+    const provideOwnerResult = async ({ document }) => {
+      if (document?.kind === 'read') return `${document.text}\nПРАВКА-USER`;
+      return document?.kind === 'form' ? 'Что важнее — а' : 'ОТВЕТ-USER';
+    };
+    const result = await Engine.run({ task: 'T', steps, send, provideOwnerResult, runMaxWords: schema.run?.maxWords, runStrictLength: schema.run?.strictLength === true });
+    expect(result.stopReason).toBe('steps_done');
+    expect(result.answers.length).toBeGreaterThan(0);
+    // Template G: the judge revises the owner's version of the table; the recommendation reads the revised one.
+    if (schema.steps.some((step) => step.ref === 'owner:choice')) {
+      expect(prompts.r6.GPT).toContain('ПРАВКА-USER');
+      expect(prompts.r7.Claude).toContain('ДОК-r6-table');
+      expect(result.artifacts.filter((entry) => entry.id === 'table').map((entry) => entry.source.step)).toEqual(['r4', 'owner:table', 'r6']);
+    }
   });
 });

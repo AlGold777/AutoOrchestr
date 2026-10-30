@@ -14,8 +14,8 @@ self.__codexFastActionOpenRegistered = false;
 const EXTENSION_RUNTIME_EPOCH_KEY = '__llm_extension_runtime_epoch_v1';
 const EXTENSION_VOLATILE_LOCAL_KEYS = [
   'llmTabMap',
+  'llmParticipantTabMap',
   'jobState',
-  '__diagnostics_events__',
   'llmComparatorSelectedModelsByView.main',
   'llmComparatorSelectedModelsByView.pipeline',
   'llmComparatorCrossViewUiState',
@@ -237,7 +237,6 @@ importScripts(
   '../shared/run-identity.js',
   '../shared/decision-ledger.js',
   '../shared/page-blocker-policy.js',
-  '../shared/log-replay-harness.js',
   '../shared/selector-profile-lifecycle.js',
   '../shared/model-policy.js',
   '../shared/transport-policy.js',
@@ -249,21 +248,13 @@ importScripts(
   '../shared/visit-policy.js',
   '../shared/pipeline-fsm.js',
   '../shared/telemetry-meta-delta.js',
-  '../shared/proof-telemetry-contracts.js',
-  '../shared/proof-telemetry-inventory.js',
-  '../shared/proof-telemetry-clock.js',
-  '../shared/proof-telemetry-incidents.js',
-  '../shared/proof-telemetry-policy.js',
-  '../shared/proof-oriented-telemetry.js',
-  '../shared/proof-telemetry-audit.js',
+  '../shared/response-viewer-retention.js',
   // disput/* модули загружаются только страницами UI (result_new.html,
   // pipeline_panel.html): фоновый слой не знает про Speaker/роли/очерёдность,
   // и это инвариант транспорта (см. docs/graph-mode/AUDIT_REPORT.md).
   'shared-state.js',
   'llm-targets.js',
   'b1-skeleton-collector.js',
-  'proof-telemetry-store.js',
-  'proof-telemetry-ledger.js',
   'telemetry-logs.js',
   'human-presence.js',
   'rate-limit.js',
@@ -285,6 +276,7 @@ importScripts(
   'cleanup-manager.js',
   'lifecycle-runtime.js',
   'pipeline-message-handlers.js',
+  'message-delivery-store.js',
   'message-router.js'
 );
 

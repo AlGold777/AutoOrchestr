@@ -61,8 +61,8 @@ function createRateLimitAlarm(llmName, until) {
 }
 
 function clearRateLimitAlarm(llmName) {
-  if (!chrome?.alarms?.clear) return;
-  chrome.alarms.clear(getRateLimitAlarmName(llmName));
+  if (!chrome?.alarms?.clear) return Promise.resolve(false);
+  return chrome.alarms.clear(getRateLimitAlarmName(llmName));
 }
 
 function isRateLimited(llmName) {
@@ -93,6 +93,54 @@ function clearRateLimit(llmName) {
   persistRateLimitState();
 }
 
+function hasRateLimitRetry(llmName) {
+  return rateLimitRetryCallbacks.has(llmName);
+}
+
+function cancelRateLimitRetry(llmName) {
+  if (!llmName) return Promise.resolve({ ok: false });
+
+  rateLimitRetryCallbacks.delete(llmName);
+  rateLimitState.delete(llmName);
+
+  let alarmClear;
+  try {
+    alarmClear = Promise.resolve(clearRateLimitAlarm(llmName)).catch((err) => {
+      console.warn(`[RATE-LIMIT] Failed to clear alarm for ${llmName}:`, err?.message || err);
+    });
+  } catch (err) {
+    console.warn(`[RATE-LIMIT] Failed to clear alarm for ${llmName}:`, err?.message || err);
+    alarmClear = Promise.resolve();
+  }
+
+  return Promise.all([alarmClear, persistRateLimitState()]).then(() => ({ ok: true }));
+}
+
+function cancelAllRateLimitRetries() {
+  const llmNames = new Set([
+    ...rateLimitState.keys(),
+    ...rateLimitRetryCallbacks.keys()
+  ]);
+  rateLimitRetryCallbacks.clear();
+  return Promise.all(Array.from(llmNames, (llmName) => {
+    try {
+      return Promise.resolve(clearRateLimitAlarm(llmName)).catch((err) => {
+        console.warn(`[RATE-LIMIT] Failed to clear alarm for ${llmName}:`, err?.message || err);
+      });
+    } catch (err) {
+      console.warn(`[RATE-LIMIT] Failed to clear alarm for ${llmName}:`, err?.message || err);
+      return false;
+    }
+  }));
+}
+
+function clearAllRateLimits() {
+  const pendingAlarmClears = cancelAllRateLimitRetries();
+  rateLimitState.clear();
+  const persist = persistRateLimitState();
+  return Promise.all([pendingAlarmClears, persist]).then(() => ({ ok: true }));
+}
+
 function scheduleRateLimitRetry(llmName, fn) {
   if (typeof fn === 'function') {
     rateLimitRetryCallbacks.set(llmName, fn);
@@ -111,6 +159,7 @@ function scheduleRateLimitRetry(llmName, fn) {
 function handleRateLimitAlarm(alarm) {
   const llmName = getLlmNameFromRateLimitAlarm(alarm?.name);
   if (!llmName) return;
+  if (!rateLimitState.has(llmName) && !rateLimitRetryCallbacks.has(llmName)) return;
   rateLimitState.delete(llmName);
   persistRateLimitState();
   updateModelState(llmName, 'IDLE', { message: 'Rate limit window expired' });
@@ -132,6 +181,9 @@ self.rateLimitState = rateLimitState;
 self.isRateLimited = isRateLimited;
 self.setRateLimit = setRateLimit;
 self.clearRateLimit = clearRateLimit;
+self.hasRateLimitRetry = hasRateLimitRetry;
+self.cancelRateLimitRetry = cancelRateLimitRetry;
+self.clearAllRateLimits = clearAllRateLimits;
 self.scheduleRateLimitRetry = scheduleRateLimitRetry;
 self.loadRateLimitState = loadRateLimitState;
 self.RATE_LIMIT_STORAGE_KEY = RATE_LIMIT_STORAGE_KEY;

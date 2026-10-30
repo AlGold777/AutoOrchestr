@@ -226,7 +226,7 @@ describe('attachment bridge authentication', () => {
     // delivered and the chip visible, every vector still timed out, attach failed
     // and the hard gate then blocked prompt insertion entirely.
     expect(HANDLER_SRC).toContain('const activeProgress = Math.max(0, progressCount - baselineProgress);');
-    expect(HANDLER_SRC).toContain('if (activeProgress > 0) sawProgress = true;');
+    expect(HANDLER_SRC).toContain('if (activeProgress > 0) { sawProgress = true; deliveryObserved = true; }');
     expect(HANDLER_SRC).toContain('const settled = activeProgress === 0');
     expect(HANDLER_SRC).toContain('sawProgress && activeProgress === 0 && hasEvidence');
     // The baseline must actually be read, which is the whole defect.
@@ -555,10 +555,12 @@ describe('attachment bridge authentication', () => {
   });
 
   test('captures the attachment baseline before paste and blocks an unconfirmed send', () => {
-    const baselineAt = HANDLER_SRC.indexOf('const baselineState = captureUploadBaseline(config)');
+    const baselineAt = HANDLER_SRC.indexOf('const baselineState = pending?.baselineState || captureUploadBaseline(config)');
     const dispatchAt = HANDLER_SRC.indexOf('dispatchResult = await dispatchFn()', baselineAt);
     expect(baselineAt).toBeGreaterThan(-1);
     expect(dispatchAt).toBeGreaterThan(baselineAt);
+    expect(HANDLER_SRC).toContain('const pending = runSessionId && previousUpload?.runSessionId === runSessionId');
+    expect(HANDLER_SRC).toContain('if (runSessionId) pendingUploads.set(model,');
     expect(GEMINI_SRC).toContain("type: 'attachment_failed'");
     expect(GEMINI_SRC).toContain('Gemini attachment upload not confirmed');
   });

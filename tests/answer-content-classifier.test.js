@@ -102,3 +102,43 @@ describe('AnswerContentClassifier', () => {
     expect(Classifier.classify(t, { prompt }).contentClass).toBe(CLASSES.VALID);
   });
 });
+
+describe('C2/C7: Russian progress lines and echoes in answer text', () => {
+  const prompt = 'Explain the CAP theorem in distributed systems.';
+  const longPrompt = 'Сравни три подхода к репликации в распределённых базах данных и опиши компромиссы каждого из них подробно';
+
+  test.each([
+    'Проектируя архитектуру модуля…',
+    'Уточнил архитектурные риски и границы ответственности',
+    'Проверю источники и цифры',
+    'Думаю над структурой ответа',
+    'Поиск выполнен, отбираю факты',
+    'Проверяю расчёты по второму пункту',
+    'Проведён анализ вариантов'
+  ])('short progress line without a token is UI noise: %s', (text) => {
+    const r = Classifier.classify(text, { prompt });
+    expect(r.contentClass).toBe(CLASSES.UI_NOISE);
+    expect(r.terminalEligible).toBe(false);
+  });
+
+  test('a progress-like start with a delivery token is not noise; a long full answer is not noise', () => {
+    expect(Classifier.classify('Проверю расчёты. [[AO-abc234]]', { prompt }).terminalEligible).toBe(true);
+    const long = 'Проверю это подробно: CAP говорит, что система не может одновременно гарантировать согласованность, доступность и устойчивость к разделению сети. Ниже разбор с примерами систем и компромиссов, которые из этого следуют, и выводы для выбора архитектуры. [[AO-abc234]]';
+    expect(long.length).toBeGreaterThan(200);
+    expect(Classifier.classify(long, { prompt }).terminalEligible).toBe(true);
+  });
+
+  test('the "<Model> сказал:" label is not part of the answer', () => {
+    expect(Classifier.stripModelSaidPrefix('ChatGPT сказал: Ответ готов.')).toBe('Ответ готов.');
+    expect(Classifier.stripModelSaidPrefix('Claude said: Done.')).toBe('Done.');
+    expect(Classifier.stripModelSaidPrefix('I said: hello')).toBe('I said: hello');
+    expect(Classifier.classify('ChatGPT сказал: Готово.', { prompt }).length).toBe('Готово.'.length);
+  });
+
+  test('a long candidate that quotes the prompt head anywhere is an echo', () => {
+    const candidate = `Интерфейс: блок вопроса. ${longPrompt} Дальше текст, который длиннее двухсот символов и не является ответом, потому что модель повторила вопрос целиком перед своим текстом. ${'x'.repeat(120)}`;
+    expect(Classifier.classify(candidate, { prompt: longPrompt }).contentClass).toBe(CLASSES.PROMPT_ECHO);
+    // Short prompts do not identify an echo by their head.
+    expect(Classifier.classify(`${'z'.repeat(20)} Hi ${'q'.repeat(200)}`, { prompt: 'Hi' }).contentClass).not.toBe(CLASSES.PROMPT_ECHO);
+  });
+});

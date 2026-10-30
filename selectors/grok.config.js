@@ -32,6 +32,7 @@
             'section[data-testid*="composer"] button[data-testid="grok-send-button"]',
             'section[data-testid*="composer"] button[aria-label*="send" i]',
             'form button[data-testid*="composer"]',
+            'button[data-testid="chat-submit"]',
             'button[data-testid="grok-send-button"]',
             'button[aria-label*="Ask Grok" i]',
             'button[aria-label*="send" i]',

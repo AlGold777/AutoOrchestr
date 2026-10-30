@@ -35,7 +35,7 @@
       }
     }
   }) : null;
-  const attachmentHandler = window.AttachmentHandler || null;
+  const getAttachmentHandler = () => window.AttachmentHandler || null;
   const getLifecycleMode = () => {
     if (typeof window !== 'undefined') {
       if (window.__humanoidActivityMode) return window.__humanoidActivityMode;
@@ -2716,6 +2716,7 @@ const keepAliveMutex = (() => {
           }
 
           if (Array.isArray(context.attachments) && context.attachments.length) {
+            const attachmentHandler = getAttachmentHandler();
             if (!attachmentHandler?.attach) {
               throw { type: 'attachment_failed', message: 'Qwen trusted attachment handler unavailable' };
             }
@@ -2958,6 +2959,8 @@ const keepAliveMutex = (() => {
       if (baseAdapter?.handleMessage(msg, _sender, sendResponse)) return true;
       
       if (msg?.type === 'STOP_AND_CLEANUP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         stopContentScript('manual-toggle');
         if (typeof sendResponse === 'function') {
@@ -2967,6 +2970,8 @@ const keepAliveMutex = (() => {
       }
 
       if (msg?.type === 'HUMANOID_FORCE_STOP') {
+        if (typeof window.ContentUtils?.isStopCommandCurrent === 'function'
+            && !window.ContentUtils.isStopCommandCurrent(msg)) return false;
         handleForceStopMessage(msg.payload?.traceId);
         if (typeof sendResponse === 'function') {
           sendResponse({ status: 'force_stop_ack' });

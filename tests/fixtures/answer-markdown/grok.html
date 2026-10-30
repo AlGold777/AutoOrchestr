@@ -1,0 +1,16 @@
+<!-- синтетика, по известной структуре: tests/fixtures/live-answer-skeletons/grok.json
+     (div.not-prose > div[data-testid=code-block] > шапка: span.font-mono.text-xs (язык) + button'ы; затем
+      div.shiki > pre.shiki > code > span.line* (строки соседними span без текстовых узлов между ними);
+      таблица: div.relative.my-2 > div.peer/table > div.table-container > table). Тексты придуманы. -->
+<section data-case="code-labelled">
+<div class="not-prose"><div class="relative not-prose @container/code-block" data-testid="code-block"><div class="border"><div class="flex flex-row px-4 py-2 h-10 items-center sticky top-0"><span class="font-mono text-xs text-secondary select-none">diff</span><div class="ml-auto flex flex-row gap-0.5"><button aria-label="Collapse"><svg class="lucide"><path></path></svg></button><button><div><svg><path></path></svg></div><span class="hidden @sm/code-block:block">Copy</span></button></div></div><div class="shiki not-prose relative"><pre class="shiki slack-ochin"><code><span class="line"><span>- old</span></span><span class="line"><span>+ new</span></span><span class="line"></span><span class="line"><span>  same</span></span></code></pre></div></div></div></div>
+</section>
+<section data-case="inline-not-block">
+<p>use <span class="text-sm px-1 rounded-sm !font-mono">x</span> here</p>
+</section>
+<section data-case="table">
+<div class="relative my-2"><div class="peer/table relative rounded-[16px]"><div class="table-container relative clear-both flex flex-row overflow-x-auto no-scrollbar"><table class="table-card-row-dividers"><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>2 <span class="text-sm">c</span></td></tr></tbody></table></div></div></div>
+</section>
+<section data-case="answer-root">
+<div data-testid="assistant-message"><div class="thinking-container"><button>Thought</button></div><div class="relative"><div class="response-content-markdown markdown"><p>answer</p></div></div></div>
+</section>

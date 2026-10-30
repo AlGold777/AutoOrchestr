@@ -3,9 +3,23 @@
   const root = typeof window !== 'undefined' ? window : globalThis;
   root.LLMExtension = root.LLMExtension || {};
   root.SelectorConfig = root.SelectorConfig || {};
+  const makeEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const safeRuntimeSendMessage = (payload) => {
     try {
       if (!chrome?.runtime?.id) return false;
+      if (payload && typeof payload === 'object') {
+        if (!payload.sourceEventId) payload.sourceEventId = makeEventId();
+        const trId = payload.transportRequestId
+          || root.__CURRENT_TRANSPORT_REQUEST_ID__
+          || (root.ContentUtils?.getTransportRequestId ? root.ContentUtils.getTransportRequestId() : null)
+          || (root.ContentUtils?.ensureDispatchMeta ? root.ContentUtils.ensureDispatchMeta({}, payload.llmName)?.transportRequestId : null)
+          || null;
+        if (trId && !payload.transportRequestId) payload.transportRequestId = trId;
+        if (payload.meta && typeof payload.meta === 'object') {
+          if (!payload.meta.sourceEventId) payload.meta.sourceEventId = payload.sourceEventId;
+          if (trId && !payload.meta.transportRequestId) payload.meta.transportRequestId = trId;
+        }
+      }
       chrome.runtime.sendMessage(payload, () => {
         const errMsg = chrome.runtime?.lastError?.message || '';
         if (errMsg.includes('Extension context invalidated')) {
@@ -37,6 +51,10 @@
         root.ContentUtils.storeSessionId(runSessionId);
       }
     }
+    const transportRequestId = meta.transportRequestId || null;
+    if (transportRequestId) {
+      root.__CURRENT_TRANSPORT_REQUEST_ID__ = transportRequestId;
+    }
     if (meta.pipelineRunId) {
       if (root.ContentUtils?.storeDispatchMeta) {
         root.ContentUtils.storeDispatchMeta({ pipelineRunId: meta.pipelineRunId });
@@ -54,7 +72,8 @@
         sessionId: meta.sessionId || message?.sessionId || null,
         dispatchId: meta.dispatchId || message?.dispatchId || null,
         tabSessionId: meta.tabSessionId || message?.tabSessionId || null,
-        pipelineRunId: meta.pipelineRunId || message?.pipelineRunId || null
+        pipelineRunId: meta.pipelineRunId || message?.pipelineRunId || null,
+        transportRequestId: meta.transportRequestId || message?.transportRequestId || null
       };
       captureDispatchMeta(merged);
     });
@@ -114,6 +133,7 @@
             root.humanSessionController._hardStop('kill-switch');
           }
           root.__LLMScrollHardStop = true;
+          root.__LLMScrollHardStopSetBy = { source: 'kill_switch', runSessionId: null, dispatchId: null, ts: Date.now() };
         } catch (_) {}
       }
     });
@@ -219,9 +239,16 @@
 
     const notifySpaNavigation = (state, reason, previousUrl, nextUrl) => {
       if (!state || !previousUrl || !nextUrl || previousUrl === nextUrl) return;
+      const sourceEventId = makeEventId();
+      const transportRequestId = root.__CURRENT_TRANSPORT_REQUEST_ID__
+        || (root.ContentUtils?.getTransportRequestId ? root.ContentUtils.getTransportRequestId() : null)
+        || (root.ContentUtils?.ensureDispatchMeta ? root.ContentUtils.ensureDispatchMeta({}, state.llmName)?.transportRequestId : null)
+        || null;
       try {
         const event = new CustomEvent('LLM_CODEX_SPA_NAVIGATION', {
           detail: {
+            sourceEventId,
+            transportRequestId,
             llmName: state.llmName,
             reason,
             previousUrl,
@@ -232,6 +259,8 @@
       } catch (_) {}
       safeRuntimeSendMessage({
         type: 'SPA_NAVIGATION',
+        sourceEventId,
+        transportRequestId,
         llmName: state.llmName,
         oldUrl: previousUrl,
         newUrl: nextUrl,

@@ -224,12 +224,12 @@
                 actions.className = 'pasted-text-dialog-actions';
                 const cancel = doc.createElement('button');
                 cancel.type = 'button';
-                cancel.textContent = 'Cancel';
+                cancel.textContent = 'Отмена';
                 cancel.addEventListener('click', closeEditor);
                 const save = doc.createElement('button');
                 save.type = 'button';
                 save.className = 'pasted-text-save';
-                save.textContent = 'Save';
+                save.textContent = 'Сохранить';
                 save.addEventListener('click', () => {
                     syncVisibleEdit();
                     captureSelection();

@@ -1,5 +1,5 @@
 (function initResponseLifecycleDetector() {
-  const VERSION = '2.3.0';
+  const VERSION = '2.3.1';
   const BUILD_VERSION = (() => {
     try { return chrome?.runtime?.getManifest?.()?.version || 'unknown'; } catch (_) { return 'unknown'; }
   })();
@@ -545,6 +545,17 @@
     }
   }
 
+  // How long this observer waits for one answer after Send before it records
+  // STALLED: the active profile hardMax (450 s Standard / 900 s Long). The page
+  // pipeline and its watcher read it so that they never give up earlier and
+  // leave only unconfirmed page text behind.
+  function completionWaitMs(settings = cachedSettings || RESPONSE_LIFECYCLE_DEFAULTS) {
+    return Math.max(
+      Number(settings?.answerCompleteTimeoutMs || 0),
+      Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax || 0)
+    );
+  }
+
   async function getSettings() {
     if (cachedSettings) return cachedSettings;
     if (!settingsPromise) {
@@ -959,6 +970,8 @@
     if (!observeTarget) return false;
     const observingBody = observeTarget === document.body;
     const observer = new MutationObserver((mutations) => {
+      // The materialization sweep moves the page and the page redraws: that is our own doing, not the model's activity.
+      if (globalThis.__AO_SWEEP_ACTIVE === true) return;
       const now = Date.now();
       if (observingBody && now - bodyMutationScheduledAt < BODY_MUTATION_THROTTLE_MS) {
         // Throttle accounting, not liveness: a Stop/loading removal can be the
@@ -1041,6 +1054,8 @@
     return true;
   }
 
+  const generateSourceEventId = () => `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
   function createTracker({
     modelName,
     dispatchId = null,
@@ -1051,14 +1066,21 @@
     navigationEpoch = lifecycleNavigationEpoch,
     promptSubmittedAt = Date.now(),
     traceId = null,
-    baselineSnapshot = null
+    baselineSnapshot = null,
+    transportRequestId = null
   }) {
+    const resolvedTransportRequestId = transportRequestId
+      || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+      || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, modelName)?.transportRequestId : null)
+      || window.__CURRENT_TRANSPORT_REQUEST_ID__
+      || null;
     return {
       modelName,
       dispatchId,
       runSessionId,
       generationEpoch,
       candidateId,
+      transportRequestId: resolvedTransportRequestId,
       documentInstanceId,
       navigationEpoch,
       navigationUrl: window.location.href,
@@ -1145,10 +1167,20 @@
     });
     if (transition.type === 'TERMINAL_DECISION' && transition.terminalResult) {
       try {
+        const sourceEventId = generateSourceEventId();
+        const transportRequestId = tracker.transportRequestId
+          || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+          || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, tracker.modelName)?.transportRequestId : null)
+          || window.__CURRENT_TRANSPORT_REQUEST_ID__
+          || null;
         chrome.runtime.sendMessage({
           type: 'LLM_COMPLETION_TERMINAL',
           llmName: tracker.modelName,
+          sourceEventId,
+          transportRequestId,
           meta: {
+            sourceEventId,
+            transportRequestId,
             runSessionId: tracker.runSessionId,
             dispatchId: tracker.dispatchId,
             generationEpoch: tracker.generationEpoch,
@@ -1279,7 +1311,12 @@
         || indicators.hasLoadingIndicator
         || indicators.hasStreamingCursor
         || indicators.hasProgressbar;
-      const hasStarted = (textLength >= 1 && (newAnswerElement || firstAnswerElement || baselineElementChanged)) || generationSignal;
+      // The text that was the last answer before the send cannot be the start of the new one (a continued chat
+      // shows it again when the node is re-rendered or identity is missing).
+      const repeatsBaselineAnswer = Boolean(tracker.baselineTextHash && tracker.baselineTextLength > 0
+        && snapshotHash === tracker.baselineTextHash);
+      const hasStarted = !repeatsBaselineAnswer
+        && ((textLength >= 1 && (newAnswerElement || firstAnswerElement || baselineElementChanged)) || generationSignal);
       if (hasStarted) {
         const answerStartedAt = Date.now();
         tracker.answerStartedAt = answerStartedAt;
@@ -1644,6 +1681,17 @@
             } : null;
           },
           forceBottom: async () => { try { tracker.latestAnswerEl?.scrollIntoView?.({ block: 'end', behavior: 'auto' }); } catch (_) {} },
+          // Generation is confirmed finished and the page is at the bottom: walk up the answer so that blocks the page draws only in view
+          // (Mermaid diagrams...) are drawn, then come back. Not a sign of life: see shared/answer-materialize-sweep.js.
+          expandDeferred: async () => {
+            const sweep = globalThis.AnswerMaterializeSweep;
+            if (!sweep || typeof sweep.run !== 'function') return;
+            await sweep.run({
+              answerEl: tracker.latestAnswerEl,
+              provider: modelName,
+              emit: (report) => emitLifecycleTelemetry('ANSWER_MATERIALIZE_SWEEP', { modelName, state: 'STABLE', level: 'info', phaseEvidence: report })
+            });
+          },
           waitForSettle: async () => delayForTracker(tracker, Math.max(5, Math.min(pollIntervalMs || stableMs, 250)), 'poll')
         });
         const materializationAfter = materialization.after;
@@ -1891,6 +1939,7 @@
     traceId = null,
     baselineText = null,
     turnAnchor = null,
+    transportRequestId = null,
     activateObservation = false
   }) {
     const activeTracker = trackers.get(modelName);
@@ -1942,7 +1991,8 @@
       navigationEpoch,
       promptSubmittedAt,
       traceId,
-      baselineSnapshot: suppliedBaseline
+      baselineSnapshot: suppliedBaseline,
+      transportRequestId: transportRequestId || storedIdentity.transportRequestId || null
     });
     tracker.turnAnchor = capturedTurnAnchor;
     trackers.set(modelName, tracker);
@@ -2057,7 +2107,7 @@
       timeouts: {
         progressTimeoutMs: Number(settings.progressTimeoutMs || settings.answerCompleteTimeoutMs),
         producerStuckTimeoutMs: Number(settings.producerStuckTimeoutMs || settings.answerCompleteTimeoutMs),
-        hardAttemptTimeoutMs: Math.max(Number(settings.answerCompleteTimeoutMs || 0), Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax || 0))
+        hardAttemptTimeoutMs: completionWaitMs(settings)
       },
       onTransition: (transition) => emitCompletionTransition(tracker, transition)
     });
@@ -2090,16 +2140,9 @@
         return trackerCancelledResult(tracker);
       }
       tracker.state = 'GENERATING';
-      const pipelineHardMaxMs = Number(
-        window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax
-        || 0
-      );
       return waitForAnswerComplete({
         modelName: tracker.modelName,
-        timeoutMs: Math.max(
-          Number(settings.answerCompleteTimeoutMs || 0),
-          pipelineHardMaxMs
-        ),
+        timeoutMs: completionWaitMs(settings),
         stableMs: settings.stableMs,
         pollIntervalMs: settings.pollIntervalMs,
         traceId: tracker.traceId
@@ -2190,6 +2233,26 @@
     const originalSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
     chrome.runtime.sendMessage = function patchedSendMessage(message, callback) {
       const cb = typeof callback === 'function' ? callback : null;
+      if (message && typeof message === 'object') {
+        if (!message.sourceEventId) {
+          message.sourceEventId = generateSourceEventId();
+        }
+        const trId = message.transportRequestId
+          || message.meta?.transportRequestId
+          || (window.ContentUtils?.getTransportRequestId ? window.ContentUtils.getTransportRequestId() : null)
+          || (window.ContentUtils?.ensureDispatchMeta ? window.ContentUtils.ensureDispatchMeta({}, message.llmName)?.transportRequestId : null)
+          || window.__CURRENT_TRANSPORT_REQUEST_ID__
+          || null;
+        if (trId) {
+          if (!message.transportRequestId) message.transportRequestId = trId;
+          if (message.meta && typeof message.meta === 'object' && !message.meta.transportRequestId) {
+            message.meta.transportRequestId = trId;
+          }
+        }
+        if (message.meta && typeof message.meta === 'object' && !message.meta.sourceEventId) {
+          message.meta.sourceEventId = message.sourceEventId;
+        }
+      }
       if (message?.type === 'PROMPT_SUBMITTED' && message.llmName) {
         notePromptSendAttempt({ ...message.meta, modelName: message.llmName });
         const result = originalSendMessage(message, cb);
@@ -2203,6 +2266,7 @@
           navigationEpoch: message?.meta?.navigationEpoch ?? lifecycleNavigationEpoch,
           promptSubmittedAt: Date.now(),
           traceId: message?.meta?.traceId || message?.meta?.dispatchId || null,
+          transportRequestId: message?.meta?.transportRequestId || message?.transportRequestId || null,
           activateObservation: true
         })).catch(() => {});
         return result;
@@ -2401,6 +2465,7 @@
     observeWitness,
     getTerminalResult,
     getCompletionSnapshot,
+    completionWaitMs,
     waitForTerminalResult,
     reconcileRecovery,
     schedulePostTerminalObservationWindow,

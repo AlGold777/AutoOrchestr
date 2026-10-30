@@ -356,6 +356,7 @@
       this.verifiedSnapshot = null;
       this.terminalResult = null;
       this.extractionSnapshot = null;
+      this.interruptEvidence = null;
     }
 
     emitTransition(type, payload = {}) {
@@ -408,7 +409,14 @@
       this.timeouts.producerActive(this.facts.producerState === 'ACTIVE', record.observedAt);
       if (type === 'PROVIDER_ERROR_VISIBLE') this.facts.providerError = true;
       if (type === 'CONTINUE_VISIBLE') this.facts.continueRequired = true;
-      if (type === 'USER_INTERRUPTED') this.facts.interrupted = true;
+      if (type === 'USER_INTERRUPTED') {
+        // A stop while the page holds text the observer never saw ownership of is not a verdict on
+        // this answer: defer it as CONTEXT_LOST (the router waits for the answer to settle).
+        const textLength = Number(record.payload?.textLength || 0);
+        this.interruptEvidence = { textLength, hardStopSetBy: record.payload?.hardStopSetBy || null };
+        if (textLength > 0 && this.facts.ownership !== 'CONFIRMED') this.facts.contextLost = true;
+        else this.facts.interrupted = true;
+      }
       if (type === 'CONTEXT_INVALIDATED') this.facts.contextLost = true;
       if (type === 'NODE_REPLACED') this.confirmOwnership({ status: 'CONFLICT', reasons: ['node_replaced'], verifiedAt: record.observedAt });
       this.refreshVetoes();
@@ -480,7 +488,12 @@
       });
       if (result) {
         this.terminalResult = result;
-        this.emitTransition('TERMINAL_DECISION', { terminalResult: result, reason: result.reason });
+        this.emitTransition('TERMINAL_DECISION', {
+          terminalResult: result,
+          reason: result.reason,
+          hardStopSetBy: this.interruptEvidence?.hardStopSetBy || null,
+          interruptTextLength: this.interruptEvidence?.textLength ?? null
+        });
         if (result.status === 'SUCCESS_TERMINAL') {
           this.extractionSnapshot = ExtractionSnapshotFactory.capture(result, this.verifiedSnapshot);
           this.emitTransition('EXTRACTION_SNAPSHOT_CAPTURED', {

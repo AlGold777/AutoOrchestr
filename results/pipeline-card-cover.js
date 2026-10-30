@@ -37,7 +37,9 @@
         };
         const refresh = () => {
             frame = 0;
+            // Service run lines (basic-run-line) are not deck cards: they are not counted and are hidden in the cover host (styles/pipeline-card-cover.css).
             const next = Array.from(root.children).filter((card) => card.classList.contains('debate-model-card')
+                && !card.classList.contains('basic-run-line')
                 && !card.hidden && card.style.display !== 'none');
             const usable = enabled && !motion?.matches && root.clientHeight > 20
                 && !next.some((card) => card.classList.contains('is-wide-expanded'));

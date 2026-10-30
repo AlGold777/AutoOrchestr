@@ -177,6 +177,15 @@ function isStaleBaselineCandidate(entry, text, dispatchId = null) {
 }
 const LATE_COLLECT_CACHE_KEY_PREFIX = 'late_answer_snapshot_v1';
 const LATE_COLLECT_CACHE_MAX_CHARS = 200000;
+// A cut inside a data: image would leave broken markup: over the cap, diagram images
+// are replaced by the visible note first, then the usual cut applies.
+function capSnapshotHtml(html) {
+  let value = String(html || '');
+  if (value.length > LATE_COLLECT_CACHE_MAX_CHARS) {
+    value = value.replace(/<img\b[^>]*src="data:image\/svg\+xml;base64,[^"]*"[^>]*>/g, '<p>[диаграмма не сохранена: размер]</p>');
+  }
+  return value.slice(0, LATE_COLLECT_CACHE_MAX_CHARS);
+}
 const LATE_COLLECT_TOTAL_BUDGET_MS = 12000;
 const LATE_COLLECT_PING_TIMEOUT_MS = 900;
 const LATE_COLLECT_SLOW_PING_TIMEOUT_MS = 1500;
@@ -307,6 +316,7 @@ const runtimeBudgetTimerIds = new Set();
 
 const isTerminalEntry = (entry) => {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState && self.ModelRunState.isTerminalRunState(entry)) return true;
   const terminalStatuses = Array.isArray(TERMINAL_STATUSES) ? TERMINAL_STATUSES : ['COPY_SUCCESS'];
   if (terminalStatuses.includes(entry.status)) return true;
@@ -316,6 +326,7 @@ const isTerminalEntry = (entry) => {
 
 const isFinalizedEntry = (entry) => {
   if (!entry) return false;
+  if (entry.cardAnswerComplete) return true;
   if (self.ModelRunState?.isTerminalRunState && self.ModelRunState.isTerminalRunState(entry)) return true;
   return Boolean(entry.finalStatusRecorded || entry.finalStatus);
 };
@@ -339,6 +350,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     'article_bottom'
   ];
   const skipStrategyIds = new Set(Array.isArray(manualOptions.skipStrategyIds) ? manualOptions.skipStrategyIds.map(String) : []);
+  // "Latest answer" is a position, not a size: the longest candidate of a chat is usually an earlier, longer turn.
+  if (manualOptions.manualLatestRecovery === true) skipStrategyIds.add('longest');
   const skipSelectors = new Set(Array.isArray(manualOptions.skipSelectors) ? manualOptions.skipSelectors.map(String) : []);
   const requestedStrategyId = typeof manualOptions.strategyId === 'string' ? manualOptions.strategyId : '';
   const requestedStrategyIndex = Number.isFinite(Number(manualOptions.strategyIndex)) ? Number(manualOptions.strategyIndex) : 0;
@@ -389,7 +402,11 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       'article .prose',
       '.prose',
       '.answer',
-      '.result'
+      '.result',
+      // Confirmed by tests/fixtures/live-answer-skeletons/lechat.json: the assistant turn
+      // carries only the role attribute (no data-message-part-type).
+      '[data-message-author-role="assistant"]',
+      '[data-role="assistant"]'
     ],
     qwen: [
       'div.qwen-chat-message.qwen-chat-message-assistant div.response-message-content div.custom-qwen-markdown > div.qwen-markdown.qwen-markdown-loose',
@@ -406,13 +423,19 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       '.message-item[data-role="assistant"] .message-content',
       '[data-role="assistant"] .markdown-body',
       '[data-role="assistant"] .message-content',
+      // the explicit marker of DeepSeek's answer first (the reasoning block may hold a .ds-markdown too)
+      '.ds-markdown.ds-assistant-message-main-content',
       'div.ds-message div.ds-markdown',
+      // the answer block itself (live DOM and the repository skeleton have no ds-message wrapper)
+      '.ds-markdown',
       '.assistant-message .markdown-body',
       '.assistant-message',
       '.markdown-body',
       '.message-content'
     ],
     claude: [
+      // Claude, 2026-10: the answer text is div.prose inside the assistant message (beside h3.sr-only «Claude responded:» and a status row).
+      '[data-testid="assistant-message"] div.prose',
       'div[data-testid="conversation-turn"][data-author-role="assistant"] div.standard-markdown.grid-cols-1',
       'div[data-testid="conversation-turn"][data-role="assistant"] div.standard-markdown.grid-cols-1',
       'div[data-is-response="true"] div.font-claude-response.relative div.standard-markdown.grid-cols-1',
@@ -489,12 +512,29 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     const latest = assistants[assistants.length - 1];
     if (latest?.querySelector('[data-message-part-type]')) {
       nodes.splice(0, nodes.length, ...latest.querySelectorAll('[data-message-part-type="answer"]'));
+    } else if (latest) {
+      // No part markers: the latest assistant turn is the answer; wider page containers
+      // found by the loose selectors above must not compete with it.
+      nodes.splice(0, nodes.length, latest);
+      nodeSelectors.set(latest, '[data-message-author-role="assistant"]');
     }
   }
   const isRejectedNode = (node) => {
     const tag = String(node?.tagName || '').toLowerCase();
     if (['input', 'textarea', 'button', 'nav', 'header', 'footer', 'form'].includes(tag)) return true;
     if (node?.closest?.('textarea,input,button,nav,header,footer,form,[contenteditable="true"],[data-message-part-type="reasoning"],[data-message-author-role="user"],[data-role="user"],[hidden],[inert],[aria-hidden="true"]')) return true;
+    // The user's own message, whatever the provider calls it (data-testid="user-message"...): see AnswerHtmlBuilder.isUserMessage.
+    if (globalThis.AnswerHtmlBuilder?.insideUserMessage?.(node)) return true;
+    // The model's reasoning block (a WHOLE WORD think/thinking/thought/reasoning/cot in a class, id or testid) is not an answer.
+    // Same rule as AnswerHtmlBuilder.isReasoningBlock (this function is serialized into the page and cannot import it).
+    const reasoningWords = ['think', 'thinking', 'thought', 'thoughts', 'reasoning', 'cot'];
+    for (let el = node; el && el.nodeType === 1; el = el.parentElement) {
+      const marker = [typeof el.className === 'string' ? el.className : '', el.id, el.getAttribute('data-testid'), el.getAttribute('data-type'), el.getAttribute('data-content-type')]
+        .filter(Boolean).join(' ').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+      const list = marker.split(/[^a-z0-9]+/);
+      // "has-thoughts" / "no-thinking" are state flags of an ordinary container, not a reasoning block
+      if (list.some((word, i) => reasoningWords.includes(word) && !(i > 0 && ['has', 'have', 'with', 'no', 'is', 'show', 'hide', 'toggle'].includes(list[i - 1])))) return true;
+    }
     return false;
   };
   const getText = (node) => {
@@ -518,8 +558,13 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     }
     return (hash >>> 0).toString(16);
   };
+  let rejectedCount = 0;
   let baseCandidates = nodes
-    .filter((node) => node && !isRejectedNode(node))
+    .filter((node) => {
+      if (!node) return false;
+      if (isRejectedNode(node)) { rejectedCount += 1; return false; }
+      return true;
+    })
     .map((node, index) => {
       const text = getText(node);
       let visible = true;
@@ -535,11 +580,6 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const selector = nodeSelectors.get(node) || '';
       const descriptor = `${selector}#${index}`;
       const className = String(node.className || '');
-      const htmlNode = normalizedModel === 'gemini' ? node.cloneNode(true) : node;
-      if (normalizedModel === 'gemini') htmlNode.querySelectorAll('h6.screen-reader-model-response-label').forEach(label => label.remove());
-      const html = normalizedModel === 'le chat' && window.ContentUtils?.buildInlineHtml
-        ? window.ContentUtils.buildInlineHtml(node, { includeRoot: false })
-        : String(htmlNode.innerHTML || '').trim();
       const isMarkdown = /markdown|prose|qwen-markdown|markdown-body/i.test(`${selector} ${className}`);
       const assistantNode = node.closest?.('[data-markdown-text-style="assistant-message"],[data-message-author-role="assistant"],[data-role="assistant"],.assistant-message,.qwen-chat-message-assistant,[class*="assistant" i]');
       const isAssistantRole = !!assistantNode;
@@ -547,7 +587,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       return {
         index,
         text,
-        html,
+        node,
         selector,
         descriptor,
         visible,
@@ -563,6 +603,54 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     .filter((candidate) => !(normalizedModel === 'gemini' && /(?:Ответ Gemini|Gemini said:?)\s*$/i.test(candidate.text)))
     .filter((candidate) => !excludeTextSignatures.has(normalizeSignature(candidate.text)))
     .filter((candidate) => !skipSelectors.has(candidate.selector) && !skipSelectors.has(candidate.descriptor));
+  // A candidate is one answer, never a page or a conversation: a node holding several
+  // assistant turns, a user message, the composer or navigation is a container. Same rule
+  // as ContentUtils.collectLateSnapshotCandidate; tests/answer-markdown-node-selection.test.js.
+  const ROLE_ASSISTANT = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
+  const ROLE_USER = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
+  // Inputs inside a code editor of the answer (Monaco/CodeMirror hidden textarea in a diagram) are not the page composer.
+  const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]'
+    // ChatGPT's writing block ("Текст") is the answer itself: its document editor is not the page composer.
+    + ',[data-client-defined-widget],[data-oai-writing-block-surface]';
+  const hasPageChrome = (root) => Array.from(root.querySelectorAll('textarea,[contenteditable="true"],form,nav'))
+    .some((el) => !(el.matches('textarea,[contenteditable="true"]') && (el.closest(EDITOR_HOST) || el.hasAttribute('readonly') || el.getAttribute('aria-hidden') === 'true')));
+  const isWideContainer = (candidate) => {
+    try {
+      const target = candidate.node;
+      const assistants = target.querySelectorAll(ROLE_ASSISTANT).length + (target.matches(ROLE_ASSISTANT) ? 1 : 0);
+      return assistants > 1
+        || !!target.querySelector(ROLE_USER)
+        || !!globalThis.AnswerHtmlBuilder?.containsUserMessage?.(target)
+        || hasPageChrome(target);
+    } catch (_) {
+      return false;
+    }
+  };
+  const beforeWide = baseCandidates.length;
+  const wideCandidates = baseCandidates.filter((candidate) => isWideContainer(candidate));
+  baseCandidates = baseCandidates.filter((candidate) => !wideCandidates.includes(candidate));
+  const wideRejected = beforeWide - baseCandidates.length;
+  // Never lose the whole answer: when only page-level containers matched but there is ONE unambiguous
+  // candidate (after dropping outer ones that contain another), return it with an explicit note.
+  let degradedNote = null;
+  if (!baseCandidates.length && wideCandidates.length) {
+    // Only page chrome (composer/form/nav) made it wide: several turns or a user message inside is a wrong answer, not a degraded one.
+    const chromeOnly = wideCandidates.filter((c) => {
+      try {
+        return c.node.querySelectorAll(ROLE_ASSISTANT).length + (c.node.matches(ROLE_ASSISTANT) ? 1 : 0) <= 1
+          && !c.node.querySelector(ROLE_USER) && !globalThis.AnswerHtmlBuilder?.containsUserMessage?.(c.node);
+      } catch (_) { return false; }
+    });
+    const inner = chromeOnly.filter((outer) => !chromeOnly.some((other) => other !== outer && outer.node.contains(other.node)));
+    // several single answers of the page (every turn of a chat has one): the LAST of them is the answer
+    if (inner.length >= 1) {
+      baseCandidates = [inner.reduce((last, candidate) => (last.node.compareDocumentPosition(candidate.node) & 4 /* FOLLOWING */ ? candidate : last))];
+      degradedNote = { type: 'answer', reason: 'узел ответа похож на контейнер страницы; взят единственный кандидат', position: 0 };
+    }
+  }
+  // Of two nested candidates with (almost) the same text keep the inner one: it has no page chrome around it.
+  baseCandidates = baseCandidates.filter((outer) => !baseCandidates.some((inner) => inner !== outer
+    && outer.node.contains(inner.node) && inner.text.length >= outer.text.length * 0.9));
   // F6.2: positional turn anchor from the dispatch baseline — candidates that
   // were already on the page before this dispatch are previous conversation
   // turns. Best-effort: the scan's candidate space differs from the pipeline's,
@@ -600,12 +688,170 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   candidates = candidates
     .map((candidate) => ({ ...candidate, strategyScore: scoreByStrategy(candidate) }))
     .sort((a, b) => b.strategyScore - a.strategyScore);
-  const best = candidates[0] || null;
+  let best = candidates[0] || null;
+  let splitAcrossBlocks = false;
+  let turnExpanded = false;
+  if (best) {
+    const builder = globalThis.AnswerHtmlBuilder;
+    // The answer of one turn may be several blocks (prose, diagram, prose...): the node found may be only one of them.
+    // Widen to the node that holds the whole turn; when only a page-level container would, fail instead of half an answer.
+    if (builder && typeof builder.expandToTurn === 'function') {
+      const peers = baseCandidates.filter((candidate) => candidate !== best && candidate.selector === best.selector).map((candidate) => candidate.node);
+      let turn = { node: best.node, status: 'ok' };
+      try {
+        turn = builder.expandToTurn(best.node, peers);
+      } catch (err) {
+        degradedNote = degradedNote || { type: 'answer', reason: `расширение до хода не удалось: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`, position: 0 };
+      }
+      if (turn.status === 'split' && peers.length) {
+        // Equal peer blocks: which one is the answer is ambiguous, so fail with a reason.
+        best = null;
+        splitAcrossBlocks = true;
+      } else if (turn.status === 'split') {
+        // The only candidate: keep the main block (better than nothing) and say the answer may continue elsewhere.
+        degradedNote = degradedNote || { type: 'answer', reason: 'ответ из нескольких блоков; взят основной блок', position: 0 };
+      } else if (turn.node !== best.node) {
+        best = { ...best, node: turn.node, text: getText(turn.node) };
+        turnExpanded = true;
+      }
+    }
+  }
+  if (best) {
+    // The ONE builder of an answer's html (content-scripts/answer-html-builder.js: computed styles with flex/grid layout,
+    // diagrams, icons, hidden content, clean code blocks). The background injects it into a tab that runs an older
+    // extension version. Without it (injection failed) the html is a plain copy and says so in the report.
+    const builder = globalThis.AnswerHtmlBuilder;
+    // The TEXT of the answer is primary. Layout/svg/code enrichment only when asked for: an observation frame (options.enrich === false)
+    // returns the text and the plain html of the node at once.
+    const usable = manualOptions.enrich !== false && builder && typeof builder.build === 'function';
+    let built = false;
+    if (usable) {
+      try {
+        best.html = builder.build(best.node, { includeRoot: false, provider: modelName });
+        best.svgNotes = builder.getLastNotes();
+        built = true;
+      } catch (_) { /* degrade below */ }
+    }
+    // An html with no text and no picture/code/table is an empty answer, however much text the node has: take the plain copy.
+    const hasContent = (html) => /<(?:img|pre|table|video|audio)\b/i.test(html) || String(html).replace(/<[^>]*>/g, '').replace(/&nbsp;|\s+/g, '').length > 0;
+    if (built && !hasContent(best.html) && hasContent(String(best.node.innerHTML || ''))) built = false;
+    if (!built) {
+      best.html = String(best.node.innerHTML || '').trim();
+      best.svgNotes = manualOptions.enrich === false ? [] : [{ type: 'html', reason: 'html собран запасным путём (без раскладки и стилей)', position: 0 }];
+    }
+    if (degradedNote) best.svgNotes = [...best.svgNotes, degradedNote];
+    // Gemini: the Markdown copy is made without its hidden page label.
+    best.mdNode = normalizedModel === 'gemini'
+      ? (() => { const copy = best.node.cloneNode(true); copy.querySelectorAll('h6.screen-reader-model-response-label').forEach((label) => label.remove()); return copy; })()
+      : best.node;
+  }
+  // DOM->Markdown copy of the chosen node. Self-contained: this function is serialized
+  // into the page. Never silent: any failure becomes a whole-answer placeholder and
+  // report.complete=false (spec: docs/Architecture/answer-markdown-spec.md, 4.2).
+  let answerMarkdown = '';
+  let copyReport = null;
+  if (best && manualOptions.enrich !== false) {
+    const stub = (reason) => {
+      answerMarkdown = `[НЕ СКОПИРОВАНО: тип=answer, причина=${reason}, позиция=1]`;
+      copyReport = {
+        version: 1, provider: modelName || null, found: {}, copied: {},
+        placeholders: [{ type: 'answer', reason, position: 1 }], mismatches: [], flags: {}, complete: false
+      };
+    };
+    const engine = globalThis.AnswerMarkdown;
+    if (!engine || typeof engine.convert !== 'function') {
+      stub(String(manualOptions.markdownInjectError || 'движок недоступен').replace(/[\],\n\r]+/g, ' ').slice(0, 120));
+    } else {
+      try {
+        let context;
+        const ctxModule = globalThis.AnswerCopyContext;
+        if (ctxModule && typeof ctxModule.collect === 'function') {
+          try { context = ctxModule.collect(best.mdNode, { provider: modelName, isLatest: true, document: best.node.ownerDocument }); } catch (_) { context = undefined; }
+        }
+        const converted = engine.convert(best.mdNode, { provider: modelName || null, context });
+        const markdown = String(converted?.markdown ?? '');
+        if (!converted?.report || typeof converted.report !== 'object') stub('движок не вернул отчёт');
+        else if (markdown.length > 1000000) {
+          stub('markdown длиннее 1000000 знаков');
+          copyReport = { ...converted.report, placeholders: [...(converted.report.placeholders || []), ...copyReport.placeholders], complete: false };
+        } else {
+          // Artifact / Canvas panels outside the message: converted and appended (same code as in
+          // content-scripts/unified-answer-pipeline.js; tests keep both equal).
+          const artifactPanelsMarkdown = (engine, context, provider) => {
+            const all = context && context.artifactPanelEls ? Array.from(context.artifactPanelEls) : [];
+            // Nested matches of the loose panel selector are one panel.
+            const panels = all.filter((panel) => !all.some((other) => other !== panel && other.contains(panel)));
+            const parts = [];
+            const sum = { found: {}, copied: {}, placeholders: [], mismatches: [], complete: true };
+            panels.forEach((panel, index) => {
+              const title = String(panel.getAttribute('aria-label') || panel.getAttribute('data-title')
+                || panel.querySelector('h1, h2, h3')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'без названия';
+              const kind = String(panel.getAttribute('data-artifact-type') || panel.getAttribute('data-type') || '').trim().slice(0, 40);
+              const heading = `### Артефакт: ${title}${kind ? `, ${kind}` : ''}`;
+              try {
+                const converted = engine.convert(panel, { provider: provider || null });
+                const body = String(converted?.markdown ?? '').trim();
+                const rep = converted?.report && typeof converted.report === 'object' ? converted.report : null;
+                if (!rep || !body) throw new Error(!rep ? 'движок не вернул отчёт' : 'панель пуста');
+                parts.push(`${heading}\n\n${body}`);
+                Object.entries(rep.found || {}).forEach(([k, v]) => { sum.found[k] = (sum.found[k] || 0) + v; });
+                Object.entries(rep.copied || {}).forEach(([k, v]) => { sum.copied[k] = (sum.copied[k] || 0) + v; });
+                sum.placeholders.push(...(rep.placeholders || []));
+                sum.mismatches.push(...(rep.mismatches || []));
+                if (rep.complete === false) sum.complete = false;
+              } catch (err) {
+                const reason = `панель артефакта не прочитана: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`;
+                parts.push(`${heading}\n\n[НЕ СКОПИРОВАНО: тип=artifact, причина=${reason}, позиция=${index + 1}]`);
+                sum.placeholders.push({ type: 'artifact', reason, position: index + 1 });
+                sum.complete = false;
+              }
+            });
+            return { markdown: parts.join('\n\n'), sum, panels: panels.length };
+          };
+          const mergeArtifactPanels = (markdown, report, panelsResult, context) => {
+            let outMarkdown = markdown;
+            let outReport = report;
+            if (panelsResult.panels) {
+              outMarkdown = `${markdown}\n\n${panelsResult.markdown}`;
+              const merge = (a, b) => { const out = { ...a }; Object.entries(b).forEach(([k, v]) => { out[k] = (out[k] || 0) + v; }); return out; };
+              outReport = {
+                ...report,
+                found: merge(report.found || {}, panelsResult.sum.found),
+                copied: merge(report.copied || {}, panelsResult.sum.copied),
+                placeholders: [...(report.placeholders || []), ...panelsResult.sum.placeholders],
+                mismatches: [...(report.mismatches || []), ...panelsResult.sum.mismatches],
+                complete: report.complete !== false && panelsResult.sum.complete
+              };
+            } else if (context && context.artifactRefs > 0 && !(report.placeholders || []).some((item) => item.type === 'artifact')) {
+              // The message points at an artifact whose panel is not on the page.
+              outReport = {
+                ...report,
+                placeholders: [...(report.placeholders || []), { type: 'artifact', reason: 'панель артефакта не найдена: содержимое не прочитано', position: 0 }],
+                complete: false
+              };
+            }
+            return { markdown: outMarkdown, report: outReport };
+          };
+          const merged = mergeArtifactPanels(markdown, converted.report, artifactPanelsMarkdown(engine, context, modelName), context);
+          answerMarkdown = merged.markdown;
+          copyReport = merged.report;
+        }
+      } catch (err) {
+        stub(`исключение: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 100)}`);
+      }
+    }
+  }
+  if (best && copyReport && Array.isArray(best.svgNotes) && best.svgNotes.length) {
+    // Diagrams the HTML copy could not keep (size): reported, not dropped silently.
+    copyReport = { ...copyReport, placeholders: [...(copyReport.placeholders || []), ...best.svgNotes], complete: false };
+  }
   return best
     ? {
       ok: true,
       text: best.text,
       html: best.html,
+      answerMarkdown,
+      copyReport,
       length: best.text.length,
       visible: best.visible,
       candidates: candidates.length,
@@ -615,13 +861,18 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       selectorUsed: best.selector,
       selectorDescriptor: best.descriptor,
       textHash: hashText(best.text),
-      anchorApplied
+      anchorApplied,
+      turnExpanded
     }
     : {
       ok: false,
       length: 0,
+      // Only page-level containers matched: say so instead of returning one as the answer.
+      reason: splitAcrossBlocks ? 'answer_split_across_blocks' : (wideRejected > 0 ? 'wide_container_only' : 'no_candidate'),
       candidates: 0,
       candidateCount: baseCandidates.length,
+      // why nothing was chosen: nodes found / dropped as page parts, user or reasoning / dropped as too short or excluded / dropped as containers
+      diagnostic: `found=${nodes.length},rejected=${rejectedCount},kept=${beforeWide},wide=${wideRejected}`,
       strategyId,
       strategyIndex,
       anchorApplied
@@ -689,7 +940,7 @@ async function saveAnswerSnapshotFromContent(message = {}, sender = {}) {
     llmName,
     tabId,
     text,
-    html: typeof message?.html === 'string' ? message.html.slice(0, LATE_COLLECT_CACHE_MAX_CHARS) : '',
+    html: typeof message?.html === 'string' ? capSnapshotHtml(message.html) : '',
     hash: message?.hash || simpleLateAnswerHash(text),
     length: text.length,
     url: typeof message?.url === 'string' ? message.url.slice(0, 1024) : '',
@@ -810,6 +1061,57 @@ const sendTabMessageForLateCollect = (tabId, payload, timeoutMs) => withLateColl
   }
 }), timeoutMs, (err) => ({ ok: false, error: err?.message || 'timeout' }));
 
+// The DOM->Markdown modules, in manifest order. A tab opened before the extension was
+// reloaded has none of them, so a read-only pull injects the missing ones first.
+const ANSWER_MARKDOWN_MODULES = [
+  ['AnswerMarkdown', 'shared/answer-markdown.js'],
+  ['AnswerMarkdownBlocks', 'shared/answer-markdown-blocks.js'],
+  ['AnswerMarkdownExtras', 'shared/answer-markdown-extras.js'],
+  ['AnswerMarkdownProviders', 'shared/answer-markdown-providers.js'],
+  ['AnswerCopyContext', 'content-scripts/answer-copy-context.js'],
+  // The one builder of an answer's html: an older tab does not have it (or has an older ContentUtils without it).
+  ['AnswerHtmlBuilder', 'content-scripts/answer-html-builder.js']
+];
+// Returns null when the modules are present, else a short reason (carried into the report).
+async function ensureAnswerMarkdownModulesInTab(tabId) {
+  try {
+    const names = ANSWER_MARKDOWN_MODULES.map(([name]) => name);
+    const probe = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (list) => list.map((name) => !!globalThis[name]),
+      args: [names]
+    });
+    const present = Array.isArray(probe?.[0]?.result) ? probe[0].result : [];
+    const missing = ANSWER_MARKDOWN_MODULES.filter((_, i) => !present[i]);
+    if (!missing.length) return null;
+    // Without the engine every later module would load without registering: inject all.
+    const files = present[0] ? missing.map(([, file]) => file) : ANSWER_MARKDOWN_MODULES.map(([, file]) => file);
+    await chrome.scripting.executeScript({ target: { tabId }, files });
+    return null;
+  } catch (err) {
+    return `внедрение модулей: ${String(err?.message || err).replace(/[\],\n\r]+/g, ' ').slice(0, 80)}`;
+  }
+}
+self.ensureAnswerMarkdownModulesInTab = ensureAnswerMarkdownModulesInTab;
+
+// Fields for a late-collect result: its own copy, or an explicit incomplete report
+// when the source (snapshot cache, preserved text...) never went through DOM->Markdown.
+function lateCollectCopyFields(result) {
+  if (result?.copyReport && typeof result.copyReport === 'object') {
+    return { answerMarkdown: typeof result.answerMarkdown === 'string' ? result.answerMarkdown : '', copyReport: result.copyReport };
+  }
+  const reason = `источник без DOM→Markdown: ${String(result?.source || 'unknown').replace(/[\],\n\r]+/g, ' ').slice(0, 60)}`;
+  return {
+    answerMarkdown: '',
+    copyReport: {
+      version: 1, provider: null, found: {}, copied: {},
+      placeholders: [{ type: 'answer', reason, position: 1 }], mismatches: [], flags: {}, complete: false
+    }
+  };
+}
+
+self.lateCollectCopyFields = lateCollectCopyFields;
+
 async function classifyLateCollectState(tabId, llmName, options = {}) {
   const tab = await getTabSafe(tabId);
   if (!tab) return { state: 'DEAD', reason: 'tab_missing' };
@@ -851,19 +1153,21 @@ async function classifyLateCollectState(tabId, llmName, options = {}) {
   };
 }
 
-async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null } = {}) {
-  // Read-only fallback: execute a pure extractor only, without content-script reinjection,
-  // listeners, observers, reloads, prompt resend, or DOM mutation.
+async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null, enrich = true } = {}) {
+  // Read-only fallback: execute a pure extractor only (no listeners, observers, reloads,
+  // prompt resend or DOM mutation). The only injection is the passive DOM->Markdown modules, and only when the
+  // result is enriched: an observation frame needs the text, fast, and injects nothing.
+  const markdownInjectError = enrich ? await ensureAnswerMarkdownModulesInTab(tabId) : null;
   const result = await withLateCollectExecutionLock(() => withLateCollectTimeout(chrome.scripting.executeScript({
     target: { tabId },
     func: extractLatestAssistantSnapshotInPage,
-    args: [llmName, minChars, manualRecovery || {}]
+    args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError, enrich }]
   }), LATE_COLLECT_EXECUTE_TIMEOUT_MS, (err) => ({ ok: false, error: err?.message || 'execute_timeout' })));
   const snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result : null;
   if (snapshot?.ok && snapshot.text) {
     return snapshot;
   }
-  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || null };
+  return { ok: false, length: snapshot?.length || 0, candidates: snapshot?.candidates || 0, error: result?.error || snapshot?.reason || null, extractReason: snapshot?.reason || result?.error || null, extractDiagnostic: snapshot?.diagnostic || null };
 }
 
 async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta = {}, minChars = DOM_SNAPSHOT_RECOVERY_MIN_CHARS, manualRecovery = null } = {}) {
@@ -907,6 +1211,8 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
           textHash: result?.textHash || (result?.text ? simpleLateAnswerHash(result.text) : null),
           cachedLength: Number(extra.cachedLength || 0),
           elapsedMs: Math.max(0, Date.now() - startedAt),
+          extractReason: result?.extractReason || null,
+          extractDiagnostic: result?.extractDiagnostic || null,
           manualRecovery: !!(manualRecovery || meta?.manualRecovery),
           preTerminalMaterialize: !!meta?.preTerminalMaterialize
         },
@@ -1032,7 +1338,10 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
       }
       return Object.keys(base).length ? base : null;
     })();
-    const inline = await runInlineLateExtract({ tabId, llmName, minChars, manualRecovery: inlineScanOptions });
+    // An observation frame (the passive ping failed / an adaptive or round collect) gets the text only; enrichment (Markdown, layout html,
+    // module injection) is for the manual, materialize and audit collects.
+    const passiveFrame = /^(?:passive_ping_error:|observation_unavailable_retry|adaptive)/.test(String(reason)) && !manualLatestRecovery && !manualRecovery && !meta?.manualRecovery;
+    const inline = await runInlineLateExtract({ tabId, llmName, minChars, manualRecovery: inlineScanOptions, enrich: !passiveFrame });
     if (inline?.ok && inline.text) {
       await saveAnswerSnapshotFromContent({
         llmName,
@@ -1056,6 +1365,8 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
         status: 'success',
         text: inline.text,
         html: inline.html || '',
+        answerMarkdown: inline.answerMarkdown || '',
+        copyReport: inline.copyReport || null,
         source: 'inline_executeScript',
         reason: state.reason,
         candidates: inline.candidates || 0,
@@ -1088,6 +1399,8 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
       text: '',
       source: 'none',
       reason: inline?.error || 'no_answer_extracted',
+      extractReason: inline?.extractReason || null,
+      extractDiagnostic: inline?.extractDiagnostic || null,
       candidates: inline?.candidates || 0,
       candidateCount: inline?.candidateCount || inline?.candidates || 0
     }, { state: state.state, stateReason: state.reason, stateError: state.error || null, cachedLength: cached?.length || 0 });
@@ -1117,6 +1430,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
   const entry = jobState?.llms?.[llmName] || null;
   const incomingText = String(result.text || '').trim();
   const incomingHtml = String(result.html || '');
+  const lateCopy = lateCollectCopyFields(result);
   const currentText = String(entry?.answer || entry?.pendingFinalAnswer || '').trim();
   const terminalEntry = Boolean(entry && isFinalizedEntry(entry));
   const incomingResponseMeta = meta?.responseMeta && typeof meta.responseMeta === 'object' ? meta.responseMeta : {};
@@ -1133,6 +1447,14 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
     || meta?.manualLatestRecovery
     || sourceHint === 'manual_latest_recovery'
   );
+  // A response bearing this request's end token can arrive after a missed
+  // provider ACK. Establish submission before applying the unconfirmed-send gate.
+  inferPromptSubmittedFromAnswerEvidence(llmName, entry, {
+    trimmedAnswer: incomingText,
+    responseMeta: incomingResponseMeta,
+    responseSource: sourceHint,
+    metaObj: meta
+  });
   const currentDispatchConfirmed = Boolean(entry?.promptSubmittedAt || entry?.submitSource === 'content' || entry?.submitSource === 'inferred_answer_evidence');
   const lockedStatus = String(entry?.finalStatus || entry?.status || '').toUpperCase();
   const lockedNoSendWithoutConfirmation = Boolean(
@@ -1284,7 +1606,14 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
     && incomingText.length >= DOM_SNAPSHOT_RECOVERY_MIN_CHARS
     && !isPromptEchoAnswerCandidate(incomingText, jobState?.prompt || '')
   );
-  const forceTerminalSuccess = Boolean(!isSnapshotPartial && forceTerminalRequested && candidateTerminalEligible);
+  // A forced SUCCESS needs proof that the model finished: its own delivery token at the end of the
+  // text, or a verified answer. Without it the text is a PARTIAL answer, whatever the caller asked.
+  const deliveryProven = Boolean(
+    incomingResponseMeta.answerVerification?.verified === true
+    || (typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, incomingText))
+  );
+  const forceWithoutProof = Boolean(forceTerminalRequested && candidateTerminalEligible && !deliveryProven);
+  const forceTerminalSuccess = Boolean(!isSnapshotPartial && forceTerminalRequested && candidateTerminalEligible && deliveryProven);
   if (forceTerminalRequested && !candidateTerminalEligible) {
     appendLogEntry(llmName, {
       type: 'RESPONSE',
@@ -1297,6 +1626,8 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
   if (entry && (improvesTerminalAnswer || replacesTerminalAnswer)) {
     entry.answer = incomingText;
     entry.answerHtml = incomingHtml || (replacesTerminalAnswer ? '' : entry.answerHtml) || '';
+    entry.answerMarkdown = lateCopy.answerMarkdown;
+    entry.copyReport = lateCopy.copyReport;
     entry.pendingFinalAnswer = incomingText;
     entry.pendingFinalAnswerHtml = incomingHtml || (replacesTerminalAnswer ? '' : entry.pendingFinalAnswerHtml) || '';
     entry.responseMeta = {
@@ -1331,6 +1662,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
       llmName,
       answer: incomingText,
       answerHtml: entry.answerHtml || '',
+      ...lateCopy,
       requestId: entry.requestId || null,
       ...transportIdentityFor(entry),
       metadata: {
@@ -1363,6 +1695,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
       navigationSeq: meta?.navigationSeq || entry?.runIdentity?.navigationSeq || null,
       responseMeta: {
         ...(incomingResponseMeta || {}),
+        ...lateCopy,
         source: incomingResponseMeta.source || meta?.source || result.source || 'late_collect',
         answerSource: incomingResponseMeta.answerSource || result.source || null,
         extractionSource: incomingResponseMeta.extractionSource || result.source || null,
@@ -1371,7 +1704,7 @@ function acceptLateCollectResult(llmName, result, meta = {}) {
         sanityConfidence: typeof incomingResponseMeta.sanityConfidence === 'number'
           ? incomingResponseMeta.sanityConfidence
           : (isSnapshotPartial ? 0.72 : 0.84),
-        partial: Boolean(incomingResponseMeta.partial || isSnapshotPartial),
+        partial: Boolean(incomingResponseMeta.partial || isSnapshotPartial || forceWithoutProof),
         lateCollectFinal: Boolean(incomingResponseMeta.lateCollectFinal || forceTerminalSuccess),
         forceTerminalSuccess,
         manualRecovery,
@@ -3824,7 +4157,9 @@ const triggerResponseCollectionPing = (llmName, tabId, source = 'auto_collect', 
     transportRetryDelays,
     allowRecovery,
     onSuccess: (response) => {
+      if (response?.status === 'ignored_stale') return;
       const successEntry = jobState?.llms?.[llmName];
+      if (successEntry?.cardAnswerComplete === true) return;
       if (successEntry) {
         successEntry.pingTransportErrorCount = 0;
       }
@@ -4939,6 +5274,7 @@ let pendingJobStateSaveWaiters = [];
 // Incremented by stopAllProcesses. A snapshot belongs to the stop generation it
 // was queued in; a stop/cancel invalidates every snapshot queued before it.
 let jobStateStopGeneration = 0;
+const getOrchestratorStopGeneration = () => jobStateStopGeneration;
 let pendingJobStateSaveGeneration = 0;
 function saveJobState(state) {
   pendingJobStateSave = state;
@@ -5076,12 +5412,21 @@ function persistPipelineControlState(nextControl = null) {
   void self.PipelineFSM.persistControlState(control);
 }
 
-function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
+function stopAllProcesses(reason = 'unspecified', { closeTabs = false, preserveResults = false } = {}) {
+  const completedState = preserveResults ? {
+    ...jobState,
+    session: { ...jobState.session, startTime: null, roundsInProgress: false },
+    llms: Object.fromEntries(Object.entries(jobState.llms || {}).map(([name, entry]) => [name, { ...entry }]))
+  } : null;
   globalThis.LLMLog?.debug?.(`[BACKGROUND] stopAllProcesses: reason=${reason}, closeTabs=${closeTabs}`);
   jobStateStopGeneration += 1;
+  startProcessReserved = null;
   // Purpose: cancel orchestrator waits tied to the previous session immediately.
   abortOrchestratorOperations(reason);
   resetOrchestratorAbortController();
+  if (typeof self.cancelPendingDispatchCoordinatorWork === 'function') {
+    self.cancelPendingDispatchCoordinatorWork(reason);
+  }
   clearSessionTimers();
   if (typeof self.clearAllScriptRuntimeHardStops === 'function') {
     self.clearAllScriptRuntimeHardStops();
@@ -5100,11 +5445,16 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
   const tabsToClose = [];
   TabMapManager.entries().forEach(([llmName, tabId]) => {
     if (!isValidTabId(tabId)) return;
+    const entry = jobState?.llms?.[llmName];
+    const dispatchId = entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null;
+    const transportRequestId = entry?.lastDispatchMeta?.transportRequestId || entry?.transportRequestId || null;
+    const meta = { runSessionId: sessionId, sessionId, dispatchId };
+    if (transportRequestId) meta.transportRequestId = transportRequestId;
     try {
       chrome.tabs.sendMessage(tabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { sessionId }
+        meta
       }).catch(() => {});
     } catch (_) {}
     closePingWindowForTab(tabId);
@@ -5124,7 +5474,7 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
       chrome.tabs.sendMessage(evaluatorTabId, {
         type: 'STOP_AND_CLEANUP',
         reason,
-        meta: { sessionId }
+        meta: { runSessionId: sessionId, sessionId, dispatchId: null }
       }).catch(() => {});
     } catch (_) {}
     if (closeTabs) tabsToClose.push(evaluatorTabId);
@@ -5169,9 +5519,13 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
     Object.keys(jobState.llms).forEach((name) => clearBudgetPhases(name));
   }
 
-  rateLimitState.clear();
-  rateLimitTimers.forEach((id) => clearTimeout(id));
-  rateLimitTimers.clear();
+  if (typeof self.clearAllRateLimits === 'function') {
+    void Promise.resolve(self.clearAllRateLimits()).catch((err) => {
+      console.warn('[BACKGROUND] Failed to clear rate-limit retries on stop:', err?.message || err);
+    });
+  } else if (typeof rateLimitState !== 'undefined') {
+    rateLimitState.clear();
+  }
 
   if (jobState && Object.keys(jobState).length) {
     try {
@@ -5185,7 +5539,8 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
       : self.PipelineFSM.stopRun(control, { reason, pipelineRunId: control.pipelineRunId || null, stage: 'stopped' });
     persistPipelineControlState(nextControl);
   }
-  jobState = {};
+  jobState = completedState || {};
+  if (completedState) saveJobState(jobState);
   broadcastGlobalState();
 }
 
@@ -5193,7 +5548,10 @@ function stopAllProcesses(reason = 'unspecified', { closeTabs = false } = {}) {
 // commands used to both pass RunGuard (busy is only known after the awaited
 // ToS read) and then both replaced the shared jobState. Held until
 // runDispatchRounds has marked the rounds active.
-let startProcessReserved = false;
+let startProcessReserved = null;
+// Basic participants of the run (T07): modelName → { participantId, newChat }, given by the page in pipelineContext.participants.
+// The page sends one request per model in a batch, so the model name is unique here; a model without an entry is the legacy path.
+let activeParticipantRequests = {};
 async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
@@ -5203,15 +5561,17 @@ async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   if (startProcessReserved && options.force !== true) {
     return { ok: false, errorCode: 'RUN_ALREADY_ACTIVE', activeSessionId: jobState?.session?.startTime || null };
   }
-  startProcessReserved = true;
+  const reservation = {};
+  startProcessReserved = reservation;
   try {
     return await startProcessReservedRun(prompt, selectedLLMs, resultsTab, options);
   } finally {
-    startProcessReserved = false;
+    if (startProcessReserved === reservation) startProcessReserved = null;
   }
 }
 
 async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options = {}) {
+  const startGeneration = jobStateStopGeneration;
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
     console.warn('[BACKGROUND] Refusing to start process while another run is active', runGuard);
@@ -5219,6 +5579,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   }
   const tosAck = await chrome.storage.local.get('tos_acknowledged_v1')
     .then((d) => d?.tos_acknowledged_v1 === true).catch(() => false);
+  if (startGeneration !== jobStateStopGeneration) return { ok: false, errorCode: 'RUN_CANCELLED' };
   if (!tosAck) {
     console.warn('[BACKGROUND] startProcess rejected: ToS consent missing');
     return { ok: false, errorCode: 'TOS_ACK_REQUIRED' };
@@ -5239,6 +5600,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   jobMetadata.clear();
   Object.keys(llmRequestMap).forEach((key) => delete llmRequestMap[key]);
   const snapshotCleanup = await clearLateAnswerSnapshotCache('start_process');
+  if (startGeneration !== jobStateStopGeneration) return { ok: false, errorCode: 'RUN_CANCELLED' };
   if (snapshotCleanup?.removed) {
     globalThis.LLMLog?.debug?.(`[LateAnswerCollector] Cleared ${snapshotCleanup.removed} stale snapshot keys before new run`);
   }
@@ -5249,7 +5611,17 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
 
   const sessionStartTime = Date.now();
   const telemetrySampled = resolveTelemetrySampling(sessionStartTime);
+  // Waves of one pipeline run share pipelineRunId but get new startTimes; carry
+  // the earlier wave start times over so the run's diagnostics stay exportable.
+  const previousSession = jobState?.session || null;
+  const continuedRunPipelineId = pipelineContext?.pipelineRunId || null;
+  const previousRunSessionIds = previousSession?.pipelineRunId && previousSession.pipelineRunId === continuedRunPipelineId
+    ? (Array.isArray(previousSession.runSessionIds) && previousSession.runSessionIds.length
+      ? previousSession.runSessionIds.slice()
+      : (previousSession.startTime != null ? [previousSession.startTime] : []))
+    : [];
   jobState = self.PipelineRunState.create({
+    previousRunSessionIds,
     prompt,
     selectedModels: Array.isArray(selectedLLMs) ? selectedLLMs : [],
     useApiFallback,
@@ -5262,6 +5634,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     startedAt: sessionStartTime,
     promptsByModel
   });
+  const reservedStartState = jobState;
   // A per-model start chain belongs to exactly one run. A promise left by an
   // interrupted MV3 worker/run must never hold the next run behind old work.
   selectedLLMs.forEach((llmName) => {
@@ -5269,18 +5642,27 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
     promptSubmitWaiters.delete(llmName);
     dispatchMutexManager.clear(llmName);
   });
-  // Authoritatively admit the new run before any model telemetry can arrive.
-  // A mismatched late event is quarantined by the proof ledger and can no
-  // longer reset the active run implicitly.
-  await self.ProofTelemetryLedger?.beginRun?.(sessionStartTime, {
-    wallTs: sessionStartTime,
-    expectedModels: Array.isArray(selectedLLMs) ? selectedLLMs.slice() : []
-  });
+  if (startGeneration !== jobStateStopGeneration
+    || jobState !== reservedStartState
+    || jobState?.session?.startTime !== sessionStartTime) {
+    return { ok: false, errorCode: 'RUN_CANCELLED' };
+  }
   humanPresencePaused = false;
   humanPresenceManuallyStopped = false;
   // Who drives the run (panel-issued): a moderator-driven run does not get the
   // system's own page visits; the moderator pulls answers with Get it.
   jobState.session.runMode = String(pipelineContext?.runMode || '') || null;
+  // The chats of the participants are bound per run (R01): each request carries its run and visit identity.
+  await self.pruneParticipantRuns?.(pipelineContext?.pipelineRunId || null);
+  activeParticipantRequests = pipelineContext?.participants && typeof pipelineContext.participants === 'object'
+    ? Object.fromEntries(Object.entries(pipelineContext.participants).map(([modelName, participant]) => [modelName, {
+      ...participant,
+      runId: String(pipelineContext?.pipelineRunId || '') || null,
+      stageAttemptId: String(pipelineContext?.stageAttemptId || '') || null,
+      requestId: String(pipelineContext?.transportRequestIds?.[modelName] || participant?.transportRequestId || participant?.requestId || '') || null,
+      transportRequestId: String(pipelineContext?.transportRequestIds?.[modelName] || participant?.transportRequestId || participant?.requestId || '') || null
+    }]))
+    : {};
   if (self.PipelineFSM?.startRun) {
     jobState.session.pipelineControl = self.PipelineFSM.startRun({
       pipelineRunId: pipelineContext?.pipelineRunId || null,
@@ -5381,9 +5763,25 @@ function startModelForLLM(llmName, prompt, forceNewTabs, attachments = [], optio
       return;
     }
 
-    const apiUsed = await tryApiDirect(llmName, prompt, attachments);
-    if (apiUsed) {
-      return;
+    // A participant chat (T07) is never sent by the stateless API path (R06). With the API mode on it is refused
+    // before the send; the mode the user selected is not changed.
+    if (activeParticipantRequests[llmName]) {
+      if (await isApiModeSelectedFor(llmName)) {
+        failParticipantRequest(llmName, {
+          ok: false,
+          type: 'participant_api_unsupported',
+          errorCode: 'participant_api_unsupported',
+          message: 'Для чата участника не поддержан API-режим: выключите API-режим для этого прогона. Запрос не отправлен.',
+          recoverable: false,
+          meta: { participantId: activeParticipantRequests[llmName].participantId || null, runId: activeParticipantRequests[llmName].runId || null }
+        });
+        return;
+      }
+    } else {
+      const apiUsed = await tryApiDirect(llmName, prompt, attachments);
+      if (apiUsed) {
+        return;
+      }
     }
 
     await runModelThroughTabs(llmName, prompt, forceNewTabs, attachments, { ...options, sessionId });
@@ -5391,6 +5789,12 @@ function startModelForLLM(llmName, prompt, forceNewTabs, attachments = [], optio
     console.error(`[BACKGROUND] Failed to start ${llmName}:`, err);
   });
   return llmStartChains[llmName];
+}
+
+// The API mode is selected for the model: the user has the API transport on and the model has an API endpoint.
+async function isApiModeSelectedFor(llmName) {
+  if (jobState?.useApiFallback === false || !apiFallbackConfig[llmName]) return false;
+  return isApiTransportFeatureEnabled();
 }
 
 async function tryApiDirect(llmName, prompt, attachments = []) {
@@ -5635,9 +6039,56 @@ async function reuseMappedDonorProviderTab(llmName, prompt, attachments = [], op
   return false;
 }
 
+// A Basic participant (T07) has its own chat, bound per run and participant (R01); the chat decision is in openParticipantChat.
+// A continue whose bound chat is lost is refused before the send, it never falls back to another chat.
+async function runParticipantThroughTabs(llmName, prompt, attachments = [], options = {}, participant) {
+  const result = await openParticipantChat(llmName, {
+    runId: participant.runId,
+    participantId: String(participant.participantId || ''),
+    newChat: participant.newChat === true,
+    // A resumed participant that already sent in this run and has no chat on record (V01): refused, not attached elsewhere.
+    strict: participant.strict === true,
+    requestId: participant.requestId,
+    stageAttemptId: participant.stageAttemptId,
+    // The chat the page saved for this participant (R01): used only when the run has no binding of its own.
+    binding: participant.binding || null,
+    stepRef: participant.stepRef || null,
+    visit: participant.visit || null,
+    attempt: participant.attempt || null,
+    phase: participant.phase || null,
+    attemptKey: participant.attemptKey || null,
+    transportRequestId: participant.transportRequestId || participant.requestId || options.transportRequestId || null
+  }, prompt, attachments, options).catch((err) => ({
+    ok: false,
+    error: {
+      ok: false,
+      type: 'participant_chat_lost',
+      errorCode: 'participant_chat_lost',
+      message: err?.message || 'Чат участника не открыт.',
+      recoverable: false,
+      meta: { participantId: participant.participantId || null, runId: participant.runId || null }
+    }
+  }));
+  if (!result.ok) {
+    if (result.error) failParticipantRequest(llmName, result.error);
+    return false;
+  }
+  return true;
+}
+
+// A participant request that is refused before the send ends the model with an explicit status (not a deferred retry).
+function failParticipantRequest(llmName, error) {
+  handleLLMResponse(llmName, '', error);
+  updateModelState(llmName, 'USER_ACTION_REQUIRED', { message: error.message, errorCode: error.errorCode });
+}
+
 async function runModelThroughTabs(llmName, prompt, forceNewTabs, attachments = [], options = {}) {
   if (options.sessionId && !isSessionActive(options.sessionId)) {
     return false;
+  }
+  const participant = activeParticipantRequests[llmName];
+  if (participant) {
+    return runParticipantThroughTabs(llmName, prompt, attachments, options, participant);
   }
   if (forceNewTabs) {
     detachExistingTab(llmName);
@@ -5950,18 +6401,83 @@ async function focusTabForVerification(llmName, tabId, durationMs, sessionId) {
 }
 
 
+// Get it: after the page was pulled down, walk the answer upward so that blocks the page draws only when they come into view
+// (Mermaid diagrams) exist before the pull. Own budget (never added to the LATE_COLLECT_* limits); the tab is already active
+// (the focus lock of the nudge); a tab that is not shown reports visible:false. The report goes to telemetry only.
+const MATERIALIZE_SWEEP_TAB_BUDGET_MS = 8000;
+async function runMaterializeSweepInTab(llmName, tabId, options = {}) {
+  try {
+    const probe = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!globalThis.AnswerMaterializeSweep });
+    if (!probe?.[0]?.result) {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['shared/answer-materialize-sweep.js'] });
+    }
+    const results = await withLateCollectTimeout(chrome.scripting.executeScript({
+      target: { tabId },
+      func: (provider, budgetMs, force) => globalThis.AnswerMaterializeSweep.run({ provider, force, config: { budgetMs } }),
+      args: [llmName, MATERIALIZE_SWEEP_TAB_BUDGET_MS, options.force === true]
+    }), MATERIALIZE_SWEEP_TAB_BUDGET_MS + 3000, () => null);
+    const report = results?.[0]?.result || null;
+    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: report?.note ? 'warning' : 'info', details: `${report?.reason || 'no_report'}${report?.note ? `:${report.note}` : ''}`, meta: { tabId, trigger: options.trigger || null, activated: options.activated === undefined ? null : options.activated, ...(report || { reason: 'timeout_or_no_report' }) } });
+    return report;
+  } catch (err) {
+    emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'warning', details: err?.message || String(err), meta: { tabId, reason: 'sweep_failed' } });
+    return null;
+  }
+}
+self.runMaterializeSweepInTab = runMaterializeSweepInTab;
+
+// Per dispatch limit of automatic pre-collect visits (tab activation). One number.
+const PRECOLLECT_NUDGE_MAX_PER_DISPATCH = 4;
+const PRECOLLECT_NUDGE_BASE_PAUSE_MS = 4000;
+const precollectNudgeState = new Map();
+function gatePreCollectNudge(llmName, entry, tabId, reason, now = Date.now()) {
+  const dispatchId = entry?.lastDispatchMeta?.dispatchId || `tab${tabId}`;
+  const key = `${llmName}:${dispatchId}`;
+  const answerSig = `${String(entry?.pendingFinalAnswer || entry?.answer || '').trim().length}`;
+  const state = precollectNudgeState.get(key) || { count: 0, lastAt: 0, lastSig: null, exhausted: false };
+  const skip = (why) => {
+    if (!state.exhausted) {
+      emitTelemetry(llmName, 'PRECOLLECT_NUDGE_SKIP', {
+        level: 'warning',
+        details: why,
+        meta: { tabId, reason, attempts: state.count, dispatchId, summary: `ответ не получен: ${why}` },
+        force: true
+      });
+    }
+    state.exhausted = why === 'attempts_exhausted' || why === 'same_empty_result' || state.exhausted;
+    precollectNudgeState.set(key, state);
+    return { allowed: false, reason: why };
+  };
+  if (state.count >= PRECOLLECT_NUDGE_MAX_PER_DISPATCH) return skip('attempts_exhausted');
+  if (state.count >= 2 && answerSig === '0' && state.lastSig === answerSig) return skip('same_empty_result');
+  if (state.count >= 1 && now - state.lastAt < PRECOLLECT_NUDGE_BASE_PAUSE_MS * (2 ** (state.count - 1))) return skip('backoff');
+  state.count += 1;
+  state.lastAt = now;
+  state.lastSig = answerSig;
+  precollectNudgeState.set(key, state);
+  if (precollectNudgeState.size > 200) precollectNudgeState.delete(precollectNudgeState.keys().next().value);
+  return { allowed: true };
+}
+
 async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'precollect_nudge', options = {}) {
   const requiredBottom = options.getIt === true;
-  if (self.isInitialPromptPassActive?.()) return false;
-  if (!llmName || !isValidTabId(tabId)) return false;
-  if (sessionId && !isSessionActive(sessionId)) return false;
+  // A manual pull ALWAYS leaves a trace of the upward pass: either its report, or why it was not called.
+  const skipSweep = (why) => {
+    if (requiredBottom) {
+      try { emitTelemetry(llmName, 'ANSWER_MATERIALIZE_SWEEP', { level: 'warning', details: `not_called:${why}`, meta: { tabId, reason: 'not_called', why, trigger: reason }, force: true }); } catch (_) { /* telemetry only */ }
+    }
+    return false;
+  };
+  if (self.isInitialPromptPassActive?.()) return skipSweep('initial_prompt_pass_active');
+  if (!llmName || !isValidTabId(tabId)) return skipSweep('no_tab');
+  if (sessionId && !isSessionActive(sessionId)) return skipSweep('session_inactive');
   const initialEntry = jobState?.llms?.[llmName];
   if (!initialEntry || (!requiredBottom && isFinalizedEntry(initialEntry))) {
     emitTelemetry(llmName, 'PRECOLLECT_NUDGE_SKIP', {
       details: 'terminal',
       meta: { tabId, reason }
     });
-    return false;
+    return skipSweep('no_entry');
   }
   if (!requiredBottom && self.isActiveFocusAllowedForEntry?.(initialEntry) === false) {
     emitTelemetry(llmName, 'PRECOLLECT_NUDGE_SKIP', {
@@ -5970,16 +6486,24 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
     });
     return false;
   }
+  // Our own visits are not evidence of progress and must not steal focus forever: an automatic nudge for an answer that is still
+  // empty runs at most PRECOLLECT_NUDGE_MAX_PER_DISPATCH times per dispatch, with a growing pause, and never again after a visit
+  // that left the answer exactly as empty as before. A click on "Get it" by the user (reason get_it_*) is never limited.
+  if (typeof gatePreCollectNudge === 'function' && options.manual !== true && !/^get_it_/.test(String(reason))) {
+    const gate = gatePreCollectNudge(llmName, initialEntry, tabId, reason);
+    if (!gate.allowed) return false;
+  }
   const performNudge = async () => {
     const liveEntry = jobState?.llms?.[llmName];
     if (self.isInitialPromptPassActive?.() || (sessionId && !isSessionActive(sessionId))
-      || liveEntry !== initialEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return false;
+      || liveEntry !== initialEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return skipSweep('state_changed_before_visit');
     if (!requiredBottom && self.isActiveFocusAllowedForEntry?.(liveEntry) === false) return false;
+    let activated = null;
     if (typeof activateTabForDispatch === 'function') {
-      await activateTabForDispatch(tabId);
+      activated = await activateTabForDispatch(tabId);
     }
     if (self.isInitialPromptPassActive?.() || (sessionId && !isSessionActive(sessionId))
-      || jobState?.llms?.[llmName] !== liveEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return false;
+      || jobState?.llms?.[llmName] !== liveEntry || (!requiredBottom && isFinalizedEntry(liveEntry))) return skipSweep('state_changed_after_activation');
     const manualVisitStartedAt = Date.now();
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -6087,6 +6611,12 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
       },
       args: [{ reason, llmName, requiredBottom }]
     });
+    // Get it (a manual, user-asked visit): the page is at the bottom now; walk the answer upward, then back, before the pull.
+    // Automatic collection of a finished answer (round*_precollect, materialize recovery) prepares the same way, under the visit
+    // limits above; a nudge for a still printing answer (round2_batch_timeout) does not walk the page.
+    const sweepBeforePull = requiredBottom || /_precollect$/.test(String(reason)) || String(reason).startsWith('materialize_recovery_fallback');
+    if (sweepBeforePull && typeof runMaterializeSweepInTab === 'function') await runMaterializeSweepInTab(llmName, tabId, { force: requiredBottom, trigger: reason, activated });
+    else if (requiredBottom) skipSweep('sweep_unavailable');
     // Manual visits already wait for rendering in the page script. Do not add
     // the automatic nudge's extra stabilization delay on top of their dwell.
     if (!requiredBottom) await orchestratorSleepMs(PRECOLLECT_NUDGE_STABILIZE_MS);
@@ -6128,7 +6658,7 @@ async function runPreCollectScrollNudge(llmName, tabId, sessionId, reason = 'pre
       details: err?.message || String(err),
       meta: { tabId, reason }
     });
-    return false;
+    return skipSweep(`nudge_error:${String(err?.message || err).slice(0, 60)}`);
   }
 }
 
@@ -7279,7 +7809,7 @@ function deriveFailureFinalStatus(error = null, sendConfirmed = null, failure = 
   const failureClass = String(failure?.class || '').toLowerCase();
   const reason = String(error?.message || failure?.reason || '').toLowerCase();
   const haystack = [type, failureClass, reason].filter(Boolean).join(' ');
-  if (/auth_required|continue_required|login|required_login|captcha|wrong_page|conversation_limit|unsafe_prompt_modal|attachment_failed|attachment_unavailable/.test(haystack)) return 'USER_ACTION_REQUIRED';
+  if (/participant_chat_lost|participant_binding_failed|participant_api_unsupported|auth_required|continue_required|login|required_login|captcha|wrong_page|conversation_limit|unsafe_prompt_modal|attachment_failed|attachment_unavailable/.test(haystack)) return 'USER_ACTION_REQUIRED';
   if (/provider_error|provider_error_surface|model_unavailable|rate_limit|rate limited|external_llm|external llm|api_failed|overload|overloaded|high_demand|unable_to_respond/.test(haystack)) return 'EXTERNAL_LLM_FAILURE';
   if (sendConfirmed === false) return 'NO_SEND';
   if (['send_failed', 'send_payload_mismatch', 'send_payload_unverified', 'no_send'].includes(type)) return 'NO_SEND';
@@ -7332,6 +7862,38 @@ function hashEvidenceText(value = '') {
 function expectedAnswerCardId(llmName = '') {
   return `panel-${String(llmName || '').toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
 }
+
+// DOM->Markdown copy travels inside responseMeta from the content script. Lift it
+// out so it is stored/broadcast as its own fields, not as telemetry-sized meta.
+// Never silently dropped: a non-string markdown with no report is reported as incomplete.
+function liftAnswerMarkdownCopy(responseMeta) {
+  const out = { answerMarkdown: '', copyReport: null };
+  if (!responseMeta || typeof responseMeta !== 'object') return out;
+  if (typeof responseMeta.answerMarkdown === 'string') out.answerMarkdown = responseMeta.answerMarkdown;
+  if (responseMeta.copyReport && typeof responseMeta.copyReport === 'object') out.copyReport = responseMeta.copyReport;
+  delete responseMeta.answerMarkdown;
+  delete responseMeta.copyReport;
+  return out;
+}
+self.liftAnswerMarkdownCopy = liftAnswerMarkdownCopy;
+
+// Adapters' own paths send answerMarkdown/copyReport next to answerHtml; hand them to
+// handleLLMResponse inside meta.responseMeta, where the pipeline path already carries them.
+function withMessageAnswerCopy(message) {
+  const meta = message?.meta || null;
+  const hasMarkdown = typeof message?.answerMarkdown === 'string';
+  const hasReport = !!(message?.copyReport && typeof message.copyReport === 'object');
+  if (!hasMarkdown && !hasReport) return meta;
+  return {
+    ...(meta || {}),
+    responseMeta: {
+      ...(meta?.responseMeta || {}),
+      ...(hasMarkdown ? { answerMarkdown: message.answerMarkdown } : {}),
+      ...(hasReport ? { copyReport: message.copyReport } : {})
+    }
+  };
+}
+self.withMessageAnswerCopy = withMessageAnswerCopy;
 
 function commitAcceptedAnswer(llmName, entry, answerText, answerHtml, context = {}) {
   if (!entry) return null;
@@ -7929,10 +8491,8 @@ function summarizeFinalizationEvidenceForTelemetry(evidence = null) {
 }
 
 function shouldInferSubmitFromAnswerEvidence(llmName, entry, context = {}) {
-  if (llmName !== 'Qwen') return false;
   if (!entry || entry.promptSubmittedAt) return false;
   const answerText = String(context.trimmedAnswer || '').trim();
-  if (answerText.length < DOM_SNAPSHOT_RECOVERY_MIN_CHARS) return false;
   // Heuristic guard for DOM-extracted text (page error banners); not a status channel.
   if (/^error\s*:/i.test(answerText)) return false;
   if (isPromptEchoAnswerCandidate(answerText, jobState?.prompt || '')) return false;
@@ -7943,6 +8503,24 @@ function shouldInferSubmitFromAnswerEvidence(llmName, entry, context = {}) {
   const dispatchId = metaObj.dispatchId || entry?.lastDispatchMeta?.dispatchId || entry?.confirmedDispatchId || null;
   if (isStaleBaselineCandidate(entry, answerText, dispatchId)) return false;
   const liveDispatchId = entry?.lastDispatchMeta?.dispatchId || entry?.awaitingSubmitConfirmationDispatchId || null;
+  const incomingDispatchId = metaObj.dispatchId || responseMeta.dispatchId || null;
+  const incomingSessionId = metaObj.runSessionId || metaObj.sessionId || responseMeta.runSessionId || null;
+  const incomingEpoch = metaObj.generationEpoch ?? responseMeta.generationEpoch;
+  const liveEpoch = entry?.lastDispatchMeta?.generationEpoch ?? entry?.generationEpoch;
+  const wrappedPrompt = String(self.TransportPolicy?.resolvePromptForModel
+    ? self.TransportPolicy.resolvePromptForModel(jobState?.session?.promptsByModel, llmName, '')
+    : (jobState?.session?.promptsByModel?.[llmName] || ''));
+  const ownEndToken = Boolean(
+    incomingDispatchId && incomingDispatchId === liveDispatchId
+    && (!incomingSessionId || String(incomingSessionId) === String(jobState?.session?.startTime))
+    && (incomingEpoch == null || liveEpoch == null || String(incomingEpoch) === String(liveEpoch))
+    && typeof answerHasDeliveryToken === 'function' && answerHasDeliveryToken(llmName, answerText)
+    && answerText.replace(/\[\[AO-[a-z0-9]{6}\]\]/gi, '').trim()
+    && normalizeEvidenceText(answerText) !== normalizeEvidenceText(wrappedPrompt)
+    && !isPromptEchoAnswerCandidate(answerText, wrappedPrompt)
+  );
+  if (ownEndToken) return true;
+  if (llmName !== 'Qwen' || answerText.length < DOM_SNAPSHOT_RECOVERY_MIN_CHARS) return false;
   const previousPendingAnswer = String(entry?.pendingFinalAnswer || '').trim();
   const observedGrowthAfterDispatch = Boolean(
     entry.awaitingSubmitConfirmation === true
@@ -8154,7 +8732,101 @@ const PRE_INSERTION_DEFERRAL_TIMEOUT_MS = 120000;
 // Blockers a repeat dispatch cannot clear - only a human can. Everything else
 // (attachment upload not confirmed, unclassified adapter error, transport loss)
 // is worth exactly one more attempt before the model is written off.
-const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded/;
+const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded|participant_api_unsupported|participant_chat_lost|participant_binding_failed/;
+
+// An empty or UI-noise extraction after the prompt was sent is not a verdict: the model may still be
+// generating (a progress line like "Проверю…" is the whole visible text while Stop is shown). Such a
+// result stays open until the wait cap from the submit; only then it becomes a terminal failure.
+const GENERATION_WAIT_CAP_MS = 240000;
+const GENERATION_WAIT_RECHECK_MS = 5000;
+const GENERATION_WAIT_ERROR_TYPES = new Set(['empty_answer', 'answer_ui_noise']);
+const generationWaitCapTimers = new Map();
+
+function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaObj = null) {
+  const type = String(error?.type || '');
+  if (!entry || !GENERATION_WAIT_ERROR_TYPES.has(type)) return false;
+  if (isFinalizedEntry(entry) || !entry.promptSubmittedAt) return false;
+  const responseMeta = metaObj?.responseMeta && typeof metaObj.responseMeta === 'object' ? metaObj.responseMeta : {};
+  if (
+    metaObj?.lastResortTerminal
+    || metaObj?.automationDeadline
+    || metaObj?.manualRecovery
+    || metaObj?.preTerminalMaterialize
+    || responseMeta.automationStopped
+    || responseMeta.lateCollectFinal
+    || responseMeta.manualRecovery
+    || responseMeta.preTerminalMaterialize
+  ) return false;
+  const dispatchId = metaObj?.dispatchId || entry.lastDispatchMeta?.dispatchId || null;
+  const liveDispatchId = entry.lastDispatchMeta?.dispatchId || null;
+  if (dispatchId && liveDispatchId && String(dispatchId) !== String(liveDispatchId)) return false;
+  const submittedAt = Number(entry.promptSubmittedAt);
+  const waitedMs = Math.max(0, Date.now() - submittedAt);
+  if (waitedMs >= GENERATION_WAIT_CAP_MS) return false;
+  const tabId = resolveBoundTabIdForOrchestrator(llmName, entry);
+  entry.generationWaitReason = type;
+  entry.generationWaitCount = Number(entry.generationWaitCount || 0) + 1;
+  // One cap timer per submit: when the wait is over, the last non-answer becomes the terminal.
+  const capKey = String(submittedAt);
+  if (entry.generationWaitCapKey !== capKey) {
+    clearTimeout(generationWaitCapTimers.get(llmName));
+    entry.generationWaitCapKey = capKey;
+    const capTimer = registerSessionTimer(setTimeout(() => {
+      generationWaitCapTimers.delete(llmName);
+      const liveEntry = jobState?.llms?.[llmName];      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
+      if (String(liveEntry.answer || '').trim()) return;
+      handleLLMResponse(
+        llmName,
+        '',
+        {
+          type: liveEntry.generationWaitReason || 'empty_answer',
+          message: `No answer text after the generation wait cap (${GENERATION_WAIT_CAP_MS}ms)`
+        },
+        {
+          dispatchId: liveEntry.lastDispatchMeta?.dispatchId || null,
+          sessionId: jobState?.session?.startTime || undefined,
+          runSessionId: jobState?.session?.startTime || undefined,
+          lastResortTerminal: true
+        },
+        ''
+      );
+    }, GENERATION_WAIT_CAP_MS - waitedMs));
+    generationWaitCapTimers.set(llmName, capTimer);
+  }
+  // Re-read the answer while the wait lasts; each re-read that is still empty or noise defers again.
+  if (isValidTabId(tabId)) {
+    registerSessionTimer(setTimeout(() => {
+      const liveEntry = jobState?.llms?.[llmName];
+      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
+      triggerResponseCollectionPing(llmName, tabId, 'answer_generation_wait_recheck', {
+        allowRecovery: true,
+        maxAttempts: 3,
+        baseDelay: 700
+      });
+    }, GENERATION_WAIT_RECHECK_MS));
+  }
+  emitTelemetry(llmName, 'ANSWER_GENERATION_WAIT', {
+    level: 'warning',
+    details: `${type} waited=${waitedMs}ms cap=${GENERATION_WAIT_CAP_MS}ms`,
+    meta: { dispatchId, reason: type, waitedMs, capMs: GENERATION_WAIT_CAP_MS, count: entry.generationWaitCount },
+    force: true
+  });
+  appendLogEntry(llmName, {
+    type: 'RESPONSE',
+    label: 'Terminal deferred (answer still generating)',
+    details: `${type} waited=${waitedMs}ms`,
+    level: 'warning',
+    meta: { dispatchId, reason: type, waitedMs, capMs: GENERATION_WAIT_CAP_MS }
+  });
+  updateModelState(llmName, 'RECEIVING', {
+    message: 'answer_generation_wait',
+    completionReason: type,
+    responseSource: responseMeta?.source || null
+  });
+  saveJobState(jobState);
+  broadcastGlobalState();
+  return true;
+}
 
 function evaluatePreInsertionFailureDeferral(llmName, entry, context = {}) {
   const decline = (reason) => ({ defer: false, reason });
@@ -8587,6 +9259,14 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     });
     return merged;
   })();
+  const answerMarkdownCopy = liftAnswerMarkdownCopy(responseMeta);
+  if (!answerMarkdownCopy.copyReport && !error) {
+    // A path that never went through DOM->Markdown (snapshot cache, an adapter's manual
+    // pull...) must say so instead of passing as a normal copy.
+    answerMarkdownCopy.copyReport = lateCollectCopyFields({
+      source: responseMeta?.source || metaObj?.source || 'unknown'
+    }).copyReport;
+  }
   const answerMeta = responseMeta?.answer && typeof responseMeta.answer === 'object' ? responseMeta.answer : null;
   const sanityWarnings = Array.isArray(responseMeta?.sanityWarnings) ? responseMeta.sanityWarnings : [];
   const sanityConfidence = typeof responseMeta?.sanityConfidence === 'number' ? responseMeta.sanityConfidence : null;
@@ -8758,6 +9438,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     normalizedHtml = '';
     trimmedAnswer = '';
   }
+  if (maybeDeferNonAnswerWhileGenerating(llmName, entry, error, metaObj)) return;
   //- 1.1. Fix Claude: Если текст ответа получен (>50 символов), считаем это частичным успехом, а не фатальной ошибкой -//
   const hasAnswerContent = trimmedAnswer.length > 50;
   const isClaude = llmName.toLowerCase().includes('claude');
@@ -8781,7 +9462,14 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         emitTelemetry(llmName, 'PIPELINE_ERROR', {
           level: 'warning',
           details: 'hard_timeout',
-          meta: { degraded: true, degradedReason: 'hard_timeout', retry: 'scheduled' }
+          meta: {
+            degraded: true,
+            degradedReason: 'hard_timeout',
+            retry: 'scheduled',
+            // The expired timer and its start (review C11); null when the content side sent no timer.
+            timeoutMs: metaObj?.responseMeta?.timers?.hardTimeoutMs ?? null,
+            startedAt: metaObj?.responseMeta?.timers?.startedAt ?? null
+          }
         });
         updateModelState(llmName, 'RECOVERABLE_ERROR', {
           message: 'hard_timeout_retry_scheduled',
@@ -8805,6 +9493,11 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     || metaObj?.manualLatestRecovery
     || String(responseSource || metaObj?.source || '').toLowerCase() === 'manual_latest_recovery'
   );
+  if (isSuccess && entry) {
+    inferPromptSubmittedFromAnswerEvidence(llmName, entry, {
+      trimmedAnswer, responseMeta, responseSource, metaObj
+    });
+  }
   // Grok explicitly reports confirmed:false when every send strategy fails. A later
   // broad DOM/manual-ping scrape must not turn composer text or an old page fragment
   // into SUCCESS. Messages from the same content script are ordered, so a real Grok
@@ -8890,14 +9583,6 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     minChars: DOM_SNAPSHOT_RECOVERY_MIN_CHARS
   }) || { ok: false };
   const allowManualTerminalOverride = Boolean(manualTerminalOverrideRequested && isSuccess && trimmedAnswer.length >= DOM_SNAPSHOT_RECOVERY_MIN_CHARS);
-  if (isSuccess && entry) {
-    inferPromptSubmittedFromAnswerEvidence(llmName, entry, {
-      trimmedAnswer,
-      responseMeta,
-      responseSource,
-      metaObj
-    });
-  }
   if (isSuccess && maybeDeferStreamingFinalization(llmName, normalizedAnswer, metaObj, normalizedHtml, normalizedAnswer)) {
     return;
   }
@@ -9417,6 +10102,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         llmName,
         answer: normalizedAnswer,
         answerHtml: normalizedHtml,
+        ...answerMarkdownCopy,
         ...transportIdentityFor(entry),
         requestId: entry?.requestId || null,
         metadata: {
@@ -9657,6 +10343,10 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         completionReason,
         finalStatus,
         finalReason,
+        // Timer limits (which expired, their values), the hard-stop flag and a stall diagnosis (review C11, C9).
+        timers: metaObj?.responseMeta?.timers || null,
+        flags: metaObj?.responseMeta?.flags || null,
+        stopStalled: metaObj?.responseMeta?.stopStalled || null,
         dispatchId,
         generationEpoch,
         tabId,
@@ -9685,6 +10375,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     llmName,
     answer: normalizedAnswer,
     answerHtml: normalizedHtml,
+    ...answerMarkdownCopy,
     ...transportIdentityFor(entry),
     requestId: entry?.requestId || jobState?.llms?.[llmName]?.requestId || null,
     metadata: {
@@ -9736,6 +10427,8 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     if (!alreadyFinalized || allowTerminalUpgrade || allowManualTerminalOverride) {
       finalProjection.answer = normalizedAnswer;
       finalProjection.answerHtml = normalizedHtml;
+      finalProjection.answerMarkdown = answerMarkdownCopy.answerMarkdown;
+      finalProjection.copyReport = answerMarkdownCopy.copyReport;
       finalProjection.status = finalStatus;
       finalProjection.statusReason = finalReason;
     } else {
@@ -9996,6 +10689,9 @@ function initRequestMetadata(llmName, tabId, initialUrl = '') {
     type: 'LLM_JOB_CREATED',
     requestId,
     llmName,
+    transportRequestId: jobState?.llms?.[llmName]?.transportRequestId || null,
+    sourceView: jobState?.session?.sourceView || null,
+    pipelineRunId: jobState?.session?.pipelineRunId || null,
     metadata: {
       url: snapshot.url,
       createdAt: snapshot.createdAt,
@@ -10119,6 +10815,9 @@ function runStaticAnswerWatchTick(sessionId) {
       return;
     }
     if (quietMs >= STATIC_WATCH_COMMIT_AFTER_MS) {
+      // Claude's raw text can hold page chrome (sidebar, model menu, prompt echo) and no delivery
+      // token: an unverified snapshot is not committed, the watch keeps observing.
+      if (llmName === 'Claude') return;
       reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'text_quiet', answerChars: text.length });
       commitIncompleteAnswer(llmName, entry, {
         text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
@@ -10261,6 +10960,15 @@ async function collectFailedGetItPages(selectedModels, options) {
   return {status:'get_it_completed', results};
 }
 
+// The single preparation before a manual pull of an answer (see handleManualResponsePing). Manual: never limited like the automatic visits.
+async function prepareManualCollect(llmName, tabId, { reason = 'manual_ping_precollect', returnToTabId = null } = {}) {
+  return runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), reason, {
+    getIt: true,
+    manual: true,
+    returnToTabId: Number.isInteger(returnToTabId) ? returnToTabId : null
+  });
+}
+
 async function handleManualResponsePing(llmName, options = {}) {
   if (!llmName) {
     return { status: 'manual_ping_failed', error: 'LLM name missing' };
@@ -10390,15 +11098,17 @@ async function handleManualResponsePing(llmName, options = {}) {
     });
     return { status: 'manual_ping_sent' };
   }
-  if (options.getIt === true && options.skipBottomPreparation !== true) {
-    const prepared = await runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), 'get_it_precollect', {
-      getIt: true,
-      returnToTabId: options.reason === 'status_indicator_dblclick' ? options.returnToTabId : null
-    });
-    if (!prepared) return { status: 'manual_ping_failed', error: 'Не удалось перейти к концу беседы. Повторите Get it после завершения отправки запросов.' };
-  } else if (options.skipBottomPreparation !== true && !isFinalizedEntry(liveEntry)) {
-    await runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), 'manual_ping_precollect');
-  } else if (allowRecoverableTerminalPing || allowManualSelectorRecovery) {
+  // ONE preparation before every manual pull (Get answer, indicator click / double click, Get it, recoverable terminal, manual
+  // selector recovery): scroll to the end, walk the answer upward (materialize sweep), return to the results page. A finished
+  // answer is prepared too: the user pulls it again exactly when some blocks were not drawn. Only Get it must reach the end.
+  if (options.skipBottomPreparation !== true) {
+    const strict = options.getIt === true;
+    const prepared = typeof prepareManualCollect === 'function'
+      ? await prepareManualCollect(llmName, tabId, { reason: strict ? 'get_it_precollect' : 'manual_ping_precollect', returnToTabId: options.returnToTabId })
+      : await runPreCollectScrollNudge(llmName, tabId, getActiveSessionId(), 'get_it_precollect', { getIt: true, returnToTabId: options.returnToTabId });
+    if (!prepared && strict) return { status: 'manual_ping_failed', error: 'Не удалось перейти к концу беседы. Повторите Get it после завершения отправки запросов.' };
+  }
+  if (allowRecoverableTerminalPing || allowManualSelectorRecovery) {
     broadcastDiagnostic(llmName, {
       type: 'PING',
       label: allowManualSelectorRecovery ? 'Manual selector recovery started' : 'Manual ping override (recoverable terminal)',
@@ -10452,6 +11162,7 @@ async function handleManualResponsePing(llmName, options = {}) {
       transportRetryDelays: HARD_STOP_PING_RETRY_DELAYS_MS,
       allowRecovery: true,
       onSuccess: (response) => {
+        if (response?.status === 'ignored_stale') return;
         const successEntry = jobState?.llms?.[llmName];
         if (successEntry) {
           successEntry.pingTransportErrorCount = 0;
@@ -10564,8 +11275,16 @@ async function handleManualResponsePing(llmName, options = {}) {
             source: result.source || 'late_collect',
             answer: String(updatedEntry?.answer || result.text || ''),
             answerHtml: String(updatedEntry?.answerHtml || result.html || ''),
+            answerMarkdown: String(updatedEntry?.answerMarkdown || result.answerMarkdown || ''),
+            copyReport: updatedEntry?.copyReport || result.copyReport || null,
             requestId: updatedEntry?.requestId || null,
             ...transportIdentityFor(updatedEntry),
+            metadata: {
+              ...(updatedEntry?.answerCommitEvidence || {}),
+              dispatchId: updatedEntry?.lastDispatchMeta?.dispatchId || null,
+              attemptId: updatedEntry?.lastDispatchMeta?.attemptId || null,
+              answerEndMarkerSeen: answerHasDeliveryToken(llmName, updatedEntry?.answer || result.text || '')
+            },
             finalStatus: updatedEntry?.finalStatus || updatedEntry?.status || null,
             strategyId: candidate?.strategyId || result.strategyId || strategy?.id || null,
             selectorUsed: candidate?.selectorDescriptor || result.selectorDescriptor || result.selectorUsed || null,
@@ -10763,6 +11482,9 @@ function sendCleanupCommand(llmName) {
   self.registerSessionTimer = registerSessionTimer;
   self.deregisterSessionTimer = deregisterSessionTimer;
   self.clearSessionTimers = clearSessionTimers;
+  self.getOrchestratorStopGeneration = getOrchestratorStopGeneration;
+  self.startModelForLLM = startModelForLLM;
+  self.extractLatestAssistantSnapshotInPage = extractLatestAssistantSnapshotInPage;
 
     globalThis.LLMLog?.debug?.('[JobOrchestrator] Module loaded');
   })();

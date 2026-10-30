@@ -938,10 +938,48 @@ function customFlowReport({ runId, delivery }) {
   const stageExecutions = arr(start.steps).map((step) => {
     const stageId = customStageId(runId, step.step);
     const batches = journal.filter((e) => e.kind === 'batch_start' && e.stageId === stageId);
-    const closes = journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
-    const startedAt = batches[0]?.at ?? null, completedAt = closes[closes.length - 1]?.at ?? null;
-    return { stageId, label: step.label, purpose: `custom:${step.order}:${step.input}`,
+    const stepStarts = journal.filter((e) => (
+      e.kind === 'custom_step_start' || e.kind === 'custom_step_resumed' ||
+      ((e.kind === 'round' || e.kind === 'owner') && e.startedAt != null && e.endedAt == null)
+    ) && e.pipelineRunId === runId && e.step === step.step);
+    const ends = journal.filter((e) => (
+      e.kind === 'custom_step_end' ||
+      ((e.kind === 'round' || e.kind === 'owner') && e.endedAt != null && e.outcome !== 'stopped' && e.outcome !== 'failed' && e.outcome !== 'cancelled')
+    ) && e.pipelineRunId === runId && e.step === step.step);
+    const interrupted = journal.filter((e) => (
+      e.kind === 'custom_step_interrupted' ||
+      ((e.kind === 'round' || e.kind === 'owner') && ['stopped', 'failed', 'cancelled'].includes(e.outcome))
+    ) && e.pipelineRunId === runId && e.step === step.step);
+
+    let startedAt = null;
+    let startBasis = null;
+    if (stepStarts.length) {
+      startedAt = stepStarts[0].at ?? (stepStarts[0].startedAt ? new Date(stepStarts[0].startedAt).toISOString() : null);
+      startBasis = 'proven_step_start';
+    } else if (batches.length) {
+      startedAt = batches[0].at ?? null;
+      startBasis = 'batch_start_fallback';
+    }
+
+    let completedAt = null;
+    let endBasis = null;
+    if (ends.length) {
+      completedAt = ends[ends.length - 1].at ?? (ends[ends.length - 1].endedAt ? new Date(ends[ends.length - 1].endedAt).toISOString() : null);
+      endBasis = 'proven_step_end';
+    } else if (interrupted.length) {
+      completedAt = interrupted[interrupted.length - 1].at ?? null;
+      endBasis = 'step_interrupted';
+    } else {
+      const closes = journal.filter((e) => e.kind === 'custom_step' && e.pipelineRunId === runId && e.step === step.step);
+      if (closes.length) {
+        completedAt = closes[closes.length - 1]?.at ?? null;
+        endBasis = 'legacy_check';
+      }
+    }
+
+    return { stageId, label: step.label, purpose: `custom:${step.input}`,
       actual: { startedAt, completedAt, participants: arr(step.models) },
+      startBasis, endBasis,
       durationMs: startedAt != null && completedAt != null ? toMs(completedAt) - toMs(startedAt) : null };
   });
   return { metadata: { debateRunId: runId, flow: 'custom' }, stageExecutions, events: [], diagnoses: [],

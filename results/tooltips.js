@@ -17,7 +17,18 @@
             if (!target || !target.dataset || !target.dataset.tooltip) return;
             const message = target.dataset.tooltip.trim();
             if (!message) return;
-            floatingTooltip.textContent = message;
+            const description = (target.dataset.tooltipDesc || '').trim();
+            if (description) {
+                const name = doc.createElement('b');
+                name.className = 'floating-tooltip-name';
+                name.textContent = message;
+                const desc = doc.createElement('span');
+                desc.className = 'floating-tooltip-desc';
+                desc.textContent = description;
+                floatingTooltip.replaceChildren(name, desc);
+            } else {
+                floatingTooltip.textContent = message;
+            }
             activeTooltipTarget = target;
             floatingTooltip.classList.add('is-visible');
             requestAnimationFrame(() => {

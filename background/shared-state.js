@@ -125,7 +125,7 @@ self.getActiveFocusWindowMs = () => (generationWaitProfileLong
   ? ACTIVE_FOCUS_WINDOW_LONG_MS
   : ACTIVE_FOCUS_WINDOW_STANDARD_MS);
 self.isActiveFocusAllowedForEntry = (entry, now = Date.now()) => {
-  if (!entry) return false;
+  if (!entry || entry.cardAnswerComplete) return false;
   const startedAt = Number(
     entry.activeFocusStartedAt
     || entry?.budgetTimers?.generation?.startedAt

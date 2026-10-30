@@ -1,5 +1,7 @@
 // Persistent pre-run plan for the universal Canvas. A DraftPlan is the only
 // editable source before an Orchestrator creates the initial PlanRevision.
+// The Basic canvas builds its plan from rounds only (createCanvasPlan): a synthesis is a round of one model with a role.
+// normalize keeps reading stored plans of every shape, a synthesis stage of an older plan included.
 (function initDebateDraftPlan(root) {
   'use strict';
 
@@ -9,10 +11,6 @@
   const clean = (value) => String(value == null ? '' : value).trim();
   const id = (value) => clean(value).replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
   const stageId = (value, fallback) => id(value) || fallback;
-
-  function stageById(plan, plannedStageId) {
-    return arr(plan?.plannedStages).find((stage) => stage.plannedStageId === plannedStageId) || null;
-  }
 
   function normalizeStage(stage = {}, index = 0) {
     const purpose = clean(stage.purpose) || 'response';
@@ -106,58 +104,10 @@
       instruction: round.instruction,
       meta: round.meta
     }, index));
-    const synthesizer = clean(input.synthesizer);
-    if (synthesizer) {
-      stages.push(normalizeStage({
-        plannedStageId: 'planned-final-synthesis', label: 'Final synthesis', purpose: 'synthesis',
-        participantIds: [synthesizer], assignmentPolicy: 'explicit_required', requiredCapabilities: ['synthesis'],
-        upstream: stages.length ? [stages[stages.length - 1].plannedStageId] : [],
-        activationPolicy: 'finalization_ready', outputIntent: 'candidate_final',
-        terminalPolicy: 'eligible_for_finalization', auditPolicy: 'none',
-        expectedArtifactTypes: ['synthesis_conclusion']
-      }, stages.length));
-    }
     return normalize({ planId: input.planId || 'canvas-plan', revision: input.revision || 0, plannedStages: stages, selectedModels });
   }
 
-  function insertSynthesis(plan, { afterPlannedStageId, participantIds, plannedStageId } = {}) {
-    const normalized = normalize(plan);
-    const sourceIndex = normalized.plannedStages.findIndex((stage) => stage.plannedStageId === afterPlannedStageId);
-    if (sourceIndex < 0) return { ok: false, code: 'SEMANTIC_INVALID', reasonCode: 'INVALID_INSERTION_POINT' };
-    const assignments = arr(participantIds).map(clean).filter(Boolean);
-    if (!assignments.length) return { ok: false, code: 'SEMANTIC_INVALID', reasonCode: 'SYNTHESIS_PARTICIPANT_REQUIRED' };
-    const next = clone(normalized);
-    const insertedId = stageId(plannedStageId, `planned-working-synthesis-${next.revision + 1}-${sourceIndex + 1}`);
-    if (stageById(next, insertedId)) return { ok: false, code: 'SEMANTIC_INVALID', reasonCode: 'PLANNED_STAGE_ID_DUPLICATE' };
-    const downstream = next.plannedStages.filter((stage) => arr(stage.upstream).includes(afterPlannedStageId));
-    const stage = normalizeStage({
-      plannedStageId: insertedId, purpose: 'synthesis', participantIds: assignments,
-      assignmentPolicy: 'explicit_required', requiredCapabilities: ['synthesis'], upstream: [afterPlannedStageId],
-      activationPolicy: 'immediate', outputIntent: 'working_synthesis', terminalPolicy: 'continue',
-      auditPolicy: 'none', expectedArtifactTypes: ['synthesis_working'], goalIds: []
-    }, sourceIndex + 1);
-    downstream.forEach((item) => { item.upstream = arr(item.upstream).map((value) => value === afterPlannedStageId ? insertedId : value); });
-    next.plannedStages.splice(sourceIndex + 1, 0, stage);
-    next.revision += 1;
-    next.updatedAt = new Date().toISOString();
-    return { ok: true, plan: normalize(next), stage };
-  }
-
-  function setStageParticipants(plan, plannedStageId, participantIds) {
-    const next = normalize(plan);
-    const stage = stageById(next, plannedStageId);
-    if (!stage) return { ok: false, code: 'SEMANTIC_INVALID', reasonCode: 'PLANNED_STAGE_NOT_FOUND' };
-    const assignments = arr(participantIds).map(clean).filter(Boolean);
-    if (stage.purpose === 'synthesis' && stage.assignmentPolicy === 'explicit_required' && !assignments.length) {
-      return { ok: false, code: 'SEMANTIC_INVALID', reasonCode: 'SYNTHESIS_PARTICIPANT_REQUIRED' };
-    }
-    stage.participantIds = assignments;
-    next.revision += 1;
-    next.updatedAt = new Date().toISOString();
-    return { ok: true, plan: normalize(next) };
-  }
-
-  const api = Object.freeze({ SCHEMA_VERSION, normalize, validate, createCanvasPlan, insertSynthesis, setStageParticipants });
+  const api = Object.freeze({ SCHEMA_VERSION, normalize, validate, createCanvasPlan });
   root.DebateDraftPlan = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

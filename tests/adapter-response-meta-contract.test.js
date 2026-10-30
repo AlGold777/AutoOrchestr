@@ -51,7 +51,11 @@ describe('adapter response metadata contract', () => {
       // The typed run result is part of this contract: the background gate
       // reads responseMeta.runResult, so dropping it here silently turns an
       // unproven run back into an ordinary success.
-      runResult
+      runResult,
+      // Timer limits, the hard-stop flag and a stall diagnosis of the streaming wait (review C11).
+      timers: null,
+      flags: null,
+      stopStalled: null
     });
   });
 
@@ -62,7 +66,10 @@ describe('adapter response metadata contract', () => {
       sanityWarnings: ['unverified_fallback'],
       sanityConfidence: null,
       answerVerification: null,
-      runResult: null
+      runResult: null,
+      timers: null,
+      flags: null,
+      stopStalled: null
     });
   });
 

@@ -54,27 +54,37 @@ describe('false success: watcher completion guards', () => {
       selectors: window.AnswerPipelineSelectors.PLATFORM_SELECTORS.chatgpt
     }).active).toBe(true);
 
-    let settled = null;
-    watcher.waitForCompletion({ container: document.querySelector('main') })
-      .then((r) => { settled = r; });
+    // Общий предел при видимом Stop: hardMax профиля (+ запас 5 с), здесь 300 с.
+    const adaptive = window.AnswerPipelineConfig.streaming.adaptiveTimeout;
+    const savedHardMax = adaptive.hardMax;
+    adaptive.hardMax = 300000;
+    try {
+      let settled = null;
+      watcher.waitForCompletion({ container: document.querySelector('main') })
+        .then((r) => { settled = r; });
 
-    for (let i = 0; i < 40; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
-    const at20s = settled;
+      for (let i = 0; i < 40; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      const at20s = settled;
 
-    for (let i = 0; i < 360; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
-    const beforeHardDeadline = settled;
+      for (let i = 0; i < 460; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      // 250 s: собственный hard watcher уже истёк, общий предел (305 s) ещё нет.
+      const beforeHardDeadline = settled;
+      expect(watcher.timeoutManager.checkExpiration().hardExpired).toBe(true);
+      expect(beforeHardDeadline).toBeNull();
 
-    for (let i = 0; i < 60; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
-    const afterHardDeadline = settled;
+      for (let i = 0; i < 120; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      const afterHardDeadline = settled;
 
-    expect(document.querySelector('button[data-testid="stop-button"]')).not.toBeNull();
-    expect(at20s).toBeNull();
-    expect(beforeHardDeadline).toBeNull();
-    expect(afterHardDeadline).not.toBeNull();
-    expect(afterHardDeadline.reason).toBe('hard_timeout');
-    expect(afterHardDeadline.completed).toBe(false);
-    expect(watcher.getStopVisible()).toBe(true);
-    jest.useRealTimers();
+      expect(document.querySelector('button[data-testid="stop-button"]')).not.toBeNull();
+      expect(at20s).toBeNull();
+      expect(afterHardDeadline).not.toBeNull();
+      expect(afterHardDeadline.reason).toBe('hard_timeout');
+      expect(afterHardDeadline.completed).toBe(false);
+      expect(watcher.getStopVisible()).toBe(true);
+    } finally {
+      adaptive.hardMax = savedHardMax;
+      jest.useRealTimers();
+    }
   });
 
   test('expected very-long answer selects the profile hard maximum', () => {
@@ -86,12 +96,54 @@ describe('false success: watcher completion guards', () => {
   });
 
   test('content growth extends a short deadline without exceeding hardMax', () => {
-    const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT' });
-    const initial = watcher.timeoutManager.calculateTimeout(1);
-    const grown = watcher.timeoutManager.recalculateOnGrowth(6000);
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    try {
+      const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT' });
+      const initial = watcher.timeoutManager.calculateTimeout(1);
+      const grown = watcher.timeoutManager.recalculateOnGrowth(6000);
 
-    expect(initial).toEqual({ soft: 50000, hard: 100000 });
-    expect(grown.softRemaining).toBe(450000);
-    expect(grown.hardRemaining).toBe(450000);
+      expect(initial).toEqual({ soft: 50000, hard: 100000 });
+      expect(grown.softRemaining).toBe(450000);
+      expect(grown.hardRemaining).toBe(450000);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('while the lifecycle detector tracks the dispatch, only its terminal result ends the wait', async () => {
+    jest.useFakeTimers();
+    document.body.innerHTML = `
+      <main>
+        <article data-message-author-role="assistant">
+          <div class="prose">Short partial answer.</div>
+        </article>
+      </main>
+    `;
+    let terminal = null;
+    window.ResponseLifecycleDetector = {
+      completionWaitMs: () => 450000,
+      getCompletionSnapshot: () => ({ facts: {} }),
+      getTerminalResult: () => terminal,
+      observeWitness: () => true
+    };
+    try {
+      const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT', expectedLength: 'short' });
+      let settled = null;
+      watcher.waitForCompletion({ container: document.querySelector('main') }).then((r) => { settled = r; });
+
+      // Past the watcher's own short soft (50 s) and hard (100 s) deadlines.
+      for (let i = 0; i < 600; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      expect(settled).toBeNull();
+
+      terminal = { status: 'STALLED', reason: 'timeout_hard' };
+      for (let i = 0; i < 4; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      expect(settled).not.toBeNull();
+      expect(settled.terminalResult).toEqual(terminal);
+      expect(settled.completed).toBe(false);
+    } finally {
+      delete window.ResponseLifecycleDetector;
+      jest.useRealTimers();
+    }
   });
 });

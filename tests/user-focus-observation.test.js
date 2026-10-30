@@ -36,19 +36,4 @@ describe('user focus observation is not an automation lease', () => {
     expect(startVisit).toContain("if (source === 'user_focus')");
     expect(startVisit).toContain('return recordUserFocusObservation(tabId, llmName)');
   });
-
-  test('proof telemetry preserves user focus without calling it a lease', () => {
-    const proof = fs.readFileSync(
-      path.join(__dirname, '..', 'shared', 'proof-oriented-telemetry.js'),
-      'utf8'
-    );
-    const contracts = fs.readFileSync(
-      path.join(__dirname, '..', 'shared', 'proof-telemetry-contracts.js'),
-      'utf8'
-    );
-    expect(proof).toContain("USER_FOCUS_OBSERVATION_STARTED: 'USER_FOCUS_OBSERVED'");
-    expect(proof).toContain("USER_FOCUS_OBSERVATION_ENDED: 'USER_FOCUS_OBSERVED'");
-    expect(contracts).toContain("kind: 'user_focus', state: 'started'");
-    expect(contracts).toContain("kind: 'user_focus', state: 'ended'");
-  });
 });

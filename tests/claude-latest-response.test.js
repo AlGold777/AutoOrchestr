@@ -94,3 +94,14 @@ describe('Claude latest response selection', () => {
     expect(source.slice(recoveredAt, recoveredAt + 1400)).toContain('await Promise.resolve(chrome.runtime.sendMessage({');
   });
 });
+
+describe('C10: chat-loader is history loading, not a generation end marker', () => {
+  test('Claude and Qwen have no chat-loader end marker in the bundle (JSON and runtime JS)', () => {
+    const bundle = JSON.parse(read('selectors', 'config-bundle.json'));
+    expect(JSON.stringify(bundle.Claude)).not.toContain('chat-loader');
+    expect(JSON.stringify(bundle.Qwen)).not.toContain('chat-loader');
+    const js = read('selectors', 'config-bundle.js');
+    const markerBlocks = js.match(/"endGenerationMarkers": \[[^\]]*\]/g) || [];
+    expect(markerBlocks.some((block) => block.includes('chat-loader'))).toBe(false);
+  });
+});

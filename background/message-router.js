@@ -1,10 +1,10 @@
-﻿
+
 
 const API_MODE_STORAGE_KEY = 'llmComparatorApiModeEnabled';
 const AUTO_FOCUS_NEW_TABS_KEY = 'autofocus_llm_tabs_enabled';
 const DIAGNOSTICS_EVENTS_KEY = '__diagnostics_events__';
-const DIAGNOSTICS_EXPORT_MAX_ITEMS = 2000;
-const DIAGNOSTICS_EXPORT_MAX_BYTES = 1500000;
+const DIAGNOSTICS_EXPORT_MAX_ITEMS = 4000;
+const DIAGNOSTICS_EXPORT_MAX_BYTES = 3000000;
 const llmStartChains = Object.create(null);
 const routerSessionTimerManager = (() => {
     const register = (typeof self?.registerSessionTimer === 'function') ? self.registerSessionTimer : (id) => id;
@@ -26,7 +26,7 @@ const completionAuthorityAttempts = self.__completionAuthorityAttempts || new Ma
 self.__completionAuthorityAttempts = completionAuthorityAttempts;
 const completionRuntimeByTab = new Map();
 const completionRuntimeRepairFlights = new Map();
-const EXPECTED_COMPLETION_DETECTOR_VERSION = '2.3.0';
+const EXPECTED_COMPLETION_DETECTOR_VERSION = '2.3.1';
 const EXPECTED_COMPLETION_PROTOCOL_VERSION = '2.3.1';
 
 const expectedCompletionRuntime = () => ({
@@ -1094,6 +1094,7 @@ async function dispatchKimiTrustedSend(tabId) {
 
 const isTerminalRouterEntry = (entry = null) => {
     if (!entry) return false;
+    if (entry.cardAnswerComplete === true) return true;
     if (self.ModelRunState?.isTerminalRunState?.(entry)) return true;
     const entryStatus = String(entry?.status || entry?.finalStatus || '').toUpperCase();
     return Boolean(entry.finalStatusRecorded || entry.finalStatus || TERMINAL_STATUSES.includes(entryStatus));
@@ -1215,6 +1216,11 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
     const key = completionAuthorityKey(llmName);
     if (!key) return null;
     const previous = getCompletionAuthorityAttempt(key) || {};
+    const liveIdentity = jobState?.llms?.[key]?.lastDispatchMeta;
+    if (meta.dispatchId && liveIdentity?.dispatchId
+        && String(meta.dispatchId) !== String(liveIdentity.dispatchId)) return getCompletionAuthorityAttempt(key);
+    if (meta.generationEpoch != null && liveIdentity?.generationEpoch != null
+        && Number(meta.generationEpoch) !== Number(liveIdentity.generationEpoch)) return getCompletionAuthorityAttempt(key);
     const nextDispatchId = meta.dispatchId || previous.dispatchId || null;
     const sameAttempt = Boolean(previous.dispatchId && nextDispatchId
         && String(previous.dispatchId) === String(nextDispatchId));
@@ -1222,7 +1228,7 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
         ...(sameAttempt ? previous : {}),
         runSessionId: meta.runSessionId || meta.sessionId || previous.runSessionId || null,
         dispatchId: nextDispatchId,
-        generationEpoch: meta.generationEpoch ?? previous.generationEpoch ?? null,
+        generationEpoch: meta.generationEpoch ?? (sameAttempt ? previous.generationEpoch : null) ?? null,
         rolloutMode: ['legacy', 'shadow', 'enforced'].includes(meta.rolloutMode) ? meta.rolloutMode : (previous.rolloutMode || 'enforced'),
         legacyDeliveryAuthorized: meta.legacyDeliveryAuthorized === true,
         protocolVersion: meta.protocolVersion || previous.protocolVersion || null,
@@ -1341,9 +1347,12 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             nudges = Math.max(nudges, 2);
         }
         const capped = now - deferredAt >= UNCERTAIN_TERMINAL_MAX_DEFER_MS;
+        // Silence alone does not end the answer (a model may pause while it writes): the end is the
+        // request's delivery token after a short quiet, or the cap.
+        const finished = (tokenSeen && quiet) || capped;
         if (nudges === 0 && now - deferredAt >= UNCERTAIN_TERMINAL_EARLY_NUDGE_MS && !capped && bottomNudge(live, 'early')) return;
         if (quiet && nudges < 2 && !capped && bottomNudge(live, 'before_commit')) return;
-        if (!quiet && !capped) {
+        if (!finished) {
             schedule(UNCERTAIN_TERMINAL_POLL_MS);
             return;
         }
@@ -1351,7 +1360,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
         if (typeof reportDispatchPhase === 'function') {
             reportDispatchPhase(llmName, live, 'terminal_deferral_ended', {
                 dispatchId: entry.deferredUncertainTerminal.dispatchId,
-                reason: capped && !quiet ? 'max_defer_reached' : (tokenSeen ? 'delivery_token_seen' : 'answer_quiet'),
+                reason: tokenSeen && quiet ? 'delivery_token_seen' : 'max_defer_reached',
                 answerChars: length
             });
         }
@@ -1366,17 +1375,30 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
     schedule(UNCERTAIN_TERMINAL_POLL_MS);
 };
 
+const manualRecoveryRequested = (meta = {}) => Boolean(
+    meta.manualRecovery?.manualRecovery === true
+    || meta.manualRecovery === true
+    || meta.responseMeta?.manualRecovery === true
+);
+
 const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
     if (message.error || !String(message.answer || '').trim()) return { ok: true, reason: 'non_success_payload' };
     const meta = message.meta && typeof message.meta === 'object' ? message.meta : {};
     const authority = getCompletionAuthorityAttempt(llmName);
     const incomingDispatchId = meta.dispatchId || null;
+    // Get It / the indicator double-click read the model's own tab on the user's request. That needs no attempt of this run:
+    // the chat may have been answered before the run started, and nothing else would ever deliver its answer.
+    if (!authority && manualRecoveryRequested(meta)) return { ok: true, reason: 'manual_recovery_explicit' };
     if (!authority) return { ok: false, reason: 'completion_attempt_unregistered' };
     if (authority.dispatchId && !incomingDispatchId) {
         return { ok: false, reason: 'completion_authority_dispatch_missing' };
     }
     if (authority.dispatchId && String(authority.dispatchId) !== String(incomingDispatchId)) {
         return { ok: false, reason: 'completion_authority_dispatch_mismatch' };
+    }
+    if (meta.generationEpoch != null && authority.generationEpoch != null
+        && Number(meta.generationEpoch) !== Number(authority.generationEpoch)) {
+        return { ok: false, reason: 'completion_authority_generation_mismatch' };
     }
     const rolloutMode = meta.completionRolloutMode || authority.rolloutMode || 'enforced';
     if ((rolloutMode === 'legacy' || rolloutMode === 'shadow') && authority.legacyDeliveryAuthorized === true) {
@@ -1389,6 +1411,12 @@ const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
     // STALLED records a deadline in the observer, not a provider failure. A late
     // payload must still reach answer verification with that status intact.
     // Dropping it here makes recovery impossible even when the page finishes.
+    // An internal stop (INTERRUPTED with no text) does not discard a complete answer the page
+    // already accepted on a manual recovery (Get It): that answer is the user's own request.
+    if (String(terminalResult?.status || '') === 'INTERRUPTED'
+        && manualRecoveryRequested(meta) && meta.responseMeta?.copyReport?.complete === true) {
+        return { ok: true, reason: 'manual_complete_over_interrupted' };
+    }
     const explicitlyFailed = new Set(['FAILED_TERMINAL', 'INTERRUPTED', 'CANCELLED']);
     if (explicitlyFailed.has(String(terminalResult?.status || ''))) {
         return { ok: false, reason: 'completion_terminal_failed' };
@@ -1608,20 +1636,6 @@ const clearDiagnosticsRuntimeLogs = () => {
     return changed;
 };
 
-const clearDiagnosticsStorageOnStartup = () => {
-    writeDiagnosticsEventsToStorage([])
-        .catch((err) => console.warn('[DIAGNOSTICS] startup clear failed', err));
-};
-
-if (typeof chrome !== 'undefined' && chrome?.runtime) {
-    if (typeof chrome.runtime.onStartup?.addListener === 'function') {
-        chrome.runtime.onStartup.addListener(clearDiagnosticsStorageOnStartup);
-    }
-    if (typeof chrome.runtime.onInstalled?.addListener === 'function') {
-        chrome.runtime.onInstalled.addListener(clearDiagnosticsStorageOnStartup);
-    }
-}
-
 const DIAG_PINNED_LABELS = new Set([
     'ATTEMPT_CONTEXT_CAPTURED',
     'COMPLETION_ATTEMPT_ACCEPTED',
@@ -1789,6 +1803,43 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 let initialStatePromise = null;
 let initialStateReady = false;
+
+// The viewer content that earlier versions left in chrome.storage.local goes (once, at start), and the session storage keeps
+// the newest few (shared/response-viewer-retention.js).
+async function pruneResponseViewerContent({ legacyLocal = false } = {}) {
+    const retention = self.ResponseViewerRetention;
+    if (!retention) return;
+    try {
+        if (legacyLocal) {
+            const keys = typeof chrome.storage.local.getKeys === 'function'
+                ? await chrome.storage.local.getKeys()
+                : Object.keys(await chrome.storage.local.get(null));
+            const stale = keys.filter((key) => String(key).startsWith(retention.PREFIX));
+            if (stale.length) await chrome.storage.local.remove(stale);
+        }
+        const sessionKeys = typeof chrome.storage.session.getKeys === 'function'
+            ? await chrome.storage.session.getKeys()
+            : Object.keys(await chrome.storage.session.get(null));
+        const drop = retention.keysToRemove(sessionKeys, retention.KEEP);
+        if (drop.length) await chrome.storage.session.remove(drop);
+    } catch (err) {
+        console.warn('[BACKGROUND] Response viewer cleanup failed:', err);
+    }
+}
+
+// The old viewer copies are removed at the start of the service worker itself, once per browser session (a flag in the session
+// storage): the general maintenance below starts only at the end of the initial state, which does not finish when the storage is full.
+(async () => {
+    try {
+        const { responseViewerLegacyCleaned } = await chrome.storage.session.get('responseViewerLegacyCleaned');
+        if (responseViewerLegacyCleaned) return;
+        await pruneResponseViewerContent({ legacyLocal: true });
+        await chrome.storage.session.set({ responseViewerLegacyCleaned: true });
+    } catch (err) {
+        console.warn('[BACKGROUND] Response viewer start cleanup failed:', err);
+    }
+})();
+
 let initialStorageMaintenancePromise = null;
 
 function scheduleInitialStorageMaintenance() {
@@ -1797,6 +1848,9 @@ function scheduleInitialStorageMaintenance() {
         setTimeout(resolve, 1000);
     })
         .then(async () => {
+            // First, and on its own: with the storage full, the maintenance below may fail on the quota, and the viewer copies
+            // are what frees the room (pruneResponseViewerContent catches its own errors).
+            await pruneResponseViewerContent({ legacyLocal: true });
             await CompressedStorage.migrate(['results', 'notes', 'logs']);
             await CompressedStorage.pruneIfNeeded();
         })
@@ -1940,78 +1994,53 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     if (cleanupReason) {
         // Никогда не закрываем LLM-вкладки автоматически при закрытии results,
         // оставляем только очистку состояния.
-        stopAllProcesses(cleanupReason, { closeTabs: false });
+        self.stopAllProcesses(cleanupReason, { closeTabs: false });
     }
 });
-
-async function respondProofTelemetrySnapshot(message, sendResponse) {
-    try {
-        if (message?.incidentScope && self.ProofTelemetryLedger?.snapshotIncident) {
-            const events = await self.ProofTelemetryLedger.snapshotIncident(message.incidentScope);
-            sendResponse({
-                success: true,
-                schemaVersion: 6,
-                incidentScope: message.incidentScope,
-                eventCount: events.length,
-                events
-            });
-            return;
-        }
-        const ledger = self.ProofTelemetryLedger;
-        if (!ledger?.snapshot) {
-            sendResponse({ success: false, error: 'proof_telemetry_ledger_unavailable' });
-            return;
-        }
-        const snapshotStartedAt = Date.now();
-        const timeoutToken = Object.freeze({ timedOut: true });
-        let timeoutId = null;
-        const barrierSnapshot = ledger.snapshot({
-            runSessionId: message?.runSessionId || null
-        }).catch(() => timeoutToken);
-        const barrierDeadline = new Promise((resolve) => {
-            timeoutId = setTimeout(() => resolve(timeoutToken), 750);
-        });
-        let snapshot = await Promise.race([barrierSnapshot, barrierDeadline]);
-        if (timeoutId) clearTimeout(timeoutId);
-        const barrierTimedOut = snapshot === timeoutToken;
-        if (barrierTimedOut) {
-            const committed = await ledger.snapshotCommitted?.({
-                runSessionId: message?.runSessionId || null
-            });
-            if (!committed) {
-                sendResponse({ success: false, error: 'proof_telemetry_ledger_unavailable' });
-                return;
-            }
-            sendResponse({
-                success: true,
-                ...committed,
-                barrierTimedOut: true,
-                snapshotWaitMs: Date.now() - snapshotStartedAt,
-                snapshotConsistency: committed?.snapshotConsistency || 'committed_boundary',
-                queuedMutationCount: Number(committed?.queuedMutationCount || 0),
-                pendingRecordCount: Number(committed?.pendingRecordCount || 0)
-            });
-            return;
-        }
-        if (!snapshot) {
-            sendResponse({ success: false, error: 'proof_telemetry_ledger_unavailable' });
-            return;
-        }
-        sendResponse({
-            success: true,
-            ...snapshot,
-            barrierTimedOut,
-            snapshotWaitMs: Date.now() - snapshotStartedAt
-        });
-    } catch (err) {
-        sendResponse({ success: false, error: err?.message || String(err) });
-    }
-}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     globalThis.LLMLog?.debug?.("[BACKGROUND] Received message:", message);
     if (message?.type === 'NOTES_CMD' || message?.type === 'NOTES_EVENT') {
         return false;
+    }
+    if (message?.type === 'DELIVERY_JOURNAL_APPEND') {
+        const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+        if (!store?.append) {
+            sendResponse({ ok: false, error: 'delivery_store_unavailable' });
+            return false;
+        }
+        store.append(message.events || []).then((res) => {
+            sendResponse(res && typeof res.ok === 'boolean' ? res : { ok: true, ...res });
+        }).catch((err) => {
+            sendResponse({ ok: false, error: String(err?.message || err) });
+        });
+        return true;
+    }
+    if (message?.type === 'DELIVERY_JOURNAL_SNAPSHOT') {
+        const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+        if (!store?.snapshot) {
+            sendResponse({ ok: false, error: 'delivery_store_unavailable' });
+            return false;
+        }
+        store.snapshot().then((snap) => {
+            sendResponse({ ok: true, snapshot: snap });
+        }).catch((err) => {
+            sendResponse({ ok: false, error: String(err?.message || err) });
+        });
+        return true;
+    }
+    if (message?.type === 'DELIVERY_JOURNAL_CLEAR') {
+        const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+        if (!store?.clear) {
+            sendResponse({ ok: false, error: 'delivery_store_unavailable' });
+            return false;
+        }
+        store.clear().then((res) => {
+            sendResponse({ ok: true, ...res });
+        }).catch((err) => {
+            sendResponse({ ok: false, error: String(err?.message || err) });
+        });
+        return true;
     }
     if (message?.type === 'RESPONSE_VIEWER_CLOSE') {
         const windowId = sender?.tab?.windowId;
@@ -2027,12 +2056,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ ok: false, error: 'invalid_response_viewer_payload' });
             return false;
         }
-        chrome.storage.local.set({ [key]: message.payload }, () => {
-            if (chrome.runtime.lastError) {
-                sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+        // The content is a copy read by one window: it goes to the session storage, and to the local one only when the session
+        // write fails (it used to be written to both and never removed, which filled the quota). Only the newest few are kept.
+        chrome.storage.session.set({ [key]: message.payload }, () => {
+            if (!chrome.runtime.lastError) {
+                void pruneResponseViewerContent();
+                sendResponse({ ok: true });
                 return;
             }
-            chrome.storage.session.set({ [key]: message.payload }, () => sendResponse({ ok: !chrome.runtime.lastError }));
+            chrome.storage.local.set({ [key]: message.payload }, () => sendResponse(chrome.runtime.lastError
+                ? { ok: false, error: chrome.runtime.lastError.message } : { ok: true }));
         });
         return true;
     }
@@ -2051,13 +2084,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         return true;
     }
-    // Export must remain available during a cold service-worker start. It only
-    // depends on the proof ledger, which is imported before this router, and
-    // must not wait for unrelated job/tab/circuit initialization below.
-    if (message?.type === 'GET_PROOF_TELEMETRY_SNAPSHOT') {
-        void respondProofTelemetrySnapshot(message, sendResponse);
-        return true;
-    }
     // The debugger permission is restored only for the proven Le Chat and
     // Perplexity submit transactions. Keep every other historical CDP route
     // fail-closed so adding the permission cannot silently change attachments
@@ -2071,7 +2097,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (self.PipelineMessageHandlers?.handle?.(message, {
             jobState,
             sendResponse,
-            stopAllProcesses,
+            stopAllProcesses: self.stopAllProcesses,
             saveJobState,
             chromeApi: chrome,
             fsm: self.PipelineFSM
@@ -2124,16 +2150,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // to one batch: later stages of the same run keep the evidence of
                     // earlier stages.
                     const incomingPipelineRunId = message.pipelineContext?.pipelineRunId || null;
+                    const startGeneration = self.getOrchestratorStopGeneration();
                     const continuesPipelineRun = Boolean(incomingPipelineRunId)
                         && incomingPipelineRunId === (jobState?.session?.pipelineRunId || null);
                     if (!continuesPipelineRun) {
                         try {
                             await writeDiagnosticsEventsToStorage([]);
-                            await self.ProofTelemetryLedger?.clear?.(null);
                             clearDiagnosticsRuntimeLogs();
                         } catch (err) {
                             console.warn('[DIAGNOSTICS] new run clear failed', err);
                         }
+                    }
+                    if (startGeneration !== self.getOrchestratorStopGeneration()) {
+                        sendResponse({ success: false, errorCode: 'RUN_CANCELLED' });
+                        return;
                     }
                     const startResult = await startProcess(message.prompt, message.selectedLLMs, sender.tab.id, {
                         forceNewTabs,
@@ -2185,7 +2215,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     active,
                     staleActiveRun,
                     sessionAgeMs,
-                    sourceView: session?.sourceView || session?.pipelineContext?.sourceView || null,
+                    sourceView: session?.sourceView || session?.pipelineContext?.sourceView
+                        || (session?.startTime ? (session.pipelineRunId ? 'pipeline' : 'main') : null),
                     sessionId: session?.startTime || null,
                     roundsInProgress: !!session?.roundsInProgress,
                     totalModels,
@@ -2411,7 +2442,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     message.llmName,
                     message.answer,
                     message.error || null,
-                    message.meta || null,
+                    typeof withMessageAnswerCopy === 'function' ? withMessageAnswerCopy(message) : (message.meta || null),
                     message.answerHtml || message.html || ''
                 );
                 sendResponse({ status: 'response_handled' });
@@ -2461,7 +2492,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     message.llmName,
                     message.answer,
                     message.error || null,
-                    message.meta || null,
+                    typeof withMessageAnswerCopy === 'function' ? withMessageAnswerCopy(message) : (message.meta || null),
                     message.answerHtml || message.html || ''
                 );
                 sendResponse({ status: 'final_response_handled' });
@@ -2479,6 +2510,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const senderGate = validateLifecycleSender(llmName, sender, 'PROMPT_INSERTION_OBSERVED', incomingMeta);
                 const correlationGate = validateLifecycleCorrelation(llmName, message, 'PROMPT_INSERTION_OBSERVED');
                 if (!entry || !senderGate.ok || !correlationGate.ok) {
+                    // The sender and correlation gates leave their own telemetry; a missing
+                    // model entry did not, so a dropped insertion verdict was indistinguishable
+                    // from one the adapter never sent.
+                    if (!entry && llmName) {
+                        emitTelemetry(llmName, 'PROMPT_INSERTION_REJECTED', {
+                            level: 'warning',
+                            details: 'missing_model_entry',
+                            meta: { insertionState: message.insertionState || null, method: message.method || null,
+                                reason: message.reason || null, ...deliveryIdentityMeta(incomingMeta) },
+                            force: true
+                        });
+                    }
                     if (typeof sendResponse === 'function') {
                         sendResponse({
                             status: 'prompt_insertion_rejected',
@@ -3920,6 +3963,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
 
                 const lifecycleEntry = jobState?.llms?.[llmName] || null;
+                if (isTerminalRouterEntry(lifecycleEntry)) {
+                    sendResponse({ status: 'humanoid_event_ignored', reason: 'terminal_entry' });
+                    break;
+                }
                 const lifecycleBlocker = lifecycleEntry?.transientBlocker || null;
                 if (llmName === 'Perplexity'
                     && event === 'activity:error'
@@ -4067,6 +4114,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (!entry || (resultsTabId && senderTabId !== resultsTabId)) {
                     sendResponse({ ok: false, reason: !entry ? 'missing_model_entry' : 'not_results_tab' });
                     break;
+                }
+                const markerRequestId = message?.meta?.transportRequestId || message?.meta?.requestId;
+                if (message?.meta?.answerEndMarkerSeen === true && message?.meta?.usableResult === true
+                    && markerRequestId && markerRequestId === entry.transportRequestId
+                    && (!expectedDispatchId || incomingDispatchId === expectedDispatchId)) {
+                    entry.cardAnswerComplete = true;
+                    if (!entry.answer && entry.pendingFinalAnswer) {
+                        entry.answer = entry.pendingFinalAnswer;
+                        entry.answerHtml = entry.pendingFinalAnswerHtml || '';
+                    }
+                    completeHumanPresenceForModel(llmName, 'answer_card_end_marker');
+                    clearDeferredAnswerTimer(llmName);
+                    const completedTabId = self.getBoundTabId?.(llmName, entry) || entry.tabId;
+                    if (isValidTabId(completedTabId)) {
+                        try {
+                            chrome.tabs.sendMessage(completedTabId, {
+                                type: 'STOP_AND_CLEANUP',
+                                reason: 'answer_card_end_marker',
+                                meta: {
+                                    runSessionId: jobState?.session?.startTime || null,
+                                    sessionId: jobState?.session?.startTime || null,
+                                    dispatchId: expectedDispatchId
+                                }
+                            }).catch(() => {});
+                        } catch (_) {}
+                    }
+                    saveJobState(jobState);
+                    const models = jobState?.session?.selectedModels || [];
+                    if (!jobState?.session?.pipelineRunId && models.length
+                        && models.every(name => jobState.llms?.[name]?.cardAnswerComplete)) {
+                        self.stopAllProcesses('answer_cards_complete', { closeTabs: false, preserveResults: true });
+                    }
                 }
                 emitTelemetry(llmName, 'ANSWER_CARD_RENDER_EVALUATED', {
                     level: message?.meta?.outcome === 'matched' ? 'success' : 'warning',
@@ -4460,13 +4539,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             case 'STOP_ALL': {
-                (async () => {
-                    const cmd = { action: 'STOP_ALL', timestamp: Date.now(), platforms: message.platforms };
-                    await chrome.storage.local.set({ global_command: cmd });
-                    stopAllProcesses('stop_all_command', { closeTabs: false });
-                    sendResponse({ success: true });
-                })();
-                return true;
+                const cmd = {
+                    action: 'STOP_ALL',
+                    timestamp: Date.now(),
+                    platforms: message.platforms,
+                    runSessionId: jobState?.session?.startTime || null,
+                    activeDispatchIds: Array.from(new Set(Object.values(jobState?.llms || {})
+                        .map((entry) => entry?.lastDispatchMeta?.dispatchId || entry?.runIdentity?.dispatchId || null)
+                        .filter(Boolean)))
+                };
+                try {
+                    self.stopAllProcesses('stop_all_command', { closeTabs: false });
+                } catch (err) {
+                    sendResponse({ success: false, error: err?.message || String(err) });
+                    break;
+                }
+                // Stopping is an in-memory lifecycle action; acknowledge it
+                // before legacy persistence so storage cannot hold up the UI.
+                sendResponse({ success: true });
+                // Scope the delayed command to the session/dispatches being
+                // stopped. A late storage change must not stop a replacement.
+                if (cmd.runSessionId || cmd.activeDispatchIds.length) {
+                    try {
+                        Promise.resolve()
+                            .then(() => chrome.storage.local.set({ global_command: cmd }))
+                            .catch((err) => console.warn('[BACKGROUND] Failed to persist STOP_ALL command:', err));
+                    } catch (err) {
+                        console.warn('[BACKGROUND] Failed to persist STOP_ALL command:', err);
+                    }
+                }
+                break;
             }
 
             case 'COMMAND_ACK': {
@@ -4561,10 +4663,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             runSessionId: sourceEvent.runSessionId || (canAttachCurrentRun ? currentRunSessionId : null),
                             source: sourceEvent.source || sender?.url || sender?.tab?.url || null,
                             meta
-                        });
-                        await self.ProofTelemetryLedger?.record?.(evt, llmName || platform || 'SYSTEM', {
-                            runSessionId: meta.runSessionId || currentRunSessionId || null,
-                            producerComponent: 'content-script-diagnostic'
                         });
                         const appendEvent = (arr) => {
                             let next = diagTrimDiagnosticsBuffer(
@@ -4668,18 +4766,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             arr = arr.filter((e) => set.has(String(e?.platform || 'unknown').toLowerCase()));
                         }
                         // The persisted diagnostics buffer is cleared when a new
-                        // run starts, not when a page reloads. Reloading the
-                        // results page without starting a run therefore re-hydrated
-                        // the previous session, and the page's own
-                        // "current run" resolver — which reads the newest event it
-                        // was given — then presented that stale run as the active
-                        // one. Scope to the ledger's current run session here so a
-                        // reload cannot resurrect an earlier session. Events that
-                        // carry no run identity (setup/system lines) are kept.
-                        const activeRunSessionId = message?.allRunSessions === true
+                        // pipeline run starts, not on page reload or browser restart.
+                        // A reload must not resurrect an earlier run, so the export is
+                        // scoped to the run's wave start times (session.runSessionIds;
+                        // a single startTime for sessions without the list). Each wave
+                        // of a pipeline run has its own startTime, so all waves stay
+                        // in the export. Events that carry no run identity
+                        // (setup/system lines) are kept.
+                        const sessionForScope = jobState?.session || null;
+                        const activeRunSessionIds = message?.allRunSessions === true
                             ? null
-                            : (self.ProofTelemetryLedger?.currentRunSessionId?.() ?? null);
-                        if (activeRunSessionId !== null && activeRunSessionId !== undefined) {
+                            : (Array.isArray(sessionForScope?.runSessionIds) && sessionForScope.runSessionIds.length
+                                ? sessionForScope.runSessionIds
+                                : (sessionForScope?.startTime != null ? [sessionForScope.startTime] : null));
+                        if (activeRunSessionIds && activeRunSessionIds.length) {
+                            const allowedRunSessionIds = new Set(activeRunSessionIds.map((id) => String(id)));
                             arr = arr.filter((entry) => {
                                 const entryRunSessionId = entry?.meta?.runSessionId
                                     ?? entry?.meta?.sessionId
@@ -4687,7 +4788,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     ?? entry?.sessionId
                                     ?? null;
                                 if (entryRunSessionId === null || entryRunSessionId === undefined) return true;
-                                return String(entryRunSessionId) === String(activeRunSessionId);
+                                return allowedRunSessionIds.has(String(entryRunSessionId));
                             });
                         }
                         const capSize = (limit && Number.isFinite(limit))
@@ -4702,26 +4803,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
             }
 
-            case 'GET_PROOF_TELEMETRY_INCIDENTS': {
-                (async () => {
-                    try {
-                        const incidents = await self.ProofTelemetryStore?.listIncidents?.({
-                            runGeneration: message?.runGeneration ?? null,
-                            modelId: message?.modelId || null
-                        }) || [];
-                        sendResponse({ success: true, incidents });
-                    } catch (err) {
-                        sendResponse({ success: false, error: err?.message || String(err) });
-                    }
-                })();
-                return true;
-            }
-
             case 'CLEAR_DIAG_EVENTS': {
                 (async () => {
                     try {
                         await writeDiagnosticsEventsToStorage([]);
-                        await self.ProofTelemetryLedger?.clear?.(null);
                         const runtimeCleared = clearDiagnosticsRuntimeLogs();
                         sendResponse({ success: true, runtimeCleared });
                     } catch (err) {
@@ -5246,6 +5331,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             advanceStrategy: message.advanceStrategy === true || message.advanceSelector === true,
                             manualLatestRecovery: message.manualLatestRecovery === true,
                             manualRecovery: message.manualRecovery !== false,
+                            returnToTabId: isAppUiTab(sender?.tab) ? sender.tab.id : null,
                             reason: message.reason || 'manual_button'
                         });
                         sendResponse(result);
@@ -5286,8 +5372,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         const result = await handleManualResponsePing(llmName, {
                             advanceStrategy: shouldAdvanceStrategy,
                             getIt: message.getIt === true,
-                            returnToTabId: message.reason === 'status_indicator_dblclick' && isAppUiTab(sender?.tab)
-                                ? sender.tab.id : null,
+                            returnToTabId: isAppUiTab(sender?.tab) ? sender.tab.id : null,
                             manualLatestRecovery,
                             manualRecovery: message.manualRecovery !== false,
                             reason: message.reason || 'request_llm_response'

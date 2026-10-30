@@ -17,6 +17,34 @@
 
         const attachedFiles = [];
         const attachmentKeys = new Set();
+        const draftKey = options.draftKey || '';
+        // IndexedDB keeps File objects intact, without base64 expansion or the
+        // chrome.storage quota that is smaller than a valid attachment batch.
+        const draftRequest = (mode, files) => new Promise((resolve, reject) => {
+            if (!draftKey || !root.indexedDB) { resolve([]); return; }
+            const request = root.indexedDB.open('aoPromptAttachments', 1);
+            request.onupgradeneeded = () => request.result.createObjectStore('drafts');
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                const db = request.result;
+                const transaction = db.transaction('drafts', mode);
+                const store = transaction.objectStore('drafts');
+                const operation = mode === 'readonly' ? store.get(draftKey)
+                    : (files.length ? store.put(files, draftKey) : store.delete(draftKey));
+                transaction.oncomplete = () => { db.close(); resolve(operation.result || []); };
+                transaction.onabort = () => { db.close(); reject(transaction.error); };
+                transaction.onerror = () => {}; // onabort reports the failure once.
+            };
+        });
+        let draftWrite = Promise.resolve();
+        const saveDraft = () => {
+            const files = [...attachedFiles];
+            draftWrite = draftWrite.catch(() => {}).then(() => draftRequest('readwrite', files));
+            return draftWrite;
+        };
+        const persistDraft = () => saveDraft().catch((err) => {
+            console.warn('[results] failed to save attachment draft', err);
+        });
         const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
         const MAX_TOTAL_BYTES = 25 * 1024 * 1024;
 
@@ -76,7 +104,10 @@
                 attachedFiles.push(file);
                 added = true;
             });
-            if (added) renderPromptAttachments();
+            if (added) {
+                renderPromptAttachments();
+                persistDraft();
+            }
         };
 
         const tryAddTransferAttachments = (transfer) => {
@@ -94,6 +125,7 @@
             attachmentKeys.clear();
             try { if (promptAttachInput) promptAttachInput.value = ''; } catch (_) {}
             renderPromptAttachments();
+            persistDraft();
             return true;
         };
 
@@ -155,12 +187,22 @@
                 attachedFiles.splice(idx, 1);
                 attachmentKeys.delete(key);
                 renderPromptAttachments();
+                persistDraft();
             }
         });
 
         renderPromptAttachments();
 
         return {
+            saveDraft,
+            restoreDraft: async ({ clear = false } = {}) => {
+                if (clear) {
+                    await draftRequest('readwrite', []);
+                    return;
+                }
+                const files = await draftRequest('readonly');
+                addPromptAttachments(Array.isArray(files) ? files : []);
+            },
             buildAttachmentPayload,
             tryAddTransferAttachments,
             renderPromptAttachments,

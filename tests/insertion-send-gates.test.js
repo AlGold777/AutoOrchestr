@@ -16,7 +16,9 @@ test('GPT does not confirm Send merely because the composer is empty', async () 
   const confirm = vm.runInNewContext(code + '\nconfirmChatgptSend;', {
     Date: { now: () => now }, sleep: async ms => { now += ms; },
     inputField: { value: '' }, preSendUserCount: 1,
-    document: { querySelector: () => null, querySelectorAll: () => [{}] }
+    userTurnSelector: '[data-message-author-role="user"], [data-user-message-bubble="true"]',
+    document: { querySelector: () => null, querySelectorAll: () => [{}] },
+    grabLatestAssistantMarkup: () => ({ node: null, text: '' })
   });
   await expect(confirm()).resolves.toBe(false);
 });
@@ -25,7 +27,8 @@ test.each(['', prompt.slice(0, 120), 'old draft ' + prompt, 'a'.repeat(150) + 'z
     const send = jest.fn();
     const report = jest.fn();
     const code = section(read('chatgpt'), '        const composerAfterPrepare =', '        activity.heartbeat(0.35');
-    const context = { inputField: { isConnected: true }, expectedComposerText: prompt,
+    const inputField = { isConnected: true };
+    const context = { inputField, prepared: { ok: true, method: 'fixture', composer: inputField }, expectedComposerText: prompt,
       normalizeForComparison: s => s, readComposerValue: () => draft, prompt,
       preparedRecently: false, hasPreparedPrompt: false, MODEL: 'GPT', dispatchMeta: {},
       window: { ContentUtils: { reportPromptInsertion: report } }, send };
@@ -37,7 +40,8 @@ test.each(['', prompt.slice(0, 120), 'old draft ' + prompt, 'a'.repeat(150) + 'z
 test('GPT accepts the full live draft but rejects a detached composer', () => {
   const code = section(read('chatgpt'), '        const composerAfterPrepare =', '        activity.heartbeat(0.35');
   const send = jest.fn();
-  const c = { inputField: { isConnected: true }, expectedComposerText: prompt, prompt,
+  const inputField = { isConnected: true };
+  const c = { inputField, prepared: { ok: true, method: 'fixture', composer: inputField }, expectedComposerText: prompt, prompt,
     normalizeForComparison: s => s, readComposerValue: () => prompt, preparedRecently: false,
     hasPreparedPrompt: false, MODEL: 'GPT', dispatchMeta: {}, window: {}, send };
   vm.runInNewContext(code + '\nsend();', c);
