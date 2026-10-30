@@ -440,13 +440,14 @@ function reportDispatchPhase(llmName, entry, phase, extra = {}) {
 // The delivery token ([[AO-xxxxxx]]) is the last line the model is asked to write:
 // once the model's own text contains the token of THIS request's prompt, the
 // model finished writing — whatever the page's completion signals say.
-function answerHasDeliveryToken(llmName, text) {
+function answerHasDeliveryToken(llmName, text, tag = '') {
   // The stored prompt map is keyed by the UPPER-CASED model name (TransportPolicy
   // normalizes it): a plain lookup by "Le Chat" finds nothing.
   const prompt = String(self.TransportPolicy?.resolvePromptForModel
     ? self.TransportPolicy.resolvePromptForModel(jobState?.session?.promptsByModel, llmName, '')
     : (jobState?.session?.promptsByModel?.[llmName] || ''));
-  const token = (prompt.match(/\[\[AO-[a-z0-9]{6}\]\]/i) || [])[0];
+  // An earlier request of the round (or a correction) has its own token: the caller passes it (tag), else the current prompt's.
+  const token = (String(tag || prompt).match(/\[\[AO-[a-z0-9]{6}\]\]/i) || [])[0];
   if (!token) return false;
   // The token is the LAST line of the answer (provider chrome such as a time may follow,
   // see TAIL_AFTER_TOKEN_RE in message-delivery.js). The same text earlier in the page

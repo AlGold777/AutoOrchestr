@@ -10902,13 +10902,21 @@ const RETRY_REREAD_WAIT_MS = 60000;
 
 async function rereadOwnTurnForBasic(message = {}) {
   const llmName = String(message.llmName || '');
-  const sentPrompt = String(message.sentPrompt || '');
-  const previousLength = String(message.previousText || '').trim().length;
+  // The requests of this participant in the round (the original and its corrections): the answer of any of them is taken.
+  const roundPrompts = [...new Set([message.sentPrompt, ...(Array.isArray(message.sentPrompts) ? message.sentPrompts : [])]
+    .map((prompt) => String(prompt || '')).filter(Boolean))];
+  const roundTags = roundPrompts.map((prompt) => String(prompt.match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '')).filter(Boolean);
+  const previousText = String(message.previousText || '').trim();
+  const previousLength = previousText.length;
   const entry = jobState?.llms?.[llmName];
-  if (!llmName || !sentPrompt || !entry) return { found: false, reason: 'reread_unavailable' };
+  if (!llmName || !roundPrompts.length || !entry) return { found: false, reason: 'reread_unavailable' };
   const tabId = Number(message.tabId) || Number(entry.tabId) || null;
   if (!isValidTabId(tabId)) return { found: false, reason: 'no_tab' };
-  if (!(await pageHoldsOwnPromptTurn(tabId, sentPrompt))) return { found: false, reason: 'no_own_turn' };
+  let ownTurn = false;
+  for (const prompt of roundPrompts) {
+    if (await pageHoldsOwnPromptTurn(tabId, prompt)) { ownTurn = true; break; }
+  }
+  if (!ownTurn) return { found: false, reason: 'no_own_turn' };
   try {
     await handleManualResponsePing(llmName, {
       getIt: true, manualLatestRecovery: true, manualRecovery: true, advanceStrategy: false, reason: 'retry_reread_page'
@@ -10925,10 +10933,11 @@ async function rereadOwnTurnForBasic(message = {}) {
     const current = String(jobState?.llms?.[llmName]?.pendingFinalAnswer || jobState?.llms?.[llmName]?.answer || '').trim();
     if (current && current === text) quiet += 1;
     else { quiet = 0; text = current; }
-    confirmed = Boolean(text) && answerHasDeliveryToken(llmName, text);
+    // The text already judged before the read is not a new answer: it does not end the wait.
+    confirmed = Boolean(text) && text !== previousText && roundTags.some((tag) => answerHasDeliveryToken(llmName, text, tag));
     if (confirmed || (text && quiet >= RETRY_REREAD_QUIET_POLLS)) break;
   }
-  if (!text || (!confirmed && text.length <= previousLength)) return { found: false, reason: 'no_new_answer' };
+  if (!text || text === previousText || (!confirmed && text.length <= previousLength)) return { found: false, reason: 'no_new_answer' };
   return { found: true, text, confirmed, status: confirmed ? 'SUCCESS' : 'PARTIAL', completion: confirmed ? 'complete' : 'partial', reason: 'retry_reread_page' };
 }
 

@@ -726,10 +726,16 @@
 
     // The last request of a participant that was sent: its prompt carries the delivery token, its answer is the text already held.
     const lastSent = (participantId) => [...history].reverse().find((entry) => entry.participant === participantId && entry.sentPrompt) || null;
+    // Every request of the participant in this round (the original and its corrections): each carries its own delivery token,
+    // and the page may hold the answer of any of them.
+    const roundPrompts = (participantId, step) => [...new Set(history
+      .filter((entry) => entry.participant === participantId && entry.ref === step.ref && entry.visit === activeVisit && entry.sentPrompt)
+      .map((entry) => entry.sentPrompt))];
 
-    // M-11: reads the page for the answer of the last request of each participant (the host's reread callback, which checks the
-    // request's own user turn). Returns the answers found on the page: participant id → a reply for the acceptance. The others are
-    // sent again by the caller. Every read is a journal event (retry_reread_page: outcome accepted | resent).
+    // M-11: reads the page for the answer of the requests of each participant (the host's reread callback, which checks the
+    // request's own user turn and takes an answer that ends with the token of any request of the round). Returns the answers found
+    // on the page: participant id → a reply for the acceptance. The others are sent again by the caller. Every read is a journal
+    // event (retry_reread_page: outcome accepted | resent).
     async function rereadOwnTurns(models, step, tryNo) {
       const found = {};
       if (typeof reread !== 'function') return found;
@@ -739,7 +745,7 @@
         if (prev) {
           try {
             reply = await reread({ participantId: model.id, modelName: model.name, stepRef: step.ref, visit: activeVisit, attempt: tryNo,
-              sentPrompt: prev.sentPrompt, previousText: text(prev.answer) });
+              sentPrompt: prev.sentPrompt, sentPrompts: roundPrompts(model.id, step), previousText: text(prev.answer) });
           } catch (error) {
             reply = { found: false, reason: String(error?.message || error) };
           }
@@ -761,15 +767,17 @@
       const phase = 'answer';
       let pending = models.slice();
       let current = requests; // participant id → { prompt, parts, retryOf, trigger, triggerReason, previousAttemptKey }
+      // Participants whose page was read after their last answer (the partial read below): not read again before the next send.
+      const readBeforeSend = new Set();
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
         if (aborted()) throw new StopRun('cancelled');
         // The budget is checked before every send, a correction request included.
         const tooLong = pending.find((model) => String(current[model.id].prompt || '').length > maxPromptChars);
         if (tooLong) throw new StopRun('context_full', overBudget(step, tooLong, String(current[tooLong.id].prompt || '').length));
-        // M-11: a repeat of a request («Повторить», a retry after an empty answer) reads the page first. An answer of the same request
-        // that is already there is judged like any reply and nothing is sent for it. A correction is a new request for a rejected
-        // answer, so it is not read again.
-        const rereadNeeded = pending.filter((model) => current[model.id]?.retryOf && !current[model.id]?.parts?.correction);
+        // M-11: a repeat of a request («Повторить», a retry after an empty answer, a correction) reads the page first. An answer of
+        // any request of this round that is already there is judged like any reply and nothing is sent for it.
+        const rereadNeeded = pending.filter((model) => current[model.id]?.retryOf && !readBeforeSend.has(model.id));
+        readBeforeSend.clear();
         const rereadFound = rereadNeeded.length ? await rereadOwnTurns(rereadNeeded, step, tryNo) : {};
         const toSend = pending.filter((model) => !rereadFound[model.id]);
         const entries = Object.fromEntries(pending.map((model) => {
@@ -1003,12 +1011,14 @@
           const stepEntry = { step, visit: activeVisit, outcome, skipped: false, valid: true };
           await settleUnknown(step, stepEntry, uncertain.map((m) => ({ participantId: m.id, attempt: tryNo })));
         }
-        // M-11: a partial answer (capped or unproven) is read again before its correction: a longer text on the page is judged first.
-        // The correction stays for a text that is still not accepted.
-        const partialRead = retry.filter((model) => PARTIAL_REREAD_REASONS.has(outcome[model.id]?.reason) && !current[model.id]?.parts?.correction);
+        // M-11 / M-17: a rejected answer that is partial or empty is read again before the next request and before the owner window:
+        // the page may have grown after the reply (the same collection as Get it). A longer or complete text is judged first;
+        // the correction stays for a text that is still not accepted. One read per participant and round.
+        const partialRead = retry.filter((model) => PARTIAL_REREAD_REASONS.has(outcome[model.id]?.reason) || isNoAnswer(outcome[model.id]?.reason));
         if (partialRead.length && !(reply?.closedByOwner || wasClosedByOwner)) {
           const read = await rereadOwnTurns(partialRead, step, tryNo);
           partialRead.forEach((model) => {
+            readBeforeSend.add(model.id);
             if (!read[model.id]) return;
             retry.splice(retry.indexOf(model), 1);
             processParticipantResult(model, read[model.id]);
