@@ -294,7 +294,34 @@
     return normalized;
   }
 
-  function resolveStructuralTurn(modelName, turnAnchor = 0) {
+  // model-response nodes that existed when the dispatch baseline was reported (before Send), per platform.
+  // turn-resolver uses them as proof: a node outside this set is a new turn node (Gemini fresh-node path).
+  const PRE_DISPATCH_NODE_TTL_MS = 10 * 60 * 1000;
+  const preDispatchNodeSets = new Map();
+
+  function recordPreDispatchNodes(modelName, dispatchId = null) {
+    const platform = platformForModel(modelName);
+    if (platform !== 'gemini') return false;
+    try {
+      preDispatchNodeSets.set(platform, {
+        dispatchId: dispatchId ? String(dispatchId) : null,
+        capturedAt: Date.now(),
+        nodes: new WeakSet(Array.from(document.querySelectorAll('model-response')))
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function preDispatchNodesFor(modelName, dispatchId = null) {
+    const entry = preDispatchNodeSets.get(platformForModel(modelName));
+    if (!entry || Date.now() - entry.capturedAt > PRE_DISPATCH_NODE_TTL_MS) return null;
+    if (dispatchId && entry.dispatchId && String(dispatchId) !== entry.dispatchId) return null;
+    return entry.nodes;
+  }
+
+  function resolveStructuralTurn(modelName, turnAnchor = 0, dispatchId = null) {
     const platform = platformForModel(modelName);
     const selectors = window.AnswerPipelineSelectors?.PLATFORM_SELECTORS?.[platform];
     if (!selectors || !window.TurnResolver?.resolveTurn) return null;
@@ -303,7 +330,8 @@
       selectors,
       document,
       anchorAnswerCount: Math.max(0, Number(turnAnchor || 0)),
-      minimumTextLength: 1
+      minimumTextLength: 1,
+      preDispatchNodes: preDispatchNodesFor(modelName, dispatchId) || undefined
     });
   }
 
@@ -316,7 +344,7 @@
     if (!tracker || !window.AnswerStructure?.inspect || !window.GenerationSignal?.inspect) return null;
     const platform = platformForModel(tracker.modelName);
     const selectors = window.AnswerPipelineSelectors?.PLATFORM_SELECTORS?.[platform];
-    const turn = resolveStructuralTurn(tracker.modelName, tracker.turnAnchor);
+    const turn = resolveStructuralTurn(tracker.modelName, tracker.turnAnchor, tracker.dispatchId);
     if (!selectors || !turn?.answerNode) return null;
     const selectedText = window.AnswerStructure.linearizeText(turn.answerNode);
     const messageRootText = window.AnswerStructure.linearizeText(turn.messageRoot);
@@ -2473,6 +2501,8 @@
     getLatestAnswerSnapshot,
     registerAnswerCandidate,
     captureTurnAnchor,
+    recordPreDispatchNodes,
+    preDispatchNodesFor,
     verifyStructuralCompletion,
     observeWitness,
     getTerminalResult,

@@ -1410,6 +1410,9 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         selectorAllowed: (selector) => !circuit || circuit.shouldUse(selector, this.platform, 'answer') !== false,
         anchorAnswerCount: this.anchorAnswerCount,
         minimumTextLength: 1,
+        // Gemini fresh-node proof: response nodes that existed before Send (see turn-resolver preDispatchNodes).
+        preDispatchNodes: (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)
+          ?.preDispatchNodesFor?.(this.platform, window.__LLMPreDispatchTurnAnchor?.dispatchId || null) || undefined,
         // Stop visible: ChatGPT's final block is awaited, not a preamble (review L-3).
         stopVisible: this.activeAnswerWatcher?.lastStopVisible === true,
         candidateEligible: ({ node, text }) => {

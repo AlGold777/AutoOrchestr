@@ -2660,7 +2660,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         reason: message.reason || null,
                         elapsedMs: Number.isFinite(Number(message.elapsedMs)) ? Number(message.elapsedMs) : null,
                         composerVisible: typeof message.composerVisible === 'boolean' ? message.composerVisible : null,
-                        composerConnected: typeof message.composerConnected === 'boolean' ? message.composerConnected : null
+                        composerConnected: typeof message.composerConnected === 'boolean' ? message.composerConnected : null,
+                        diagnostics: message.diagnostics && typeof message.diagnostics === 'object' ? message.diagnostics : null
                     },
                     force: true
                 });

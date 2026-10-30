@@ -1012,7 +1012,44 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     return null;
   }
 
+  // Send budget of one sendComposer call (M-3: about 12 s; in 2.81.950 the failure came 3 min after the request).
+  // Every step is bounded by Date.now() against one deadline, not by iteration count: the wait after the budget
+  // ends is never started, and the un-bounded waits (SelectorFinder button lookup, humanoid click) get the remainder.
+  // A frozen or throttled tab can still delay the report itself; the first step after it wakes returns at once.
+  const DEEPSEEK_SEND_BUDGET_MS = 12000;
+  const SEND_BUDGET_TIMEOUT = Symbol('deepseek_send_budget_timeout');
+  let lastSendOutcome = null;
+
   async function sendComposer(input) {
+    const startedAt = Date.now();
+    const deadline = startedAt + DEEPSEEK_SEND_BUDGET_MS;
+    const remainingMs = () => deadline - Date.now();
+    const boundedBy = (promise, ms) => new Promise((resolve) => {
+      if (ms <= 0) { resolve(SEND_BUDGET_TIMEOUT); return; }
+      const timer = setTimeout(() => resolve(SEND_BUDGET_TIMEOUT), ms);
+      Promise.resolve(promise).then(
+        (value) => { clearTimeout(timer); resolve(value); },
+        () => { clearTimeout(timer); resolve(null); }
+      );
+    });
+    const budgetSleep = (ms) => sleep(Math.max(0, Math.min(ms, remainingMs())));
+    const finish = (confirmed, reason) => {
+      lastSendOutcome = {
+        outcome: confirmed ? 'confirmed' : 'failed',
+        reason,
+        budgetMs: DEEPSEEK_SEND_BUDGET_MS,
+        budgetSource: 'content-deepseek sendComposer',
+        elapsedMs: Date.now() - startedAt,
+        composerLength: readComposerValue(input).length,
+        proseCount: getProseNodes().length,
+        proseBaseline: baselineCount,
+        stopVisible: Boolean(document.querySelector('[data-role="assistant"] [aria-busy="true"], [data-streaming="true"]')),
+        visibilityState: document.visibilityState || null,
+        hidden: document.hidden === true,
+        composerConnected: input.isConnected === true
+      };
+      return confirmed;
+    };
     const dispatchEnter = (mods = {}) => {
       try {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, ctrlKey: !!mods.ctrlKey }));
@@ -1023,7 +1060,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     const baselineCount = getProseNodes().length;
     const startPath = location.pathname;
     const confirmDeepSeekSend = async (timeout = 2000) => {
-      const deadline = Date.now() + timeout;
+      const deadline = Date.now() + Math.max(0, Math.min(timeout, remainingMs()));
       while (Date.now() < deadline) {
         // Only the streaming signals of the answer count. A page-wide .loading/.spinner
         // (sidebar, history) was read as "sent" even when the composer still held the prompt.
@@ -1042,28 +1079,32 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       return false;
     };
 
-    await sleep(2000);
+    await budgetSleep(2000);
 
-    // Strategy 1: Ctrl+Enter
+    // Strategy 1: Ctrl+Enter. Each next strategy starts only while the budget has time left.
+    if (remainingMs() <= 0) return finish(false, 'send_budget_exhausted');
     dispatchEnter({ ctrlKey: true });
     let confirmed = await confirmDeepSeekSend(2200);
-    if (!confirmed) {
-      await sleep(400);
-      dispatchEnter({ ctrlKey: true });
-      confirmed = await confirmDeepSeekSend(2200);
+    if (!confirmed && remainingMs() > 0) {
+      await budgetSleep(400);
+      if (remainingMs() > 0) {
+        dispatchEnter({ ctrlKey: true });
+        confirmed = await confirmDeepSeekSend(2200);
+      }
     }
-    if (!confirmed) {
+    if (!confirmed && remainingMs() > 0) {
       dispatchEnter();
       confirmed = await confirmDeepSeekSend(2000);
     }
-    if (!confirmed) {
-      const sendButton = await resolveSendButton(input);
-      if (sendButton) {
-        await deepseekHumanClick(sendButton);
+    if (!confirmed && remainingMs() > 0) {
+      const sendButton = await boundedBy(resolveSendButton(input), remainingMs());
+      if (sendButton && sendButton !== SEND_BUDGET_TIMEOUT && remainingMs() > 0) {
+        await boundedBy(deepseekHumanClick(sendButton), remainingMs());
         confirmed = await confirmDeepSeekSend(3000);
       }
     }
-    return confirmed;
+    if (confirmed) return finish(true, 'confirmed');
+    return finish(false, remainingMs() <= 0 ? 'send_budget_exhausted' : 'send_not_confirmed');
   }
 
   function getProseNodes() {
@@ -1467,7 +1508,9 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
           const sendConfirmed = await sendComposer(composer);
           if (!sendConfirmed) {
             window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_action_failed', {
-              outcome: 'failed', reason: 'send_not_confirmed'
+              outcome: 'failed', reason: 'send_not_confirmed',
+              elapsedMs: lastSendOutcome?.elapsedMs ?? null,
+              diagnostics: lastSendOutcome
             });
             throw { type: 'send_failed', message: 'DeepSeek send not confirmed' };
           }

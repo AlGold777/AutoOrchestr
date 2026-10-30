@@ -234,6 +234,31 @@
     }
     if (!answerNode && minimumTextLength <= 0) answerNode = pool[pool.length - 1] || null;
 
+    // Gemini (2.81.950, anchor 3 and candidate count 3 for minutes while the answer was on the page):
+    // Send added a response node, but the positional pool stayed empty, so the turn never bound.
+    // Node identity is the proof here: a model-response that did not exist when the dispatch baseline
+    // was reported is this turn's node. Nodes present at baseline are never picked, so an old answer
+    // cannot be attached even when the count did not grow. A delivery token, if present, wins.
+    let freshTurnNode = false;
+    if (!answerNode && options.preDispatchNodes && typeof options.preDispatchNodes.has === 'function'
+      && String(options.platform || '').toLowerCase() === 'gemini') {
+      const fresh = [];
+      let rawNodes = [];
+      try { rawNodes = Array.from(queryAll('model-response') || []); } catch (_) { rawNodes = []; }
+      rawNodes.forEach((node) => {
+        if (!node || node.nodeType !== 1 || options.preDispatchNodes.has(node)) return;
+        const text = String(readNodeText(node) || '').trim();
+        if (text.length < minimumTextLength || isIneligible(node, text, -1)) return;
+        fresh.push({ node, text });
+      });
+      const tokenEntries = fresh.filter((entry) => DELIVERY_TOKEN_RE.test(entry.text));
+      const picked = tokenEntries[tokenEntries.length - 1] || fresh[fresh.length - 1] || null;
+      if (picked) {
+        answerNode = picked.node;
+        freshTurnNode = true;
+      }
+    }
+
     // A configured fallback may match a paragraph/code block inside the exact
     // answer. DOM order puts that fragment last, but it is not a newer turn.
     if (answerNode && metadataByElement.get(answerNode)?.sourceKind === 'secondary') {
@@ -272,7 +297,11 @@
 
     let resolution = 'unresolved';
     let reason = answerNode ? 'message_root_unresolved' : 'answer_node_unresolved';
-    if (answerNode && messageRoot && answerMeta?.sourceKind === 'primary' && !usedContainerFallback) {
+    const selectorSourceKind = answerMeta?.sourceKind || (freshTurnNode ? 'primary' : null);
+    if (answerNode && messageRoot && freshTurnNode) {
+      resolution = 'exact';
+      reason = 'gemini_fresh_turn_node';
+    } else if (answerNode && messageRoot && answerMeta?.sourceKind === 'primary' && !usedContainerFallback) {
       resolution = 'exact';
       reason = 'platform_answer_and_root_matched';
     } else if (answerNode) {
@@ -290,11 +319,11 @@
       candidates: sorted,
       candidatePool: pool,
       rejectedCandidates,
-      selectorUsed: answerMeta?.selector || null,
+      selectorUsed: answerMeta?.selector || (freshTurnNode ? 'model-response' : null),
       selectorIndex: answerMeta?.index ?? null,
-      selectorSource: answerMeta?.sourceKind || null,
-      selectorTier: answerMeta?.sourceKind === 'primary' ? 'platform_primary'
-        : (answerMeta?.sourceKind === 'secondary' ? 'configured_fallback' : 'container_fallback'),
+      selectorSource: selectorSourceKind,
+      selectorTier: selectorSourceKind === 'primary' ? 'platform_primary'
+        : (selectorSourceKind === 'secondary' ? 'configured_fallback' : 'container_fallback'),
       positionalFiltered: pool !== sorted,
       metadataByElement,
       matchedIndices,
