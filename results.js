@@ -5503,8 +5503,13 @@ document.addEventListener('click', (event) => {
             const hint = document.getElementById('owner-ask-hint');
             if (hint) hint.textContent = `${info.label || info.plannedStageId || 'Этап'}: модель просит ответа User. Выберите вариант, при желании добавьте комментарий. Ответ получат следующие этапы.`;
             window.OwnerAsk.render(document.getElementById('owner-ask-list'), info.asks || []);
+            // Basic: «Позже» and «Продолжить без ответа» do the same, so only the latter is shown.
+            const laterButton = ownerAskDialog.querySelector('[data-owner-ask="later"]');
+            if (laterButton) laterButton.hidden = typeof info.resolve === 'function';
             if (!ownerAskDialog.open) ownerAskDialog.showModal();
         };
+        // Escape must not close the question without an answer: the window can't be reopened.
+        ownerAskDialog?.addEventListener('cancel', (event) => event.preventDefault());
         ownerAskDialog?.addEventListener('click', (event) => {
             const action = event.target.closest?.('[data-owner-ask]')?.dataset?.ownerAsk;
             if (!action || !pendingOwnerAsks) return;
@@ -7389,6 +7394,7 @@ document.addEventListener('click', (event) => {
                                 .map((file) => inputFilePayloads[file.id]) : [],
                             // A document for reading is edited in the window.
                             choices: [{ value: 'send', label: 'Отправить' }],
+                            cancelText: 'Остановить прогон',
                             ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {}),
                             ...(document ? { folder: { name: folderName, onPick: pickDocumentsFolder } } : {})
                         });
@@ -7401,7 +7407,8 @@ document.addEventListener('click', (event) => {
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
                         message: `${stepRef}: отправка не подтверждена (${items.map((item) => item.participantId).join(', ')}). ${choices.includes('check') ? 'Проверить, пришёл ли ответ в чате (ничего не отправляется), отправить заново или пропустить?' : 'Отправить заново или пропустить?'}`,
-                        choices: choices.map((id) => ({ value: id, label: { check: 'Проверить ответ', resend: 'Отправить заново', skip: 'Пропустить' }[id] || id }))
+                        choices: choices.map((id) => ({ value: id, label: { check: 'Проверить ответ', resend: 'Отправить заново', skip: 'Пропустить' }[id] || id })),
+                        cancelText: 'Остановить прогон'
                     }),
                     // The texts of the answers go to the record (the registry and the snapshot keep references to them).
                     ...(record ? {
@@ -8012,7 +8019,7 @@ document.addEventListener('click', (event) => {
                 showNotification('Preset pipelines cannot be deleted.', 'warn');
                 return;
             }
-            const confirmed = await showConfirm(`Delete pipeline "${activeName}"?`);
+            const confirmed = await showConfirm(`Удалить схему «${activeName}»? Схему можно вернуть только из файла экспорта.`, { confirmText: 'Удалить', cancelText: 'Отмена' });
             if (!confirmed) return;
 
             delete pipelineStore.pipelines[activeName];
@@ -8287,7 +8294,7 @@ document.addEventListener('click', (event) => {
 
             const exists = pipelineStore.order.includes(trimmedNew);
             if (exists) {
-                const confirmed = await showConfirm(`Pipeline "${trimmedNew}" already exists. Replace it?`);
+                const confirmed = await showConfirm(`Схема «${trimmedNew}» уже есть. Заменить её?`, { confirmText: 'Заменить', cancelText: 'Отмена' });
                 if (!confirmed) return false;
             }
 
@@ -8570,7 +8577,7 @@ document.addEventListener('click', (event) => {
                     return;
                 }
                 if (pipelineStore.order.includes(trimmed) && !isDefaultPipelineName(trimmed)) {
-                    const confirmed = await showConfirm(`Pipeline "${trimmed}" already exists. Replace it?`);
+                    const confirmed = await showConfirm(`Схема «${trimmed}» уже есть. Заменить её?`, { confirmText: 'Заменить', cancelText: 'Отмена' });
                     if (!confirmed) return;
                 }
                 // A copy of a template remembers it; saving a saved pipeline again keeps what it was based on.
@@ -8816,7 +8823,7 @@ document.addEventListener('click', (event) => {
             const name = String((await showPrompt('Имя pipeline для схемы:', wanted)) || '').trim();
             if (!name) return;
             if (isDefaultPipelineName(name)) { showNotification(`«${name}» — имя шаблона. Выберите другое имя.`, 'warn'); return; }
-            if (pipelineStore.order.includes(name) && !(await showConfirm(`Pipeline "${name}" already exists. Replace it?`))) return;
+            if (pipelineStore.order.includes(name) && !(await showConfirm(`Схема «${name}» уже есть. Заменить её?`, { confirmText: 'Заменить', cancelText: 'Отмена' }))) return;
             const result = await installBasicSchema(name, schema);
             if (!result.ok) {
                 showNotification(`Схема не установлена. ${describeSchemaErrors(result.errors)}`, 'error');
@@ -8890,7 +8897,7 @@ document.addEventListener('click', (event) => {
                     final = typed;
                 }
                 if (isDefaultPipelineName(final)) { problems.push(`«${final}»: имя шаблона занять нельзя, схема не добавлена.`); notAdded += 1; continue; }
-                if (pipelineStore.order.includes(final) && !(await showConfirm(`Pipeline "${final}" already exists. Replace it?`))) {
+                if (pipelineStore.order.includes(final) && !(await showConfirm(`Схема «${final}» уже есть. Заменить её?`, { confirmText: 'Заменить', cancelText: 'Отмена' }))) {
                     problems.push(`«${final}»: замена не подтверждена, схема не добавлена.`); notAdded += 1; continue;
                 }
                 const result = await installBasicSchema(final, schema);
@@ -18036,7 +18043,8 @@ document.addEventListener('click', (event) => {
     })();
     modalElements.forEach((modal) => {
         modal.addEventListener('click', (event) => {
-            if (event.target === modal) {
+            // The confirm window is answered by its buttons only: a click outside it would leave showConfirm unresolved.
+            if (event.target === modal && modal.id !== 'confirm-modal') {
                 modalManager.hide(modal);
             }
         });
