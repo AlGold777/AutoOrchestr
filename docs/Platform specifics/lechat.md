@@ -1,6 +1,6 @@
 # Le Chat (провайдер Le Chat)
 
-Код: `content-scripts/content-lechat.js` (версия скрипта `v6.1.4`, `:8`), селекторы `selectors/lechat.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 21). Заготовка от 2026-10-30. Попыток Le Chat в выгрузках `docs/pipelines/*/exports/` нет: факты из кода и реестра, живым прогоном не проверены.
+Код: `content-scripts/content-lechat.js` (версия скрипта `v6.1.4`, `:8`), селекторы `selectors/lechat.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 21). Заготовка от 2026-10-30. Попыток Le Chat в выгрузках `docs/Run/Test_run/*/exports/` нет: факты из кода и реестра, живым прогоном не проверены.
 
 ## 1. Отправка
 

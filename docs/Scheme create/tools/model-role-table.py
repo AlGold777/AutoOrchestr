@@ -1,5 +1,5 @@
 #!/usr/bin/env python3 -I
-"""Таблица «модель × роль» по экспортам Basic: docs/pipelines/*/exports/*.json.
+"""Таблица «модель × роль» по экспортам Basic: docs/Run/Test_run/*/exports/*.json.
 Запуск: python3 -I "docs/Scheme create/tools/model-role-table.py" [--md]
 «Мусор» = ответ начинается со страницы-оболочки Perplexity («Новое / Компьютер…») или короче 500 символов.
 Роль выводится из имени pipeline и ссылки шага (ref): см. ROLES."""
@@ -21,7 +21,7 @@ def role_of(pipeline, ref):
 
 def load():
     seen, rows = set(), []
-    for p in sorted(glob.glob(os.path.join(ROOT, 'docs/pipelines/*/exports/*.json'))):
+    for p in sorted(glob.glob(os.path.join(ROOT, 'docs/Run/Test_run/*/exports/*.json'))):
         d = json.load(open(p, encoding='utf-8'))
         cr = d.get('customRun') or {}
         name, texts = cr.get('pipelineName', ''), cr.get('texts', {})

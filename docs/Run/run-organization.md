@@ -41,7 +41,9 @@
 
 ## 5. Что создаётся во время работы
 
-В папке прогона `docs/pipelines/<имя>_<дата>/`:
+**Правило размещения (владелец, 2026-10-30).** Всё, что относится к прогонам, лежит в `docs/Run/Test_run/`. У каждого прогона там своя папка `docs/Run/Test_run/<имя>_<yyyy-mm-dd>[_HH-mm]/` (например `docs/Run/Test_run/Research_Instruction_2026-10-30_22-00/`) с подпапками `schema/`, `artefacts/`, `exports/`, `notes/`: в ней все документы этого прогона и созданные артефакты (`.../artefacts/`). Материалов прогонов в других папках (в том числе прежней `docs/pipelines/`) не держим; ссылки из других документов ведут в `Test_run`. Это правило заменяет общее правило `docs/pipelines/` из глобальных инструкций для этого проекта.
+
+В папке прогона:
 `schema/` (схема и `task.txt`), `exports/` (одна выгрузка «Basic»), `artefacts/` (итог и контроль), `notes/run-report.md` (по шаблону), `notes/action-log.md` (мои действия в Chrome с временем: кто нажал, а кто сделал движок), `notes/lessons-for-handbook.md` (уроки для схем), `notes/analysis-*.md` (разборы аналитиков).
 
 Вне папки: строки реестра (ID продолжают нумерацию; перед записью проверить коллизии), дополнения в `docs/Platform specifics/<провайдер>.md`, правки `docs/Run/` при изменении процедуры.
@@ -79,6 +81,6 @@
 
 ## 9. Ближайший прогон: «Исследование инструкция v2»
 
-- Задача — [task.txt](../pipelines/Research_Instruction_2026-10-30_22-00/schema/task.txt): продуктовая инструкция для задач вида «Исследование» (до 1200 слов + три пункта). Схема — [research-instruction.schema.json](../pipelines/Research_Instruction_2026-10-30_22-00/schema/research-instruction.schema.json).
+- Задача — [task.txt](Test_run/Research_Instruction_2026-10-30_22-00/schema/task.txt): продуктовая инструкция для задач вида «Исследование» (до 1200 слов + три пункта). Схема — [research-instruction.schema.json](Test_run/Research_Instruction_2026-10-30_22-00/schema/research-instruction.schema.json).
 - Структура: r1 три независимых варианта (GPT опорный, DeepSeek, Qwen) → r2 свод Claude → r3 проверка (GPT аудит и premortem; DeepSeek и Qwen применяют инструкцию на пробных задачах; Perplexity — практики исследований) → r4 правка Claude → `owner:ok` (отвечает ведущий) → r5 итог Claude → r6 контроль GPT.
 - Первая попытка 2026-10-30 22:31 оборвана в раунде 1 (L-37). Повторный запуск — по новому разрешению владельца.
