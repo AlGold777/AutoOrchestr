@@ -7533,7 +7533,7 @@ document.addEventListener('click', (event) => {
                     reread: async (request) => {
                         const saved = chatBindings[request.participantId];
                         const reply = await chrome.runtime.sendMessage({ type: 'BASIC_REREAD_OWN_TURN', llmName: request.modelName,
-                            tabId: saved?.tabId ?? null, sentPrompt: request.sentPrompt, previousText: request.previousText });
+                            tabId: saved?.tabId ?? null, sentPrompt: request.sentPrompt, sentPrompts: request.sentPrompts, previousText: request.previousText });
                         return reply || { found: false, reason: 'no_reply' };
                     },
                     accept: ({ text, completion, status, prompt, reason }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt, reason } }),

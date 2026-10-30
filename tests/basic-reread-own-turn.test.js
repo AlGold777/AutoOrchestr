@@ -108,8 +108,8 @@ describe('M-11: the background and the host route the re-read', () => {
     const job = read('background/job-orchestrator.js');
     const fn = job.slice(job.indexOf('async function rereadOwnTurnForBasic'), job.indexOf('function collectGetItBatch('));
     // The own user turn is checked before any collection; the collection is the Get it ping.
-    expect(fn.indexOf('pageHoldsOwnPromptTurn(tabId, sentPrompt)')).toBeGreaterThan(0);
-    expect(fn.indexOf('pageHoldsOwnPromptTurn(tabId, sentPrompt)')).toBeLessThan(fn.indexOf('handleManualResponsePing('));
+    expect(fn.indexOf('pageHoldsOwnPromptTurn(tabId, prompt)')).toBeGreaterThan(0);
+    expect(fn.indexOf('pageHoldsOwnPromptTurn(tabId, prompt)')).toBeLessThan(fn.indexOf('handleManualResponsePing('));
     expect(fn).toMatch(/confirmed \|\| \(text && quiet >= RETRY_REREAD_QUIET_POLLS\)/);
     expect(fn).toMatch(/text\.length <= previousLength/);
   });
