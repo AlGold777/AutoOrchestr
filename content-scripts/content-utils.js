@@ -725,6 +725,7 @@
       elapsedMs: Number.isFinite(Number(outcome.elapsedMs)) ? Number(outcome.elapsedMs) : null,
       composerVisible: typeof outcome.composerVisible === 'boolean' ? outcome.composerVisible : null,
       composerConnected: typeof outcome.composerConnected === 'boolean' ? outcome.composerConnected : null,
+      diagnostics: outcome.diagnostics && typeof outcome.diagnostics === 'object' ? outcome.diagnostics : null,
       meta: ensureDispatchMeta(meta && typeof meta === 'object' ? meta : {}, llmName) || {}
     });
   };
