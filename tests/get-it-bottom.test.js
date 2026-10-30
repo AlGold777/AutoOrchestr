@@ -16,9 +16,9 @@ test('manual recovery prefers the run-bound tab and does not silently switch a m
   const orch = fs.readFileSync(require.resolve('../background/job-orchestrator'), 'utf8');
   const from = orch.indexOf('async function handleManualResponsePing');
   const c = { jobState: { llms: { GPT: { tabId: 11 } } }, TabMapManager: { get: () => 22 },
-    getTabSafe: jest.fn(async id => ({ id })), isEligibleTabForLlm: () => true };
+    getTabSafe: jest.fn(async id => ({ id })), isEligibleTabForLlm: () => true, broadcastDiagnostic: () => {} };
   vm.createContext(c);
-  vm.runInContext(orch.slice(from, orch.indexOf('  if (!tabId) {', from)) + 'return {tabId};\n}', c);
+  vm.runInContext(orch.slice(from, orch.indexOf('  const manualRecoveryRequested', from)) + 'return {tabId};\n}', c);
   expect((await c.handleManualResponsePing('GPT')).tabId).toBe(11);
   c.getTabSafe.mockResolvedValue(null);
   expect((await c.handleManualResponsePing('GPT')).status).toBe('manual_ping_failed');
