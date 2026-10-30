@@ -91,7 +91,7 @@
     const escaped = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const block = new RegExp(`\\[\\[DOC:\\s*${escaped}\\s*\\]\\]([\\s\\S]*?)\\[\\[\\/DOC\\]\\]`).exec(String(answer == null ? '' : answer));
     if (!block) return null;
-    const text = block[1].trim();
+    const text = stripDocumentMarks(block[1]).trim();
     return text === '' ? null : text;
   }
 
@@ -142,9 +142,11 @@
   // marks ([[DOC: id]], [[/DOC]]) are service text. Document extraction reads the raw answer, so it runs before this.
   const DELIVERY_MARK = /\s*\[\[AO-[^\]]*\]\]\s*$/;
   const DOCUMENT_MARK = /\[\[\/?DOC(?::[^\]]*)?\]\]/g;
+  // A document (the text to show, record and write to a file) has no document marks, whatever the raw answer held.
+  function stripDocumentMarks(raw) { return String(raw == null ? '' : raw).replace(DOCUMENT_MARK, ''); }
   const cleanAnswer = (raw) => String(raw == null ? '' : raw).replace(DELIVERY_MARK, '').replace(DOCUMENT_MARK, '').trim();
 
-  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, extractDocument, checkAnswer, cleanAnswer });
+  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, extractDocument, checkAnswer, cleanAnswer, stripDocumentMarks });
   root.BasicOutput = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

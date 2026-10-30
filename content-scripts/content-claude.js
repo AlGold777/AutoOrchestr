@@ -1721,6 +1721,8 @@ if (typeof window.SelectorFinder === 'undefined') {
       const clone = node.cloneNode(true);
       stripClaudeThinkingNodes(clone);
       clone.querySelectorAll('button, svg, img, [aria-hidden="true"], header, footer, form, nav, aside, [role="navigation"], [contenteditable], .sr-only, [class*="group/status"]').forEach(el => el.remove());
+      // textContent drops cell boundaries: tables become markdown first (shared/answer-markdown-providers.js).
+      window.AnswerMarkdownProviders?.replaceTablesWithMarkdown?.(clone);
       return (clone.textContent || clone.innerText || '').trim();
     };
     let text = extractFrom(container);

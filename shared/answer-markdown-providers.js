@@ -284,5 +284,36 @@
     return true;
   }
 
-  return { VERSION, RULES, PROVIDERS: Object.keys(RULES), register, exactText, normalizeLang, genericCodeBlock, genericTableRoot };
+  // ---- tables as markdown (text taken with textContent loses the cells) -----------------------------------------------
+
+  // One line per cell (white space collapsed, a pipe escaped). The first row is the header, a delimiter row follows it.
+  const cellLine = (cell) => String(cell.textContent || '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+  function tableToMarkdown(table) {
+    if (!table || table.nodeType !== 1) return '';
+    const rows = Array.from(table.querySelectorAll('tr'))
+      .filter((tr) => closest(tr, 'table') === table)
+      .map((tr) => Array.from(tr.children).filter((c) => isTag(c, 'TD') || isTag(c, 'TH')).map(cellLine))
+      .filter((cells) => cells.length);
+    if (!rows.length) return '';
+    const width = Math.max(...rows.map((cells) => cells.length));
+    const line = (cells) => `| ${Array.from({ length: width }, (_, i) => cells[i] || '').join(' | ')} |`;
+    const out = [line(rows[0]), `| ${Array.from({ length: width }, () => '---').join(' | ')} |`];
+    rows.slice(1).forEach((cells) => out.push(line(cells)));
+    return out.join('\n');
+  }
+
+  // Every outermost <table> under root becomes its markdown table (blank lines around it). Changes root in place.
+  function replaceTablesWithMarkdown(root) {
+    if (!root || typeof root.querySelectorAll !== 'function') return root;
+    const doc = root.ownerDocument || (typeof document !== 'undefined' ? document : null);
+    Array.from(root.querySelectorAll('table'))
+      .filter((table) => !closest(table.parentElement, 'table'))
+      .forEach((table) => {
+        const markdown = tableToMarkdown(table);
+        if (doc) table.replaceWith(doc.createTextNode(markdown ? `\n\n${markdown}\n\n` : ` ${table.textContent || ''} `));
+      });
+    return root;
+  }
+
+  return { VERSION, RULES, PROVIDERS: Object.keys(RULES), register, exactText, normalizeLang, genericCodeBlock, genericTableRoot, tableToMarkdown, replaceTablesWithMarkdown };
 });

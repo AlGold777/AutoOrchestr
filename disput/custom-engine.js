@@ -1057,7 +1057,9 @@
           await checkpointNow('judge', { pendingOwner: null });
           return entry.owner;
         }
-        const textRef = putText(verdict.text);
+        // The owner's text is shown and kept as a document: the document marks are service text, not part of it.
+        const ownerText = Output.stripDocumentMarks(verdict.text);
+        const textRef = putText(ownerText);
         (step.output?.artifacts || []).forEach((declaration) => {
           // A revision joins the line of the artifact the owner got; any other artifact starts the owner's own line.
           const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
@@ -1081,7 +1083,7 @@
               inputs: previous ? [{ lineage: { ...previous.lineage }, source: { ...previous.source } }] : [], description: '' });
           }
         }
-        entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}), ...(approved ? { approved } : {}) };
+        entry.owner = { text: ownerText, textRef, ...(verdict.file ? { file: verdict.file } : {}), ...(approved ? { approved } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
         await checkpointNow('judge', { pendingOwner: null });
         return entry.owner;
