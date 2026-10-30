@@ -189,17 +189,28 @@ describe('watcher: transport evidence gates the commit', () => {
         <button aria-label="Stop generating" data-testid="stop-button">Stop</button>
       </main>
     `;
-    const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT' });
-    let settled = null;
-    watcher.waitForCompletion({ container: document.querySelector('main') }).then((r) => { settled = r; });
+    const adaptive = window.AnswerPipelineConfig.streaming.adaptiveTimeout;
+    const savedHardMax = adaptive.hardMax;
+    adaptive.hardMax = 300000;
+    try {
+      const watcher = new window.AnswerPipeline.UnifiedAnswerCompletionWatcher('chatgpt', { llmName: 'GPT' });
+      let settled = null;
+      watcher.waitForCompletion({ container: document.querySelector('main') }).then((r) => { settled = r; });
 
-    await tick(460);
+      // 230 s: собственный hard истёк, но общий предел (305 s) ещё нет, при видимом Stop ответ не закрыт.
+      await tick(460);
+      expect(settled).toBeNull();
 
-    expect(settled).not.toBeNull();
-    expect(settled.reason).toBe('hard_timeout');
-    expect(settled.completed).toBe(false);
-    expect(['UNKNOWN', 'SUSPECTED_COMPLETE']).toContain(settled.runProof.type);
-    expect(settled.runProof.textReadable).toBe(false);
+      // 315 s: общий предел достигнут, завершение только как hard_timeout.
+      await tick(170);
+      expect(settled).not.toBeNull();
+      expect(settled.reason).toBe('hard_timeout');
+      expect(settled.completed).toBe(false);
+      expect(['UNKNOWN', 'SUSPECTED_COMPLETE']).toContain(settled.runProof.type);
+      expect(settled.runProof.textReadable).toBe(false);
+    } finally {
+      adaptive.hardMax = savedHardMax;
+    }
   });
 
   test('the detector tick names why it did not conclude, in the form the export keeps', async () => {

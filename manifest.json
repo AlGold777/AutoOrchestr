@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "_Opus",
-  "version": "2.81.940",
+  "version": "2.81.941",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
     "storage",

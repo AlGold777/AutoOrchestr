@@ -54,27 +54,37 @@ describe('false success: watcher completion guards', () => {
       selectors: window.AnswerPipelineSelectors.PLATFORM_SELECTORS.chatgpt
     }).active).toBe(true);
 
-    let settled = null;
-    watcher.waitForCompletion({ container: document.querySelector('main') })
-      .then((r) => { settled = r; });
+    // Общий предел при видимом Stop: hardMax профиля (+ запас 5 с), здесь 300 с.
+    const adaptive = window.AnswerPipelineConfig.streaming.adaptiveTimeout;
+    const savedHardMax = adaptive.hardMax;
+    adaptive.hardMax = 300000;
+    try {
+      let settled = null;
+      watcher.waitForCompletion({ container: document.querySelector('main') })
+        .then((r) => { settled = r; });
 
-    for (let i = 0; i < 40; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
-    const at20s = settled;
+      for (let i = 0; i < 40; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      const at20s = settled;
 
-    for (let i = 0; i < 360; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
-    const beforeHardDeadline = settled;
+      for (let i = 0; i < 460; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      // 250 s: собственный hard watcher уже истёк, общий предел (305 s) ещё нет.
+      const beforeHardDeadline = settled;
+      expect(watcher.timeoutManager.checkExpiration().hardExpired).toBe(true);
+      expect(beforeHardDeadline).toBeNull();
 
-    for (let i = 0; i < 60; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
-    const afterHardDeadline = settled;
+      for (let i = 0; i < 120; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
+      const afterHardDeadline = settled;
 
-    expect(document.querySelector('button[data-testid="stop-button"]')).not.toBeNull();
-    expect(at20s).toBeNull();
-    expect(beforeHardDeadline).toBeNull();
-    expect(afterHardDeadline).not.toBeNull();
-    expect(afterHardDeadline.reason).toBe('hard_timeout');
-    expect(afterHardDeadline.completed).toBe(false);
-    expect(watcher.getStopVisible()).toBe(true);
-    jest.useRealTimers();
+      expect(document.querySelector('button[data-testid="stop-button"]')).not.toBeNull();
+      expect(at20s).toBeNull();
+      expect(afterHardDeadline).not.toBeNull();
+      expect(afterHardDeadline.reason).toBe('hard_timeout');
+      expect(afterHardDeadline.completed).toBe(false);
+      expect(watcher.getStopVisible()).toBe(true);
+    } finally {
+      adaptive.hardMax = savedHardMax;
+      jest.useRealTimers();
+    }
   });
 
   test('expected very-long answer selects the profile hard maximum', () => {

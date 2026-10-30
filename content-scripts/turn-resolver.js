@@ -83,6 +83,30 @@
     return Object.freeze({ all, one, roots: collectRoots });
   }
 
+  // ChatGPT draws one turn as sibling blocks: progress lines ("Уточнил план ответа…"), the draft and the
+  // final answer. The delivery token ([[AO-xxxxxx]]) is written only at the end of the final answer.
+  const DELIVERY_TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/i;
+  const PROGRESS_LINE_MAX_CHARS = 200;
+
+  // A progress line sits inside span > span, or is short, has no token and is followed by a longer block.
+  function isChatGptProgressLine(node, text, laterEntries) {
+    const outerSpan = node.closest?.('span');
+    if (outerSpan && outerSpan.parentElement?.closest?.('span')) return true;
+    return text.length < PROGRESS_LINE_MAX_CHARS && !DELIVERY_TOKEN_RE.test(text)
+      && laterEntries.some((entry) => entry.text.length > text.length);
+  }
+
+  // The last block with the delivery token is the answer; without a token, the last block that is not a progress line.
+  function pickChatGptAnswerNode(entries) {
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      if (DELIVERY_TOKEN_RE.test(entries[i].text)) return entries[i].node;
+    }
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      if (!isChatGptProgressLine(entries[i].node, entries[i].text, entries.slice(i + 1))) return entries[i].node;
+    }
+    return entries.length ? entries[entries.length - 1].node : null;
+  }
+
   function resolveTurn(options = {}) {
     const selectors = options.selectors || {};
     const deepQuery = createDeepQuery(options.document || root.document);
@@ -162,30 +186,41 @@
       ? options.candidateEligible
       : null;
     const rejectedCandidates = [];
-    for (let index = pool.length - 1; index >= 0; index -= 1) {
-      const node = pool[index];
-      const text = String(readNodeText(node) || '').trim();
-      if (text.length < minimumTextLength) continue;
+    const isIneligible = (node, text, index) => {
       if (node.closest?.('[hidden], [aria-hidden="true"], [inert], [data-message-part-type="reasoning"], [data-role="user"], [data-message-author-role="user"], [data-author-role="user"]')) {
-        rejectedCandidates.push(node);
-        continue;
+        return true;
       }
-      if (String(options.platform || '').toLowerCase() === 'kimi' && isKimiReasoningNode(node)) {
-        rejectedCandidates.push(node);
-        continue;
-      }
+      if (String(options.platform || '').toLowerCase() === 'kimi' && isKimiReasoningNode(node)) return true;
       if (candidateEligible) {
         let eligible = false;
         try { eligible = candidateEligible({ node, text, index, pool }) !== false; } catch (_) { eligible = false; }
-        if (!eligible) {
+        if (!eligible) return true;
+      }
+      return false;
+    };
+    if (String(options.platform || '').toLowerCase() === 'chatgpt') {
+      const entries = [];
+      pool.forEach((node, index) => {
+        const text = String(readNodeText(node) || '').trim();
+        if (text.length < minimumTextLength) return;
+        if (isIneligible(node, text, index)) {
           rejectedCandidates.push(node);
-          continue;
+          return;
         }
+        entries.push({ node, text });
+      });
+      answerNode = pickChatGptAnswerNode(entries);
+    }
+    for (let index = answerNode ? -1 : pool.length - 1; index >= 0; index -= 1) {
+      const node = pool[index];
+      const text = String(readNodeText(node) || '').trim();
+      if (text.length < minimumTextLength) continue;
+      if (isIneligible(node, text, index)) {
+        rejectedCandidates.push(node);
+        continue;
       }
-      if (text.length >= minimumTextLength) {
-        answerNode = node;
-        break;
-      }
+      answerNode = node;
+      break;
     }
     if (!answerNode && minimumTextLength <= 0) answerNode = pool[pool.length - 1] || null;
 

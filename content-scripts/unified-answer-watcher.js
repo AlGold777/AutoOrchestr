@@ -314,6 +314,10 @@
         (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.() || 0
       );
       const lifecycleDeadlineAt = this.startTime + lifecycleWaitMs + LIFECYCLE_DECISION_MARGIN_MS;
+      // General limit while Stop is visible: the lifecycle wait, or without a detector the profile hardMax.
+      const profileHardMaxMs = Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax) || 0;
+      const generalWaitMs = lifecycleWaitMs || profileHardMaxMs;
+      const generalDeadlineAt = this.startTime + generalWaitMs + LIFECYCLE_DECISION_MARGIN_MS;
       let typingActive = true;
       const growthHistory = [];
 
@@ -543,7 +547,12 @@
             ? { ...ownExpiration, softExpired: false, hardExpired: false }
             : ownExpiration;
           if (stopVisible) {
-            if (expiration.hardExpired) {
+            // Generation indicator (Stop) is visible: silence and the soft/own hard timers do not end the wait.
+            // Only the general limit does (lifecycle wait or profile hardMax, plus margin; the own hard timer if neither is known).
+            const generalLimitReached = generalWaitMs > 0
+              ? Date.now() >= generalDeadlineAt
+              : ownExpiration.hardExpired;
+            if (generalLimitReached) {
               cleanup(this.buildResult('hard_timeout', 0.3, typingActive, getRecentGrowth(), false));
             }
             return;

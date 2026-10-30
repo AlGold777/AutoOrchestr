@@ -47,6 +47,17 @@ describe('Basic card feed cover deck', () => {
     root.remove();
   });
 
+  test('the answer body contains its own paint: copied ChatGPT markup cannot grow the feed', () => {
+    const css = read('styles', 'modals-responsive.css');
+    const rule = css.match(/\n\.debate-model-card-output \{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect(rule[1]).toMatch(/overflow: hidden;/);
+    expect(rule[1]).toMatch(/contain: paint;/);
+    // Expanded card keeps its full height: the containment does not cap the in-flow content.
+    expect(css).toMatch(/\.debate-model-card\.is-expanded \.debate-model-card-output \{\s*max-height: none;\s*overflow: visible;/);
+    expect(read('styles', 'pipeline-card-cover.css')).toMatch(/\.pipeline-cover-host > \.pipeline-cover-card\.is-expanded \.debate-model-card-output \{\s*flex: 1;\s*min-height: 0;\s*max-height: none;\s*overflow-y: auto;/);
+  });
+
   test('the cover stylesheet hides run lines inside the cover host', () => {
     expect(read('styles', 'pipeline-card-cover.css')).toMatch(/\.pipeline-cover-host > \.basic-run-line:not\(:has\(\.basic-run-line-button\)\) \{ display: none; \}/);
   });

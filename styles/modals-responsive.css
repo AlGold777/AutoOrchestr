@@ -1881,6 +1881,8 @@ body.pro-features-hidden .comparison-section {
     color: #4b5563;
     max-height: calc(var(--debate-card-line-height) * 5);
     overflow: hidden;
+    /* Скопированная разметка ответа несёт позиционированные потомки; без contain они выходят за обрезку карточки и раздувают ленту. */
+    contain: paint;
     white-space: pre-wrap;
     word-break: break-word;
     text-align: left !important;

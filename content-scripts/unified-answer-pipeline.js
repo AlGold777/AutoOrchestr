@@ -41,6 +41,12 @@
   const ANSWER_MARKDOWN_MAX_CHARS = 1000000;
   // Lets the lifecycle detector record its own STALLED before the page watchdog fires.
   const COMPLETION_DECISION_MARGIN_MS = 5000;
+  // Ожидание завершения ответа: детектор жизненного цикла, без него — профильный hardMax.
+  // Фолбэк на 180 с обрывал ответ раньше детектора.
+  const completionWaitMsForCeiling = () => {
+    const detector = window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector;
+    return Number(detector?.completionWaitMs?.()) || Number(window.AnswerPipelineConfig?.streaming?.adaptiveTimeout?.hardMax) || 0;
+  };
   const buildFailedCopyReport = (provider, reason) => ({
     version: 1,
     provider: provider || null,
@@ -410,10 +416,8 @@
       const self = this;
       // Потолок HumanSession не ниже ожидания завершения от ResponseLifecycleDetector:
       // иначе сессия обрывает ожидание на 180 с, пока детектор ещё ждёт конца ответа.
-      // Детектор читается в момент вызова; если его нет, потолок остаётся 180 с.
-      const lifecycleWaitMs = Number(
-        (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.()
-      ) || 0;
+      // Детектор читается в момент вызова; если его нет, берётся профильный hardMax.
+      const lifecycleWaitMs = completionWaitMsForCeiling();
       const ceiling = Math.max(180000, lifecycleWaitMs + COMPLETION_DECISION_MARGIN_MS);
       const cfg = Object.assign({
         onHardStop() {
@@ -422,6 +426,8 @@
         }
       }, this.config.streaming?.humanSession || {}, {
         baseTimeoutMs: ceiling,
+        // Потолок — нижняя граница решения: джиттер ±20% укорачивал бы сессию до 364 с.
+        jitterPct: 0,
         hardStopMin: ceiling,
         hardStopMax: ceiling,
         hardStopAbsoluteMaxMs: ceiling
@@ -722,9 +728,7 @@ const baseTimeouts = this.adaptiveTimeout.calculateTimeout(this.config.seedConte
 // the profile hardMax from Send. Giving up before it left only unconfirmed page text.
 // This floor applies to the watchdog below; HumanSession gets the same ceiling in
 // _initHumanSession, so neither stops before the detector decides.
-const lifecycleWaitMs = Number(
-  (window.LLMExtension?.ResponseLifecycleDetector || window.ResponseLifecycleDetector)?.completionWaitMs?.() || 0
-);
+const lifecycleWaitMs = completionWaitMsForCeiling();
 const timeouts = {
   soft: baseTimeouts.soft,
   hard: Math.max(baseTimeouts.hard, lifecycleWaitMs ? lifecycleWaitMs + COMPLETION_DECISION_MARGIN_MS : 0)

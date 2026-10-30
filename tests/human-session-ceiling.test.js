@@ -74,16 +74,25 @@ describe('HumanSession ceiling follows the lifecycle detector', () => {
     expect(cfg.hardStopAbsoluteMaxMs).toBe(cfg.baseTimeoutMs);
   });
 
-  test('ceiling stays at 180000 when the detector is not loaded', () => {
+  test('ceiling falls back to the profile hardMax when the detector is not loaded', () => {
     const captured = [];
     const Pipeline = loadPipelineClass(captured);
     initHumanSessionWith(Pipeline, window.AnswerPipelineConfig);
 
     const cfg = captured[captured.length - 1];
-    expect(cfg.baseTimeoutMs).toBe(180000);
-    expect(cfg.hardStopMin).toBe(180000);
-    expect(cfg.hardStopMax).toBe(180000);
-    expect(cfg.hardStopAbsoluteMaxMs).toBe(180000);
+    expect(cfg.baseTimeoutMs).toBe(455000);
+    expect(cfg.hardStopMin).toBe(455000);
+    expect(cfg.hardStopMax).toBe(455000);
+    expect(cfg.hardStopAbsoluteMaxMs).toBe(455000);
+  });
+
+  test('the ceiling is not jittered: the time-limit expiry is never shorter than the ceiling', () => {
+    window.LLMExtension = { ResponseLifecycleDetector: { completionWaitMs: () => 450000 } };
+    const captured = [];
+    const Pipeline = loadPipelineClass(captured);
+    initHumanSessionWith(Pipeline, window.AnswerPipelineConfig);
+
+    expect(captured[captured.length - 1].jitterPct).toBe(0);
   });
 
   test('shared pipeline config is not mutated', () => {
