@@ -451,7 +451,11 @@ function answerHasDeliveryToken(llmName, text) {
   // The token is the LAST line of the answer (provider chrome such as a time may follow,
   // see TAIL_AFTER_TOKEN_RE in message-delivery.js). The same text earlier in the page
   // is a quoted instruction or a prompt echo, not proof that the model finished.
-  return Boolean(self.AnswerProofNormalization?.hasDeliveryTokenTail?.(text, token));
+  if (!self.AnswerProofNormalization?.hasDeliveryTokenTail?.(text, token)) return false;
+  // L-21: a progress line («Проверю…») followed by the marker is not the end of the answer.
+  // Same predicate as answerEndMarkerSeen in shared/message-delivery.js.
+  const body = String(text || '').replace(/\[\[AO-[a-z0-9]{6}\]\]/gi, '').trim();
+  return !self.AnswerContentClassifier?.isProgressOnlyBody?.(body);
 }
 
 // Runs in the provider page (chrome.scripting): is there a user turn carrying the tag?
