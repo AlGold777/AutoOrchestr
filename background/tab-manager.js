@@ -1554,6 +1554,16 @@ async function ensureTabReadyForDispatch(tabId, llmName, { reason = 'unknown' } 
     });
     return { ok: false, reason: 'tab_missing', snapshot: initialSnapshot };
   }
+  // A check page in the tab (Google CAPTCHA): the provider's page is not there, so nothing is sent and nothing is waited for.
+  const blockerUrl = self.PageBlockerPolicy?.classifyUrl?.(initialTab.url || '') || null;
+  if (blockerUrl) {
+    emitTelemetry(llmName, 'TAB_READY_FAIL', {
+      details: blockerUrl,
+      level: 'warning',
+      meta: { snapshot: initialSnapshot || null, reason, ...buildTabTimingMeta(initialSnapshot) }
+    });
+    return { ok: false, reason: blockerUrl, snapshot: initialSnapshot };
+  }
   if (!shouldWaitForInitialTabUrl(initialTab) && !isEligibleTabForLlm(llmName, initialTab)) {
     emitTelemetry(llmName, 'TAB_READY_FAIL', {
       details: 'tab_ineligible',

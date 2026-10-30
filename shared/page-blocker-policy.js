@@ -61,10 +61,20 @@
     };
   }
 
+  // A page in the tab's address that is a check, not the provider's chat: Google's CAPTCHA ("/sorry/" on google.*).
+  // Decided from the URL alone, because the provider's content script does not run on that page.
+  function classifyUrl(url) {
+    let parsed = null;
+    try { parsed = new URL(String(url || '')); } catch (_) { return null; }
+    if (/^(?:[a-z0-9-]+\.)*google\.(?:com?\.)?[a-z]{2,3}$/i.test(parsed.hostname) && parsed.pathname.startsWith('/sorry/')) return 'captcha_required';
+    return null;
+  }
+
   const api = Object.freeze({
     POLICY,
     normalize,
-    classify
+    classify,
+    classifyUrl
   });
 
   root.PageBlockerPolicy = api;

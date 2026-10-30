@@ -176,6 +176,6 @@ describe('usage limit: wiring', () => {
   test('Basic does not repeat a request that hit the limit and names the reason', () => {
     const engine = read('disput', 'custom-engine.js');
     expect(engine).toContain("usage_limit: 'лимит использования модели'");
-    expect(engine).toContain("verdict.reason !== 'usage_limit') retry.push(model)");
+    expect(engine).toContain("verdict.reason !== 'usage_limit' && verdict.reason !== 'captcha_required') retry.push(model)");
   });
 });
