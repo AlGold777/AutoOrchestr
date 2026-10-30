@@ -1,5 +1,14 @@
 # CHANGELOG — Project
 
+### 2026-10-30 — Сбой этапа виден на холсте, понятные причины и подписи, строка «Продолжить» после перезагрузки, версия 2.81.944
+
+- Сбойный или остановленный этап на холсте Basic стал красным (`pipeline-run-failed`) с «!» и причиной (последняя непринятая попытка), а не выглядел «не начатым» (`results.js`, `syncPipelineRunStateVisuals`, `styles/pipeline.css`).
+- Пустой ответ со статусом NO_SEND или TIMEOUT: причина «не отправлено» / «таймаут», тот же запрос уходит повторно (`disput/custom-engine.js`, `noAnswerReason`); добавлены причины missing_sections, invalid_json, invalid_audit_verdict, rejected; в окнах User подставляются название шага и участника вместо id.
+- После перезагрузки расширения строка «Продолжить» возвращается для последней остановленной записи активного pipeline (`offerStoredResumeLine`).
+- Карточка не помечается wrong_card, если у карточки пайплайна нет id (`emitAnswerCardRenderEvidence`).
+- Вставка схемы предлагает имя из заголовка; видимые подписи Basic по-русски; одинаковое имя файла документа не затирает файл другого прогона (суффикс « (2)»); при отказе доступа к папке вместо её имени «нет доступа» (`results/documents-folder.js`).
+- Тесты: `tests/basic-wave3-fixes.test.js`; обновлены `tests/custom-engine.test.js`, `tests/custom-run-record.test.js`, `tests/release-log-regressions.test.js`.
+
 ### 2026-10-30 — INTERRUPTED не стирает растущий ответ, единый предикат метки, force только с меткой, строки прогресса ChatGPT, версия 2.81.943
 
 - Раздел C ревью прогона Remote Viewfinder (`docs/pipelines/Remote_Viewfinder_2026-10-30/notes/review.md`).
