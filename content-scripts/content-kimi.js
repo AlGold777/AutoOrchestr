@@ -246,10 +246,21 @@
       await sleep(100);
       button = findFirst(SEND_SELECTORS);
     }
+    let clicked = false;
     if (button && !button.disabled && !button.classList?.contains('disabled')) {
       button.click();
+      clicked = true;
     }
-    if (await waitForSendConfirmation(composer, beforeUserTurns, 1500)) return true;
+    // L-7: a click that was made may take effect late (after 1.5 s). Its window is longer, so the
+    // trusted fallback below does not race with it.
+    if (await waitForSendConfirmation(composer, beforeUserTurns, clicked ? 4000 : 1500)) return true;
+
+    // A trusted click now would send the prompt a second time if the in-page click landed late:
+    // it is requested only while the composer still holds the draft and no user turn has appeared.
+    const sendTaken = () => !readComposerText(composer)
+      || document.querySelectorAll(USER_TURN_SELECTOR).length > beforeUserTurns
+      || isGenerating();
+    if (sendTaken()) return true;
 
     const trusted = await requestTrustedSend();
     if (trusted?.ok && await waitForSendConfirmation(composer, beforeUserTurns, 4000)) return true;

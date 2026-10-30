@@ -270,11 +270,9 @@
   // A body that is only a progress or noise line: short, no content, a progress verb without a verdict.
   // The classifier is the same one that judges the answer (shared/answer-content-classifier.js).
   function isProgressOnlyBody(body) {
-    const text = String(body || '').trim();
-    if (!text || text.length >= 300) return false;
     const classifier = root.AnswerContentClassifier
       || (typeof module !== 'undefined' && module.exports ? require('./answer-content-classifier.js') : null);
-    return Boolean(classifier && classifier.isProgressLine(text));
+    return Boolean(classifier && classifier.isProgressOnlyBody(String(body || '').trim()));
   }
 
   // Incoming: returns null when the message must be dropped (stale answer),

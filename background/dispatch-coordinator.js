@@ -451,7 +451,11 @@ function answerHasDeliveryToken(llmName, text) {
   // The token is the LAST line of the answer (provider chrome such as a time may follow,
   // see TAIL_AFTER_TOKEN_RE in message-delivery.js). The same text earlier in the page
   // is a quoted instruction or a prompt echo, not proof that the model finished.
-  return Boolean(self.AnswerProofNormalization?.hasDeliveryTokenTail?.(text, token));
+  if (!self.AnswerProofNormalization?.hasDeliveryTokenTail?.(text, token)) return false;
+  // L-21: a progress line («Проверю…») followed by the marker is not the end of the answer.
+  // Same predicate as answerEndMarkerSeen in shared/message-delivery.js.
+  const body = String(text || '').replace(/\[\[AO-[a-z0-9]{6}\]\]/gi, '').trim();
+  return !self.AnswerContentClassifier?.isProgressOnlyBody?.(body);
 }
 
 // Runs in the provider page (chrome.scripting): is there a user turn carrying the tag?
@@ -1388,8 +1392,21 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     // seconds after the upload/send stage, while Round 1 still owns the queue.
     const leaveAt = (hasAttachments ? Date.now() : commandAt) + Number(options.postSendMs ?? 5000);
     await pause(Math.max(0, leaveAt - Date.now()));
+    // L-6: the page may still be sending (DeepSeek needs up to ~12 s). While it reports
+    // send_action_requested without a completion or failure, keep the visit open, up to
+    // SEND_IN_FLIGHT_EXTENSION_MS (longest extra wait; it ends at once on completion or failure).
+    // The fixed slot alone closed visits mid-send: in the exports every `submitted` lands at
+    // exactly +5 s after command_accepted.
+    const SEND_IN_FLIGHT_EXTENSION_MS = 15000;
+    const sendInFlightCapAt = leaveAt + SEND_IN_FLIGHT_EXTENSION_MS;
+    const sendInFlight = () => entry.providerDispatchStageDispatchId === meta.dispatchId
+      && entry.providerDispatchStage === 'send_action_requested';
+    while (current() && sendInFlight() && Date.now() < sendInFlightCapAt) {
+      await pause(Math.min(100, sendInFlightCapAt - Date.now()));
+    }
     if (!current()) return {ok: false, reason: 'session_changed'};
-    const attempted = Boolean(sendObserved());
+    // A send that the page reported as failed is not submitted, even though its request was seen.
+    const attempted = Boolean(sendObserved()) && !failed();
     const outcome = attempted ? 'send_attempt_observed' : (deliveryError || (failed() ? 'provider_failed' : 'send_unconfirmed'));
     if (!entry.promptSubmittedAt) {
       entry.awaitingSubmitConfirmation = true;
@@ -2133,6 +2150,16 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         });
         return { ok: true, accepted: true, response: { accepted: true, dispatchId }, verifiedOnPage: true };
       };
+      // L-6: a repeat of a prompt (after send_not_taken, an undelivered command or a manual
+      // resend) first looks at the page. If this request's own user turn is already there,
+      // the earlier command went through: a repeat would send the prompt twice.
+      const repeatDispatch = ['retry_supervisor', 'round2_repair', 'round2_repair_pre_visit', 'manual_resend'].includes(reason);
+      const deliverOrVerifyCommand = async () => {
+        if (repeatDispatch && await pageHoldsOwnPromptTurn(tabId, prompt)) {
+          return recoverUndeliveredCommand({ ok: false, reason: 'repeat_own_turn_on_page' });
+        }
+        return recoverUndeliveredCommand(await deliverAnswerCommand());
+      };
       const deliverAnswerCommand = async () => {
         if (!isCurrentDispatchContext()) return { ok: false, stale: true, reason: 'session_mismatch' };
         prepareInsertionWaiter();
@@ -2183,7 +2210,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           if (options.deferSendMs) {
             await dispatchSleepMs(options.deferSendMs);
           }
-          commandDeliveryResult = await recoverUndeliveredCommand(await deliverAnswerCommand());
+          commandDeliveryResult = await deliverOrVerifyCommand();
           const commandAccepted = reportCommandDelivered(commandDeliveryResult);
           if (!commandAccepted) settleUndeliveredCommand(commandDeliveryResult);
           if (commandAccepted && postCommandFocusHoldMs > 0) {
@@ -2281,7 +2308,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         if (options.deferSendMs) {
           await dispatchSleepMs(options.deferSendMs);
         }
-        commandDeliveryResult = await recoverUndeliveredCommand(await deliverAnswerCommand());
+        commandDeliveryResult = await deliverOrVerifyCommand();
         if (!reportCommandDelivered(commandDeliveryResult)) settleUndeliveredCommand(commandDeliveryResult);
       }
       // Not delivered and no acceptance contract to report it below: stop here

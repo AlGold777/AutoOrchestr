@@ -2062,9 +2062,7 @@ function isLikelyClaudeModelLabel(text = '') {
         // longer confirm submission — the button is disabled precisely because the
         // composer is empty, and the composer clears even when the turn is never
         // committed. Pre-existing spinners and Stop buttons from an earlier turn are
-        // likewise not proof. Only elements that are new relative to the pre-send
-        // baseline count, through the shared provider oracle.
-        const claudeSubmitConfirmation = window.ProviderSubmitConfirmation || null;
+        // likewise not proof (see claudeOwnReplyProof below).
         const collectClaudeGenerationElements = () => Array.from(document.querySelectorAll([
           '[data-testid="chat-spinner"]', '[data-testid="typing"]', '.typing-indicator',
           '[class*="streaming"]', '[data-testid="generation"]',
@@ -2077,46 +2075,36 @@ function isLikelyClaudeModelLabel(text = '') {
           '[data-testid="user-message"], [data-message-author-role="user"], [data-role="user"]'
         ).length;
 
-        const captureClaudeSendBaseline = (composerEl) => {
-          const snapshot = {
-            userTurnCount: countClaudeUserTurns(),
-            responseCount: countClaudeTurns(),
-            composerTextLength: normalizeComposerText(readComposerValue(composerEl)).length,
-            generationElements: collectClaudeGenerationElements()
-          };
-          return {
-            oracle: claudeSubmitConfirmation?.capture?.(snapshot) || null,
-            fallback: {
-              userTurnCount: snapshot.userTurnCount,
-              responseCount: snapshot.responseCount,
-              generationElements: new Set(snapshot.generationElements)
-            }
-          };
+        const captureClaudeSendBaseline = (composerEl) => ({
+          userTurnCount: countClaudeUserTurns(),
+          responseCount: countClaudeTurns(),
+          composerTextLength: normalizeComposerText(readComposerValue(composerEl)).length,
+          generationElements: new Set(collectClaudeGenerationElements())
+        });
+
+        // L-6: Send is confirmed only by this request's own reply on the page. Either its
+        // delivery tag is in the last user turn, or the composer emptied while a new user
+        // turn appeared. A new response node, a spinner or Stop button from an earlier turn
+        // is not proof: the composer and generation signals alone confirmed unsent prompts.
+        const ownClaudeTurnHoldsTag = () => {
+          const turns = document.querySelectorAll('[data-testid="user-message"], [data-message-author-role="user"], [data-role="user"]');
+          const last = turns[turns.length - 1];
+          return !!claudeDeliveryTag && !!last && String(last.textContent || '').toLowerCase().includes(claudeDeliveryTag);
+        };
+        const claudeOwnReplyProof = (baseline, composerEl) => {
+          if (ownClaudeTurnHoldsTag()) return 'own_turn_tag';
+          const composerCleared = Number(baseline?.composerTextLength || 0) > 0
+            && normalizeComposerText(readComposerValue(composerEl)).length === 0;
+          const newUserTurn = countClaudeUserTurns() > Number(baseline?.userTurnCount || 0);
+          return composerCleared && newUserTurn ? 'composer_cleared_new_user_turn' : null;
         };
 
         const confirmClaudeSend = async (baseline, composerEl) => {
           const deadline = Date.now() + 4500;
-          let provenLogged = false;
           while (Date.now() < deadline) {
-            const proof = claudeSubmitConfirmation?.evaluate?.(baseline?.oracle, {
-              userTurnCount: countClaudeUserTurns(),
-              responseCount: countClaudeTurns(),
-              composerTextLength: normalizeComposerText(readComposerValue(composerEl)).length,
-              generationElements: collectClaudeGenerationElements()
-            });
-            if (proof?.confirmed === true) {
-              if (!provenLogged) {
-                emitTiming('Send proven', { signals: (proof.directSignals || []).join(',') });
-                provenLogged = true;
-              }
-              return true;
-            }
-            // Fail closed when the shared oracle is unavailable.
-            if (!claudeSubmitConfirmation && (
-              countClaudeTurns() > Number(baseline?.fallback?.responseCount || 0)
-              || countClaudeUserTurns() > Number(baseline?.fallback?.userTurnCount || 0)
-              || collectClaudeGenerationElements().some((el) => !baseline?.fallback?.generationElements?.has(el))
-            )) {
+            const proof = claudeOwnReplyProof(baseline, composerEl);
+            if (proof) {
+              emitTiming('Send proven', { signals: proof });
               return true;
             }
             await sleep(120);

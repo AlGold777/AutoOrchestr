@@ -588,6 +588,8 @@
   };
   //-- 1.2. Перемещаем fallback-функцию внутрь IIFE --//
   // -------------------- Fallback DOM queries for send button --------------------
+  // Send control for the soft readiness gate (L-7); the same controls fallbackFindSendButton tries first.
+  const GROK_SEND_CONTROL_SELECTOR = 'button[data-testid="grok-send-button"], div[data-testid="grok-editor"] button[aria-label*="Send" i], div[data-testid="grok-editor"] button[type="submit"]';
   async function fallbackFindSendButton(composerEl, timeoutMs = 8000) {
     const fallbackSelectors = [
       'button[data-testid="grok-send-button"]',
@@ -2246,6 +2248,18 @@
           }
         }
 
+        // L-7 (soft gate): a Send button that is found but still disabled after the insertion means
+        // the editor did not take the prompt, so the insertion is repeated once. No button is not an
+        // error, and the Ctrl+Enter order below is unchanged.
+        const softSendReady = await window.ContentUtils?.ensureSendReady?.(composer, prompt, {
+          allowRepair: false,
+          getSendButton: () => document.querySelector(GROK_SEND_CONTROL_SELECTOR)
+        });
+        if (softSendReady && !softSendReady.ok) {
+          emitDiagnostic({ type: 'SEND', label: 'Send disabled after insertion: repeating insertion', level: 'warning' });
+          await clearComposer(composer);
+          if (!await grokClipboardPaste(composer, prompt)) await grokInsertText(composer, prompt);
+        }
         let sendMethod = 'ctrl_enter';
         let dispatchSuccess = false;
         reportStage('send_action_requested');

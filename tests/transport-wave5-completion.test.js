@@ -88,7 +88,7 @@ describe('C8: repeat send checks the page for an own turn', () => {
   });
 
   test('both undelivered paths check the page before settling or retrying', () => {
-    expect(dispatchSource.match(/recoverUndeliveredCommand\(await deliverAnswerCommand\(\)\)/g)).toHaveLength(2);
+    expect(dispatchSource.match(/await deliverOrVerifyCommand\(\)/g)).toHaveLength(2);
     expect(dispatchSource).toContain("'DISPATCH_DELIVERY_VERIFIED_ON_PAGE'");
   });
 });

@@ -197,7 +197,14 @@
     return classify(text, options).terminalEligible;
   }
 
-  const api = Object.freeze({ CLASSES, classify, isTerminalEligible, TERMINAL_ELIGIBLE, stripModelSaidPrefix, isProgressLine, isMeaningfulShort });
+  // A body that is only a progress or noise line: short (under PROGRESS_LINE_MAX_LENGTH) and a progress line.
+  // One predicate for the delivery layer (answerEndMarkerSeen) and the dispatch layer (answer token).
+  function isProgressOnlyBody(text) {
+    const norm = normalize(text);
+    return Boolean(norm) && norm.length < PROGRESS_LINE_MAX_LENGTH && isProgressLine(norm);
+  }
+
+  const api = Object.freeze({ CLASSES, classify, isTerminalEligible, TERMINAL_ELIGIBLE, stripModelSaidPrefix, isProgressLine, isMeaningfulShort, isProgressOnlyBody });
   root.AnswerContentClassifier = api;
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

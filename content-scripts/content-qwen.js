@@ -1744,23 +1744,37 @@ const keepAliveMutex = (() => {
 
     // The draft is already verified. Do not spend the foreground slot waiting
     // before trying the visible Send control.
+    // L-7: a visible Send control that is still disabled gets a short wait for its enabled
+    // state. Ctrl+Enter, which Qwen may ignore, is only the path when there is no control.
     let sendBtn = await resolveSendButton(input);
+    const sendControlPresent = isSafeQwenSendControl(sendBtn);
+    if (sendControlPresent && sendBtn.disabled) {
+      const enableDeadline = Date.now() + remaining(1500);
+      while (sendBtn.disabled && Date.now() < enableDeadline) await sleep(100);
+    }
     let confirmed = false;
-    if (isSafeQwenSendControl(sendBtn) && !sendBtn.disabled) {
+    if (sendControlPresent && !sendBtn.disabled) {
       sendBtn.click();
       confirmed = await confirmQwenSend(sendBtn, remaining(2200));
       // A slow acknowledgement must not trigger another click on the draft.
       if (confirmed) return true;
-    } else {
+    } else if (!sendControlPresent) {
       dispatchEnter({ ctrlKey: true });
       confirmed = await confirmQwenSend(null, remaining(1500));
+    } else {
+      failSend('Qwen Send control stays disabled');
     }
     if (!confirmed) {
+      // The retry has its own budget (it used to get what the shared deadline had left) and
+      // clicks only while this request's reply is absent and the draft is still in the composer.
+      const draftStillHeld = () => {
+        try { return normalizeForComparison(readComposerValue(input)) === normalizeForComparison(options.prompt || ''); } catch (_) { return true; }
+      };
       sendBtn = await resolveSendButton(input);
-      if (isSafeQwenSendControl(sendBtn) && !sendBtn.disabled && remaining(1200) > 0) {
+      if (isSafeQwenSendControl(sendBtn) && !sendBtn.disabled && !hasSubmittedUserMessage() && draftStillHeld()) {
         await qwenHumanClick(sendBtn);
         console.log('[content-qwen] Send button clicked');
-        confirmed = await confirmQwenSend(sendBtn, remaining(1200));
+        confirmed = await confirmQwenSend(sendBtn, 1200);
       }
     }
     if (!confirmed) {

@@ -1587,6 +1587,20 @@ const hydrateAttachments = (raw = []) =>
         reportInsertion('inserted', null, validationText.length);
         activity.heartbeat(0.45, { phase: 'typing' });
 
+        // L-7 (soft gate): a Send button that is found but still disabled after the insertion means
+        // the editor did not take the prompt, so the insertion is repeated once. No button is not an
+        // error, and the Ctrl+Enter order below is unchanged.
+        const softSendReady = await window.ContentUtils?.ensureSendReady?.(composer, prompt, {
+          allowRepair: false,
+          selectors: SEND_BUTTON_SELECTORS
+        });
+        if (softSendReady && !softSendReady.ok) {
+          await window.ContentUtils?.ensurePromptPrepared?.(composer, prompt, {
+            fallback: (input, text) => typePrompt(input, text),
+            attempts: 1,
+            settleMs: 150
+          });
+        }
         let submitOutcome;
         window.ContentUtils?.reportDispatchStage?.(MODEL, dispatchMeta, 'send_action_requested');
         try {
