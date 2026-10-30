@@ -584,6 +584,105 @@
     return false;
   };
 
+  // ==================== Send readiness (shared) ====================
+  // Some editors enable Send only from their own state: the prompt can be visible
+  // in the DOM while Send stays disabled, and nothing else submits it. The gate
+  // waits for Send to enable once the composer holds the prompt; if it does not,
+  // it re-inserts the prompt through other input paths and checks again. It never
+  // waits for an answer: the caller fails the send at once.
+  // Selectors are the provider's own Send list. `:not(...)` clauses are dropped so
+  // a disabled Send is still found. No Send button at all (Enter-submit providers)
+  // counts as ready: the provider's own send path decides.
+  const SEND_BUTTON_ENABLE_TIMEOUT_MS = 3000;
+  const SEND_BUTTON_REPAIR_TIMEOUT_MS = 2000;
+  const findSendButtonIn = (doc, selectors = []) => {
+    for (const selector of selectors) {
+      let el = null;
+      try { el = doc.querySelector(String(selector).replace(/:not\([^)]*\)/g, '')); } catch (_) {}
+      if (el) return el;
+    }
+    return null;
+  };
+  const isSendButtonEnabled = (button) => !!button && !button.disabled
+    && button.getAttribute?.('aria-disabled') !== 'true' && !button.classList?.contains('disabled');
+  const waitForSendButtonEnabled = async (findButton, timeoutMs) => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const button = findButton();
+      if (!button || isSendButtonEnabled(button)) return true;
+      if (Date.now() >= deadline) return false;
+      await sleep(100);
+    }
+  };
+  const sendReadinessHoldsPrompt = (element, prompt) => {
+    const head = normalizeForPaste(prompt).slice(0, 40);
+    return !!head && normalizeForPaste(readInputValue(element)).includes(head);
+  };
+  const insertSendTextInChunks = (element, text, chunkSize = 1500) => {
+    const doc = element.ownerDocument || document;
+    for (let i = 0; i < text.length; i += chunkSize) {
+      try {
+        try { element.focus({ preventScroll: true }); } catch (_) { element.focus?.(); }
+        const range = doc.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        const selection = doc.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        doc.execCommand?.('insertText', false, text.slice(i, i + chunkSize));
+      } catch (_) {}
+    }
+  };
+  // Each repair rewrites the composer through a different input path; Send is checked after each.
+  const SEND_READINESS_REPAIRS = [
+    (element, text) => {
+      clearComposerForPrompt(element);
+      const EventCtor = typeof ClipboardEvent === 'function' ? ClipboardEvent : Event;
+      const ev = new EventCtor('paste', { bubbles: true, cancelable: true });
+      if (!ev.clipboardData && typeof DataTransfer === 'function') {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', text);
+        try { Object.defineProperty(ev, 'clipboardData', { value: dt }); } catch (_) {}
+      } else if (ev.clipboardData) {
+        ev.clipboardData.setData('text/plain', text);
+      }
+      element.dispatchEvent(ev);
+    },
+    (element, text) => {
+      clearComposerForPrompt(element);
+      insertSendTextInChunks(element, text);
+    },
+    (element, text) => {
+      clearComposerForPrompt(element);
+      insertSendTextInChunks(element, text);
+      // A one-character edit makes the editor take the DOM as its new state.
+      insertSendTextInChunks(element, ' ', 1);
+      try { (element.ownerDocument || document).execCommand?.('delete', false, null); } catch (_) {}
+    }
+  ];
+  // -> { ok, reason }: ok when Send is enabled or absent; 'send_disabled' when a visible Send stays disabled.
+  const ensureSendReady = async (element, prompt, options = {}) => {
+    if (!element) return { ok: false, reason: 'composer_missing' };
+    const doc = element.ownerDocument || document;
+    const selectors = Array.isArray(options.selectors) ? options.selectors : [];
+    // A provider may own the lookup (its own Send control scope); otherwise its Send selectors are used.
+    const findButton = () => (typeof options.getSendButton === 'function'
+      ? options.getSendButton() || null
+      : findSendButtonIn(doc, selectors));
+    if (await waitForSendButtonEnabled(findButton, SEND_BUTTON_ENABLE_TIMEOUT_MS)) return { ok: true, reason: 'ready' };
+    // Repair rewrites the composer, so it needs the prompt text to write back.
+    if (options.allowRepair === false || !String(prompt || '')) return { ok: false, reason: 'send_disabled' };
+    for (const repair of SEND_READINESS_REPAIRS) {
+      try { repair(element, String(prompt || '')); } catch (_) {}
+      await sleep(150);
+      if (sendReadinessHoldsPrompt(element, prompt)
+        && await waitForSendButtonEnabled(findButton, SEND_BUTTON_REPAIR_TIMEOUT_MS)) {
+        return { ok: true, reason: 'repaired' };
+      }
+    }
+    return { ok: false, reason: 'send_disabled' };
+  };
+
   // Report whether the prompt actually reached the composer, for both outcomes.
   // Without a positive report the `insertion_outcome` slot of the
   // prompt-not-inserted report stays `unavailable`, and the question "was the
@@ -1648,6 +1747,7 @@
     promptMatchesComposer: pasteMatchesPrompt,
     countPromptOccurrences,
     ensurePromptPrepared,
+    ensureSendReady,
     reportPromptInsertion,
     reportDispatchStage,
     reportProviderPipelineState,

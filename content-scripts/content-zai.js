@@ -275,6 +275,9 @@
     if (!prepared.ok) {
       throw { type: 'prompt_injection_failed', message: `Z.ai prompt preparation failed: ${prepared.reason}` };
     }
+    // Send must be enabled: a disabled button means the editor did not take the prompt.
+    const sendReady = await window.ContentUtils.ensureSendReady(composer, prompt, { selectors: SEND_SELECTORS });
+    if (!sendReady.ok) throw { type: 'send_not_taken', message: 'Z.ai send button stays disabled with the prompt in the composer' };
     window.ContentUtils?.reportDispatchStage?.(MODEL, meta, 'send_action_requested');
     const sendStartedAt = Date.now();
     let sendResult;

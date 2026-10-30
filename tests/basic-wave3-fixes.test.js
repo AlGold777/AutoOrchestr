@@ -30,6 +30,15 @@ describe('B6: причина пустого ответа несёт статус
     expect(result.steps[0].outcome.A.ok).toBe(true);
   });
 
+  test('NO_SEND дважды подряд: окно решения владельца получает причину not_sent и вариант «повторить»', async () => {
+    const transport = scripted([{ text: '', status: 'NO_SEND' }, { text: '', status: 'NO_SEND' }]);
+    const asked = [];
+    await Engine.run({ task: 'T', steps: ROUND, send: transport.send, decide: (problem) => { asked.push(problem); return 'skip'; } });
+    expect(transport.calls).toHaveLength(2);
+    expect(asked[0].reasons.A).toBe('not_sent');
+    expect(asked[0].choices).toContain('retry');
+  });
+
   test('таймаут без текста дает причину timeout, а не «пустой»', async () => {
     const transport = scripted([{ text: '', status: 'STREAM_TIMEOUT' }, { text: 'Полный ответ модели.', status: 'SUCCESS' }]);
     const result = await Engine.run({ task: 'T', steps: ROUND, send: transport.send });

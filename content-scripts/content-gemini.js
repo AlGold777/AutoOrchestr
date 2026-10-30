@@ -1354,6 +1354,15 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
 
         await sleep(200);
 
+        // Send must be enabled: a disabled button means the editor did not take the prompt.
+        // Icon-only selectors (:has(svg)) would also match the attach and voice controls, so they are left out.
+        const sendReady = await window.ContentUtils.ensureSendReady(inputField, prompt, {
+            selectors: sendButtonSelectors.filter((selector) => !selector.includes(':has('))
+        });
+        if (!sendReady.ok) {
+            throw Object.assign(new Error('Gemini send button stays disabled with the prompt in the composer'), { type: 'send_not_taken' });
+        }
+
         // 2.81.117: composer clearing, a disabled Send button and any page-wide
         // loading element used to confirm submission. All three are satisfied by
         // "nothing happened": the button is disabled precisely because the composer

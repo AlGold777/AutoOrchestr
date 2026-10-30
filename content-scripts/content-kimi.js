@@ -348,6 +348,9 @@
       throw { type: 'prompt_injection_failed', message: `Kimi prompt preparation failed: ${prepared.reason}` };
     }
     composer = prepared.composer || composer;
+    // Send must be enabled: Kimi's send container carries the disabled class until the editor takes the prompt.
+    const sendReady = await window.ContentUtils.ensureSendReady(composer, prompt, { selectors: SEND_SELECTORS });
+    if (!sendReady.ok) throw { type: 'send_not_taken', message: 'Kimi send button stays disabled with the prompt in the composer' };
     window.ContentUtils?.reportDispatchStage?.(MODEL, meta, 'send_action_requested');
     const sendConfirmed = await sendPrompt(composer);
     if (!sendConfirmed) throw { type: 'send_failed', message: 'Kimi send not confirmed' };

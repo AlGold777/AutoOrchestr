@@ -1455,6 +1455,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
           if (!prepared.ok) {
             throw { type: 'prompt_injection_failed', message: `DeepSeek prompt preparation failed: ${prepared.reason}` };
           }
+          // Send must be enabled: a disabled button means the editor did not take the prompt.
+          const sendReady = await window.ContentUtils.ensureSendReady(composer, prompt, {
+            selectors: ['button[aria-label*="send" i]', 'button[type="submit"]', 'button[data-testid*="send"]']
+          });
+          if (!sendReady.ok) throw { type: 'send_not_taken', message: 'DeepSeek send button stays disabled with the prompt in the composer' };
           activity.heartbeat(0.45, { phase: 'typing-complete' });
           
           console.log('[DeepSeek] Sending...');

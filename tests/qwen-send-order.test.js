@@ -6,7 +6,8 @@ function setup(accepted) {
   const messages=[];
   const document={querySelector:()=>({})};
   const button={disabled:false,click:jest.fn(()=>{if(accepted)messages.push('8 / 4');})};
-  const c={Date,console,document,KeyboardEvent:class {},sleep:ms=>new Promise(r=>setTimeout(r,ms)),
+  // The Send readiness gate is covered by claude-send-readiness.test.js; here the editor always accepts Send.
+  const c={Date,console,document,window:{ContentUtils:{ensureSendReady:async()=>({ok:true,reason:'ready'})}},KeyboardEvent:class {},sleep:ms=>new Promise(r=>setTimeout(r,ms)),
     resolveQwenChatRoot:()=>({detached:true}),getUserMessages:root=>root===document?messages:[],
     normalizeForComparison:s=>String(s).trim(),extractMessageText:s=>s,
     resolveSendButton:async()=>button,isSafeQwenSendControl:b=>b===button};
@@ -88,7 +89,7 @@ test('Send enabled after paste is clicked during the foreground slot despite a s
   c.document.querySelector=()=>button;
   c.document.querySelectorAll=()=>[];
   c.isSafeQwenSendControl=b=>b===button && !b.disabled;
-  c.window={SelectorFinder:{findOrDetectSelector:jest.fn(()=>new Promise(()=>{}))}};
+  c.window={SelectorFinder:{findOrDetectSelector:jest.fn(()=>new Promise(()=>{}))},ContentUtils:{ensureSendReady:async()=>{while(button.disabled)await new Promise(r=>setTimeout(r,100));return {ok:true};}}};
   vm.runInContext(source.slice(source.indexOf('  async function resolveSendButton'),source.indexOf('  function requestSubmitNearComposer')),c);
   setTimeout(()=>{button.disabled=false;},300);
   const pending=c.sendComposer({dispatchEvent:jest.fn()},{prompt:'8 / 4'});
