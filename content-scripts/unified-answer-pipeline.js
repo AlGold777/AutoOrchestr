@@ -41,6 +41,7 @@
   const ANSWER_MARKDOWN_MAX_CHARS = 1000000;
   // Lets the lifecycle detector record its own STALLED before the page watchdog fires.
   const COMPLETION_DECISION_MARGIN_MS = 5000;
+  const STOP_VISIBLE_WATCHDOG_RECHECK_MS = 1000;
   // Ожидание завершения ответа: детектор жизненного цикла, без него — профильный hardMax.
   // Фолбэк на 180 с обрывал ответ раньше детектора.
   const completionWaitMsForCeiling = () => {
@@ -737,12 +738,21 @@ console.log(`[Pipeline] Timeouts for ${this.platform}: soft=${timeouts.soft}ms, 
 let watchdog = null;
 const hardTimeoutPromise = new Promise((_, reject) => {
   const hardTimerStartedAt = Date.now();
-  watchdog = setTimeout(() => {
-    this.streamingTimedOut = true;
-    // Which timer ended the wait and its limit: PIPELINE_ERROR hard_timeout carries both (review C11).
-    this.hardTimerInfo = { timeoutMs: timeouts.hard, startedAt: hardTimerStartedAt };
-    reject(new Error('hard_timeout'));
-  }, timeouts.hard);
+  // With Stop visible only the watcher's general limit ends the wait (stop_stalled, review L-1):
+  // the watchdog defers to it instead of racing it into a plain hard_timeout.
+  const armHardWatchdog = (delayMs) => {
+    watchdog = setTimeout(() => {
+      if (this.activeAnswerWatcher?.lastStopVisible === true) {
+        armHardWatchdog(STOP_VISIBLE_WATCHDOG_RECHECK_MS);
+        return;
+      }
+      this.streamingTimedOut = true;
+      // Which timer ended the wait and its limit: PIPELINE_ERROR hard_timeout carries both (review C11).
+      this.hardTimerInfo = { timeoutMs: timeouts.hard, startedAt: hardTimerStartedAt };
+      reject(new Error('hard_timeout'));
+    }, delayMs);
+  };
+  armHardWatchdog(timeouts.hard);
 });
 
       this.humanActivity.startDuringWait();
@@ -985,7 +995,7 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
       if (!this.answerWatcherClass) {
         return { success: false, reason: 'watcher_missing' };
       }
-      const watcher = new this.answerWatcherClass(this.platform, {
+      const watcher = this.activeAnswerWatcher = new this.answerWatcherClass(this.platform, {
         completionCriteria: this.config.streaming?.completionCriteria,
         adaptiveTimeout: this.config.streaming?.adaptiveTimeout,
         humanSession: this.humanSession,
