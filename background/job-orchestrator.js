@@ -10702,6 +10702,9 @@ function runStaticAnswerWatchTick(sessionId) {
       return;
     }
     if (quietMs >= STATIC_WATCH_COMMIT_AFTER_MS) {
+      // Claude's raw text can hold page chrome (sidebar, model menu, prompt echo) and no delivery
+      // token: an unverified snapshot is not committed, the watch keeps observing.
+      if (llmName === 'Claude') return;
       reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'text_quiet', answerChars: text.length });
       commitIncompleteAnswer(llmName, entry, {
         text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),

@@ -244,7 +244,7 @@ describe('transport fixes behind the field report', () => {
     expect(finalize).not.toHaveBeenCalled();
   });
 
-  test('tab activity that does not grow the answer (visits, probes) does not postpone the terminal', () => {
+  test('tab activity that does not grow the answer (visits, probes) does not postpone the cap', () => {
     const entry = { promptSubmittedAt: Date.now() - 120000, pendingFinalAnswer: 'complete text', lastRuntimeActivityAt: 0, lastDispatchMeta: { dispatchId: 'X:1:1' } };
     const jobState = { session: { startTime: 1 }, llms: { X: entry } };
     const { deferUncertainCompletionTerminal, timers, context } = loadDeferral({ entry, jobState });
@@ -254,7 +254,7 @@ describe('transport fixes behind the field report', () => {
     try {
       // Fresh runtime activity on every poll, but the text is unchanged.
       let offset = 0;
-      for (let i = 0; i < 12 && !finalize.mock.calls.length; i += 1) {
+      for (let i = 0; i < 40 && !finalize.mock.calls.length; i += 1) {
         offset += 5000;
         Date.now = () => realNow() + offset;
         entry.lastRuntimeActivityAt = Date.now();
@@ -264,7 +264,7 @@ describe('transport fixes behind the field report', () => {
       Date.now = realNow;
     }
     expect(finalize).toHaveBeenCalledTimes(1);
-    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferral_ended', expect.objectContaining({ reason: 'answer_quiet', answerChars: 13 }));
+    expect(context.reportDispatchPhase).toHaveBeenCalledWith('X', entry, 'terminal_deferral_ended', expect.objectContaining({ reason: 'max_defer_reached', answerChars: 13 }));
   });
 
   test('the deferral is capped even while the answer keeps changing', () => {
@@ -590,7 +590,7 @@ describe('forced commit shape, stale background, skipped nudges', () => {
     expect(error).toBeNull();
     expect(meta).toMatchObject({
       dispatchId: 'X:1:1', lastResortTerminal: true, preTerminalMaterializeFinal: true, finalizationDeferredCheck: true,
-      responseMeta: { partial: true, lateCollectFinal: true, forceTerminalSuccess: true, source: 'deferred_terminal_snapshot' }
+      responseMeta: { partial: true, lateCollectFinal: true, forceTerminalSuccess: false, source: 'deferred_terminal_snapshot' }
     });
     // The gates turned it back into an open request: the report says so.
     timers.shift()();
@@ -732,7 +732,7 @@ describe('the delivery token is the model\'s own end-of-answer marker', () => {
   test('the deferral and the visits act on the token without waiting for the page', () => {
     const router = read('background/message-router.js');
     expect(router).toContain('const UNCERTAIN_TERMINAL_TOKEN_QUIET_MS = 5000;');
-    expect(router).toContain("(tokenSeen ? 'delivery_token_seen' : 'answer_quiet')");
+    expect(router).toContain("reason: tokenSeen && quiet ? 'delivery_token_seen' : 'max_defer_reached'");
     const presence = read('background/human-presence.js');
     expect(presence).toContain("completionReason: 'static_text_with_delivery_token'");
   });

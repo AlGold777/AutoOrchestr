@@ -1,5 +1,15 @@
 # CHANGELOG — Project
 
+### 2026-10-30 — Завершение ответа: тишина без метки не конец, полный ручной ответ поверх INTERRUPTED, снимок Claude проверяется, версия 2.81.937
+
+- Найдено живым прогоном Basic: GPT завершался раньше времени (через 30 с без роста текста, даже без метки доставки), а Claude в текст брал сайдбар, меню модели и эхо промпта, когда снимок коммитился по тишине. Рецензент отклонял полный ручной ответ страницы как `completion_terminal_failed`, если внутренняя остановка дала `INTERRUPTED` с пустым текстом.
+- Отсроченный неопределённый финал (`CONTEXT_LOST` / `AMBIGUOUS`) фиксируется только с меткой доставки этого запроса и 5 с тишины, либо по пределу 180 с (`max_defer_reached`). Одна тишина не конец. `message-router.js`, `check()`.
+- Полный ручной ответ (Get It, `copyReport.complete === true`) принимается поверх `INTERRUPTED` (`manual_complete_over_interrupted`). Неполная копия и `INTERRUPTED` без ручного восстановления по-прежнему отклоняются. `message-router.js`, `validateCompletionAuthorityDelivery`.
+- Неполный ответ (без метки) не получает `forceTerminalSuccess`; полный остаётся как был. `dispatch-coordinator.js`, `commitIncompleteAnswer`.
+- Наблюдатель за неизменным текстом не фиксирует текст Claude без метки доставки; наблюдение продолжается. `job-orchestrator.js`, `runStaticAnswerWatchTick`.
+- Извлечение ответа Claude не берёт `nav`, `aside`, `[role="navigation"]`, `[contenteditable]`. `content-scripts/content-claude.js`, `extractResponseText`.
+- Тесты `tests/completion-quiet-manual-interrupted.test.js`; обновлены `tests/automation-telemetry.test.js` (сроки отсрочки, `forceTerminalSuccess` неполного ответа).
+
 ### 2026-10-30 — Pipelines: список шаблонов в две колонки, все шаблоны видны, версия 2.81.936
 
 - Список pipelines на странице pipeline_panel показывал пять колонок по три строки: при большом числе шаблонов новые уходили за правый край. Теперь ровно две колонки на всю ширину блока, заполнение сверху вниз (сначала левая), строк = ceil(N/2). `renderPipelineList` в `results.js` выставляет `--pipeline-rows`, `styles/pipeline.css` использует его в `.pipeline-items`. Тест `tests/pipeline-items-two-columns.test.js`.

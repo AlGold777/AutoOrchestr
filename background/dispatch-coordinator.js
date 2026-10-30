@@ -493,7 +493,8 @@ function commitIncompleteAnswer(llmName, entry, { text, html = '', source, compl
       completionReason: complete ? `${completionReason}:delivery_token` : completionReason,
       partial: !complete,
       lateCollectFinal: true,
-      forceTerminalSuccess: true,
+      // Only a complete answer (delivery token) may be forced to success; a partial one stays open for the gates.
+      forceTerminalSuccess: complete,
       manualRecoveryAvailable: true
     }
   }, String(html || ''));

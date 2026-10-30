@@ -1347,9 +1347,12 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             nudges = Math.max(nudges, 2);
         }
         const capped = now - deferredAt >= UNCERTAIN_TERMINAL_MAX_DEFER_MS;
+        // Silence alone does not end the answer (a model may pause while it writes): the end is the
+        // request's delivery token after a short quiet, or the cap.
+        const finished = (tokenSeen && quiet) || capped;
         if (nudges === 0 && now - deferredAt >= UNCERTAIN_TERMINAL_EARLY_NUDGE_MS && !capped && bottomNudge(live, 'early')) return;
         if (quiet && nudges < 2 && !capped && bottomNudge(live, 'before_commit')) return;
-        if (!quiet && !capped) {
+        if (!finished) {
             schedule(UNCERTAIN_TERMINAL_POLL_MS);
             return;
         }
@@ -1357,7 +1360,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
         if (typeof reportDispatchPhase === 'function') {
             reportDispatchPhase(llmName, live, 'terminal_deferral_ended', {
                 dispatchId: entry.deferredUncertainTerminal.dispatchId,
-                reason: capped && !quiet ? 'max_defer_reached' : (tokenSeen ? 'delivery_token_seen' : 'answer_quiet'),
+                reason: tokenSeen && quiet ? 'delivery_token_seen' : 'max_defer_reached',
                 answerChars: length
             });
         }
@@ -1408,6 +1411,12 @@ const validateCompletionAuthorityDelivery = (llmName, message = {}) => {
     // STALLED records a deadline in the observer, not a provider failure. A late
     // payload must still reach answer verification with that status intact.
     // Dropping it here makes recovery impossible even when the page finishes.
+    // An internal stop (INTERRUPTED with no text) does not discard a complete answer the page
+    // already accepted on a manual recovery (Get It): that answer is the user's own request.
+    if (String(terminalResult?.status || '') === 'INTERRUPTED'
+        && manualRecoveryRequested(meta) && meta.responseMeta?.copyReport?.complete === true) {
+        return { ok: true, reason: 'manual_complete_over_interrupted' };
+    }
     const explicitlyFailed = new Set(['FAILED_TERMINAL', 'INTERRUPTED', 'CANCELLED']);
     if (explicitlyFailed.has(String(terminalResult?.status || ''))) {
         return { ok: false, reason: 'completion_terminal_failed' };

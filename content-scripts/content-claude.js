@@ -1720,7 +1720,7 @@ if (typeof window.SelectorFinder === 'undefined') {
     const extractFrom = (node) => {
       const clone = node.cloneNode(true);
       stripClaudeThinkingNodes(clone);
-      clone.querySelectorAll('button, svg, img, [aria-hidden="true"], header, footer, form, .sr-only, [class*="group/status"]').forEach(el => el.remove());
+      clone.querySelectorAll('button, svg, img, [aria-hidden="true"], header, footer, form, nav, aside, [role="navigation"], [contenteditable], .sr-only, [class*="group/status"]').forEach(el => el.remove());
       return (clone.textContent || clone.innerText || '').trim();
     };
     let text = extractFrom(container);
