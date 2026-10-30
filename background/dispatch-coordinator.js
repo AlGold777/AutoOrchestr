@@ -1800,6 +1800,9 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
   emitTelemetry(llmName, 'DISPATCH_START', {
     meta: { ...dispatchIdentityMeta, dispatchReason: reason, attempt: entry.dispatchAttempts, visibilityState, hasFocus, attachmentCount: attachments.length }
   });
+  // M-19: the participant is bound to the tab the request was actually sent to.
+  // Reads (poll, recovery, Get it, Repeat) resolve through getBoundTabId(entry) first.
+  entry.tabId = tabId;
   checkTabVisibilityForDispatch(llmName, tabId, { dispatchId: dispatchIdentityMeta?.dispatchId || null, dispatchReason: reason });
     try {
       if (machine) {

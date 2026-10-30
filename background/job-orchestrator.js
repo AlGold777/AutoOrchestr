@@ -11051,64 +11051,24 @@ async function handleManualResponsePing(llmName, options = {}) {
   if (!llmName) {
     return { status: 'manual_ping_failed', error: 'LLM name missing' };
   }
-  let tabId = jobState?.llms?.[llmName]?.tabId || TabMapManager.get(llmName);
-  if (tabId) {
-    const boundTab = await getTabSafe(tabId);
-    if (!boundTab || !isEligibleTabForLlm(llmName, boundTab)) {
-      return { status: 'manual_ping_failed', error: 'Привязанная вкладка модели недоступна. Откройте нужный диалог перед сбором ответа.' };
-    }
-  }
-  if (!tabId) {
-    broadcastDiagnostic(llmName, {
-      type: 'PING',
-      label: 'Manual ping fallback',
-      details: 'Tab not registered, searching open tabs',
-      level: 'warning'
-    });
-    const patterns = typeof getQueryPatternsForLLM === 'function'
-      ? getQueryPatternsForLLM(llmName)
-      : null;
-    const queryList = Array.isArray(patterns) && patterns.length ? patterns : null;
-    if (!queryList) {
-      broadcastDiagnostic(llmName, {
-        type: 'PING',
-        label: 'Manual ping unavailable',
-        details: 'No query patterns configured',
-        level: 'error'
-      });
-      return { status: 'manual_ping_failed', error: 'No open tabs found. Please open the LLM website first.' };
-    }
-    const tabs = await new Promise((resolve) => {
-      chrome.tabs.query({ url: queryList }, (foundTabs) => {
-        if (chrome.runtime.lastError) {
-          resolve([]);
-          return;
-        }
-        resolve(Array.isArray(foundTabs) ? foundTabs : []);
-      });
-    });
-    const eligibleTabs = tabs
-      .filter((tab) => isEligibleTabForLlm(llmName, tab))
-      .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-    if (!eligibleTabs.length) {
-      broadcastDiagnostic(llmName, {
-        type: 'PING',
-        label: 'Manual ping unavailable',
-        details: 'No eligible tabs found',
-        level: 'error'
-      });
-      return { status: 'manual_ping_failed', error: 'No open tabs found. Please open the LLM website first.' };
-    }
-    tabId = eligibleTabs[0].id;
-    broadcastDiagnostic(llmName, {
-      type: 'PING',
-      label: 'Manual ping fallback tab selected',
-      details: `Using tab ${tabId}`,
-      level: 'info'
-    });
-    if (typeof setTabBinding === 'function') {
-      await setTabBinding(llmName, tabId);
-    }
+  // M-19: only the tab this participant's request was sent to. No "most recent tab
+  // of the domain" search: it picked old topics' tabs and rebound them.
+  const liveEntry0 = jobState?.llms?.[llmName] || null;
+  const tabId = typeof getBoundTabId === 'function'
+    ? getBoundTabId(llmName, liveEntry0)
+    : (liveEntry0?.tabId || null);
+  const tabMissing = (details) => {
+    broadcastDiagnostic(llmName, { type: 'PING', label: 'Manual ping: tab_missing', details, level: 'error' });
+    return {
+      status: 'manual_ping_failed',
+      reason: 'tab_missing',
+      error: 'Вкладка модели, на которую ушёл запрос этого прогона, не найдена (закрыта или перешла на другую страницу). Откройте её и повторите сбор.'
+    };
+  };
+  if (!tabId) return tabMissing('Participant has no bound tab');
+  const boundTab = await getTabSafe(tabId);
+  if (!boundTab || !isEligibleTabForLlm(llmName, boundTab)) {
+    return tabMissing(`Bound tab ${tabId} is closed or not a chat page`);
   }
   broadcastDiagnostic(llmName, {
     type: 'PING',
