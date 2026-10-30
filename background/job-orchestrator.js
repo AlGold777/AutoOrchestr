@@ -8734,6 +8734,100 @@ const PRE_INSERTION_DEFERRAL_TIMEOUT_MS = 120000;
 // is worth exactly one more attempt before the model is written off.
 const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|captcha|conversation_limit|unsafe_prompt_modal|wrong_page|rate_limit|quota_exceeded|participant_api_unsupported|participant_chat_lost|participant_binding_failed/;
 
+// An empty or UI-noise extraction after the prompt was sent is not a verdict: the model may still be
+// generating (a progress line like "Проверю…" is the whole visible text while Stop is shown). Such a
+// result stays open until the wait cap from the submit; only then it becomes a terminal failure.
+const GENERATION_WAIT_CAP_MS = 240000;
+const GENERATION_WAIT_RECHECK_MS = 5000;
+const GENERATION_WAIT_ERROR_TYPES = new Set(['empty_answer', 'answer_ui_noise']);
+const generationWaitCapTimers = new Map();
+
+function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaObj = null) {
+  const type = String(error?.type || '');
+  if (!entry || !GENERATION_WAIT_ERROR_TYPES.has(type)) return false;
+  if (isFinalizedEntry(entry) || !entry.promptSubmittedAt) return false;
+  const responseMeta = metaObj?.responseMeta && typeof metaObj.responseMeta === 'object' ? metaObj.responseMeta : {};
+  if (
+    metaObj?.lastResortTerminal
+    || metaObj?.automationDeadline
+    || metaObj?.manualRecovery
+    || metaObj?.preTerminalMaterialize
+    || responseMeta.automationStopped
+    || responseMeta.lateCollectFinal
+    || responseMeta.manualRecovery
+    || responseMeta.preTerminalMaterialize
+  ) return false;
+  const dispatchId = metaObj?.dispatchId || entry.lastDispatchMeta?.dispatchId || null;
+  const liveDispatchId = entry.lastDispatchMeta?.dispatchId || null;
+  if (dispatchId && liveDispatchId && String(dispatchId) !== String(liveDispatchId)) return false;
+  const submittedAt = Number(entry.promptSubmittedAt);
+  const waitedMs = Math.max(0, Date.now() - submittedAt);
+  if (waitedMs >= GENERATION_WAIT_CAP_MS) return false;
+  const tabId = resolveBoundTabIdForOrchestrator(llmName, entry);
+  entry.generationWaitReason = type;
+  entry.generationWaitCount = Number(entry.generationWaitCount || 0) + 1;
+  // One cap timer per submit: when the wait is over, the last non-answer becomes the terminal.
+  const capKey = String(submittedAt);
+  if (entry.generationWaitCapKey !== capKey) {
+    clearTimeout(generationWaitCapTimers.get(llmName));
+    entry.generationWaitCapKey = capKey;
+    const capTimer = registerSessionTimer(setTimeout(() => {
+      generationWaitCapTimers.delete(llmName);
+      const liveEntry = jobState?.llms?.[llmName];      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
+      if (String(liveEntry.answer || '').trim()) return;
+      handleLLMResponse(
+        llmName,
+        '',
+        {
+          type: liveEntry.generationWaitReason || 'empty_answer',
+          message: `No answer text after the generation wait cap (${GENERATION_WAIT_CAP_MS}ms)`
+        },
+        {
+          dispatchId: liveEntry.lastDispatchMeta?.dispatchId || null,
+          sessionId: jobState?.session?.startTime || undefined,
+          runSessionId: jobState?.session?.startTime || undefined,
+          lastResortTerminal: true
+        },
+        ''
+      );
+    }, GENERATION_WAIT_CAP_MS - waitedMs));
+    generationWaitCapTimers.set(llmName, capTimer);
+  }
+  // Re-read the answer while the wait lasts; each re-read that is still empty or noise defers again.
+  if (isValidTabId(tabId)) {
+    registerSessionTimer(setTimeout(() => {
+      const liveEntry = jobState?.llms?.[llmName];
+      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
+      triggerResponseCollectionPing(llmName, tabId, 'answer_generation_wait_recheck', {
+        allowRecovery: true,
+        maxAttempts: 3,
+        baseDelay: 700
+      });
+    }, GENERATION_WAIT_RECHECK_MS));
+  }
+  emitTelemetry(llmName, 'ANSWER_GENERATION_WAIT', {
+    level: 'warning',
+    details: `${type} waited=${waitedMs}ms cap=${GENERATION_WAIT_CAP_MS}ms`,
+    meta: { dispatchId, reason: type, waitedMs, capMs: GENERATION_WAIT_CAP_MS, count: entry.generationWaitCount },
+    force: true
+  });
+  appendLogEntry(llmName, {
+    type: 'RESPONSE',
+    label: 'Terminal deferred (answer still generating)',
+    details: `${type} waited=${waitedMs}ms`,
+    level: 'warning',
+    meta: { dispatchId, reason: type, waitedMs, capMs: GENERATION_WAIT_CAP_MS }
+  });
+  updateModelState(llmName, 'RECEIVING', {
+    message: 'answer_generation_wait',
+    completionReason: type,
+    responseSource: responseMeta?.source || null
+  });
+  saveJobState(jobState);
+  broadcastGlobalState();
+  return true;
+}
+
 function evaluatePreInsertionFailureDeferral(llmName, entry, context = {}) {
   const decline = (reason) => ({ defer: false, reason });
   if (!entry) return decline('missing_entry');
@@ -9344,6 +9438,7 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     normalizedHtml = '';
     trimmedAnswer = '';
   }
+  if (maybeDeferNonAnswerWhileGenerating(llmName, entry, error, metaObj)) return;
   //- 1.1. Fix Claude: Если текст ответа получен (>50 символов), считаем это частичным успехом, а не фатальной ошибкой -//
   const hasAnswerContent = trimmedAnswer.length > 50;
   const isClaude = llmName.toLowerCase().includes('claude');

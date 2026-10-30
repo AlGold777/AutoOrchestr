@@ -216,6 +216,7 @@
 | `truncation_marker` | оборван | в тексте `[...truncated]`, незакрытый блок кода или многоточие без завершения (`evaluate`) |
 | `incomplete_ending` | оборван на середине | последняя строка длиннее трёх слов, без знака конца, не список и не заголовок, и `completion` не `complete` (`evaluate`) |
 | `partial_unproven` | не завершён: нет подтверждения окончания | статус транспорта `PARTIAL` без `completion: complete`, при любой длине (например «Проверяя архитектуру» или обрезанный текст); повторяется как другие причины (`evaluate`) |
+| `unproven_status` | не подтверждено окончание: статус … | статус транспорта `EXTRACT_FAILED`, `FAILED`, `UNCERTAIN`, `INTERRUPTED`, `TIMEOUT` или `NO_SEND` без `completion: complete` (текст и статус в причине) (`evaluate`) |
 | `prompt_echo` | повторяет запрос вместо ответа | в ответе есть первые 60 символов отправленного запроса (`evaluate`, `sentPrompt`) |
 | `closed_by_owner` | раунд закрыт User | транспорт закрыт User (`closeReason: moderator_closed`) и текста нет (движок) |
 | `too_long` | длиннее допустимого (с числом слов) | `output.strictLength: true` или `run.strictLength: true` (для шага без своего `strictLength`): слов больше предела модели, а без него — общего `run.maxWords` (`BasicOutput.checkAnswer`) |

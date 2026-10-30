@@ -1658,3 +1658,66 @@ test('C5: a forced success without the delivery token or a verified answer is PA
   expect(accepted).toBe(true);
   expect(entry.finalStatus).toBe('PARTIAL');
 });
+
+describe('an empty or UI-noise answer while the model is still generating', () => {
+  const PREAMBLE = 'Проверю ключевые платформенные ограничения и способы записи с восстановлением после сбоя, затем сведу решения в единую архитектуру MVP с альтернативами и критериями выбора.';
+  const WAIT_CAP_MS = 240000;
+
+  beforeEach(() => { jest.useFakeTimers(); });
+  afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+
+  function submitGpt(context, submittedAt) {
+    const entry = context.jobState.llms.GPT;
+    entry.promptSubmittedAt = submittedAt;
+    entry.submitSource = 'content';
+    return entry;
+  }
+
+  test('the progress preamble alone is not a terminal failure before the wait cap', () => {
+    const { context } = createSandbox();
+    const entry = submitGpt(context, Date.now());
+
+    context.handleLLMResponse('GPT', PREAMBLE, null, { dispatchId: 'dispatch-gpt', responseMeta: { source: 'pipeline' } });
+
+    expect(entry.finalStatusRecorded).toBeFalsy();
+    expect(entry.finalStatus || '').toBe('');
+    expect(entry.generationWaitReason).toBe('answer_ui_noise');
+  });
+
+  test('an empty answer is not a terminal failure before the wait cap either', () => {
+    const { context } = createSandbox();
+    const entry = submitGpt(context, Date.now());
+
+    context.handleLLMResponse('GPT', '', null, { dispatchId: 'dispatch-gpt', responseMeta: { source: 'pipeline' } });
+
+    expect(entry.finalStatusRecorded).toBeFalsy();
+    expect(entry.generationWaitReason).toBe('empty_answer');
+  });
+
+  test('the wait cap hands the model to the terminal path; nothing does so before it', async () => {
+    const { context } = createSandbox();
+    const entry = submitGpt(context, Date.now());
+    const labels = () => context.appendLogEntry.mock.calls.map(([, log]) => log?.label);
+    const flush = async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); };
+
+    context.handleLLMResponse('GPT', PREAMBLE, null, { dispatchId: 'dispatch-gpt', responseMeta: { source: 'pipeline' } });
+    jest.advanceTimersByTime(WAIT_CAP_MS - 10000);
+    await flush();
+    expect(labels()).toEqual(['Terminal deferred (answer still generating)']);
+    expect(entry.finalStatusRecorded).toBeFalsy();
+
+    jest.advanceTimersByTime(20000);
+    await flush();
+    expect(labels().length).toBeGreaterThan(1);
+  });
+
+  test('a real answer is not held back by the wait', () => {
+    const { context } = createSandbox();
+    const entry = submitGpt(context, Date.now());
+    const real = 'Итоговая архитектура. '.repeat(20) + 'Конец.';
+
+    context.handleLLMResponse('GPT', real, null, { dispatchId: 'dispatch-gpt', responseMeta: { source: 'pipeline' } });
+
+    expect(entry.generationWaitReason).toBeUndefined();
+  });
+});

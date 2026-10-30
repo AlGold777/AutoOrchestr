@@ -54,6 +54,7 @@
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
     partial_unproven: 'не завершён: нет подтверждения окончания',
+    unproven_status: 'не подтверждено окончание:',
     prompt_echo: 'повторяет запрос вместо ответа',
     error_output: 'ошибка вместо ответа',
     closed_by_owner: 'раунд закрыт User',
@@ -190,7 +191,10 @@
     const value = text(result?.text);
     if (!value) return { ok: false, reason: noAnswerReason(result), text: '' };
     const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '', prompt: result?.sentPrompt || '' }) || {};
-    if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
+    if (verdict.ok === false) {
+      const status = verdict.details?.status ? `статус ${verdict.details.status}` : '';
+      return { ok: false, reason: verdict.reason || 'rejected', detail: status, text: value };
+    }
     const shape = check ? check(value) : null;
     if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '', text: value };
     return { ok: true, reason: '', text: value };

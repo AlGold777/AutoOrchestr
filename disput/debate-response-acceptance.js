@@ -1,6 +1,7 @@
 (function initDebateResponseAcceptance(root) {
   'use strict';
   const ENDING = /[.?!)»"'\]]$/;
+  const UNPROVEN_STATUSES = new Set(['EXTRACT_FAILED', 'FAILED', 'UNCERTAIN', 'INTERRUPTED', 'TIMEOUT', 'NO_SEND']);
   const words = (value) => String(value || '').trim().match(/[\p{L}\p{N}]+(?:[-'][\p{L}\p{N}]+)*/gu) || [];
   const requiredSectionMisses = (value, sections = []) => (Array.isArray(sections) ? sections : [])
     .filter((section) => !new RegExp(`(?:^|\\n)#{1,6}\\s*${String(section).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\n|$)`, 'i').test(value));
@@ -18,6 +19,12 @@
     const value = String(text == null ? '' : text).trim();
     if (!value) return { ok: false, reason: 'empty', details: {} };
     if (typeof meta.isErrorOutput === 'function' && meta.isErrorOutput(value)) return { ok: false, reason: 'error_output', details: {} };
+    // A transport status that says the answer did not finish (or never reached the model) is not an answer,
+    // whatever text the page left behind: only SUCCESS or a transport-proven completion is accepted.
+    // PARTIAL is judged below (partial_unproven); absent status keeps the old checks.
+    const transportStatus = String(meta.status || '').toUpperCase();
+    const transportComplete = String(meta.completion || '').toLowerCase() === 'complete';
+    if (!transportComplete && UNPROVEN_STATUSES.has(transportStatus)) return { ok: false, reason: 'unproven_status', details: { status: transportStatus } };
     const taskClass = String(meta.taskClass || '').toLowerCase();
     const outputKind = String(meta.outputKind || '').toLowerCase();
     const allowShort = meta.allowShort === true || taskClass === 'direct_answer';
