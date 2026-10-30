@@ -3088,6 +3088,14 @@ function detectActiveGenerationInPage(modelName) {
   };
 }
 
+// The DOM->Markdown copy held with a pending final text (entry.pendingFinalAnswerCopy), when it belongs to that same text.
+function heldAnswerCopyFor(entry, text) {
+  const held = entry?.pendingFinalAnswerCopy;
+  const probe = String(text || '').trim();
+  if (!held || !probe || !Array.isArray(held.texts) || !held.texts.includes(probe)) return null;
+  return { answerMarkdown: held.answerMarkdown || '', copyReport: held.copyReport || null };
+}
+
 function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, normalizedAnswer) {
   if (!DEFER_STREAM_FINAL_MODELS.has(llmName)) return false;
   const responseMeta = metaObj?.responseMeta && typeof metaObj.responseMeta === 'object' ? metaObj.responseMeta : {};
@@ -3113,6 +3121,14 @@ function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, n
   }
   entry.pendingFinalAnswer = nextPendingFinalAnswer;
   entry.pendingFinalAnswerHtml = String(answerHtml || '');
+  // The copy of this final answer waits with its text: a terminal reached later (deferred check, UNCERTAIN, partial) keeps it (L-31).
+  if (typeof responseMeta.answerMarkdown === 'string' || responseMeta.copyReport) {
+    entry.pendingFinalAnswerCopy = {
+      texts: [String(answer || '').trim(), nextPendingFinalAnswer.trim()],
+      answerMarkdown: typeof responseMeta.answerMarkdown === 'string' ? responseMeta.answerMarkdown : '',
+      copyReport: responseMeta.copyReport && typeof responseMeta.copyReport === 'object' ? responseMeta.copyReport : null
+    };
+  }
   const precheckAnswerEvidence = self.AnswerEvidence?.buildAnswerEvidence?.({
     llmName,
     text: entry.pendingFinalAnswer,
@@ -9270,6 +9286,14 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
     return merged;
   })();
   const answerMarkdownCopy = liftAnswerMarkdownCopy(responseMeta);
+  if (!answerMarkdownCopy.copyReport && !error) {
+    // The copy held with this same text (deferred final) is the answer's own copy, not a late one.
+    const heldCopy = heldAnswerCopyFor(entry, answer);
+    if (heldCopy) {
+      answerMarkdownCopy.answerMarkdown = heldCopy.answerMarkdown;
+      answerMarkdownCopy.copyReport = heldCopy.copyReport;
+    }
+  }
   if (!answerMarkdownCopy.copyReport && !error) {
     // A path that never went through DOM->Markdown (snapshot cache, an adapter's manual
     // pull...) must say so instead of passing as a normal copy.

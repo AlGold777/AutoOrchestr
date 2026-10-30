@@ -44,5 +44,34 @@
     return { text: m, text_source: 'markdown', reason: 'complete', plainChars: p.length, markdownChars: m.length };
   }
 
-  return { MIN_RATIO, TAIL_CHARS, FLAT_MIN_CHARS, choose, core, flattened };
+  // L-32: a reply longer than COPY_WAIT_LONG_CHARS waits for its copy (up to COPY_WAIT_MS, polled every COPY_WAIT_POLL_MS)
+  // even when its lines are kept, unless the copy is known to be impossible (the answer came from a source without DOM->Markdown).
+  const COPY_WAIT_LONG_CHARS = 1500;
+  const COPY_WAIT_MS = 4000;
+  const COPY_WAIT_POLL_MS = 250;
+  const COPY_IMPOSSIBLE_REASON = 'источник без DOM→Markdown';
+  const copyImpossible = (report) => Array.isArray(report?.placeholders)
+    && report.placeholders.some((item) => String(item?.reason || '').startsWith(COPY_IMPOSSIBLE_REASON));
+  function copyWaitNeeded(text, report) {
+    const t = String(text == null ? '' : text);
+    if (!t.trim()) return false;
+    if (flattened(t)) return true;
+    return t.length > COPY_WAIT_LONG_CHARS && !copyImpossible(report);
+  }
+
+  // Where a reply lost its copy (telemetry, L-31). null when the reply takes a copy (complete or not, see choose's reason).
+  function copyDropReason({ ownMarkdown = '', ownReport = null, pickedMarkdown = '', pickedReport = null, requestId = '', stashHit = false } = {}) {
+    if (pickedMarkdown && PLACEHOLDER.test(String(pickedMarkdown).trim())) return 'whole_answer_stub';
+    if (pickedMarkdown) return pickedReport && pickedReport.complete === true ? null : 'incomplete_copy';
+    if (copyImpossible(ownReport)) return 'source_without_dom_copy';
+    if (!ownMarkdown && !ownReport) return 'result_without_copy';
+    if (!ownMarkdown) return 'result_empty_copy';
+    if (requestId && !stashHit) return 'stash_miss';
+    return 'copy_not_arrived';
+  }
+
+  return {
+    MIN_RATIO, TAIL_CHARS, FLAT_MIN_CHARS, choose, core, flattened,
+    COPY_WAIT_LONG_CHARS, COPY_WAIT_MS, COPY_WAIT_POLL_MS, copyImpossible, copyWaitNeeded, copyDropReason
+  };
 });

@@ -2915,7 +2915,7 @@ const keepAliveMutex = (() => {
             const fallbackPayload = {
               text: cleaned,
               html: latestMarkup.html || lastResponseHtml,
-              meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback', answerVerification: await fallbackVerifier?.(cleaned) }) || null
+              meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback', answerVerification: await fallbackVerifier?.(cleaned), ...(window.ContentUtils?.buildFallbackAnswerCopy?.(latestMarkup.element || latestMarkup.node) || {}) }) || null
             };
             sendResult(fallbackPayload, true, context);
             activity.heartbeat(0.9, { phase: 'response-processed' });
@@ -2950,7 +2950,7 @@ const keepAliveMutex = (() => {
             const fallbackPayload = {
               text: cleanedFallback,
               html: latestMarkup.html || lastResponseHtml,
-              meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'last_chance_fallback', answerVerification: await fallbackVerifier?.(cleanedFallback) }) || null
+              meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'last_chance_fallback', answerVerification: await fallbackVerifier?.(cleanedFallback), ...(window.ContentUtils?.buildFallbackAnswerCopy?.(latestMarkup.element || latestMarkup.node) || {}) }) || null
             };
             sendResult(fallbackPayload, true, context);
             activity.stop({ status: 'success', answerLength: cleanedFallback.length, source: 'last_chance_fallback' });
