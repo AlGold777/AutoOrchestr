@@ -48,7 +48,7 @@ describe('Basic card feed cover deck', () => {
   });
 
   test('the cover stylesheet hides run lines inside the cover host', () => {
-    expect(read('styles', 'pipeline-card-cover.css')).toMatch(/\.pipeline-cover-host > \.basic-run-line \{ display: none; \}/);
+    expect(read('styles', 'pipeline-card-cover.css')).toMatch(/\.pipeline-cover-host > \.basic-run-line:not\(:has\(\.basic-run-line-button\)\) \{ display: none; \}/);
   });
 });
 

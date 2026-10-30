@@ -31,7 +31,15 @@
     z-index: var(--pipeline-cover-z);
     transform: translateY(var(--pipeline-cover-y, 0px));
 }
-.pipeline-cover-host > .basic-run-line { display: none; }
+.pipeline-cover-host > .basic-run-line:not(:has(.basic-run-line-button)) { display: none; }
+/* A run line with «Продолжить прогон» is the only way to resume: it stays visible as a bar at the bottom of the feed, outside the deck. */
+.pipeline-cover-host > .basic-run-line:has(.basic-run-line-button) {
+    grid-area: 1 / 1;
+    align-self: end;
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+}
 .pipeline-cover-card[data-cover-state="hidden"] { visibility: hidden; }
 .pipeline-cover-card[data-cover-state="moving"] { pointer-events: none; }
 .pipeline-cover-host > .pipeline-cover-card.is-expanded .debate-model-card-output {
