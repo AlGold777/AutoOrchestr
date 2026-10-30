@@ -1410,6 +1410,8 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         selectorAllowed: (selector) => !circuit || circuit.shouldUse(selector, this.platform, 'answer') !== false,
         anchorAnswerCount: this.anchorAnswerCount,
         minimumTextLength: 1,
+        // Stop visible: ChatGPT's final block is awaited, not a preamble (review L-3).
+        stopVisible: this.activeAnswerWatcher?.lastStopVisible === true,
         candidateEligible: ({ node, text }) => {
           const role = String(node?.getAttribute?.('data-role') || node?.getAttribute?.('data-message-author-role') || '').toLowerCase();
           const identity = `${node?.id || ''} ${node?.className || ''}`.toLowerCase();

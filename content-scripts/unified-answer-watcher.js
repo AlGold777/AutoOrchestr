@@ -1193,6 +1193,8 @@
         answerSelectors: this.options.answerSelectors,
         anchorAnswerCount: this.anchorAnswerCount,
         minimumTextLength: 1,
+        // Stop visible: the turn is still being written; ChatGPT's final block is awaited (review L-3).
+        stopVisible: this.lastStopVisible === true,
         selectorAllowed: (selector) => !window.SelectorCircuit
           || window.SelectorCircuit.shouldUse(selector, this.platform, 'answer') !== false,
         queryAll: (selector) => deepQuery?.all?.(selector) || this.safeQueryAll(selector),

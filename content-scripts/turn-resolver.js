@@ -88,19 +88,26 @@
   const DELIVERY_TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/i;
   const PROGRESS_LINE_MAX_CHARS = 200;
 
-  // A progress line sits inside span > span, or is short, has no token and is followed by a longer block.
+  // A progress line sits inside span > span, or has no token and is a progress verb without a verdict
+  // («Проверил и уточнил технические риски», review L-3), or is short, has no token and is followed by a longer block.
   function isChatGptProgressLine(node, text, laterEntries) {
     const outerSpan = node.closest?.('span');
     if (outerSpan && outerSpan.parentElement?.closest?.('span')) return true;
-    return text.length < PROGRESS_LINE_MAX_CHARS && !DELIVERY_TOKEN_RE.test(text)
+    if (DELIVERY_TOKEN_RE.test(text)) return false;
+    const classifier = root.AnswerContentClassifier;
+    if (text.length < PROGRESS_LINE_MAX_CHARS && classifier?.isProgressLine?.(text)) return true;
+    return text.length < PROGRESS_LINE_MAX_CHARS
       && laterEntries.some((entry) => entry.text.length > text.length);
   }
 
-  // The last block with the delivery token is the answer; without a token, the last block that is not a progress line.
-  function pickChatGptAnswerNode(entries) {
+  // The last block with the delivery token is the answer. Without a token: while Stop is visible the turn is
+  // still being written, so the answer is awaited (null), never a preamble block (review L-3); otherwise the
+  // last block that is not a progress line.
+  function pickChatGptAnswerNode(entries, { stopVisible = false } = {}) {
     for (let i = entries.length - 1; i >= 0; i -= 1) {
       if (DELIVERY_TOKEN_RE.test(entries[i].text)) return entries[i].node;
     }
+    if (stopVisible) return null;
     for (let i = entries.length - 1; i >= 0; i -= 1) {
       if (!isChatGptProgressLine(entries[i].node, entries[i].text, entries.slice(i + 1))) return entries[i].node;
     }
@@ -177,6 +184,7 @@
     // the full list here reclassifies a previous answer as the current turn.
     const pool = anchor > 0 ? sorted.slice(anchor) : sorted;
     let answerNode = null;
+    let chatGptAwaitingFinal = false;
     const minimumTextLength = Number(options.minimumTextLength || 1);
     const readNodeText = typeof options.readText === 'function'
       ? options.readText
@@ -209,9 +217,11 @@
         }
         entries.push({ node, text });
       });
-      answerNode = pickChatGptAnswerNode(entries);
+      answerNode = pickChatGptAnswerNode(entries, { stopVisible: options.stopVisible === true });
+      // Stop visible and no block with the delivery token yet: the generic fallback below must not pick a preamble.
+      if (!answerNode && options.stopVisible === true) chatGptAwaitingFinal = true;
     }
-    for (let index = answerNode ? -1 : pool.length - 1; index >= 0; index -= 1) {
+    for (let index = (answerNode || chatGptAwaitingFinal) ? -1 : pool.length - 1; index >= 0; index -= 1) {
       const node = pool[index];
       const text = String(readNodeText(node) || '').trim();
       if (text.length < minimumTextLength) continue;
@@ -292,7 +302,7 @@
     };
   }
 
-  const api = Object.freeze({ selectorList, sortDocumentOrder, createDeepQuery, resolveTurn });
+  const api = Object.freeze({ selectorList, sortDocumentOrder, createDeepQuery, resolveTurn, pickChatGptAnswerNode, isChatGptProgressLine });
   root.TurnResolver = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
