@@ -1355,6 +1355,10 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             });
         return true;
     };
+    // M-5: a provider's own window (Perplexity research: 540 s) instead of the generic cap.
+    const maxDeferMs = self.TransportContract?.generationWindowMs
+        ? self.TransportContract.generationWindowMs(llmName, 'deferCapMs', UNCERTAIN_TERMINAL_MAX_DEFER_MS)
+        : UNCERTAIN_TERMINAL_MAX_DEFER_MS;
     const check = () => {
         const live = jobState?.llms?.[llmName];
         if (live !== entry || (sessionId && jobState?.session?.startTime !== sessionId)) return;
@@ -1373,7 +1377,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             // Complete by the model's own marker: no Get it needed.
             nudges = Math.max(nudges, 2);
         }
-        const capped = now - deferredAt >= UNCERTAIN_TERMINAL_MAX_DEFER_MS;
+        const capped = now - deferredAt >= maxDeferMs;
         if (!capped && recoverOrphanedTab()) return;
         // Silence alone does not end the answer (a model may pause while it writes): the end is the
         // request's delivery token after a short quiet, or the cap.
