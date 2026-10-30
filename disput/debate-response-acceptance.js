@@ -17,6 +17,8 @@
   function evaluate({ text, meta = {} } = {}) {
     const value = String(text == null ? '' : text).trim();
     if (!value) return { ok: false, reason: 'empty', details: {} };
+    // UNCERTAIN: the transport could not prove the generation ended (e.g. Stop stayed visible). Text is kept, but not accepted.
+    if (String(meta.status || '').toUpperCase() === 'UNCERTAIN') return { ok: false, reason: 'unproven_status', details: {} };
     if (typeof meta.isErrorOutput === 'function' && meta.isErrorOutput(value)) return { ok: false, reason: 'error_output', details: {} };
     const taskClass = String(meta.taskClass || '').toLowerCase();
     const outputKind = String(meta.outputKind || '').toLowerCase();

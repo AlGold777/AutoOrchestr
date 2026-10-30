@@ -33,6 +33,7 @@
     too_short: 'слишком короткий',
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
+    unproven_status: 'не подтверждён как завершённый (генерация не закончилась)',
     error_output: 'ошибка вместо ответа',
     closed_by_owner: 'раунд закрыт владельцем'
   });

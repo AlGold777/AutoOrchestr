@@ -7036,7 +7036,7 @@ document.addEventListener('click', (event) => {
                     semiAuto,
                     signal,
                     maxPromptChars: budgetLimits ? window.DebateContextBudget.effectivePromptLimit(budgetLimits) : Infinity,
-                    accept: ({ text, completion }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
+                    accept: ({ text, completion, status }) => window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion, status } }) || { ok: true },
                     parseAsks: (text) => window.DebateStageMarkers?.parse?.(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,

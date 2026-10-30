@@ -204,7 +204,12 @@
       else if (facts?.providerError) [status, reason] = ['PROVIDER_ERROR', 'provider_error_visible'];
       else if (facts?.continueRequired) [status, reason] = ['CONTINUE_REQUIRED', 'continue_required'];
       else if (facts?.ownership === 'CONFLICT') [status, reason] = ['AMBIGUOUS', 'ownership_conflict'];
-      else if (facts?.timeoutState) [status, reason] = ['STALLED', `timeout_${String(facts.timeoutState).toLowerCase()}`];
+      else if (facts?.timeoutState) {
+        // Stop still visible at the deadline: the provider is generating, the text stopped growing.
+        // Not a stream timeout and not a success; the final status is UNCERTAIN (see FinalizationAdapter).
+        const stopHeld = Array.isArray(facts.activeVetoes) && facts.activeVetoes.includes('ACTIVE_STOP');
+        [status, reason] = ['STALLED', stopHeld ? 'stop_stalled' : `timeout_${String(facts.timeoutState).toLowerCase()}`];
+      }
       else if (this.canSucceed(facts)) [status, reason] = ['SUCCESS_TERMINAL', 'all_terminal_facts_proven'];
       if (!status) return null;
       return freeze({
@@ -276,6 +281,7 @@
 
   const FinalizationAdapter = Object.freeze({
     toFinalStatus(terminalResult) {
+      if (terminalResult?.status === 'STALLED' && terminalResult?.reason === 'stop_stalled') return 'UNCERTAIN';
       return ({
         SUCCESS_TERMINAL: 'COMPLETE',
         CONTINUE_REQUIRED: 'USER_ACTION_REQUIRED',

@@ -2326,15 +2326,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const authority = recordCompletionAuthorityAttempt(message.llmName, message.meta || {});
                 const terminalResult = authority?.terminalResult || null;
                 if (terminalResult && terminalResult.status !== 'SUCCESS_TERMINAL' && !isTerminalRouterEntry(jobState?.llms?.[message.llmName])) {
-                    const errorType = ({
+                    // Stop stayed visible without text growth: not a stream timeout and not a success.
+                    // The collected text is kept and the status is UNCERTAIN (reason stop_stalled).
+                    const stopStalled = terminalResult.status === 'STALLED' && terminalResult.reason === 'stop_stalled';
+                    const errorType = stopStalled ? 'uncertain' : (({
                         CONTINUE_REQUIRED: 'continue_required',
                         PROVIDER_ERROR: 'provider_error',
                         INTERRUPTED: 'interrupted',
                         STALLED: 'stream_start_timeout',
                         AMBIGUOUS: 'uncertain',
                         CONTEXT_LOST: 'uncertain'
-                    })[terminalResult.status] || 'uncertain';
+                    })[terminalResult.status] || 'uncertain');
                     const finalize = () => {
+                        if (stopStalled) {
+                            handleLLMResponse(message.llmName, String(message.meta?.answerText || ''), {
+                                type: 'uncertain',
+                                message: 'stop_stalled'
+                            }, {
+                                ...(message.meta || {}),
+                                completionTerminalResult: terminalResult,
+                                completionRolloutMode: authority.rolloutMode,
+                                stopStalled: true
+                            }, '');
+                            return;
+                        }
                         // A deferred uncertain terminal that ends without a final answer
                         // must not discard text the model already produced: commit it as
                         // a PARTIAL answer ("неполный"), the user decides what to do.
