@@ -5,11 +5,15 @@ const long = Array.from({ length: 40 }, (_, i) => `слово${i}`).join(' ') + 
 describe('an answer that ended without proof (PARTIAL)', () => {
   test.each(['Проверяя архитектуру', 'Запуск интерпретатора кода…Пропустить'])(
     'a status line «%s» is not an answer', (text) => {
-      expect(A.evaluate({ text, meta: { completion: 'partial', status: 'PARTIAL' } }).reason).toBe('partial_short');
+      expect(A.evaluate({ text, meta: { completion: 'partial', status: 'PARTIAL' } }).reason).toBe('partial_unproven');
     });
 
-  test('a real long answer with the same status is still accepted', () => {
-    expect(A.evaluate({ text: long, meta: { completion: 'partial', status: 'PARTIAL' } }).ok).toBe(true);
+  test('a long answer with the same status is refused too: without proof of its end it is not an answer at any length', () => {
+    expect(A.evaluate({ text: long, meta: { completion: 'partial', status: 'PARTIAL' } }).reason).toBe('partial_unproven');
+  });
+
+  test('a long answer proven complete with the same status is still accepted', () => {
+    expect(A.evaluate({ text: long, meta: { completion: 'complete', status: 'PARTIAL' } }).ok).toBe(true);
   });
 
   test('a short answer proven complete, or with another status, is accepted', () => {
