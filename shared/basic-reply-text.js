@@ -10,7 +10,10 @@
 })(typeof self !== 'undefined' ? self : (typeof globalThis !== 'undefined' ? globalThis : this), function factory() {
   'use strict';
 
-  const MIN_RATIO = 0.7; // markdown shorter than this share of the plain text (letters and digits) is not a full copy
+  // Markdown shorter than this share of the plain text (letters and digits) is not a full copy. Set to 0.25 (was 0.7):
+  // the plain text can carry text the copy rightly leaves out (a reasoning trace, a copy-button icon label): fixtures
+  // give 0.32 (DeepSeek, trace + answer) and 0.35 (Gemini). Truncation is still caught by the tail check and the report.
+  const MIN_RATIO = 0.25;
   const TAIL_CHARS = 24; // the end of the plain answer must be found in the markdown
   const DELIVERY_MARK = /\[\[AO-[^\]]*\]\]/i;
   const PLACEHOLDER = /^\[НЕ СКОПИРОВАНО/;

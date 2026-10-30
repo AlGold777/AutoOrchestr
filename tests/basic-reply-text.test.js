@@ -38,6 +38,13 @@ describe('Basic reply text: markdown when complete and matching', () => {
     expect(r.text).toContain('```mermaid\ngraph TD; A-->B\n```');
   });
 
+  test('a plain text with extra text (a reasoning trace) does not drop a complete copy of the answer', () => {
+    const trace = 'Сначала разбираю требования, сравниваю варианты и проверяю ограничения бюджета и сроков. '.repeat(3);
+    const r = choose({ plain: `${trace}${PLAIN}`, markdown: MARKDOWN, report: COMPLETE });
+    expect(r.text_source).toBe('markdown');
+    expect(r.text).toBe(MARKDOWN);
+  });
+
   test('the delivery mark is cut from the markdown reply by the Basic output', () => {
     const r = choose({ plain: PLAIN, markdown: MARKDOWN, report: COMPLETE });
     expect(BasicOutput.cleanAnswer(r.text)).not.toMatch(/\[\[AO-/);
