@@ -9367,7 +9367,14 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         emitTelemetry(llmName, 'PIPELINE_ERROR', {
           level: 'warning',
           details: 'hard_timeout',
-          meta: { degraded: true, degradedReason: 'hard_timeout', retry: 'scheduled' }
+          meta: {
+            degraded: true,
+            degradedReason: 'hard_timeout',
+            retry: 'scheduled',
+            // The expired timer and its start (review C11); null when the content side sent no timer.
+            timeoutMs: metaObj?.responseMeta?.timers?.hardTimeoutMs ?? null,
+            startedAt: metaObj?.responseMeta?.timers?.startedAt ?? null
+          }
         });
         updateModelState(llmName, 'RECOVERABLE_ERROR', {
           message: 'hard_timeout_retry_scheduled',
@@ -10241,6 +10248,10 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
         completionReason,
         finalStatus,
         finalReason,
+        // Timer limits (which expired, their values), the hard-stop flag and a stall diagnosis (review C11, C9).
+        timers: metaObj?.responseMeta?.timers || null,
+        flags: metaObj?.responseMeta?.flags || null,
+        stopStalled: metaObj?.responseMeta?.stopStalled || null,
         dispatchId,
         generationEpoch,
         tabId,

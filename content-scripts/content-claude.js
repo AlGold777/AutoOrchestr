@@ -1787,18 +1787,32 @@ if (typeof window.SelectorFinder === 'undefined') {
     }
 }
 
+  // Delivery tag ([[AO-xxxxxx]]) of the request in flight, lower-cased. Set by injectAndGetResponse.
+  let claudeDeliveryTag = '';
+  const deliveryTagOf = (text = '') => String(text || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0].toLowerCase() || '';
+  // Stop is matched in RU and EN; "тановить" covers both "Остановить" and "остановить".
+  const CLAUDE_STOP_SELECTOR = 'button[aria-label*="Stop" i], button[aria-label*="тановить"], button[data-testid*="stop"]';
+  const CLAUDE_RETRY_SELECTOR = 'button[aria-label*="Retry" i], button[aria-label*="Regenerate" i], button[aria-label*="вторить"], button[data-testid*="retry"], button[data-testid*="regenerate"]';
+
+  // Claude completion (review C4): no Stop button AND a Retry that follows the user turn
+  // carrying this request's delivery tag. A Retry left from an earlier answer of a continued
+  // chat sits before that turn and is no completion; text stability alone is no completion either.
   function hasClaudeCompletionSignal() {
-    const stopButton = document.querySelector('button[aria-label*="Stop" i], button[data-testid*="stop"]');
-    const retryButton = document.querySelector(
-      'button[aria-label*="Retry" i], button[aria-label*="Regenerate" i], button[data-testid*="retry"], button[data-testid*="regenerate"]'
-    );
-    return !stopButton && Boolean(retryButton);
+    const tag = claudeDeliveryTag;
+    if (!tag) return false;
+    if (document.querySelector(CLAUDE_STOP_SELECTOR)) return false;
+    const ownTurn = Array.from(document.querySelectorAll(
+      '[data-testid="user-message"], [data-message-author-role="user"], [data-role="user"], [data-author-role="user"]'
+    )).filter((node) => (node.textContent || '').toLowerCase().includes(tag)).pop();
+    if (!ownTurn) return false;
+    const following = window.Node?.DOCUMENT_POSITION_FOLLOWING || 4;
+    return Array.from(document.querySelectorAll(CLAUDE_RETRY_SELECTOR))
+      .some((retry) => Boolean(ownTurn.compareDocumentPosition(retry) & following));
   }
 
   async function waitForClaudeResponseForPing(timeoutMs = 45000, intervalMs = 900) {
     const deadline = Date.now() + Math.max(3000, Number(timeoutMs) || 45000);
     let stableText = '';
-    let stableHits = 0;
     while (Date.now() < deadline) {
       let candidate = extractClaudeResponseFromDOM('', null);
       if (!candidate) {
@@ -1809,13 +1823,9 @@ if (typeof window.SelectorFinder === 'undefined') {
         && !isLikelyClaudeModelLabel(cleaned)
         && !isLikelyClaudeThinkingText(cleaned)
         && !isStaleClaudeResponse(cleaned, claudeDispatchBaseline)) {
-        if (cleaned === stableText) {
-          stableHits += 1;
-        } else {
-          stableText = cleaned;
-          stableHits = 1;
-        }
-        if (stableHits >= 2 || hasClaudeCompletionSignal()) {
+        stableText = cleaned;
+        // Quiet text is not completion (review C4): only the completion signal ends the wait early.
+        if (hasClaudeCompletionSignal()) {
           return stableText;
         }
       }
@@ -1853,6 +1863,7 @@ function isLikelyClaudeModelLabel(text = '') {
       : (meta && typeof meta === 'object' ? meta : null);
     const sessionKey = dispatchMeta?.sessionId ? String(dispatchMeta.sessionId) : 'no_session';
     const promptFp = fingerprintPrompt(prompt);
+    claudeDeliveryTag = deliveryTagOf(prompt);
     const fp = `${sessionKey}:${promptFp}`;
     if (claudeSharedInjection && fp === claudeSharedFingerprint && Date.now() - claudeSharedStartedAt < 15000) {
       console.warn('[content-claude] Reusing in-flight injection promise');
@@ -2438,7 +2449,12 @@ function isLikelyClaudeModelLabel(text = '') {
             if (message.isFireAndForget) {
               return;
             }
-            
+            // An empty text is an extraction failure, never a success (review C4): the
+            // catch below reports it with the error type the background maps to EXTRACT_FAILED.
+            if (!String(resp?.text || '').trim()) {
+              throw { type: 'extract_failed', message: 'Claude answer text is empty after extraction' };
+            }
+
             const responseType = message.type === 'GET_ANSWER' ? 'LLM_RESPONSE' : 'FINAL_LLM_RESPONSE';
             const stats = contentCleaner.getStats();
             

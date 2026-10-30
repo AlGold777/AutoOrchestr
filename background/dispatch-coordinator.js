@@ -454,6 +454,28 @@ function answerHasDeliveryToken(llmName, text) {
   return Boolean(self.AnswerProofNormalization?.hasDeliveryTokenTail?.(text, token));
 }
 
+// Runs in the provider page (chrome.scripting): is there a user turn carrying the tag?
+// Self-contained on purpose: it is serialized into the page. Read-only, no focus, no clicks.
+const OWN_PROMPT_TURN_PROBE = (tag) => {
+  const needle = String(tag || '').toLowerCase();
+  if (!needle) return false;
+  return Array.from(document.querySelectorAll(
+    '[data-testid="user-message"], [data-message-author-role="user"], [data-role="user"], [data-author-role="user"]'
+  )).some((node) => (node.textContent || '').toLowerCase().includes(needle));
+};
+
+async function pageHoldsOwnPromptTurn(tabId, prompt) {
+  const tag = String(String(prompt || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '').toLowerCase();
+  if (!tag || !isValidTabId(tabId) || typeof chrome?.scripting?.executeScript !== 'function') return false;
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: OWN_PROMPT_TURN_PROBE, args: [tag] });
+    return results?.[0]?.result === true;
+  } catch (_) {
+    // The page cannot be read: keep the historical behaviour (settle, then retry).
+    return false;
+  }
+}
+
 // Commit the text the model already produced as an incomplete answer ("неполный"),
 // through the same gate-passing shape the automation deadline uses for a pending
 // answer (lastResortTerminal / lateCollectFinal / forceTerminalSuccess), so the
@@ -2098,6 +2120,19 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         });
         return true;
       };
+      // Before an undelivered command is settled or retried, look at the page (review C8):
+      // if this request's own user turn is already there, the command arrived and a repeat
+      // would send the prompt twice. Such a command counts as accepted.
+      const recoverUndeliveredCommand = async (result) => {
+        if (commandWasAccepted(result) || result?.stale) return result;
+        if (!(await pageHoldsOwnPromptTurn(tabId, prompt))) return result;
+        emitTelemetry(llmName, 'DISPATCH_DELIVERY_VERIFIED_ON_PAGE', {
+          details: result?.reason || 'command_not_delivered',
+          meta: { ...dispatchIdentityMeta, dispatchReason: reason, tabId, attempt: entry.dispatchAttempts },
+          force: true
+        });
+        return { ok: true, accepted: true, response: { accepted: true, dispatchId }, verifiedOnPage: true };
+      };
       const deliverAnswerCommand = async () => {
         if (!isCurrentDispatchContext()) return { ok: false, stale: true, reason: 'session_mismatch' };
         prepareInsertionWaiter();
@@ -2148,7 +2183,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           if (options.deferSendMs) {
             await dispatchSleepMs(options.deferSendMs);
           }
-          commandDeliveryResult = await deliverAnswerCommand();
+          commandDeliveryResult = await recoverUndeliveredCommand(await deliverAnswerCommand());
           const commandAccepted = reportCommandDelivered(commandDeliveryResult);
           if (!commandAccepted) settleUndeliveredCommand(commandDeliveryResult);
           if (commandAccepted && postCommandFocusHoldMs > 0) {
@@ -2246,7 +2281,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         if (options.deferSendMs) {
           await dispatchSleepMs(options.deferSendMs);
         }
-        commandDeliveryResult = await deliverAnswerCommand();
+        commandDeliveryResult = await recoverUndeliveredCommand(await deliverAnswerCommand());
         if (!reportCommandDelivered(commandDeliveryResult)) settleUndeliveredCommand(commandDeliveryResult);
       }
       // Not delivered and no acceptance contract to report it below: stop here

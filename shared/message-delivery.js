@@ -318,7 +318,9 @@
     if (final && !entry.final) {
       entry.final = true;
       const kind = !answer.trim() ? 'empty_answer' : state === 'verified' ? 'verified' : 'missing_token';
-      const status = String(message.status || metadata.status || metadata.finalStatus || '');
+      // An empty final is a failure whatever status the adapter reported: the journal
+      // must not say "success" next to chars=0 (review C4).
+      const status = !answer.trim() ? 'FAILED' : String(message.status || metadata.status || metadata.finalStatus || '');
       entry.finalKind = kind;
       record({
         kind, model, token: entry.token, requestId: entry.requestId, chars: answer.length, ms: Date.now() - entry.sentAt,
