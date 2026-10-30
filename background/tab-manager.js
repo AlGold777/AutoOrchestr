@@ -192,6 +192,7 @@ const registerTabListeners = () => {
 
   chrome.tabs.onActivated.addListener((activeInfo) => {
     if (!activeInfo) return;
+    globalThis.knownActiveTab = { tabId: activeInfo.tabId, windowId: activeInfo.windowId };
     if (typeof browserHasFocus !== 'undefined' && !browserHasFocus) return;
     if (typeof handleTabActivation === 'function') {
       handleTabActivation(activeInfo.tabId, activeInfo.windowId);
@@ -1370,6 +1371,8 @@ async function attachUnboundParticipantChat(llmName, visit, prompt, attachments,
   return { ok: true, tabId: TabMapManager.get(llmName) };
 }
 
+// globalThis.knownActiveTab holds the last tab reported by chrome.tabs.onActivated
+// (any window). Unset until the first activation event of this worker lifetime.
 function activateTabForDispatch(tabId, source = 'activate_tab_for_dispatch', options = {}) {
   const activationState = jobState;
   const activationEntry = Object.values(jobState?.llms || {}).find(entry => entry?.tabId === tabId);
@@ -1391,6 +1394,19 @@ function activateTabForDispatch(tabId, source = 'activate_tab_for_dispatch', opt
     const timer = setTimeout(() => finish(options.allowUnconfirmed === true ? 'unconfirmed' : false), 1500);
     // Request activation directly. Window-focus callbacks must not gate it
     // because they can stall under Chrome load.
+    // A tab already known to be active (last onActivated) needs no switch: no
+    // tabs.update, no programmatic-focus mark, no focus event. Window focus is
+    // still requested. Unknown state falls through to a real activation.
+    const known = globalThis.knownActiveTab || null;
+    if (known && known.tabId === tabId) {
+      try {
+        chrome.windows.update(known.windowId, { focused: true }, () => {
+          void chrome.runtime.lastError;
+          finish(true);
+        });
+      } catch (_) { finish(true); }
+      return;
+    }
     if (typeof self.markProgrammaticTabFocus === 'function') {
       self.markProgrammaticTabFocus(tabId, source);
     }
