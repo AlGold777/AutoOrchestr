@@ -82,6 +82,10 @@
 
 Код: `shared/transport-contract.js`, `shared/message-delivery.js`, `shared/message-delivery-diagnosis.js`, `shared/message-delivery-view.js`, точки подключения в `results.js` (`pipelineWaiter`, `runModelBatch`, обработчик сообщений, `syncStatusFromGlobalState`), `background/job-orchestrator.js` (`transportIdentityFor`), `background/dispatch-coordinator.js`, `content-scripts/content-utils.js`.
 
+## Текст ответа для Basic
+
+Ответ модели, который Basic передаёт дальше (следующий раунд, артефакт), берётся из DOM→Markdown копии (`answerMarkdown`), если она полная (`copyReport.complete`) и совпадает с плоским текстом (`answer`). Таблицы выходят pipe-таблицами, код и Mermaid блоками ```…``` (исходник Mermaid). Правило — `shared/basic-reply-text.js` (`BasicReplyText.choose`), вызов — `results.js`, `sendWave`; `answer` остаётся для приёмки и подтверждения окончания. Иначе берётся плоский текст, и причина пишется в телеметрию: событие `basic_reply_text` (`text_source` markdown|plain, `reason`: complete, incomplete_copy, no_markdown, placeholder, short_markdown, tail_missing, marker_missing, empty_plain). Метка `[[AO-…]]` и маркеры `[[DOC]]` срезаются в `disput/basic-output.js` (`cleanAnswer`) и для markdown-текста.
+
 ## Будущий функционал
 
 - Нет ответа за отведённое время — повторная отправка той же модели.
