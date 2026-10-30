@@ -547,7 +547,10 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       const label = node.querySelector('h6.screen-reader-model-response-label');
       return label ? rawText.replace(String(label.innerText || label.textContent || '').trim(), '').trim() : rawText;
     }
-    return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+    // Line breaks of innerText (paragraphs, list items, table rows) are kept (M-6); cells (tabs) become pipes.
+    return String(node?.innerText || node?.textContent || '').replace(/ /g, ' ')
+      .split('\n').map((line) => line.replace(/\t+/g, ' | ').replace(/[ \f\v\r]+/g, ' ').trim())
+      .join('\n').replace(/\n{3,}/g, '\n\n').trim();
   };
   const hashText = (value = '') => {
     const text = String(value || '');

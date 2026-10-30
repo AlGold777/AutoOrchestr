@@ -81,7 +81,8 @@ test('typed wrapper linearization and coverage preserve every answer part', () =
   document.body.innerHTML = message('Opening paragraph');
   const root = document.querySelector('[data-message-author-role="assistant"]');
   root.insertAdjacentHTML('beforeend', '<div data-message-part-type="answer"><p>Final paragraph with code Copy()</p></div>');
-  expect(window.AnswerStructure.linearizeText(root)).toBe('Opening paragraph Final paragraph with code Copy()');
+  // Paragraphs keep a blank line between them (M-6); the words are the same.
+  expect(window.AnswerStructure.linearizeText(root)).toBe('Opening paragraph\n\nFinal paragraph with code Copy()');
   const first = root.querySelector('[data-message-part-type="answer"]');
   expect(window.AnswerStructure.inspect(root, first).issues).toContain('uncovered_message_blocks');
   const payload = legacy.grabLatestAssistantMarkup();
