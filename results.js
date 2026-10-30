@@ -6765,6 +6765,9 @@ document.addEventListener('click', (event) => {
             Object.fromEntries(Object.entries(discipline).map(([name, saved]) => [name, legacyDiscipline(saved) || {}])), ...rest);
         // The owner's choice on a pause, through the shared confirm dialog (three buttons).
         let customDecisionOpen = false;
+        // The start of the owner's current wait (the engine's custom_wait_start): the dialogs show it, no timer.
+        let customWaitSince = 0;
+        const waitSinceText = () => (customWaitSince ? `Ожидает с ${new Date(customWaitSince).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : '');
         // The buttons are the choices the engine allows: «Продолжить» only at the threshold (the engine refuses it below),
         // below it «Пропустить шаг» and «Повторить».
         const askCustomDecision = async ({ label, accepted, failed, choices, reasons, required = 0 }) => {
@@ -6774,14 +6777,17 @@ document.addEventListener('click', (event) => {
                 ? `${label}: принято ${accepted.length}${required ? ` из ${required}` : ''}${failed.length ? `, без ответа: ${failedText}` : ''}. Что дальше?`
                 : `${label}: нет принятых ответов (${failedText}). Что дальше?`;
             customDecisionOpen = true;
+            // Without every answer the main button skips the participants without an answer: the accepted answers stay.
             const answer = await showConfirm(message, {
-                confirmText: canContinue ? 'Продолжить' : 'Пропустить шаг',
+                confirmText: canContinue ? 'Продолжить' : 'Пропустить участника',
                 cancelText: 'Остановить прогон',
-                retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : ''
+                retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : '',
+                skipStepText: !canContinue && choices.includes('skip') ? 'Пропустить шаг целиком' : ''
             });
             customDecisionOpen = false;
             if (answer === 'retry') return 'retry';
-            if (answer === true) return canContinue ? 'continue' : 'skip';
+            if (answer === 'skip_step') return 'skip';
+            if (answer === true) return canContinue ? 'continue' : 'skip_participant';
             return 'stop';
         };
         // The windows of a pause of a Basic run (results/choice-dialog.js): a null answer is the owner's cancel.
@@ -7430,7 +7436,7 @@ document.addEventListener('click', (event) => {
                     runMaxWords: built.run.maxWords,
                     // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
                     runStrictLength: built.run.strictLength,
-                    accept: ({ text, completion, status }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status } }),
+                    accept: ({ text, completion, status, prompt }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt } }),
                     parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,
@@ -7441,7 +7447,7 @@ document.addEventListener('click', (event) => {
                         const folderName = document ? await documentsFolderName() : '';
                         const answer = await askChoiceDialog({
                             title: `Ответ User: ${stepTitleOf(stepRef)}`,
-                            message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
+                            message: [window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }), waitSinceText()].filter(Boolean).join('\n'),
                             textInput: document ? null : { label: 'Ответ User', required: true },
                             inputFiles: window.BasicInputFiles ? window.BasicInputFiles.filesFor(steps.find((step) => step.ref === stepRef), 'owner')
                                 .map((file) => inputFilePayloads[file.id]) : [],
@@ -7459,7 +7465,7 @@ document.addEventListener('click', (event) => {
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
-                        message: `${stepTitleOf(stepRef)}: отправка не подтверждена (${items.map((item) => participantLabelOf(stepRef, item.participantId)).join(', ')}). ${choices.includes('check') ? 'Проверить, пришёл ли ответ в чате (ничего не отправляется), отправить заново или пропустить?' : 'Отправить заново или пропустить?'}`,
+                        message: [`${stepTitleOf(stepRef)}: отправка не подтверждена (${items.map((item) => participantLabelOf(stepRef, item.participantId)).join(', ')}). ${choices.includes('check') ? 'Проверить, пришёл ли ответ в чате (ничего не отправляется), отправить заново или пропустить?' : 'Отправить заново или пропустить?'}`, waitSinceText()].filter(Boolean).join('\n'),
                         choices: choices.map((id) => ({ value: id, label: { check: 'Проверить ответ', resend: 'Отправить заново', skip: 'Пропустить' }[id] || id })),
                         cancelText: 'Остановить прогон'
                     }),
@@ -7519,6 +7525,7 @@ document.addEventListener('click', (event) => {
                         return { byParticipant, closedByOwner };
                     },
                     onEvent: async (kind, fields) => {
+                        if (kind === 'custom_wait_start') customWaitSince = Number(fields.startedAt) || 0;
                         if (kind === 'custom_step_start' || kind === 'custom_step_resumed') setCustomStepStatus(fields.step, 'running');
                         if (kind === 'custom_step_end') setCustomStepStatus(fields.step, 'completed');
                         if (kind === 'custom_step_interrupted') setCustomStepStatus(fields.step, fields.outcome === 'stopped' ? 'stopped' : 'failed');
@@ -18024,6 +18031,7 @@ document.addEventListener('click', (event) => {
     const deleteConfirmBtn = document.getElementById('delete-confirm');
     const cancelConfirmBtn = document.getElementById('cancel-confirm');
     const retryConfirmBtn = document.getElementById('retry-confirm');
+    const skipStepConfirmBtn = document.getElementById('skip-step-confirm');
     const promptModal = document.getElementById('prompt-modal');
     const promptMessage = document.getElementById('prompt-message');
     const promptDialogInput = document.getElementById('prompt-dialog-input');
@@ -25105,6 +25113,7 @@ if (smartCompareButton) {
                 const confirmText = String(options?.confirmText || 'Сохранить');
                 const cancelText = String(options?.cancelText || 'Отмена');
                 const retryText = String(options?.retryText || '').trim();
+                const skipStepText = String(options?.skipStepText || '').trim();
                 confirmMessage.textContent = message;
                 deleteConfirmBtn.textContent = confirmText;
                 deleteConfirmBtn.setAttribute('aria-label', confirmText);
@@ -25117,6 +25126,12 @@ if (smartCompareButton) {
                     retryConfirmBtn.hidden = !retryText;
                     retryConfirmBtn.classList.toggle('hidden', !retryText);
                     retryConfirmBtn.disabled = options?.retryDisabled === true;
+                }
+                if (skipStepConfirmBtn) {
+                    skipStepConfirmBtn.textContent = skipStepText;
+                    skipStepConfirmBtn.setAttribute('aria-label', skipStepText);
+                    skipStepConfirmBtn.hidden = !skipStepText;
+                    skipStepConfirmBtn.classList.toggle('hidden', !skipStepText);
                 }
                 modalManager.show(confirmModal);
 
@@ -25138,10 +25153,18 @@ if (smartCompareButton) {
                     resolve('retry');
                 };
 
+                const onSkipStep = () => {
+                    modalManager.hide(confirmModal);
+                    cleanupListeners();
+                    resolve('skip_step');
+                };
+
                 const cleanupListeners = () => {
                     deleteConfirmBtn.removeEventListener('click', onConfirm);
                     cancelConfirmBtn.removeEventListener('click', onCancel);
                     retryConfirmBtn?.removeEventListener('click', onRetry);
+                    skipStepConfirmBtn?.removeEventListener('click', onSkipStep);
+                    if (skipStepConfirmBtn) { skipStepConfirmBtn.hidden = true; skipStepConfirmBtn.classList.add('hidden'); }
                     deleteConfirmBtn.textContent = 'Сохранить';
                     deleteConfirmBtn.setAttribute('aria-label', 'Сохранить');
                     cancelConfirmBtn.textContent = 'Отмена';
@@ -25159,6 +25182,7 @@ if (smartCompareButton) {
                 deleteConfirmBtn.addEventListener('click', onConfirm, { once: true });
                 cancelConfirmBtn.addEventListener('click', onCancel, { once: true });
                 if (retryText && retryConfirmBtn) retryConfirmBtn.addEventListener('click', onRetry, { once: true });
+                if (skipStepText && skipStepConfirmBtn) skipStepConfirmBtn.addEventListener('click', onSkipStep, { once: true });
             } else {
                 resolve(confirm(message));
             }

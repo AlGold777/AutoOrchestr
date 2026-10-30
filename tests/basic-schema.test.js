@@ -467,7 +467,7 @@ describe('Basic schema: input by references (4.3)', () => {
   ]);
 
   test('a list of step refs and participant addresses is valid, keeps its order and reaches assemble', () => {
-    const input = ['r1', { step: 'r3', participant: 'C', required: true }, 'mid', { step: 'r2', participant: 'A' }];
+    const input = ['r1', { step: 'r3', participant: 'C' }, 'mid', { step: 'r2', participant: 'A' }];
     expect(Schema.validate(withInput(input))).toEqual([]);
     expect(Schema.assemble(withInput(input))[4].input).toEqual(input);
   });
@@ -1028,10 +1028,12 @@ describe('Basic schema: a switched-off declared participant keeps its declaratio
     expect(Schema.assemble(schema)[1].models[0].input).toEqual(['r1', { step: 'r1', participant: 'c-1' }]);
   });
 
-  test('a required source to a switched-off participant is not a validator error: the run decides it; the round leaves it out', () => {
-    const schema = schemaWith([{ step: 'r1', participant: 'c-1', required: true }]);
-    expect(Schema.validate(schema)).toEqual([]);
-    const first = Schema.assemble(schema)[0];
+  test('a required source to a switched-off participant is a validator error (it would stop the run); without required the round leaves it out', () => {
+    const required = schemaWith([{ step: 'r1', participant: 'c-1', required: true }]);
+    expect(Schema.validate(required).map((error) => error.path)).toEqual(['steps[1].models[0].input[0].participant']);
+    const optional = schemaWith([{ step: 'r1', participant: 'c-1' }]);
+    expect(Schema.validate(optional)).toEqual([]);
+    const first = Schema.assemble(optional)[0];
     expect(first.models.map((model) => model.id)).toEqual(['A', 'gpt-1']);
   });
 
@@ -1260,32 +1262,34 @@ describe('Basic schema: этап 2 — документ для чтения в �
 
 describe('Basic schema: remarks that do not block a valid schema (warnings)', () => {
   const owner = (ref, extra = {}) => ({ ref, kind: 'owner', task: 'Ответьте', models: [], ...extra });
+  const withTask = (ref, models, extra = {}) => round(ref, models, { task: 'Задача', ...extra });
+  const full = (steps, extra = {}) => base(steps, { description: 'Описание схемы', ...extra });
   const paths = (schema) => Schema.warnings(schema).map((item) => item.path);
 
   test('a participant task next to the step task is a remark at the participant; either one alone is none', () => {
-    expect(paths(base([round('r1', ['A'], { task: 'общее' })]))).toEqual([]);
-    const both = base([{ ref: 'r1', kind: 'round', task: 'общее', models: [{ name: 'A', task: 'своё' }, { name: 'B' }] }]);
+    expect(paths(full([withTask('r1', ['A'], { task: 'общее' })]))).toEqual([]);
+    const both = full([{ ref: 'r1', kind: 'round', task: 'общее', models: [{ name: 'A', task: 'своё' }, { name: 'B' }] }]);
     expect(Schema.validate(both)).toEqual([]);
     expect(paths(both)).toEqual(['steps[0].models[0].task']);
   });
 
   test('an owner answer that no later step reads is a remark; previous, all, a reference and the document line read it', () => {
-    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'], { input: 'none' })]))).toEqual(['steps[1]']);
-    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'])]))).toEqual([]);
-    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'], { input: 'none' }), round('r3', ['A'], { input: 'all' })]))).toEqual([]);
-    expect(paths(base([round('r1', ['A']), owner('owner:a'), round('r2', ['A'], { input: 'none' }), round('r3', ['A'], { input: ['owner:a'] })]))).toEqual([]);
+    expect(paths(full([withTask('r1', ['A']), owner('owner:a'), withTask('r2', ['A'], { input: 'none' })]))).toEqual(['steps[1]']);
+    expect(paths(full([withTask('r1', ['A']), owner('owner:a'), withTask('r2', ['A'])]))).toEqual([]);
+    expect(paths(full([withTask('r1', ['A']), owner('owner:a'), withTask('r2', ['A'], { input: 'none' }), withTask('r3', ['A'], { input: 'all' })]))).toEqual([]);
+    expect(paths(full([withTask('r1', ['A']), owner('owner:a'), withTask('r2', ['A'], { input: 'none' }), withTask('r3', ['A'], { input: ['owner:a'] })]))).toEqual([]);
     const doc = { document: 'read', artifacts: [{ id: 'map', name: 'Карта', pointer: '' }] };
-    expect(paths(base([round('r1', ['A'], { output: doc }), owner('owner:a', { document: 'r1' }), round('r2', ['A'], { input: 'none' }),
-      round('r3', ['A'], { input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }] })]))).toEqual([]);
+    expect(paths(full([withTask('r1', ['A'], { output: doc }), owner('owner:a', { document: 'r1' }), withTask('r2', ['A'], { input: 'none' }),
+      withTask('r3', ['A'], { input: [{ artifact: { step: 'r1', participant: 'A', id: 'map' }, version: 'latest' }] })]))).toEqual([]);
   });
 
   test('an owner step at the end closes the schema: no remark', () => {
-    expect(paths(base([round('r1', ['A']), owner('owner:end')]))).toEqual([]);
+    expect(paths(full([withTask('r1', ['A']), owner('owner:end')]))).toEqual([]);
   });
 
   test('a placeholder text is a remark; an ellipsis inside a text is not', () => {
-    expect(paths(base([round('r1', ['A'], { task: 'TODO' })], { description: '…' }))).toEqual(['description', 'steps[0].task']);
-    expect(paths(base([round('r1', ['A'], { task: 'Сравни варианты… и выбери лучший.' })]))).toEqual([]);
+    expect(paths(full([withTask('r1', ['A'], { task: 'TODO' })], { description: '…' }))).toEqual(['description', 'steps[0].task']);
+    expect(paths(full([withTask('r1', ['A'], { task: 'Сравни варианты… и выбери лучший.' })]))).toEqual([]);
   });
 });
 

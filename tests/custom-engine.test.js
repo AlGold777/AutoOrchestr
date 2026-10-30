@@ -152,7 +152,7 @@ describe('Custom engine', () => {
     const result = await Engine.run({
       task: 'T', steps: [{ task: 'x', input: 'none', models: ['A', 'B'] }, { task: 'y', input: 'previous', models: ['A'] }], send, decide
     });
-    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: ['A'], failed: ['B'], required: 2, choices: ['retry', 'skip', 'stop'] });
+    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: ['A'], failed: ['B'], required: 2, choices: ['retry', 'skip_participant', 'skip', 'stop'] });
     expect(result.steps[0].outcome.B).toMatchObject({ ok: false, attempt: 2 });
     expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['B']]);
     expect(result.stopReason).toBe('stopped');
@@ -164,7 +164,7 @@ describe('Custom engine', () => {
     const result = await Engine.run({
       task: 'T', steps: [{ task: 'x', input: 'none', models: ['A'] }, { task: 'y', input: 'previous', models: ['B'] }], send, decide
     });
-    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: [], failed: ['A'], choices: ['retry', 'skip', 'stop'] });
+    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: [], failed: ['A'], choices: ['retry', 'skip_participant', 'skip', 'stop'] });
     expect(calls.filter((call) => call.models[0] === 'A')).toHaveLength(3);
     expect(calls[3].prompts.B).toContain('Ответ 1:\na1');
     expect(result.stopReason).toBe('steps_done');
@@ -694,7 +694,7 @@ describe('Custom engine: a round waits for all its participants', () => {
     const decide = jest.fn(async ({ choices }) => (choices.includes('retry') ? 'retry' : 'continue'));
     const result = await Engine.run({ task: 'T', send, decide, steps: [two()] });
     expect(decide).toHaveBeenCalledTimes(1);
-    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: ['A'], failed: ['B'], choices: ['retry', 'skip', 'stop'], required: 2 });
+    expect(decide.mock.calls[0][0]).toMatchObject({ accepted: ['A'], failed: ['B'], choices: ['retry', 'skip_participant', 'skip', 'stop'], required: 2 });
     expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['B'], ['B']]);
     expect(result.steps[0].outcome.B).toMatchObject({ ok: true, attempt: 3 });
     expect(result.stopReason).toBe('steps_done');
@@ -729,7 +729,7 @@ describe('Custom engine: a round waits for all its participants', () => {
     const decide = jest.fn(async () => 'stop');
     const result = await Engine.run({ task: 'T', send, decide, steps: [{ ...two(), order: 'sequential', require: 1 }] });
     expect(calls[0].models).toEqual(['A', 'B']);
-    expect(decide.mock.calls[0][0]).toMatchObject({ failed: ['B'], required: 2, choices: ['retry', 'skip', 'stop'] });
+    expect(decide.mock.calls[0][0]).toMatchObject({ failed: ['B'], required: 2, choices: ['retry', 'skip_participant', 'skip', 'stop'] });
     expect(result.stopReason).toBe('stopped');
   });
 });
@@ -765,7 +765,7 @@ describe('Custom engine owner approval', () => {
       { ref: 'r1', kind: 'round', input: 'none', owner: 'approve', models: ['A', 'B'] },
       { ref: 'r2', kind: 'round', input: 'previous', models: ['A'] }
     ] });
-    expect(decide.mock.calls[0][0].choices).toEqual(['retry', 'skip', 'stop']);
+    expect(decide.mock.calls[0][0].choices).toEqual(['retry', 'skip_participant', 'skip', 'stop']);
     expect(result.stopReason).toBe('no_decision');
     expect(calls.map((call) => call.models)).toEqual([['A', 'B'], ['B']]); // the second step is never requested
   });

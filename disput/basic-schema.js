@@ -56,6 +56,8 @@
   });
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
+  // The shared answer limits the page offers (its length select); the request to models names the same list.
+  const RUN_WORDS = Object.freeze([300, 500, 700, 1000]);
   const OUTPUT_FORMATS = Object.freeze(['json']);
   const OWNER_STEPS = Object.freeze(['approve']);
   const CHAT_MODES = Object.freeze(['continue', 'new']);
@@ -237,6 +239,12 @@
       fail(at, `участник «${participant}» не объявлен в шаге «${steps[position].ref}»`);
       return false;
     };
+    // A required source needs an answer: a switched-off participant gives none, so the run would stop before its request (missing_input).
+    const requiredOffAt = (position, participant, at, required) => {
+      if (required !== true || steps[position].kind === 'owner') return;
+      const off = (Array.isArray(steps[position].models) ? steps[position].models : []).some((model) => isObject(model) && idOf(model) === participant && model.enabled === false);
+      if (off) fail(at, `участник «${participant}» выключен (enabled: false), а вход required: включите его или снимите required`);
+    };
     const checkRequired = (value, at) => { if ('required' in value && typeof value.required !== 'boolean') fail(`${at}.required`, 'ожидается true или false'); };
     const failed = () => errors.length > mark;
 
@@ -251,7 +259,10 @@
       unknown(address, ['step', 'participant', 'id'], `${path}.artifact`);
       const position = stepAt(address.step, `${path}.artifact.step`);
       if (position >= 0 && !('participant' in address)) fail(`${path}.artifact.participant`, 'участник не указан');
-      else if (position >= 0) participantAt(position, address.participant, `${path}.artifact.participant`);
+      else if (position >= 0) {
+        participantAt(position, address.participant, `${path}.artifact.participant`);
+        requiredOffAt(position, address.participant, `${path}.artifact.participant`, source.required);
+      }
       if (position >= 0 && !('id' in address)) fail(`${path}.artifact.id`, 'ID артефакта не указан');
       const output = position >= 0 ? outputOf(steps[position], address.participant) : null;
       const declared = isObject(output) && Array.isArray(output.artifacts) && output.artifacts.some((item) => isObject(item) && item.id === address.id);
@@ -275,7 +286,10 @@
     checkRequired(source, path);
     const position = stepAt(source.step, `${path}.step`);
     // Without a participant the source is the whole accepted result of the step (3.1).
-    if (position >= 0 && 'participant' in source) participantAt(position, source.participant, `${path}.participant`);
+    if (position >= 0 && 'participant' in source) {
+      participantAt(position, source.participant, `${path}.participant`);
+      requiredOffAt(position, source.participant, `${path}.participant`, source.required);
+    }
     if (failed()) return null;
     return addressOf(source);
   }
@@ -319,6 +333,7 @@
         unknownKeys(schema.run, ['policy', 'maxWords', 'strictLength'], 'run');
         if ('policy' in schema.run) oneOf(schema.run.policy, POLICIES, 'run.policy', 'политика запуска');
         if ('maxWords' in schema.run && !(Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0)) fail('run.maxWords', 'ожидается положительное целое число слов');
+        else if ('maxWords' in schema.run && !RUN_WORDS.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${RUN_WORDS.join(', ')}`);
         if ('strictLength' in schema.run && typeof schema.run.strictLength !== 'boolean') fail('run.strictLength', 'ожидается true или false');
       }
     }
@@ -711,10 +726,25 @@
     const warn = (path, message) => out.push({ path, message });
     const enabledOf = (step) => (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
     if (placeholder(schema?.description)) warn('description', 'похоже на заглушку вместо текста');
+    if (isObject(schema) && !(typeof schema.description === 'string' && schema.description.trim())) warn('description', 'у схемы нет description: презентация для человека');
+    // The request allows two steps of User at most; the canvas does not refuse more, so it is a remark.
+    if (steps.filter((step) => isObject(step) && step.kind === 'owner').length > 2) warn('steps', 'шагов User больше двух: запрос разрешает не больше двух');
+    // The rounds are numbered r1…rN in order. The canvas refuses another order; the validator names it as a remark.
+    let roundNumber = 0;
     steps.forEach((step, index) => {
       if (!isObject(step)) return;
       const path = `steps[${index}]`;
+      if (step.kind === 'round') {
+        roundNumber += 1;
+        if (step.ref !== `r${roundNumber}`) warn(`${path}.ref`, `ref раунда должен быть «r${roundNumber}»`);
+      }
       ['task', 'goal'].forEach((key) => { if (placeholder(step[key])) warn(`${path}.${key}`, 'похоже на заглушку вместо текста'); });
+      if (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false)
+        && !(typeof step.task === 'string' && step.task.trim())) warn(`${path}.task`, 'у раунда нет task: общее задание шага не задано');
+      // An empty personal task is a value: it replaces the shared task with nothing.
+      (Array.isArray(step.models) ? step.models : []).forEach((model, at) => {
+        if (isObject(model) && model.task === '') warn(`${path}.models[${at}].task`, `пустой task у участника «${idOf(model)}»: общее задание шага ему не отправляется`);
+      });
       enabledOf(step).forEach((model, at) => {
         if (placeholder(model.task)) warn(`${path}.models[${at}].task`, 'похоже на заглушку вместо текста');
         if (step.kind === 'round' && typeof model.task === 'string' && model.task.trim() && typeof step.task === 'string' && step.task.trim()) {

@@ -138,7 +138,13 @@
     return result;
   }
 
-  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, extractDocument, checkAnswer });
+  // The text an answer hands on (to the next step, to the record): the delivery mark at its end ([[AO-…]]) and the document
+  // marks ([[DOC: id]], [[/DOC]]) are service text. Document extraction reads the raw answer, so it runs before this.
+  const DELIVERY_MARK = /\s*\[\[AO-[^\]]*\]\]\s*$/;
+  const DOCUMENT_MARK = /\[\[\/?DOC(?::[^\]]*)?\]\]/g;
+  const cleanAnswer = (raw) => String(raw == null ? '' : raw).replace(DELIVERY_MARK, '').replace(DOCUMENT_MARK, '').trim();
+
+  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, extractDocument, checkAnswer, cleanAnswer });
   root.BasicOutput = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

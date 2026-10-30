@@ -2970,6 +2970,8 @@ describe('Pipeline debate favorites view', () => {
       h.debug.clearCustomSessionForTest();
       await importFile(exported.text, exported.fileName, 'Defaults imported');
       h.debug.applyPipelineConfig(h.debug.getPipelineStoreSnapshot().pipelines['Defaults imported']);
+      // The install of a schema without description shows its remarks (a dialog): it is closed here, the test is about the defaults.
+      document.querySelectorAll('dialog.choice-dialog .choice-dialog-cancel').forEach((button) => button.click());
       await h.run();
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_ROUND');
       expect(h.starts[1].promptsByModel.GPT).toContain('PERSISTED_CONTENT');
@@ -3045,7 +3047,7 @@ describe('Pipeline debate favorites view', () => {
       const closeDialog = () => document.querySelector('dialog.choice-dialog .choice-dialog-cancel')?.click();
       try {
         const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
-        record.schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'synthesis', models: [{ name: 'GPT' }] }, { ref: 'r2', kind: 'gate', models: [{ name: 'GPT' }] }] };
+        record.schema = { schemaVersion: 1, origin: 'user', description: 'Тест ошибок шага', steps: [{ ref: 'r1', kind: 'synthesis', models: [{ name: 'GPT' }] }, { ref: 'r2', kind: 'gate', models: [{ name: 'GPT' }] }] };
         const errors = window.BasicSchema.validate(record.schema);
         expect(errors.length).toBeGreaterThan(0);
         h.debug.clearCustomSessionForTest();

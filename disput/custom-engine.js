@@ -53,7 +53,8 @@
     too_short: 'слишком короткий',
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
-    partial_short: 'не завершён: только строка состояния модели',
+    partial_unproven: 'не завершён: нет подтверждения окончания',
+    prompt_echo: 'повторяет запрос вместо ответа',
     error_output: 'ошибка вместо ответа',
     closed_by_owner: 'раунд закрыт User',
     too_long: 'длиннее допустимого',
@@ -188,7 +189,7 @@
   function judge(result, accept, check = null) {
     const value = text(result?.text);
     if (!value) return { ok: false, reason: noAnswerReason(result), text: '' };
-    const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '' }) || {};
+    const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '', prompt: result?.sentPrompt || '' }) || {};
     if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
     const shape = check ? check(value) : null;
     if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '', text: value };
@@ -743,7 +744,10 @@
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
           // An accepted answer is stored once, then each artifact it declares is registered (one line, one version).
           if (verdict.ok) {
-            const answerRef = putText(verdict.text);
+            // The answer goes on without its service marks (delivery mark, document marks); a document is taken from the raw answer.
+            const answerText = Output.cleanAnswer(verdict.text);
+            outcome[model.id].text = answerText;
+            const answerRef = putText(answerText);
             outcome[model.id].textRef = answerRef;
             const items = current[model.id].parts?.input?.items || [];
             const inputs = items.filter((item) => item.artifact).map((item) => item.artifact);
@@ -1311,8 +1315,9 @@
             emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
             if (enough && !semiAuto && !approve) break;
             if (enough && semiAuto && last && !failed.length && !approve) break;
-            // Without every answer "continue" is not offered: the owner repeats, skips or stops the step.
-            const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
+            // Without every answer "continue" is not offered: the owner repeats, skips the participants without an answer
+            // (the accepted answers stay), skips the whole step (it passes nothing on) or stops the step.
+            const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip_participant', 'skip', 'stop'];
             const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             const action = typeof decide === 'function'
               ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
@@ -1320,13 +1325,17 @@
               : null;
             // The fallback "the answers go on" holds only when every answer is accepted and no approval is asked.
             if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
+            // Skipping the participants without an answer goes on with the accepted answers; with none it is the whole step.
+            const skipParticipants = action === 'skip_participant' && accepted.length > 0;
+            const effective = action === 'skip_participant' && !skipParticipants ? 'skip' : action;
             // A decision that ends the step is saved before the checkpoint: a reload does not ask it again.
-            if (action === 'continue' || action === 'skip') state.decisions[decidedKey] = action;
+            if (skipParticipants) state.decisions[decidedKey] = 'continue';
+            else if (effective === 'continue' || effective === 'skip') state.decisions[decidedKey] = effective;
             if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: null });
             emit('custom_decision', { step: step.index, action });
-            if (action === 'continue') break;
-            if (action === 'stop') throw new StopRun('stopped');
-            if (action === 'skip') { entry.skipped = true; break; }
+            if (effective === 'continue' || skipParticipants) break;
+            if (effective === 'stop') throw new StopRun('stopped');
+            if (effective === 'skip') { entry.skipped = true; break; }
             const firstAttempt = Math.max(0, ...failed.map((id) => outcome[id]?.attempt || 0)) + 1;
             await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt, { trigger: 'user_retry', triggerReason: 'user_decision' });
           }
