@@ -50,3 +50,10 @@
     overscroll-behavior-y: auto;
 }
 .pipeline-cover-host > .pipeline-cover-card .debate-model-card-header { flex-shrink: 0; }
+
+/* L-20: a participant card whose attempt was not accepted says so (results/basic-card-verdict.js). */
+.debate-model-card > .basic-card-verdict {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #b45309;
+}
