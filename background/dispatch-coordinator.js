@@ -532,10 +532,6 @@ function commitIncompleteAnswer(llmName, entry, { text, html = '', source, compl
   return true;
 }
 
-// Longest extra wait after the fixed post-send slot while the page reports its send in flight (L-6).
-// Ends as soon as the provider reports send_action_completed or send_action_failed.
-const SEND_IN_FLIGHT_EXTENSION_MS = 15000;
-
 function scheduleDispatchRetry(entry, llmName, error) {
   if (!entry) return;
   const attempt = Number(entry.dispatchAttempts || 0);
@@ -1394,8 +1390,10 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     await pause(Math.max(0, leaveAt - Date.now()));
     // L-6: the page may still be sending (DeepSeek needs up to ~12 s). While it reports
     // send_action_requested without a completion or failure, keep the visit open, up to
-    // SEND_IN_FLIGHT_EXTENSION_MS. The fixed slot alone closed visits mid-send: in the
-    // exports every `submitted` lands at exactly +5 s after command_accepted.
+    // SEND_IN_FLIGHT_EXTENSION_MS (longest extra wait; it ends at once on completion or failure).
+    // The fixed slot alone closed visits mid-send: in the exports every `submitted` lands at
+    // exactly +5 s after command_accepted.
+    const SEND_IN_FLIGHT_EXTENSION_MS = 15000;
     const sendInFlightCapAt = leaveAt + SEND_IN_FLIGHT_EXTENSION_MS;
     const sendInFlight = () => entry.providerDispatchStageDispatchId === meta.dispatchId
       && entry.providerDispatchStage === 'send_action_requested';
