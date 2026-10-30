@@ -52,6 +52,7 @@
     token_only: 'без текста',
     too_short: 'слишком короткий и без признаков конца ответа (строка состояния?)',
     progress_only: 'строка прогресса с меткой доставки, а не ответ',
+    capped_unproven: 'оборван по лимиту времени: нет метки доставки в конце ответа',
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
     partial_unproven: 'не завершён: нет подтверждения окончания',
@@ -202,7 +203,7 @@
       if (usage) return { ok: false, reason: 'usage_limit', detail: usage.detail, text: '' };
       return { ok: false, reason: noAnswerReason(result), text: '' };
     }
-    const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '', prompt: result?.sentPrompt || '' }) || {};
+    const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '', prompt: result?.sentPrompt || '', reason: result?.reason || '' }) || {};
     if (verdict.ok === false) {
       const status = verdict.details?.status ? `статус ${verdict.details.status}` : '';
       return { ok: false, reason: verdict.reason || 'rejected', detail: status, text: value };

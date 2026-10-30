@@ -7455,7 +7455,7 @@ document.addEventListener('click', (event) => {
                     runMaxWords: built.run.maxWords,
                     // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
                     runStrictLength: built.run.strictLength,
-                    accept: ({ text, completion, status, prompt }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt } }),
+                    accept: ({ text, completion, status, prompt, reason }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt, reason } }),
                     parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: askCustomDecision,

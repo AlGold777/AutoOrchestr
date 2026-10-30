@@ -1351,6 +1351,8 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
         // Silence alone does not end the answer (a model may pause while it writes): the end is the
         // request's delivery token after a short quiet, or the cap.
         const finished = (tokenSeen && quiet) || capped;
+        // The cap ended a text without its delivery token: unproven, committed as PARTIAL (L-17).
+        const cappedUnproven = capped && !tokenSeen;
         if (nudges === 0 && now - deferredAt >= UNCERTAIN_TERMINAL_EARLY_NUDGE_MS && !capped && bottomNudge(live, 'early')) return;
         if (quiet && nudges < 2 && !capped && bottomNudge(live, 'before_commit')) return;
         if (!finished) {
@@ -1365,7 +1367,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
                 answerChars: length
             });
         }
-        finalize();
+        finalize({ cappedUnproven });
     };
     const schedule = (delayMs) => {
         const timerId = routerRegisterSessionTimer(setTimeout(() => {
@@ -2369,7 +2371,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         AMBIGUOUS: 'uncertain',
                         CONTEXT_LOST: 'uncertain'
                     })[terminalResult.status] || 'uncertain');
-                    const finalize = () => {
+                    // cappedUnproven: the deferral reached its cap with no delivery token in the text (L-17).
+                    const finalize = ({ cappedUnproven = false } = {}) => {
                         if (stopStalled) {
                             handleLLMResponse(message.llmName, String(message.meta?.answerText || ''), {
                                 type: 'uncertain',
@@ -2384,7 +2387,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                         // A deferred uncertain terminal that ends without a final answer
                         // must not discard text the model already produced: commit it as
-                        // a PARTIAL answer ("неполный"), the user decides what to do.
+                        // a PARTIAL answer ("неполный"), the user decides what to do. At the cap without the
+                        // delivery token the commit is PARTIAL with reason capped_unproven (commitIncompleteAnswer
+                        // sets partial from the token, so it is never a success here).
                         const live = jobState?.llms?.[message.llmName];
                         const snapshotText = String(live?.pendingFinalAnswer || live?.answer || '').trim();
                         if (snapshotText && DEFERRABLE_COMPLETION_TERMINALS.has(terminalResult.status)
@@ -2392,7 +2397,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 text: snapshotText,
                                 html: String(live?.pendingFinalAnswerHtml || live?.answerHtml || ''),
                                 source: 'deferred_terminal_snapshot',
-                                completionReason: 'deferred_terminal_snapshot',
+                                completionReason: cappedUnproven ? 'capped_unproven' : 'deferred_terminal_snapshot',
                                 extraMeta: { completionTerminalResult: terminalResult, completionRolloutMode: authority.rolloutMode }
                             })) {
                             return;

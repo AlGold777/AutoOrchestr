@@ -370,7 +370,7 @@ describe('card marks: incomplete and verify', () => {
 describe('deferred uncertain terminal keeps the text the model produced', () => {
   test('when no final arrives, the produced text is committed as a partial answer instead of an empty failure', () => {
     const router = read('background/message-router.js');
-    const finalize = router.slice(router.indexOf('const finalize = () => {'), router.indexOf('const liveEntry = jobState?.llms?.[message.llmName];'));
+    const finalize = router.slice(router.indexOf('const finalize = ({ cappedUnproven = false } = {}) => {'), router.indexOf('const liveEntry = jobState?.llms?.[message.llmName];'));
     expect(finalize).toContain("live?.pendingFinalAnswer || live?.answer");
     expect(finalize).toContain("commitIncompleteAnswer(message.llmName, live, {");
     expect(finalize).toContain("source: 'deferred_terminal_snapshot'");
