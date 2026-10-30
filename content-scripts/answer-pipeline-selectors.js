@@ -115,7 +115,6 @@
       generatingIndicators: [
         'button[aria-label*=\"Stop\" i]',
         'button[data-testid*=\"stop\"]',
-        '[data-testid=\"chat-loader\"]',
         '[data-testid=\"chat-spinner\"]',
         '[data-testid=\"typing\"]',
         '[data-is-streaming=\"true\"]',
@@ -257,7 +256,7 @@
         'div[class*=\"markdown\"]',
         '[class*=\"markdown-body\"]'
       ],
-      generatingIndicators: ['[data-testid=\"chat-loader\"]', '[aria-busy=\"true\"]', '.loading', '.spinner', '[data-streaming=\"true\"]', '[class*=\"streaming\" i]', '.typing-indicator', 'button[aria-label*=\"Stop\" i]'],
+      generatingIndicators: ['[aria-busy=\"true\"]', '.loading', '.spinner', '[data-streaming=\"true\"]', '[class*=\"streaming\" i]', '.typing-indicator', 'button[aria-label*=\"Stop\" i]'],
       completionIndicators: ['button[data-testid*=\"send\"]:not([disabled])', 'textarea[role=\"textbox\"]:not([disabled])'],
       stopButton: 'button[aria-label*=\"Stop\" i]',
       copyButton: COPY_BUTTON_SELECTORS

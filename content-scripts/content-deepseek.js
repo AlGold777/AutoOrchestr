@@ -172,18 +172,33 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     }
   }
 
-  async function deepseekHumanClick(element) {
+  // attempt: the send attempt of one sendComposer call (L-33). Once it is cancelled (budget ended or send
+  // finished), the click does not start, and a click the humanoid is still performing is swallowed
+  // at the window capture phase, so a late click cannot send the prompt a second time.
+  async function deepseekHumanClick(element, attempt = null) {
     const humanoid = getHumanoid();
-    if (!element) return;
-    if (humanoid?.click) {
-      try {
-        await humanoid.click(element);
-        return;
-      } catch (err) {
-        console.warn('[DeepSeek] Humanoid.click failed', err);
+    if (!element || attempt?.cancelled) return;
+    const guard = attempt ? (event) => {
+      if (!attempt.cancelled) return;
+      if (event.target !== element && !element.contains?.(event.target)) return;
+      event.preventDefault?.();
+      event.stopImmediatePropagation?.();
+    } : null;
+    if (guard) window.addEventListener('click', guard, true);
+    try {
+      if (humanoid?.click) {
+        try {
+          await humanoid.click(element);
+          return;
+        } catch (err) {
+          console.warn('[DeepSeek] Humanoid.click failed', err);
+        }
       }
+      if (attempt?.cancelled) return;
+      element.click();
+    } finally {
+      if (guard) window.removeEventListener('click', guard, true);
     }
-    element.click();
   }
 
   async function fallbackDeepseekType(input, text) {
@@ -1033,7 +1048,9 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       );
     });
     const budgetSleep = (ms) => sleep(Math.max(0, Math.min(ms, remainingMs())));
+    const sendAttempt = { cancelled: false };
     const finish = (confirmed, reason) => {
+      sendAttempt.cancelled = true;
       lastSendOutcome = {
         outcome: confirmed ? 'confirmed' : 'failed',
         reason,
@@ -1099,7 +1116,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     if (!confirmed && remainingMs() > 0) {
       const sendButton = await boundedBy(resolveSendButton(input), remainingMs());
       if (sendButton && sendButton !== SEND_BUDGET_TIMEOUT && remainingMs() > 0) {
-        await boundedBy(deepseekHumanClick(sendButton), remainingMs());
+        await boundedBy(deepseekHumanClick(sendButton, sendAttempt), remainingMs());
         confirmed = await confirmDeepSeekSend(3000);
       }
     }

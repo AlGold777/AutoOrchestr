@@ -36,6 +36,8 @@
     if (String(meta.reason || '') === 'progress_only') return { ok: false, reason: 'progress_only', details: {} };
     // The text the delivery layer committed at the time limit without its delivery token (review L-17): unproven, at any length and for any task class.
     if (String(meta.reason || '') === 'capped_unproven') return { ok: false, reason: 'capped_unproven', details: {} };
+    // The same for a PARTIAL the delivery layer marked unproven: refused for any task class (L-29).
+    if (String(meta.reason || '') === 'partial_unproven') return { ok: false, reason: 'partial_unproven', details: {} };
     if (value.length < minChars) return { ok: false, reason: 'too_short', details: { minChars, actualChars: value.length } };
     // The answer that repeats the start of its request (the page echoes the prompt) is not an answer.
     const promptHead = String(meta.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -61,7 +63,8 @@
     // A transport answer that ended without proof (PARTIAL) and is only a few words is the model's status line («Проверяя
     // архитектуру», «Запуск интерпретатора кода…») taken for text, not an answer.
     // Without that proof a PARTIAL answer is not an answer at any length: a status line, a cut-off text or the page's own text.
-    if (!allowShort && !provenComplete && outputKind !== 'json' && String(meta.status || '').toUpperCase() === 'PARTIAL') return { ok: false, reason: 'partial_unproven', details: { words: wordCount } };
+    // Not bypassed by allowShort (direct_answer): an unproven PARTIAL is not an answer for any task class (L-29).
+    if (!provenComplete && outputKind !== 'json' && String(meta.status || '').toUpperCase() === 'PARTIAL') return { ok: false, reason: 'partial_unproven', details: { words: wordCount } };
     if (!allowShort && !provenComplete && outputKind !== 'json' && !ENDING.test(value) && !/^\s*(?:[-*]|\d+[.)]|#)/.test(lastLine) && lastLine.split(/\s+/).length > 3) return { ok: false, reason: 'incomplete_ending', details: { lastLine } };
     // Proof of completion does not cover a status line: the transport can report «complete» for a text that
     // is only the model's progress («Проверил и уточнил технические риски»). A progress line is never a short

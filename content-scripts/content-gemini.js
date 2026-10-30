@@ -1651,7 +1651,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
             return {
                 text: cleanedFallback,
                 html: latestMarkup.html || '',
-                meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback', answerVerification: fallbackVerification }) || null
+                meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback', answerVerification: fallbackVerification, ...(window.ContentUtils?.buildFallbackAnswerCopy?.(latestMarkup.node) || {}) }) || null
             };
           }
         } catch (fallbackErr) {

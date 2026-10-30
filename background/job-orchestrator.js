@@ -3088,6 +3088,14 @@ function detectActiveGenerationInPage(modelName) {
   };
 }
 
+// The DOM->Markdown copy held with a pending final text (entry.pendingFinalAnswerCopy), when it belongs to that same text.
+function heldAnswerCopyFor(entry, text) {
+  const held = entry?.pendingFinalAnswerCopy;
+  const probe = String(text || '').trim();
+  if (!held || !probe || !Array.isArray(held.texts) || !held.texts.includes(probe)) return null;
+  return { answerMarkdown: held.answerMarkdown || '', copyReport: held.copyReport || null };
+}
+
 function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, normalizedAnswer) {
   if (!DEFER_STREAM_FINAL_MODELS.has(llmName)) return false;
   const responseMeta = metaObj?.responseMeta && typeof metaObj.responseMeta === 'object' ? metaObj.responseMeta : {};
@@ -3113,6 +3121,14 @@ function maybeDeferStreamingFinalization(llmName, answer, metaObj, answerHtml, n
   }
   entry.pendingFinalAnswer = nextPendingFinalAnswer;
   entry.pendingFinalAnswerHtml = String(answerHtml || '');
+  // The copy of this final answer waits with its text: a terminal reached later (deferred check, UNCERTAIN, partial) keeps it (L-31).
+  if (typeof responseMeta.answerMarkdown === 'string' || responseMeta.copyReport) {
+    entry.pendingFinalAnswerCopy = {
+      texts: [String(answer || '').trim(), nextPendingFinalAnswer.trim()],
+      answerMarkdown: typeof responseMeta.answerMarkdown === 'string' ? responseMeta.answerMarkdown : '',
+      copyReport: responseMeta.copyReport && typeof responseMeta.copyReport === 'object' ? responseMeta.copyReport : null
+    };
+  }
   const precheckAnswerEvidence = self.AnswerEvidence?.buildAnswerEvidence?.({
     llmName,
     text: entry.pendingFinalAnswer,
@@ -9271,6 +9287,14 @@ function handleLLMResponse(llmName, answer, error = null, meta = null, answerHtm
   })();
   const answerMarkdownCopy = liftAnswerMarkdownCopy(responseMeta);
   if (!answerMarkdownCopy.copyReport && !error) {
+    // The copy held with this same text (deferred final) is the answer's own copy, not a late one.
+    const heldCopy = heldAnswerCopyFor(entry, answer);
+    if (heldCopy) {
+      answerMarkdownCopy.answerMarkdown = heldCopy.answerMarkdown;
+      answerMarkdownCopy.copyReport = heldCopy.copyReport;
+    }
+  }
+  if (!answerMarkdownCopy.copyReport && !error) {
     // A path that never went through DOM->Markdown (snapshot cache, an adapter's manual
     // pull...) must say so instead of passing as a normal copy.
     answerMarkdownCopy.copyReport = lateCollectCopyFields({
@@ -10868,6 +10892,46 @@ function startStaticAnswerWatchdog(sessionId) {
   const first = registerSessionTimer(setTimeout(() => { sessionTimers.delete(first); tick(); }, STATIC_WATCH_TICK_MS));
 }
 
+// M-11: before a repeat of a Basic request the page is read again. The answer of this request is taken only when the page holds
+// the request's own user turn (its delivery token) and the text is confirmed by that token or is longer than the text already
+// held; otherwise nothing is taken and the caller sends the request again. The collection answers asynchronously: the text is
+// polled until it is confirmed or stops changing.
+const RETRY_REREAD_POLL_MS = 2000;
+const RETRY_REREAD_QUIET_POLLS = 2;
+const RETRY_REREAD_WAIT_MS = 60000;
+
+async function rereadOwnTurnForBasic(message = {}) {
+  const llmName = String(message.llmName || '');
+  const sentPrompt = String(message.sentPrompt || '');
+  const previousLength = String(message.previousText || '').trim().length;
+  const entry = jobState?.llms?.[llmName];
+  if (!llmName || !sentPrompt || !entry) return { found: false, reason: 'reread_unavailable' };
+  const tabId = Number(message.tabId) || Number(entry.tabId) || null;
+  if (!isValidTabId(tabId)) return { found: false, reason: 'no_tab' };
+  if (!(await pageHoldsOwnPromptTurn(tabId, sentPrompt))) return { found: false, reason: 'no_own_turn' };
+  try {
+    await handleManualResponsePing(llmName, {
+      getIt: true, manualLatestRecovery: true, manualRecovery: true, advanceStrategy: false, reason: 'retry_reread_page'
+    });
+  } catch (err) {
+    return { found: false, reason: 'reread_failed' };
+  }
+  const deadline = Date.now() + RETRY_REREAD_WAIT_MS;
+  let text = '';
+  let quiet = 0;
+  let confirmed = false;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, RETRY_REREAD_POLL_MS));
+    const current = String(jobState?.llms?.[llmName]?.pendingFinalAnswer || jobState?.llms?.[llmName]?.answer || '').trim();
+    if (current && current === text) quiet += 1;
+    else { quiet = 0; text = current; }
+    confirmed = Boolean(text) && answerHasDeliveryToken(llmName, text);
+    if (confirmed || (text && quiet >= RETRY_REREAD_QUIET_POLLS)) break;
+  }
+  if (!text || (!confirmed && text.length <= previousLength)) return { found: false, reason: 'no_new_answer' };
+  return { found: true, text, confirmed, status: confirmed ? 'SUCCESS' : 'PARTIAL', completion: confirmed ? 'complete' : 'partial', reason: 'retry_reread_page' };
+}
+
 function collectGetItBatch(selectedModels = [], options = {}) {
   if (getItBatchInFlight) return getItBatchInFlight;
   if (options.failedOnly === true) {
@@ -11433,6 +11497,8 @@ function sendCleanupCommand(llmName) {
   // Declarations inside this initialization block are not global: other
   // background files can only reach what is exported on self.
   self.runAutomaticGetItForModel = runAutomaticGetItForModel;
+  self.rereadOwnTurnForBasic = rereadOwnTurnForBasic;
+  self.triggerResponseCollectionPing = triggerResponseCollectionPing;
   self.resolveBoundTabIdForOrchestrator = resolveBoundTabIdForOrchestrator;
   self.resolvePromptForDispatch = resolvePromptForDispatch;
   self.handleManualResendRequest = handleManualResendRequest;

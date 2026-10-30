@@ -1653,6 +1653,10 @@
       : { answerMarkdown: '', copyReport: buildAnswerMarkdownCopy(null, llmName).copyReport };
   };
 
+  // Fallback paths (dom_fallback) read their text from one element: the copy comes from that same element,
+  // so the Basic reply gets markdown instead of the flat text (L-31). No element, no copy: the background marks it incomplete.
+  const buildFallbackAnswerCopy = (node) => (node && node.nodeType === 1 ? buildLatestAnswerCopy(undefined, node) : {});
+
   const simpleSnapshotHash = (value = '') => {
     const text = String(value || '');
     let hash = 2166136261;
@@ -1775,6 +1779,7 @@
     extractSafeVisibleText,
     collectLateSnapshotCandidate,
     buildLatestAnswerCopy,
+    buildFallbackAnswerCopy,
     getLastInlineHtmlNotes,
     initLateAnswerSnapshotObserver
   };

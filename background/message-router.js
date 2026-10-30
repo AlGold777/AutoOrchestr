@@ -5377,6 +5377,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
             }
 
+            case 'BASIC_REREAD_OWN_TURN': {
+                // M-11: the page is read again before a repeat of a Basic request (see rereadOwnTurnForBasic).
+                Promise.resolve().then(() => self.rereadOwnTurnForBasic(message)).then(sendResponse, err => {
+                    sendResponse({ found: false, reason: err?.message || String(err) });
+                });
+                return true;
+            }
+
             case 'MANUAL_RESPONSE_PING': {
                 (async () => {
                     try {

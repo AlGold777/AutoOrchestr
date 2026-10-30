@@ -2852,6 +2852,12 @@ document.addEventListener('click', (event) => {
         if (!markdown && !report) { delete answerCopyPending[llmName]; return; }
         answerCopyPending[llmName] = { markdown, report, requestId: String(requestId || '') };
         if (requestId) {
+            // A later message without a usable copy (a source without DOM->Markdown, an empty copy) must not
+            // overwrite the complete copy already stashed for this request (L-31, the terminal message after a partial one).
+            const held = answerCopyByRequest.get(String(requestId));
+            const heldComplete = Boolean(held && held.markdown && held.report && held.report.complete === true);
+            const newComplete = Boolean(markdown && report && report.complete === true);
+            if (heldComplete && !newComplete) return;
             answerCopyByRequest.delete(String(requestId));
             answerCopyByRequest.set(String(requestId), { llmName, markdown, report });
             if (answerCopyByRequest.size > 200) answerCopyByRequest.delete(answerCopyByRequest.keys().next().value);
@@ -2859,9 +2865,11 @@ document.addEventListener('click', (event) => {
     };
     // The DOM->Markdown copy a Basic reply should take (shared/basic-reply-text.js). A flat plain text with a missing or
     // incomplete copy waits a few seconds: the Claude ping path sends the text first and the copy in a later message.
-    const REPLY_COPY_WAIT_MS = 4000;
-    const REPLY_COPY_POLL_MS = 250;
-    const replyCopyFor = async (llmName, requestId, flat, own) => {
+    // Waits and thresholds live in shared/basic-reply-text.js (L-32); the literals only serve when that module is absent.
+    const REPLY_COPY_WAIT_MS = globalThis.BasicReplyText?.COPY_WAIT_MS || 4000;
+    const REPLY_COPY_POLL_MS = globalThis.BasicReplyText?.COPY_WAIT_POLL_MS || 250;
+    // `wait`: the reply needs its copy (a flat text, or a long one whose copy is not known to be impossible).
+    const replyCopyFor = async (llmName, requestId, wait, own) => {
         const rid = String(requestId || '');
         const hasCopy = (copy) => Boolean(copy && copy.markdown && copy.report && copy.report.complete === true);
         const latest = () => {
@@ -2870,7 +2878,7 @@ document.addEventListener('click', (event) => {
         };
         const pick = () => (hasCopy(own) ? own : (hasCopy(latest()) ? latest() : (latest() || own || {})));
         let waitedMs = 0;
-        if (flat && !hasCopy(pick())) {
+        if (wait && !hasCopy(pick())) {
             const deadline = Date.now() + REPLY_COPY_WAIT_MS;
             while (!hasCopy(pick()) && Date.now() < deadline) {
                 await new Promise((resolve) => setTimeout(resolve, REPLY_COPY_POLL_MS));
@@ -7410,8 +7418,9 @@ document.addEventListener('click', (event) => {
                         // The reply text: the markdown copy when complete and matching the plain answer (shared/basic-reply-text.js).
                         // A flat text waits for its copy first (replyCopyFor); the copy read here is the one the reply is chosen from.
                         const flatText = Boolean(text.trim() && globalThis.BasicReplyText?.flattened(text));
+                        const copyWaitNeeded = Boolean(text.trim() && globalThis.BasicReplyText?.copyWaitNeeded(text, modelResult.copyReport));
                         const copyWait = text.trim() && globalThis.BasicReplyText
-                            ? await replyCopyFor(model, modelResult.transportRequestId, flatText, { markdown: modelResult.answerMarkdown, report: modelResult.copyReport })
+                            ? await replyCopyFor(model, modelResult.transportRequestId || modelResult.requestId, copyWaitNeeded, { markdown: modelResult.answerMarkdown, report: modelResult.copyReport })
                             : { copy: {}, waitedMs: 0 };
                         const replyChoice = text.trim() && globalThis.BasicReplyText
                             ? globalThis.BasicReplyText.choose({ plain: text, markdown: copyWait.copy.markdown, report: copyWait.copy.report })
@@ -7419,7 +7428,9 @@ document.addEventListener('click', (event) => {
                         // Diagnostics for L-23: where the copy came from (the result of the batch, the copy stash by request, or none),
                         // and whether the terminal message carried a copy at all.
                         const copySource = !copyWait.copy.markdown ? 'none' : (copyWait.copy.markdown === modelResult.answerMarkdown ? 'result' : 'stash');
-                        globalThis.MessageDelivery?.batchEvent?.('basic_reply_text', { model, text_source: replyChoice.text_source, reason: replyChoice.reason, plainChars: text.length, markdownChars: replyChoice.markdownChars || 0, flatText, copyWaitMs: copyWait.waitedMs, copySource, copyComplete: copyWait.copy.report?.complete === true, resultHasMarkdown: typeof modelResult.answerMarkdown === 'string' && modelResult.answerMarkdown.length > 0, resultStatus: modelResult.status || null, requestId: modelResult.transportRequestId || null });
+                        // L-31: where the copy was lost (null when the reply took a copy). copyWaitNeeded tells whether the reply waited for it.
+                        const copyDropReason = globalThis.BasicReplyText?.copyDropReason({ ownMarkdown: modelResult.answerMarkdown, ownReport: modelResult.copyReport, pickedMarkdown: copyWait.copy.markdown, pickedReport: copyWait.copy.report, requestId: modelResult.transportRequestId || modelResult.requestId || '', stashHit: copySource === 'stash' }) ?? null;
+                        globalThis.MessageDelivery?.batchEvent?.('basic_reply_text', { model, text_source: replyChoice.text_source, reason: replyChoice.reason, plainChars: text.length, markdownChars: replyChoice.markdownChars || 0, flatText, copyWaitNeeded, copyWaitMs: copyWait.waitedMs, copySource, copyComplete: copyWait.copy.report?.complete === true, copyDropReason, resultHasMarkdown: typeof modelResult.answerMarkdown === 'string' && modelResult.answerMarkdown.length > 0, resultStatus: modelResult.status || null, requestId: modelResult.transportRequestId || null });
                         if (!text.trim() && String(modelResult.status || '').toUpperCase() === 'USER_ACTION_REQUIRED') {
                             // A participant request refused before the send (R01, R06): the reason is said, nothing is sent.
                             const code = Object.values(window.RunError?.CODES || {}).find((item) => String(modelResult.reason || '').includes(item)) || '';
@@ -7518,6 +7529,13 @@ document.addEventListener('click', (event) => {
                     runMaxWords: built.run.maxWords,
                     // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
                     runStrictLength: built.run.strictLength,
+                    // M-11: before a repeat the page is read again; the background takes the answer of the request's own turn (or says there is none).
+                    reread: async (request) => {
+                        const saved = chatBindings[request.participantId];
+                        const reply = await chrome.runtime.sendMessage({ type: 'BASIC_REREAD_OWN_TURN', llmName: request.modelName,
+                            tabId: saved?.tabId ?? null, sentPrompt: request.sentPrompt, previousText: request.previousText });
+                        return reply || { found: false, reason: 'no_reply' };
+                    },
                     accept: ({ text, completion, status, prompt, reason }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt, reason } }),
                     parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,

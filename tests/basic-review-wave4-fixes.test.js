@@ -29,7 +29,7 @@ const base = (steps, extra = {}) => ({ schemaVersion: 1, origin: 'user', descrip
 const errorPaths = (schema) => Schema.validate(schema).map((error) => error.path);
 const warningPaths = (schema) => Schema.warnings(schema).map((item) => item.path);
 
-const requestDoc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Pipeline scenarios', 'basic-model-request.md'), 'utf8');
+const requestDoc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Scheme create', 'basic-model-request.md'), 'utf8');
 const requestText = requestDoc.match(/^````\n([\s\S]*?)\n````$/m)[1];
 
 describe('A2, A3: the model request agrees with the validator and the engine', () => {

@@ -45,6 +45,8 @@
   const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
   const Artifacts = root.BasicArtifacts || (typeof require === 'function' ? require('./basic-artifacts') : null);
   const DEFAULT_ATTEMPTS = 2;
+  // M-11: the rejections whose text may already be complete on the page: it is read again before the correction is sent.
+  const PARTIAL_REREAD_REASONS = new Set(['capped_unproven', 'partial_unproven', 'unproven_status', 'incomplete_ending', 'truncation_marker']);
   const REASON_TEXT = Object.freeze({
     empty: 'пустой',
     not_sent: 'не отправлено',
@@ -439,7 +441,7 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
+    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
@@ -720,6 +722,37 @@
       return { prompt, parts: partsFor(step, model, input, spec) };
     }
 
+    // The last request of a participant that was sent: its prompt carries the delivery token, its answer is the text already held.
+    const lastSent = (participantId) => [...history].reverse().find((entry) => entry.participant === participantId && entry.sentPrompt) || null;
+
+    // M-11: reads the page for the answer of the last request of each participant (the host's reread callback, which checks the
+    // request's own user turn). Returns the answers found on the page: participant id → a reply for the acceptance. The others are
+    // sent again by the caller. Every read is a journal event (retry_reread_page: outcome accepted | resent).
+    async function rereadOwnTurns(models, step, tryNo) {
+      const found = {};
+      if (typeof reread !== 'function') return found;
+      for (const model of models) {
+        const prev = lastSent(model.id);
+        let reply = null;
+        if (prev) {
+          try {
+            reply = await reread({ participantId: model.id, modelName: model.name, stepRef: step.ref, visit: activeVisit, attempt: tryNo,
+              sentPrompt: prev.sentPrompt, previousText: text(prev.answer) });
+          } catch (error) {
+            reply = { found: false, reason: String(error?.message || error) };
+          }
+        }
+        const got = Boolean(reply?.found) && Boolean(text(reply.text));
+        if (got) {
+          found[model.id] = { text: text(reply.text), status: reply.status || 'PARTIAL', completion: reply.completion || (reply.confirmed ? 'complete' : 'partial'),
+            answered: true, transportRequestId: prev.transportRequestId || '', sentPrompt: prev.sentPrompt, attribution: 'reread', reason: reply.reason || '' };
+        }
+        await emit('retry_reread_page', { step: step.index, ref: step.ref, label: stepLabel(step), visit: activeVisit, model: model.name, participant: model.id,
+          attempt: tryNo, outcome: got ? 'accepted' : 'resent', reason: reply?.reason || (prev ? null : 'no_sent_prompt') });
+      }
+      return found;
+    }
+
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
     // is a history entry of its own: a retry never rewrites the attempt it follows, it refers to it.
     async function attempt(step, models, requests, outcome, firstAttempt = 1, initialTriggerInfo = null) {
@@ -731,6 +764,12 @@
         // The budget is checked before every send, a correction request included.
         const tooLong = pending.find((model) => String(current[model.id].prompt || '').length > maxPromptChars);
         if (tooLong) throw new StopRun('context_full', overBudget(step, tooLong, String(current[tooLong.id].prompt || '').length));
+        // M-11: a repeat of a request («Повторить», a retry after an empty answer) reads the page first. An answer of the same request
+        // that is already there is judged like any reply and nothing is sent for it. A correction is a new request for a rejected
+        // answer, so it is not read again.
+        const rereadNeeded = pending.filter((model) => current[model.id]?.retryOf && !current[model.id]?.parts?.correction);
+        const rereadFound = rereadNeeded.length ? await rereadOwnTurns(rereadNeeded, step, tryNo) : {};
+        const toSend = pending.filter((model) => !rereadFound[model.id]);
         const entries = Object.fromEntries(pending.map((model) => {
           const prevAttemptKey = current[model.id]?.previousAttemptKey || (current[model.id]?.retryOf ? JSON.stringify([step.ref, model.id, activeVisit, current[model.id].retryOf, phase]) : null);
           const trig = current[model.id]?.trigger || (tryNo > 1 ? 'automatic_retry' : (initialTriggerInfo?.trigger || 'initial'));
@@ -741,11 +780,12 @@
             triggerReason: trigReason,
             previousAttemptKey: prevAttemptKey,
             phase, visit: activeVisit, state: 'sent', sentAt: Date.now() };
+          if (rereadFound[model.id]) entry.trigger = 'page_reread';
           history.push(entry);
-          if (typeof onRequest === 'function') onRequest(entry);
+          if (typeof onRequest === 'function' && !rereadFound[model.id]) onRequest(entry);
           return [model.id, entry];
         }));
-        inFlight = pending.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit }));
+        inFlight = toSend.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit }));
         await checkpointNow('send');
         const processed = new Set();
         const retry = [];
@@ -798,6 +838,13 @@
           // A usage limit does not clear by a repeat: the round ends without this answer and the owner decides.
           if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN' && verdict.reason !== 'usage_limit') retry.push(model);
         };
+
+        // The answers read from the page are judged now; a rejected one takes its correction like any other.
+        pending.forEach((model) => {
+          if (!rereadFound[model.id] || processed.has(model.id)) return;
+          processed.add(model.id);
+          processParticipantResult(model, rereadFound[model.id]);
+        });
 
         const dispatched = new Set();
         let waveDispatchedExplicit = false;
@@ -883,24 +930,28 @@
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
         try {
           const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
-          if (pending.length && pending.every((model) => found[model.id])) {
+          if (!toSend.length) {
+            // Every answer was read from the page (M-11): nothing is sent.
+            byId = {};
+            reply = {};
+          } else if (pending.length && pending.every((model) => found[model.id])) {
             byId = found;
             viaCheck = true;
             reply = {};
             pending.forEach((model) => { delete prefetched[model.id]; });
             if (!Object.keys(prefetched).length) prefetched = null;
           } else if (participants) {
-            reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
+            reply = await sendParticipants(toSend.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
               // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
               chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
             { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
             byId = reply?.byParticipant || (reply && typeof reply === 'object' && !('byParticipant' in reply) ? reply : {});
           } else {
-            reply = await send(pending.map((model) => model.name), Object.fromEntries(pending.map((model) => [model.name, current[model.id].prompt])),
+            reply = await send(toSend.map((model) => model.name), Object.fromEntries(toSend.map((model) => [model.name, current[model.id].prompt])),
               { ...meta,
-                maxWordsByModel: Object.fromEntries(pending.map((model) => [model.name, model.maxWords || null])),
-                correctionByModel: Object.fromEntries(pending.map((model) => [model.name, correctionOf[model.id]])) });
-            byId = Object.fromEntries(pending.map((model) => [model.id, reply?.byModel?.[model.name]]));
+                maxWordsByModel: Object.fromEntries(toSend.map((model) => [model.name, model.maxWords || null])),
+                correctionByModel: Object.fromEntries(toSend.map((model) => [model.name, correctionOf[model.id]])) });
+            byId = Object.fromEntries(toSend.map((model) => [model.id, reply?.byModel?.[model.name]]));
           }
         } catch (error) {
           if (error instanceof StopRun) throw error;
@@ -949,6 +1000,17 @@
         if (uncertain.length) {
           const stepEntry = { step, visit: activeVisit, outcome, skipped: false, valid: true };
           await settleUnknown(step, stepEntry, uncertain.map((m) => ({ participantId: m.id, attempt: tryNo })));
+        }
+        // M-11: a partial answer (capped or unproven) is read again before its correction: a longer text on the page is judged first.
+        // The correction stays for a text that is still not accepted.
+        const partialRead = retry.filter((model) => PARTIAL_REREAD_REASONS.has(outcome[model.id]?.reason) && !current[model.id]?.parts?.correction);
+        if (partialRead.length && !(reply?.closedByOwner || wasClosedByOwner)) {
+          const read = await rereadOwnTurns(partialRead, step, tryNo);
+          partialRead.forEach((model) => {
+            if (!read[model.id]) return;
+            retry.splice(retry.indexOf(model), 1);
+            processParticipantResult(model, read[model.id]);
+          });
         }
         if (reply?.closedByOwner || wasClosedByOwner) return { closedByOwner: true };
         pending = retry.filter((m) => !outcome[m.id]?.ok);

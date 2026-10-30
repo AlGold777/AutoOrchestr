@@ -129,7 +129,7 @@ Luna C запускает и анализирует проверки, главн
 | [basic-start-here.md](basic-start-here.md) | Различие модели и участника, два чата, добавление и использование по раундам |
 | [basic-windows.md](basic-windows.md) | +/×, подпись, Send off, пустые поля, Default/Save и ручное заполнение |
 | [basic-schema-guide.md](basic-schema-guide.md) | v1/v2, id/name/label, явные настройки, пример двух Claude, источники по ID |
-| [basic-model-request.md](basic-model-request.md) | Инструкция моделям по новому формату без выдуманных полей |
+| [basic-model-request.md](<../Scheme create/basic-model-request.md>) | Инструкция моделям по новому формату без выдуманных полей |
 | [basic-developer.md](basic-developer.md) | Контракты, файлы, несовпадения возможностей страницы и движка, URL recovery, тесты |
 | [agent-extension-pages-spec.md](../Agents/agent-extension-pages-spec.md) | Фактические элементы и обработчики обеих страниц после реализации |
 | [agent-onboarding.md](../Agents/agent-onboarding.md) | Обновить текущие ограничения только после их фактического устранения |

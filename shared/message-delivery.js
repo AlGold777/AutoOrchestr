@@ -299,9 +299,9 @@
     }
     const metadata = { ...(message.metadata || {}) };
     // Preserve proof after removing the transport token from the visible text.
-    const tokenAt = answer.toLowerCase().lastIndexOf(tag(entry.token).toLowerCase());
+    // The same predicate that decides 'verified' above (L-28): the token is the last line of the answer.
     const endMarkerSeen = state === 'verified'
-      && tokenAt >= 0 && answer.length - tokenAt - tag(entry.token).length <= 40
+      && Boolean(proof?.hasDeliveryTokenTail?.(answer, tag(entry.token)))
       && Boolean(clean(answer));
     // A marker after a progress line («Проверю…») is not the end of the answer (review L-2).
     const progressOnly = endMarkerSeen && isProgressOnlyBody(clean(answer));

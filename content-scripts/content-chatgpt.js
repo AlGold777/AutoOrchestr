@@ -1327,7 +1327,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
             return {
               text: cleanedFallback,
               html: latestMarkup.html || '',
-              meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback' }) || null
+              meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback', ...(window.ContentUtils?.buildFallbackAnswerCopy?.(latestMarkup.node) || {}) }) || null
             };
           }
         } catch (fallbackErr) {
