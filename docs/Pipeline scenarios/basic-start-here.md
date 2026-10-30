@@ -361,6 +361,7 @@
 | `custom_step_resumed` | движок, продолжение шага после остановки | `step`, `ref`, `kind`, `label`, `visit` |
 | `custom_answer` | движок, на каждый ответ каждой попытки | `step`, `label`, `model`, `attempt`, `input`, `accepted`, `reason`, `status`, `transportRequestId`, `promptChars` |
 | `custom_step` | движок, когда шаг завершил попытки | `step`, `label`, `accepted` (число), `failed` (число) |
+| `retry_reread_page` | движок, перед повтором запроса (кнопка «Повторить», повтор пустого ответа, корректировка неполного): страница перечитана | `step`, `ref`, `label`, `visit`, `model`, `participant`, `attempt`, `outcome` (`accepted` — ответ этого запроса со страницы принят на проверку и повторно не отправлен; `resent` — ответа на странице нет, запрос отправлен снова), `reason` |
 | `custom_step_end` | движок, после решения User и ASK (конец шага) | `step`, `ref`, `kind`, `label`, `visit`, `outcome` (`completed`, `skipped`), `skipped`, `accepted`, `failed`, `endedAt` |
 | `custom_step_interrupted` | движок, прерывание шага при Stop или ошибке | `step`, `ref`, `kind`, `label`, `visit`, `outcome` (`stopped`, `cancelled`, `failed`), `reason`, `at` |
 | `custom_decision` | движок, после ответа на окно паузы | `step`, `action` (`continue`, `retry`, `skip`, `stop`) |

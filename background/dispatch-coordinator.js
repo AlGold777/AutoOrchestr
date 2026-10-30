@@ -2148,6 +2148,10 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           meta: { ...dispatchIdentityMeta, dispatchReason: reason, tabId, attempt: entry.dispatchAttempts },
           force: true
         });
+        // M-11: the answer of this turn may already be on the page: it is collected, the request is not sent again.
+        if (result?.reason === 'repeat_own_turn_on_page' && typeof self.triggerResponseCollectionPing === 'function') {
+          self.triggerResponseCollectionPing(llmName, tabId, 'retry_reread_page');
+        }
         return { ok: true, accepted: true, response: { accepted: true, dispatchId }, verifiedOnPage: true };
       };
       // L-6: a repeat of a prompt (after send_not_taken, an undelivered command or a manual
