@@ -1,0 +1,1 @@
+(function(){var b=Array.from(document.querySelectorAll('.modal-content button, .modal-buttons button')).filter(function(x){return x.offsetParent&&/^(OK|ОК)$/.test(x.textContent.trim())})[0];if(!b)return 'no ok';b.click();return 'ok clicked'})()
