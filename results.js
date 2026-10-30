@@ -7415,7 +7415,7 @@ document.addEventListener('click', (event) => {
                             : { copy: {}, waitedMs: 0 };
                         const replyChoice = text.trim() && globalThis.BasicReplyText
                             ? globalThis.BasicReplyText.choose({ plain: text, markdown: copyWait.copy.markdown, report: copyWait.copy.report })
-                            : { text, text_source: 'plain', reason: 'no_converter' };
+                            : { text, text_source: 'plain', reason: text.trim() ? 'no_converter' : 'empty_plain' };
                         // Diagnostics for L-23: where the copy came from (the result of the batch, the copy stash by request, or none),
                         // and whether the terminal message carried a copy at all.
                         const copySource = !copyWait.copy.markdown ? 'none' : (copyWait.copy.markdown === modelResult.answerMarkdown ? 'result' : 'stash');

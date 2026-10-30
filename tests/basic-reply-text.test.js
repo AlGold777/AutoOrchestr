@@ -85,6 +85,12 @@ describe('Basic reply text: the wiring is limited to the Basic reply', () => {
     expect(uses[uses.length - 1]).toBeLessThan(src.indexOf('const byParticipant = {};', uses[0]));
   });
 
+  test('an empty reply is reported as empty_plain; no_converter means the converter is missing (L-23, M-6)', () => {
+    const block = src.slice(src.indexOf('const replyChoice = text.trim()'), src.indexOf('// Diagnostics for L-23'));
+    expect(block).toContain("reason: text.trim() ? 'no_converter' : 'empty_plain'");
+    expect(block).toContain("globalThis.BasicReplyText");
+  });
+
   test('the handler keeps the plain text of every answer; the copy is only stored next to it', () => {
     const handler = src.slice(src.indexOf('handleFinal(messageOrName, answer) {'), src.indexOf('handleResponse(llmName, answer'));
     expect(handler).toContain('batch.responses[llmName] = text;');
