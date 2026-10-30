@@ -10822,7 +10822,10 @@ function runStaticAnswerWatchTick(sessionId) {
       }
       return;
     }
-    if (quietMs >= STATIC_WATCH_COMMIT_AFTER_MS) {
+    const quietCommitMs = self.TransportContract?.generationWindowMs
+      ? self.TransportContract.generationWindowMs(llmName, 'quietCommitMs', STATIC_WATCH_COMMIT_AFTER_MS)
+      : STATIC_WATCH_COMMIT_AFTER_MS;
+    if (quietMs >= quietCommitMs) {
       // Claude's raw text can hold page chrome (sidebar, model menu, prompt echo) and no delivery
       // token: an unverified snapshot is not committed, the watch keeps observing.
       if (llmName === 'Claude') return;

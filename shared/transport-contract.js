@@ -58,6 +58,17 @@
   // Dispatch queueing (serialized focus), finalization stability checks and
   // background delivery on top of the content generation limit.
   const PANEL_WAIT_MARGIN_MS = 120000;
+  // M-5: Perplexity research answers run 8-10 minutes and pause while it searches (run 2.81.950: 469-581 s,
+  // quiet pauses over 30 s). The generic 30 s quiet commit and 180 s deferral cap closed them mid-generation.
+  const GENERATION_WINDOW_MS = Object.freeze({
+    perplexity: Object.freeze({ quietCommitMs: 240000, deferCapMs: 540000 })
+  });
+  // The provider's window for a key, or the generic fallback.
+  function generationWindowMs(llmName, key, fallbackMs) {
+    const window = GENERATION_WINDOW_MS[String(llmName || '').toLowerCase()];
+    const value = window ? Number(window[key]) : 0;
+    return value > 0 ? value : fallbackMs;
+  }
 
   // The panel must never give up before the tab itself can finish: otherwise a
   // legitimate long answer is lost to the pipeline while the tab still waits.
@@ -89,6 +100,8 @@
     isTerminalStatus,
     classifyCompletion,
     resolvePanelWaitTimeoutMs,
+    generationWindowMs,
+    GENERATION_WINDOW_MS,
     makeTransportRequestId
   });
 

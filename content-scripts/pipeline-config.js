@@ -156,6 +156,15 @@
     return target;
   };
 
+  // M-5: Perplexity research answers ran 469-581 s; the Standard 450 s hardMax closed them early.
+  // Applied on the Perplexity host only, in the Standard profile (Long already allows 900 s).
+  const PERPLEXITY_RESEARCH_OVERRIDES = {
+    streaming: { adaptiveTimeout: { hardMax: 540000, veryLong: { timeout: 540000 } } }
+  };
+  const isPerplexityHost = () => {
+    try { return /(^|\.)perplexity\.ai$/i.test(location.hostname); } catch (_) { return false; }
+  };
+
   let activeProfile = 'standard';
   let profileLoaded = false;
   let resolveProfileReady;
@@ -174,6 +183,8 @@
     deepAssign(CONFIG, clone(STANDARD_SNAPSHOT));
     if (next === 'long') {
       deepAssign(CONFIG, LONG_OVERRIDES);
+    } else if (isPerplexityHost()) {
+      deepAssign(CONFIG, PERPLEXITY_RESEARCH_OVERRIDES);
     }
     activeProfile = next;
     return activeProfile;

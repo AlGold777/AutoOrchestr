@@ -1329,6 +1329,36 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             });
         return true;
     };
+    // M-4: CONTEXT_LOST (context_invalidated) means the provider tab's script was orphaned by an
+    // extension reload. Restore the tab once before the Get It nudges, which need a live script;
+    // the chat stays on the page, so the answer can still be read.
+    const recoverOrphanedTab = () => {
+        if (terminalResult?.status !== 'CONTEXT_LOST' || entry.deferredUncertainTerminal.tabRecoveryAt) return false;
+        const tabId = typeof self.resolveBoundTabIdForOrchestrator === 'function'
+            ? self.resolveBoundTabIdForOrchestrator(llmName, entry) : null;
+        if (!tabId || typeof self.recoverOrphanedProviderTab !== 'function') return false;
+        entry.deferredUncertainTerminal.tabRecoveryAt = Date.now();
+        if (typeof reportDispatchPhase === 'function') {
+            reportDispatchPhase(llmName, entry, 'tab_recovering', {
+                dispatchId: entry.deferredUncertainTerminal.dispatchId,
+                reason: 'вкладка модели потеряла связь с расширением; обновлена'
+            });
+        }
+        nudgeInFlight = true;
+        Promise.resolve()
+            .then(() => self.recoverOrphanedProviderTab(tabId, llmName))
+            .catch(() => false)
+            .finally(() => {
+                nudgeInFlight = false;
+                lastGrowthAt = Date.now();
+                schedule(UNCERTAIN_TERMINAL_POLL_MS);
+            });
+        return true;
+    };
+    // M-5: a provider's own window (Perplexity research: 540 s) instead of the generic cap.
+    const maxDeferMs = self.TransportContract?.generationWindowMs
+        ? self.TransportContract.generationWindowMs(llmName, 'deferCapMs', UNCERTAIN_TERMINAL_MAX_DEFER_MS)
+        : UNCERTAIN_TERMINAL_MAX_DEFER_MS;
     const check = () => {
         const live = jobState?.llms?.[llmName];
         if (live !== entry || (sessionId && jobState?.session?.startTime !== sessionId)) return;
@@ -1347,7 +1377,8 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             // Complete by the model's own marker: no Get it needed.
             nudges = Math.max(nudges, 2);
         }
-        const capped = now - deferredAt >= UNCERTAIN_TERMINAL_MAX_DEFER_MS;
+        const capped = now - deferredAt >= maxDeferMs;
+        if (!capped && recoverOrphanedTab()) return;
         // Silence alone does not end the answer (a model may pause while it writes): the end is the
         // request's delivery token after a short quiet, or the cap.
         const finished = (tokenSeen && quiet) || capped;

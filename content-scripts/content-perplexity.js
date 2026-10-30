@@ -512,7 +512,10 @@ function grabLatestAssistantMarkup() {
       : []).flat().filter(Boolean);
     const candidates = selectorsFromBundle.length ? selectorsFromBundle : PERPLEXITY_FALLBACK_LAST_MESSAGE_SELECTORS;
     for (const sel of candidates) {
-      const nodes = Array.from(document.querySelectorAll(sel));
+      // M-5: a combined selector also matches the nested blocks of one answer (.prose inside the answer
+      // card); the last of those is a fragment of the text. Take the outermost matches: the whole answer block.
+      const all = Array.from(document.querySelectorAll(sel));
+      const nodes = all.filter((n) => !all.some((other) => other !== n && typeof other.contains === 'function' && other.contains(n)));
       for (let i = nodes.length - 1; i >= 0; i--) {
         const node = nodes[i];
         // The generic fallbacks (.prose, article) also match the user's own bubble:
