@@ -675,24 +675,20 @@
     executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
-    // A model is on the canvas when a round sends it or when its onCanvas mark stands (a switched-off model on the canvas).
-    const visibleParticipants = [];
-    rounds.forEach((step) => (step.models || []).forEach((model) => {
-      if (model.enabled !== false || model.onCanvas === true || (model.id && model.id !== model.name)) {
-        if (!visibleParticipants.some((item) => idOf(item) === idOf(model))) visibleParticipants.push(model);
-      }
-    }));
-    const selectedModels = models.filter((name) => visibleParticipants.some((item) => item.name === name));
-    // Each round's stack: enabled participants, then visible disabled participants, preserving IDs and labels.
+    // Each round's stack holds only the participants of that round: enabled ones, then its switched-off ones with onCanvas.
+    // A participant of another round never stands in this stack, whatever its id or its mark in that round.
     const stacks = Object.fromEntries(rounds.map((step, index) => {
-      const own = enabledOf(step);
-      const ownIds = new Set(own.map(idOf));
-      const items = [
-        ...own.map((model) => ({ name: model.name, id: idOf(model), ...(model.label ? { label: model.label } : {}), input: true, send: true, role: model.role || null })),
-        ...visibleParticipants.filter((model) => !ownIds.has(idOf(model))).map((model) => ({ name: model.name, id: idOf(model), ...(model.label ? { label: model.label } : {}), input: false, send: false, role: null }))
-      ];
-      return [`r${index + 1}-models`, { items }];
+      const items = (step.models || []).filter((model) => model.enabled !== false || model.onCanvas === true).map((model) => {
+        const on = model.enabled !== false;
+        return { name: model.name, id: idOf(model), ...(model.label ? { label: model.label } : {}), input: on, send: on, role: (on && model.role) || null };
+      });
+      // The enabled ones first, then the switched-off ones, each group in the order of the schema.
+      const ordered = [...items.filter((item) => item.send), ...items.filter((item) => !item.send)];
+      return [`r${index + 1}-models`, { items: ordered }];
     }));
+    // A model is selected when a stack of some round shows it.
+    const shownNames = new Set(Object.values(stacks).flatMap((stack) => stack.items.map((item) => item.name)));
+    const selectedModels = models.filter((name) => shownNames.has(name));
     return { errors, roundCounter: rounds.length, selectedModels, stacks, controls,
       rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })) };
   }

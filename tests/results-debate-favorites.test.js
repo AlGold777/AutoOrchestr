@@ -3223,12 +3223,12 @@ describe('Pipeline debate favorites view', () => {
       test('the order of a round and the send marks of its models survive load and a second save', async () => {
         const h = setupCustomInheritance('Order host');
         try {
-          // The schema order differs from the canvas order (Claude, GPT); the switched-off Claude of R2 comes first on the canvas.
+          // The schema order differs from the canvas order (Claude, GPT); the switched-off Claude of R2 is on the canvas by its onCanvas mark.
           const schema = {
             schemaVersion: 1, origin: 'user', run: { policy: 'auto' },
             steps: [
               { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] },
-              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', enabled: false, request: 'KEPT REQUEST' }] }
+              { ref: 'r2', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude', enabled: false, onCanvas: true, request: 'KEPT REQUEST' }] }
             ]
           };
           expect(await h.debug.installBasicSchema('Ordered', schema)).toEqual({ ok: true, errors: [] });

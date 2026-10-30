@@ -175,9 +175,9 @@ describe('Basic schema: the canvas a schema stands for', () => {
     expect(canvas.stacks['r1-models'].items).toEqual([
       { name: 'GPT', id: 'GPT', input: true, send: true, role: null }, { name: 'Claude', id: 'Claude', input: true, send: true, role: 'critic' }
     ]);
-    expect(canvas.stacks['r2-models'].items.map((item) => [item.name, item.send])).toEqual([['GPT', true], ['Claude', false]]);
+    expect(canvas.stacks['r2-models'].items.map((item) => [item.name, item.send])).toEqual([['GPT', true]]);
     expect(canvas.stacks['r3-models'].items).toEqual([
-      { name: 'Claude', id: 'Claude', input: true, send: true, role: 'interaction_meta_synthesis' }, { name: 'GPT', id: 'GPT', input: false, send: false, role: null }
+      { name: 'Claude', id: 'Claude', input: true, send: true, role: 'interaction_meta_synthesis' }
     ]);
     expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT', 'Claude'], ['GPT'], ['Claude']]);
     expect(canvas).not.toHaveProperty('synthesizer');
@@ -433,14 +433,10 @@ describe('Basic schema: the order of participants on the canvas', () => {
     expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT', 'Claude'], ['Claude', 'GPT']]);
   });
 
-  test('the models of a round that are not in it follow the enabled ones, switched off for this round', () => {
+  test('a round shows only its own participants: no model of another round stands in its stack', () => {
     const canvas = toCanvas(base([round('r1', ['GPT']), round('r2', ['Claude'])]));
-    expect(canvas.stacks['r1-models'].items).toEqual([
-      { name: 'GPT', id: 'GPT', input: true, send: true, role: null }, { name: 'Claude', id: 'Claude', input: false, send: false, role: null }
-    ]);
-    expect(canvas.stacks['r2-models'].items).toEqual([
-      { name: 'Claude', id: 'Claude', input: true, send: true, role: null }, { name: 'GPT', id: 'GPT', input: false, send: false, role: null }
-    ]);
+    expect(canvas.stacks['r1-models'].items).toEqual([{ name: 'GPT', id: 'GPT', input: true, send: true, role: null }]);
+    expect(canvas.stacks['r2-models'].items).toEqual([{ name: 'Claude', id: 'Claude', input: true, send: true, role: null }]);
     expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['GPT'], ['Claude']]);
   });
 
@@ -1290,5 +1286,61 @@ describe('Basic schema: remarks that do not block a valid schema (warnings)', ()
   test('a placeholder text is a remark; an ellipsis inside a text is not', () => {
     expect(paths(base([round('r1', ['A'], { task: 'TODO' })], { description: '…' }))).toEqual(['description', 'steps[0].task']);
     expect(paths(base([round('r1', ['A'], { task: 'Сравни варианты… и выбери лучший.' })]))).toEqual([]);
+  });
+});
+
+describe('Basic schema: the canvas shows only the participants of each round', () => {
+  const canvasModels = ['Claude', 'GPT', 'DeepSeek', 'Perplexity'];
+  const toCanvas = (schema) => Schema.toCanvas(schema, { models: canvasModels });
+  const names = (canvas, ref) => canvas.stacks[`${ref}-models`].items.map((item) => item.name);
+
+  test('two rounds with other participants: the stack of each round holds its own participants only', () => {
+    const schema = base([
+      round('r1', ['Claude', 'GPT', 'DeepSeek', { name: 'Perplexity', enabled: false }]),
+      round('r2', ['Claude', { name: 'GPT', enabled: false }, { name: 'DeepSeek', enabled: false }])
+    ]);
+    const canvas = toCanvas(schema);
+    expect(canvas.errors).toEqual([]);
+    expect(names(canvas, 'r1')).toEqual(['Claude', 'GPT', 'DeepSeek']);
+    expect(names(canvas, 'r2')).toEqual(['Claude']);
+    expect(canvas.selectedModels).toEqual(['Claude', 'GPT', 'DeepSeek']);
+  });
+
+  test('a switched-off participant with onCanvas stays in its own round only; a switched-off one of another round does not show', () => {
+    const schema = base([
+      round('r1', ['Claude', { name: 'Perplexity', enabled: false, onCanvas: true }]),
+      round('r2', ['GPT', { id: 'pplx-2', name: 'Perplexity', enabled: false }])
+    ]);
+    const canvas = toCanvas(schema);
+    expect(canvas.errors).toEqual([]);
+    expect(names(canvas, 'r1')).toEqual(['Claude', 'Perplexity']);
+    expect(canvas.stacks['r1-models'].items[1]).toEqual({ name: 'Perplexity', id: 'Perplexity', input: false, send: false, role: null });
+    expect(names(canvas, 'r2')).toEqual(['GPT']);
+    expect(canvas.rounds.map((item) => item.participantIds)).toEqual([['Claude'], ['GPT']]);
+    // A participant with an id in another round is not shown there either, and does not select its model.
+    expect(canvas.selectedModels).toEqual(['Claude', 'GPT', 'Perplexity']);
+    expect(toCanvas(base([round('r1', ['Claude']), round('r2', [{ id: 'pplx-2', name: 'Perplexity', enabled: false }])])).selectedModels).toEqual(['Claude']);
+  });
+
+  test('round trip: the schema keeps every participant with its id, label, role, task and enabled state after the canvas', () => {
+    const schema = base([
+      round('r1', [{ name: 'Claude', role: 'critic', task: 'T1' }, { name: 'GPT', id: 'gpt-1', label: 'GPT 1', enabled: false, onCanvas: true, request: 'KEPT' }, 'DeepSeek']),
+      round('r2', [{ name: 'Claude', id: 'claude-2', label: 'Claude 2' }, { name: 'GPT', id: 'gpt-1', label: 'GPT 1', enabled: false, request: 'LATER' }])
+    ]);
+    const before = JSON.stringify(schema);
+    const canvas = toCanvas(schema);
+    expect(canvas.errors).toEqual([]);
+    expect(canvas.stacks['r1-models'].items).toEqual([
+      { name: 'Claude', id: 'Claude', input: true, send: true, role: 'critic' },
+      { name: 'DeepSeek', id: 'DeepSeek', input: true, send: true, role: null },
+      { name: 'GPT', id: 'gpt-1', label: 'GPT 1', input: false, send: false, role: null }
+    ]);
+    expect(names(canvas, 'r2')).toEqual(['Claude']);
+    const settings = Schema.toSettings(schema);
+    expect(Object.keys(settings.customModelSettings.r1).sort()).toEqual(['Claude', 'DeepSeek', 'gpt-1']);
+    expect(settings.customModelSettings.r1['gpt-1']).toEqual({ promptTemplate: 'KEPT', name: 'GPT', label: 'GPT 1', enabled: false, onCanvas: true });
+    expect(settings.customModelSettings.r2['claude-2']).toEqual({ name: 'Claude', label: 'Claude 2' });
+    expect(settings.customModelSettings.r2['gpt-1']).toEqual({ promptTemplate: 'LATER', name: 'GPT', label: 'GPT 1', enabled: false });
+    expect(JSON.stringify(schema)).toBe(before);
   });
 });

@@ -121,7 +121,7 @@ describe('Basic participant page integration', () => {
     resetPipelineStore();
     const name = 'Explicit participant defaults';
     const schema = schemaV2([round('r1', [
-      { id: 'claude-review', name: 'Claude', label: 'Claude 2', enabled: false, settingsMode: 'explicit' },
+      { id: 'claude-review', name: 'Claude', label: 'Claude 2', enabled: false, onCanvas: true, settingsMode: 'explicit' },
       { id: 'gpt-main', name: 'GPT' }
     ], { input: 'previous', task: 'ROUND TASK' })], {
       defaults: { roundTask: 'PIPELINE TASK', discipline: { limit: 'PIPELINE LIMIT', content: 'PIPELINE CONTENT' } }

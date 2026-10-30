@@ -6483,16 +6483,18 @@ document.addEventListener('click', (event) => {
                 steps.splice(0, steps.length, ...complete);
             }
             if (forSave) {
-                // A model on the canvas whose Send is off in every round is marked onCanvas in each round: the canvas takes it
-                // from the schema alone (BasicSchema.toCanvas). A model sent in some round needs no mark: it stays on the canvas.
-                const headerNames = getSelectedLLMs();
+                // A switched-off participant that the canvas shows in a round is marked onCanvas in that round, and only there: the
+                // canvas takes it from the schema alone (BasicSchema.toCanvas), and a round where it is not shown stays without it.
                 const roundsOf = steps.filter((step) => step.kind === 'round');
-                const sentSomewhere = new Set(roundsOf.flatMap((step) => step.models.filter((model) => model.enabled !== false).map((model) => model.name)));
                 roundsOf.forEach((step) => {
-                    headerNames.filter((name) => !sentSomewhere.has(name)).forEach((name) => {
-                        const at = step.models.findIndex((model) => model.name === name);
-                        if (at >= 0) step.models[at] = { ...step.models[at], onCanvas: true };
-                        else step.models.push(modelEntry(step.ref, name, { enabled: false, onCanvas: true }));
+                    const stackEl = document.getElementById(`${step.ref}-models`);
+                    const shownKeys = Array.from(stackEl?.querySelectorAll('.model-block') || []).map((block) => modelBlockId(block));
+                    step.models.forEach((model, at) => {
+                        if (model.enabled === false && shownKeys.includes(model.id ?? model.name)) step.models[at] = { ...model, onCanvas: true };
+                    });
+                    shownKeys.forEach((key) => {
+                        if (step.models.some((model) => (model.id ?? model.name) === key)) return;
+                        step.models.push(modelEntry(step.ref, key, { enabled: false, onCanvas: true }));
                     });
                 });
             }
@@ -7916,14 +7918,12 @@ document.addEventListener('click', (event) => {
                 showNotification(`Схема не отображена на холсте: ${window.BasicSchema.describeErrors(schemaCanvas.errors)}`, 'error');
             }
             const sourceRoundSteps = incomingSchema?.steps?.filter((step) => step.kind === 'round') || [];
-            const sourceParticipants = [...new Map(sourceRoundSteps.flatMap((step) => step.models || []).map((model) => [model.id || model.name, model])).values()];
+            // The stack of a round holds only its own participants: enabled ones, and switched-off ones marked onCanvas.
             const schemaStacksFallback = Object.fromEntries(sourceRoundSteps.map((step, index) => {
-                const local = new Map((step.models || []).map((model) => [model.id || model.name, model]));
-                const items = sourceParticipants.map((model) => {
-                    const own = local.get(model.id || model.name);
-                    const enabled = own && own.enabled !== false;
+                const items = (step.models || []).filter((model) => model && (model.enabled !== false || model.onCanvas === true)).map((model) => {
+                    const enabled = model.enabled !== false;
                     return { name: model.name, id: model.id || model.name, label: model.label || model.name,
-                        input: Boolean(enabled), send: Boolean(enabled), role: own?.role || null };
+                        input: enabled, send: enabled, role: (enabled && model.role) || null };
                 });
                 return [`r${index + 1}-models`, { items }];
             }));
