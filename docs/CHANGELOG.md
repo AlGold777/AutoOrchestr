@@ -61,7 +61,7 @@
 
 ### 2026-10-30 — INTERRUPTED не стирает растущий ответ, единый предикат метки, force только с меткой, строки прогресса ChatGPT, версия 2.81.943
 
-- Раздел C ревью прогона Remote Viewfinder (`docs/pipelines/Remote_Viewfinder_2026-10-30/notes/review.md`).
+- Раздел C ревью прогона Remote Viewfinder (`docs/Run/Test_run/Remote_Viewfinder_2026-10-30/notes/review.md`).
 - C1: остановка с текстом на странице и без подтверждённого владения даёт `CONTEXT_LOST` (отложенный финал), а не `INTERRUPTED` с пустым текстом. Флаг `window.__LLMScrollHardStop` сбрасывается новым `GET_ANSWER` (другой `runSessionId`/`dispatchId`), кроме выключателя; установщик флага пишется в `hardStopSetBy` (`content-scripts/content-utils.js`, `content-bootstrap.js`, `pipeline-modules.js`, `unified-answer-watcher.js`, `shared/completion-protocol.js`). Тесты: `tests/completion-protocol.test.js`, `tests/content-stop-runtime.test.js`.
 - C2, C7: русские строки прогресса («Проектир…», «Уточнил…», «Проверю», «Думаю», «Поиск выполнен», «Проверяю», «Проведён») короче 200 символов без метки — не ответ; префикс «<Модель> сказал:» срезается; эхо промпта ищется по голове (80 символов) в любой позиции длинного текста (`shared/answer-content-classifier.js`). Тесты: `tests/answer-content-classifier.test.js`. Выбор блока ChatGPT по «более длинный блок позже» не менялся.
 - C3: один предикат метки доставки — метка в хвосте, не более 40 символов после неё (`shared/answer-proof-normalization.js`, `hasDeliveryTokenTail`); `inspect()` и `answerHasDeliveryToken` его используют. Тесты: `tests/message-delivery.test.js`.
@@ -72,7 +72,7 @@
 
 ### 2026-10-30 — Окна не зависают (Escape, подложка), понятные подписи кнопок, версия 2.81.942
 
-- Найдено ревью прогона Remote Viewfinder (`docs/pipelines/Remote_Viewfinder_2026-10-30/notes/review.md`, B1–B4, B9): Escape в «Вопрос User» закрывал окно без ответа; клик по подложке окна подтверждения оставлял решение висеть; подтверждения удаления и замены схемы показывали «Save»; «Отмена» в окнах User и «Неизвестный запрос» останавливала прогон.
+- Найдено ревью прогона Remote Viewfinder (`docs/Run/Test_run/Remote_Viewfinder_2026-10-30/notes/review.md`, B1–B4, B9): Escape в «Вопрос User» закрывал окно без ответа; клик по подложке окна подтверждения оставлял решение висеть; подтверждения удаления и замены схемы показывали «Save»; «Отмена» в окнах User и «Неизвестный запрос» останавливала прогон.
 - `results.js`: `cancel` окна `#owner-ask-dialog` отменён (`preventDefault`); подложка `#confirm-modal` не закрывает окно; удаление и замена схемы — «Удалить» / «Заменить» и «Отмена», текст по-русски; в окнах User и «Неизвестный запрос» отмена называется «Остановить прогон»; для Basic скрыта «Позже».
 - Тесты: `tests/basic-dialog-buttons.test.js`.
 

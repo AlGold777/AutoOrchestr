@@ -1,6 +1,6 @@
 # Z.ai (провайдер Z.ai)
 
-Код: `content-scripts/content-zai.js`, селекторы `selectors/zai.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 26). Заготовка от 2026-10-30. Попыток Z.ai в выгрузках `docs/pipelines/*/exports/` нет: факты из кода и реестра, живым прогоном не проверены.
+Код: `content-scripts/content-zai.js`, селекторы `selectors/zai.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 26). Заготовка от 2026-10-30. Попыток Z.ai в выгрузках `docs/Run/Test_run/*/exports/` нет: факты из кода и реестра, живым прогоном не проверены.
 
 ## 1. Отправка
 

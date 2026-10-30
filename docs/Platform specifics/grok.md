@@ -1,6 +1,6 @@
 # Grok (провайдер Grok)
 
-Код: `content-scripts/content-grok.js`, селекторы `selectors/grok.config.js` (344 строки, не разобраны в этой заготовке). Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 20). Заготовка от 2026-10-30. Попыток Grok в выгрузках `docs/pipelines/*/exports/` нет: факты из кода и реестра, живым прогоном не проверены.
+Код: `content-scripts/content-grok.js`, селекторы `selectors/grok.config.js` (344 строки, не разобраны в этой заготовке). Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 20). Заготовка от 2026-10-30. Попыток Grok в выгрузках `docs/Run/Test_run/*/exports/` нет: факты из кода и реестра, живым прогоном не проверены.
 
 ## 1. Отправка
 
