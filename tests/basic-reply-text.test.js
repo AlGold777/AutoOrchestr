@@ -122,7 +122,7 @@ describe('Basic reply text: a flat text waits for its copy (L-4)', () => {
     expect(src).toContain('answerCopyByRequest.set(String(requestId)');
     expect(src).toContain('const copyWait = text.trim() && globalThis.BasicReplyText');
     expect(src).toContain('await replyCopyFor(model, modelResult.transportRequestId || modelResult.requestId, copyWaitNeeded');
-    expect(src).toContain('flatText, copyWaitMs: copyWait.waitedMs');
+    expect(src).toContain('flatText, copyWaitNeeded, copyWaitMs: copyWait.waitedMs');
   });
 
   test('the Claude ping path retries the element the copy comes from before it sends the copy', () => {
