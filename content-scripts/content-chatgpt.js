@@ -1097,6 +1097,12 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           'form [role="button"][aria-label*="send" i]'
         ];
 
+        // Send must be enabled: a disabled button means the editor did not take the prompt.
+        const sendReady = await window.ContentUtils.ensureSendReady(inputField, prompt, { selectors: sendButtonSelectors });
+        if (!sendReady.ok) {
+          throw Object.assign(new Error('ChatGPT send button stays disabled with the prompt in the composer'), { type: 'send_not_taken' });
+        }
+
         console.log('[CONTENT-GPT] Looking for send button...');
         activity.heartbeat(0.45, { phase: 'send-button-search' });
         

@@ -1719,6 +1719,12 @@ const keepAliveMutex = (() => {
     const remaining = (fallbackMs) => Math.max(0, Math.min(fallbackMs, sendDeadline - Date.now()));
     const failSend = (message) => { throw { type: 'send_failed', message }; };
 
+    // Send must be enabled: a disabled control means the editor did not take the draft.
+    const sendReady = await window.ContentUtils.ensureSendReady(input, options.prompt || '', {
+      selectors: ['button[data-testid*="send" i]', 'button[aria-label*="Send" i]', 'button[aria-label*="发送" i]', 'button[type="submit"]', 'button:has(svg.icon-send)']
+    });
+    if (!sendReady.ok) throw { type: 'send_not_taken', message: 'Qwen send button stays disabled with the prompt in the composer' };
+
     const isMac = typeof navigator !== 'undefined'
       && /Mac/i.test(navigator.userAgentData?.platform || navigator.platform || '');
     if (isMac) {

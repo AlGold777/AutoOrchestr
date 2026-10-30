@@ -407,6 +407,7 @@
     isVisible,
     resolveSendControl,
     clickSend,
+    findSendControl: resolveSendControl,
     describe,
     scoreComposer,
     collectCandidates,

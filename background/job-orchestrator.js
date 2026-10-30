@@ -2612,6 +2612,8 @@ function shouldMaterializeBeforeTerminal(llmName, finalStatus, finalReason, erro
   const errorType = String(error?.type || '').toLowerCase();
   const reason = String(finalReason || error?.message || '').toLowerCase();
   if (errorType === 'attachment_unavailable' || errorType.includes('attachment') || reason.includes('attachment') || reason.includes('file upload')) return false;
+  // The provider proved the prompt never left the composer: nothing can arrive, so no recovery visit or observation window.
+  if (errorType === 'send_not_taken') return false;
   const status = String(finalStatus || '').toUpperCase();
   if (isUnconfirmedSendFailure(status, reason, error)) return true;
   if (Array.isArray(FAILURE_STATUSES) && FAILURE_STATUSES.includes(status)) return true;
@@ -7779,7 +7781,7 @@ function classifyFailure(error = null, context = {}) {
     return result('page_readiness', true, true);
   }
   if (
-    /send_failed|send_payload_mismatch|send_payload_unverified|no_send|submit_timeout|prompt_submit|prompt_submitted_timeout|dispatch_error|dispatch_send|tab reference|tab not found|circuit_open/.test(haystack)
+    /send_failed|send_not_taken|send_payload_mismatch|send_payload_unverified|no_send|submit_timeout|prompt_submit|prompt_submitted_timeout|dispatch_error|dispatch_send|tab reference|tab not found|circuit_open/.test(haystack)
   ) {
     return result('dispatch', true, true);
   }
@@ -7815,7 +7817,7 @@ function deriveFailureFinalStatus(error = null, sendConfirmed = null, failure = 
   if (/participant_chat_lost|participant_binding_failed|participant_api_unsupported|auth_required|continue_required|login|required_login|captcha|wrong_page|conversation_limit|unsafe_prompt_modal|attachment_failed|attachment_unavailable/.test(haystack)) return 'USER_ACTION_REQUIRED';
   if (/provider_error|provider_error_surface|model_unavailable|rate_limit|rate limited|external_llm|external llm|api_failed|overload|overloaded|high_demand|unable_to_respond/.test(haystack)) return 'EXTERNAL_LLM_FAILURE';
   if (sendConfirmed === false) return 'NO_SEND';
-  if (['send_failed', 'send_payload_mismatch', 'send_payload_unverified', 'no_send'].includes(type)) return 'NO_SEND';
+  if (['send_failed', 'send_not_taken', 'send_payload_mismatch', 'send_payload_unverified', 'no_send'].includes(type)) return 'NO_SEND';
   if (failureClass === 'dispatch' && /send|submit|dispatch|no_send/.test(type)) return type === 'no_send' || /send|submit/.test(type) ? 'NO_SEND' : 'ERROR';
   if (['extract_failed', 'empty_answer', 'answer_element_missing', 'answer_prompt_echo', 'answer_ui_noise'].includes(type)) return 'EXTRACT_FAILED';
   if (['extraction', 'semantic'].includes(failureClass) && !/^rate_limit|captcha/.test(type)) return 'EXTRACT_FAILED';

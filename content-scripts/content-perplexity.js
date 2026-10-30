@@ -1721,6 +1721,11 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
 
     // Prefer the Send control owned by the verified draft. A clicked control
     // must be followed by page evidence, never by an immediate second send.
+    // Send must be enabled: a disabled Send ignores both the click and Ctrl+Enter.
+    const sendReady = await window.ContentUtils.ensureSendReady(findLivePromptComposer() || inputField, prompt, {
+      getSendButton: () => window.PerplexityComposerTransaction?.findSendControl?.(findLivePromptComposer() || inputField) || null
+    });
+    if (!sendReady.ok) throw { type: 'send_not_taken', message: 'Perplexity send button stays disabled with the prompt in the composer' };
     reportStage('send_action_requested');
     const domSend = window.PerplexityComposerTransaction?.clickSend?.(findLivePromptComposer(), prompt);
     activity.heartbeat(0.38, { phase: domSend?.ok ? 'send-control-clicked' : 'ctrl-enter-attempt' });

@@ -477,6 +477,14 @@ describe('finalization evidence contract', () => {
     expect(context.deriveFailureFinalStatus({ type: 'unknown_state' }, null, unknownFailure)).toBe('UNCERTAIN');
   });
 
+  test('send_not_taken (the prompt never left the composer) is NO_SEND and needs no recovery visit', () => {
+    const context = createSandbox();
+    const failure = context.classifyFailure({ type: 'send_not_taken', message: 'Send stays disabled' });
+    expect(failure.class).toBe('dispatch');
+    expect(context.deriveFailureFinalStatus({ type: 'send_not_taken' }, null, failure)).toBe('NO_SEND');
+    expect(context.shouldMaterializeBeforeTerminal('Claude', 'NO_SEND', 'send_not_taken', { type: 'send_not_taken' }, {})).toBe(false);
+  });
+
   test('records failure class in finalization evidence', () => {
     const context = createSandbox();
     const entry = context.jobState.llms.Perplexity;

@@ -1214,91 +1214,20 @@ if (typeof window.SelectorFinder === 'undefined') {
     return null;
   };
   const isClaudeSendEnabled = (button) => !!button && !button.disabled && button.getAttribute('aria-disabled') !== 'true';
-  // True when Send is enabled, or when no Send button is present at all (the existing
-  // send path then decides). False only for a visible button that stays disabled.
-  const waitForClaudeSendReady = async (selectors, timeoutMs) => {
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-      const button = readClaudeSendButton(selectors);
-      if (!button || isClaudeSendEnabled(button)) return true;
-      if (Date.now() >= deadline) return false;
-      await sleep(100);
-    }
-  };
   // The prompt is still in the composer after a send attempt: the message did not go.
   // A sent message clears the composer, so a remaining head means no submission.
   const composerStillHoldsPrompt = (element, prompt) => {
     const head = normalizeComposerText(prompt).slice(0, 40);
     return !!head && !!element?.isConnected && normalizeComposerText(readComposerValue(element)).includes(head);
   };
-  const makeClaudePasteEvent = (text) => {
-    const EventCtor = typeof ClipboardEvent === 'function' ? ClipboardEvent : Event;
-    const ev = new EventCtor('paste', { bubbles: true, cancelable: true });
-    if (!ev.clipboardData && typeof DataTransfer === 'function') {
-      const dt = new DataTransfer();
-      dt.setData('text/plain', text);
-      try { Object.defineProperty(ev, 'clipboardData', { value: dt }); } catch (_) {}
-    } else if (ev.clipboardData) {
-      ev.clipboardData.setData('text/plain', text);
-    }
-    return ev;
-  };
-  const clearClaudeComposer = (element) => {
-    try {
-      if ('value' in element) { element.value = ''; element.dispatchEvent(new Event('input', { bubbles: true })); return; }
-      const doc = element.ownerDocument || document;
-      try { element.focus({ preventScroll: true }); } catch (_) { element.focus?.(); }
-      const range = doc.createRange();
-      range.selectNodeContents(element);
-      const selection = doc.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      doc.execCommand?.('delete', false, null);
-    } catch (_) {}
-  };
-  const insertClaudeTextInChunks = (element, text, chunkSize = 1500) => {
-    const doc = element.ownerDocument || document;
-    for (let i = 0; i < text.length; i += chunkSize) {
-      try {
-        try { element.focus({ preventScroll: true }); } catch (_) { element.focus?.(); }
-        const range = doc.createRange();
-        range.selectNodeContents(element);
-        range.collapse(false);
-        const selection = doc.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-        doc.execCommand?.('insertText', false, text.slice(i, i + chunkSize));
-      } catch (_) {}
-    }
-  };
-  // Each method rewrites the composer through a different input path. The editor
-  // re-reads the DOM after each one; the gate checks Send after every method.
-  const CLAUDE_SEND_REPAIR_METHODS = [
-    (element, text) => {
-      clearClaudeComposer(element);
-      element.dispatchEvent(makeClaudePasteEvent(text));
-    },
-    (element, text) => {
-      clearClaudeComposer(element);
-      insertClaudeTextInChunks(element, text);
-    },
-    (element, text) => {
-      clearClaudeComposer(element);
-      insertClaudeTextInChunks(element, text);
-      // A one-character edit at the end makes the editor take the DOM as its new state.
-      insertClaudeTextInChunks(element, ' ', 1);
-      try { (element.ownerDocument || document).execCommand?.('delete', false, null); } catch (_) {}
-    }
-  ];
+  // The shared gate (ContentUtils.ensureSendReady) waits for Send to enable and repairs the
+  // editor through other input paths; Claude's Send selectors come first.
   const ensureClaudeSendReady = async (element, prompt, selectors, { allowRepair = true } = {}) => {
-    if (await waitForClaudeSendReady(selectors, 3000)) return true;
-    if (!allowRepair) return false;
-    for (const method of CLAUDE_SEND_REPAIR_METHODS) {
-      try { method(element, String(prompt || '')); } catch (_) {}
-      await sleep(150);
-      if (composerHasPromptHead(element, prompt) && await waitForClaudeSendReady(selectors, 2500)) return true;
-    }
-    return false;
+    const result = await window.ContentUtils.ensureSendReady(element, prompt, {
+      selectors: [CLAUDE_SEND_BUTTON_SELECTOR, ...(Array.isArray(selectors) ? selectors : [])],
+      allowRepair
+    });
+    return result.ok;
   };
 
   const pipelineExpectedLength = (text = '') => {
@@ -2126,7 +2055,7 @@ function isLikelyClaudeModelLabel(text = '') {
             details: `composerLength=${readComposerValue(inputArea).length}`,
             level: 'error'
           });
-          throw Object.assign(new Error('Claude send button stays disabled with the prompt in the composer'), { type: 'send_failed' });
+          throw Object.assign(new Error('Claude send button stays disabled with the prompt in the composer'), { type: 'send_not_taken' });
         }
 
         // 2.81.117: composer clearing/shortening and a disabled Send button no
@@ -2294,7 +2223,7 @@ function isLikelyClaudeModelLabel(text = '') {
             details: 'prompt still in composer, Send disabled',
             level: 'error'
           });
-          throw Object.assign(new Error('Claude send did not take: the prompt is still in the composer'), { type: 'send_failed' });
+          throw Object.assign(new Error('Claude send did not take: the prompt is still in the composer'), { type: 'send_not_taken' });
         }
 
         if (!sentConfirmed) {
