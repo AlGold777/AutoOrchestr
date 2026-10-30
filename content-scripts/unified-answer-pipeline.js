@@ -1058,6 +1058,12 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         this.telemetry.logPhase('finalization_empty_answer', { platform: this.platform });
         return { success: false, error: 'empty_answer' };
       }
+      // Account usage limit: the page shows the limit, not an answer (shared/usage-limit-detector.js).
+      const usageLimit = authoritySnapshot ? null : window.UsageLimitDetector?.detect?.({ answerEl: this.getAnswerElement({ reportHealth: false }) || null });
+      if (usageLimit?.detected) {
+        this.telemetry.logPhase('finalization_usage_limit', { platform: this.platform, kind: usageLimit.kind, resetAt: usageLimit.resetAt || null });
+        return { success: false, error: usageLimit.reasonCode };
+      }
       const providerErrorSurface = authoritySnapshot ? null : window.ContentUtils?.detectProviderErrorSurface?.();
       if (providerErrorSurface?.detected) {
         this.telemetry.logPhase('finalization_provider_error_surface', {

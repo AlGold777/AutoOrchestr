@@ -6775,8 +6775,14 @@ document.addEventListener('click', (event) => {
         const waitSinceText = () => (customWaitSince ? `Ожидает с ${new Date(customWaitSince).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : '');
         // The buttons are the choices the engine allows: «Продолжить» only at the threshold (the engine refuses it below),
         // below it «Пропустить шаг» and «Повторить».
-        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, required = 0 }) => {
-            const failedText = failed.map((name) => `${name}${reasons[name] ? ` (${window.CustomEngine?.REASON_TEXT?.[reasons[name]] || reasons[name]})` : ''}`).join(', ');
+        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, details = {}, required = 0 }) => {
+            // The reason with its detail: a usage limit names the reset time («лимит использования модели, сброс в 16:30»).
+            const reasonWithDetail = (name) => {
+                const code = reasons[name];
+                const text = window.CustomEngine?.REASON_TEXT?.[code] || code;
+                return code === 'usage_limit' && details[name] ? `${text}, ${details[name]}` : text;
+            };
+            const failedText = failed.map((name) => `${name}${reasons[name] ? ` (${reasonWithDetail(name)})` : ''}`).join(', ');
             const canContinue = choices.includes('continue');
             const message = accepted.length
                 ? `${label}: принято ${accepted.length}${required ? ` из ${required}` : ''}${failed.length ? `, без ответа: ${failedText}` : ''}. Что дальше?`
@@ -7183,7 +7189,8 @@ document.addEventListener('click', (event) => {
             const stageFailureReason = (index) => {
                 const last = (record?.attempts || []).filter((item) => item.step === index && item.state !== 'sent' && !item.accepted).pop();
                 if (!last) return '';
-                return window.CustomEngine?.REASON_TEXT?.[last.reason] || last.reason || (last.status ? `статус ${last.status}` : '');
+                const text = window.CustomEngine?.REASON_TEXT?.[last.reason] || last.reason || (last.status ? `статус ${last.status}` : '');
+                return last.reason === 'usage_limit' && last.detail ? `${text}, ${last.detail}` : text;
             };
             const finishCustomRunProgress = (lifecycle, stopReason = '') => {
                 if (!customRunProgress) return;
@@ -7378,7 +7385,9 @@ document.addEventListener('click', (event) => {
                             sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
                             attribution: modelResult.attribution || '',
                             answered: String(modelResult.status || '').toUpperCase() === 'SUCCESS' && modelResult.attribution === 'verified',
-                            transportRequestId: modelResult.transportRequestId || ''
+                            transportRequestId: modelResult.transportRequestId || '',
+                            // The transport reason (usage_limit or usage_limit:HH:MM) and its text: the engine reads them for a usage limit.
+                            reason: modelResult.reason || ''
                         }];
                     }));
                     const byParticipant = {};

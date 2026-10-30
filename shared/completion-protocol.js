@@ -24,7 +24,7 @@
     'GENERATION_ACTIVE', 'GENERATION_INACTIVE', 'FRESH_RESPONSE_OBSERVED',
     'STOP_VISIBLE', 'STOP_ABSENT', 'COPY_VISIBLE', 'REGENERATE_VISIBLE',
     'COMPLETION_MARKER_VISIBLE', 'CONTINUE_VISIBLE', 'CONTENT_PROGRESS',
-    'RESPONSE_STRUCTURE_CHANGED', 'COSMETIC_MUTATION', 'PROVIDER_ERROR_VISIBLE',
+    'RESPONSE_STRUCTURE_CHANGED', 'COSMETIC_MUTATION', 'PROVIDER_ERROR_VISIBLE', 'USAGE_LIMIT_VISIBLE',
     'NODE_REPLACED', 'CONTEXT_INVALIDATED', 'USER_INTERRUPTED'
   ]);
 
@@ -201,6 +201,8 @@
       let reason = null;
       if (facts?.contextLost) [status, reason] = ['CONTEXT_LOST', 'context_invalidated'];
       else if (facts?.interrupted) [status, reason] = ['INTERRUPTED', 'attempt_interrupted'];
+      // The account's usage limit is the verdict over a generic provider error: the reason carries the reset time.
+      else if (facts?.usageLimit) [status, reason] = ['PROVIDER_ERROR', facts.usageLimitResetAt ? `usage_limit:${facts.usageLimitResetAt}` : 'usage_limit'];
       else if (facts?.providerError) [status, reason] = ['PROVIDER_ERROR', 'provider_error_visible'];
       else if (facts?.continueRequired) [status, reason] = ['CONTINUE_REQUIRED', 'continue_required'];
       else if (facts?.ownership === 'CONFLICT') [status, reason] = ['AMBIGUOUS', 'ownership_conflict'];
@@ -282,6 +284,8 @@
   const FinalizationAdapter = Object.freeze({
     toFinalStatus(terminalResult) {
       if (terminalResult?.status === 'STALLED' && terminalResult?.reason === 'stop_stalled') return 'UNCERTAIN';
+      // A usage limit is a failed request: the same text is not an answer and the limit does not clear by itself.
+      if (/^usage_limit(?::|$)/.test(String(terminalResult?.reason || ''))) return 'FAILED';
       return ({
         SUCCESS_TERMINAL: 'COMPLETE',
         CONTINUE_REQUIRED: 'USER_ACTION_REQUIRED',
@@ -353,7 +357,7 @@
       this.facts = {
         generationObserved: false, producerState: 'UNKNOWN', contentTerminal: false,
         ownership: 'UNKNOWN', activeVetoes: [], timeoutState: null,
-        providerError: false, continueRequired: false, interrupted: false, contextLost: false
+        providerError: false, usageLimit: false, usageLimitResetAt: null, continueRequired: false, interrupted: false, contextLost: false
       };
       this.ownershipResult = null;
       this.capabilityHealth = new CompletionCapabilityHealth(options.capabilityHealth, (change) => {
@@ -414,6 +418,10 @@
       this.facts.producerState = this.producer.observe(type, record.observedAt, record.seq);
       this.timeouts.producerActive(this.facts.producerState === 'ACTIVE', record.observedAt);
       if (type === 'PROVIDER_ERROR_VISIBLE') this.facts.providerError = true;
+      if (type === 'USAGE_LIMIT_VISIBLE') {
+        this.facts.usageLimit = true;
+        this.facts.usageLimitResetAt = /^\d{1,2}:\d{2}$/.test(String(record.payload?.resetAt || '')) ? record.payload.resetAt : null;
+      }
       if (type === 'CONTINUE_VISIBLE') this.facts.continueRequired = true;
       if (type === 'USER_INTERRUPTED') {
         // A stop while the page holds text the observer never saw ownership of is not a verdict on
@@ -471,7 +479,7 @@
       const vetoes = [];
       if (this.facts.producerState === 'ACTIVE') vetoes.push('ACTIVE_GENERATION');
       if (this.ledger.getLatest('STOP_VISIBLE')?.seq > (this.ledger.getLatest('STOP_ABSENT')?.seq || 0)) vetoes.push('ACTIVE_STOP');
-      if (this.facts.providerError) vetoes.push('PROVIDER_ERROR');
+      if (this.facts.providerError || this.facts.usageLimit) vetoes.push('PROVIDER_ERROR');
       if (this.facts.continueRequired) vetoes.push('CONTINUE_REQUIRED');
       if (this.facts.ownership === 'CONFLICT') vetoes.push('OWNERSHIP_CONFLICT');
       if (this.facts.contextLost) vetoes.push('CONTEXT_INVALID');

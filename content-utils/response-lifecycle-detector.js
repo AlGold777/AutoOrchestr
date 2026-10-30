@@ -1138,7 +1138,7 @@
       GENERATION_ACTIVE: 'generation', GENERATION_INACTIVE: 'generation',
       FRESH_RESPONSE_OBSERVED: 'fresh', CONTENT_PROGRESS: 'content',
       RESPONSE_STRUCTURE_CHANGED: 'structure', COSMETIC_MUTATION: 'cosmetic',
-      PROVIDER_ERROR_VISIBLE: 'provider-error', CONTINUE_VISIBLE: 'continue'
+      PROVIDER_ERROR_VISIBLE: 'provider-error', USAGE_LIMIT_VISIBLE: 'usage-limit', CONTINUE_VISIBLE: 'continue'
     })[type] || type;
     const witnessSignature = `${type}:${JSON.stringify(payload || null)}`;
     const repeatedTerminalCandidate = ['STOP_ABSENT', 'GENERATION_INACTIVE', 'COPY_VISIBLE', 'REGENERATE_VISIBLE', 'COMPLETION_MARKER_VISIBLE'].includes(type)
@@ -1490,6 +1490,16 @@
         tracker.completionSession?.capabilityHealth?.report?.('producerControls', 'HEALTHY');
         appendCompletionWitness(tracker, 'STOP_ABSENT', { probeTrusted: indicators.probeTrusted });
         appendCompletionWitness(tracker, 'GENERATION_INACTIVE', { probeTrusted: indicators.probeTrusted });
+      }
+      // Account usage limit ("Достигнут лимит использования. Сброс в 16:30."): terminal at once, no waiting for the answer to settle.
+      const usageLimit = window.UsageLimitDetector?.detect?.({
+        root: document,
+        answerEl: tracker.latestAnswerEl || null,
+        stopVisible: indicators.hasStopButton === true,
+        textGrowing: !stability.stable
+      });
+      if (usageLimit?.detected) {
+        appendCompletionWitness(tracker, 'USAGE_LIMIT_VISIBLE', { resetAt: usageLimit.resetAt || null, kind: usageLimit.kind });
       }
       const providerErrorSurface = window.ContentUtils?.detectProviderErrorSurface?.();
       if (providerErrorSurface?.detected) {

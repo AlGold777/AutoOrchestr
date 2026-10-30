@@ -67,7 +67,8 @@
     invalid_output: 'не в формате ответа',
     invalid_form: 'опросник не по формату',
     missing_field: 'без обязательного поля',
-    missing_artifact: 'без объявленного артефакта'
+    missing_artifact: 'без объявленного артефакта',
+    usage_limit: 'лимит использования модели'
   });
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
@@ -181,6 +182,12 @@
     if (status.includes('TIMEOUT')) return 'timeout';
     return result?.answered ? 'token_only' : 'empty';
   }
+  // The account's usage limit (the transport reason usage_limit or usage_limit:HH:MM): the request is not repeated before the reset.
+  const USAGE_LIMIT_RE = /^usage_limit(?::(\d{1,2}:\d{2}))?$/;
+  function usageLimitOf(result) {
+    const match = USAGE_LIMIT_RE.exec(String(result?.reason || ''));
+    return match ? { detail: match[1] ? `сброс в ${match[1]}` : '' } : null;
+  }
   // A reason with no text at all: the same request goes out again, no correction is asked.
   const isNoAnswer = (reason) => reason === 'empty' || reason === 'not_sent' || reason === 'timeout';
   // The participant's label in the step (the id when the schema gives none).
@@ -189,7 +196,11 @@
   // The technical acceptance first, then the check of the output (`check`, when the step has an output).
   function judge(result, accept, check = null) {
     const value = text(result?.text);
-    if (!value) return { ok: false, reason: noAnswerReason(result), text: '' };
+    if (!value) {
+      const usage = usageLimitOf(result);
+      if (usage) return { ok: false, reason: 'usage_limit', detail: usage.detail, text: '' };
+      return { ok: false, reason: noAnswerReason(result), text: '' };
+    }
     const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '', prompt: result?.sentPrompt || '' }) || {};
     if (verdict.ok === false) {
       const status = verdict.details?.status ? `статус ${verdict.details.status}` : '';
@@ -782,7 +793,8 @@
             accepted: verdict.ok, reason: verdict.reason || null, status: result.status || null,
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
           inFlight = inFlight.filter((item) => item.participantId !== model.id);
-          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN') retry.push(model);
+          // A usage limit does not clear by a repeat: the round ends without this answer and the owner decides.
+          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN' && verdict.reason !== 'usage_limit') retry.push(model);
         };
 
         const dispatched = new Set();
@@ -1327,7 +1339,8 @@
             const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             const action = typeof decide === 'function'
               ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
-                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }), { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res) })
+                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])),
+                details: Object.fromEntries(failed.map((id) => [id, outcome[id]?.detail || ''])) }), { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res) })
               : null;
             // The fallback "the answers go on" holds only when every answer is accepted and no approval is asked.
             if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }

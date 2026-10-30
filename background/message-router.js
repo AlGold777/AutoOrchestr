@@ -101,6 +101,7 @@ const ensureCompletionRuntimeInTab = (tabId, llmName) => {
                     injectImmediately: true,
                     files: [
                         'shared/completion-protocol.js',
+                        'shared/usage-limit-detector.js',
                         'content-utils/selector-resolver-v2.js',
                         'content-utils/response-lifecycle-detector.js',
                         'content-scripts/content-bootstrap.js'

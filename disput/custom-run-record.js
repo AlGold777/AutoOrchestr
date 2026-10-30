@@ -147,7 +147,8 @@
       Object.assign(attempt, {
         state: 'done', finishedAt: entry.finishedAt || Date.now(), ...sentPromptFields(record, attempt, entry.sentPrompt),
         answerRef: record.put(entry.answer), attribution: entry.attribution || '', accepted: Boolean(entry.accepted),
-        reason: entry.reason || '', status: entry.status || '', transportRequestId: entry.transportRequestId || ''
+        reason: entry.reason || '', status: entry.status || '', transportRequestId: entry.transportRequestId || '',
+        ...(entry.detail ? { detail: String(entry.detail).slice(0, 200) } : {})
       });
       if (entry.chatRoute) attempt.chatRoute = normalizeChatRoute(entry.chatRoute);
       if (entry.recoveredBy) attempt.recoveredBy = entry.recoveredBy;

@@ -33,6 +33,7 @@ const COMMON_FILES = [
   'shared/answer-verification.js',
   'shared/provider-submit-confirmation.js',
   'shared/completion-protocol.js',
+  'shared/usage-limit-detector.js',
   // Completion authority must be present in the two-script distribution too.
   // The field build previously shipped the protocol object without the
   // lifecycle detector that creates CompletionSession instances.

@@ -7755,6 +7755,8 @@ function classifyFailure(error = null, context = {}) {
     terminalRequiresEvidenceMiss: !!terminalRequiresEvidenceMiss
   });
 
+  // The account's usage limit: a failed request with the reset time in the reason (usage_limit:HH:MM).
+  if (/usage_limit/.test(haystack)) return result('external_llm', false, false);
   if (explicitClass && allowedClasses.has(explicitClass)) {
     return result(explicitClass, explicitClass !== 'semantic', true);
   }
@@ -7809,6 +7811,7 @@ function deriveFailureFinalStatus(error = null, sendConfirmed = null, failure = 
   const failureClass = String(failure?.class || '').toLowerCase();
   const reason = String(error?.message || failure?.reason || '').toLowerCase();
   const haystack = [type, failureClass, reason].filter(Boolean).join(' ');
+  if (/usage_limit/.test(haystack)) return 'FAILED';
   if (/participant_chat_lost|participant_binding_failed|participant_api_unsupported|auth_required|continue_required|login|required_login|captcha|wrong_page|conversation_limit|unsafe_prompt_modal|attachment_failed|attachment_unavailable/.test(haystack)) return 'USER_ACTION_REQUIRED';
   if (/provider_error|provider_error_surface|model_unavailable|rate_limit|rate limited|external_llm|external llm|api_failed|overload|overloaded|high_demand|unable_to_respond/.test(haystack)) return 'EXTERNAL_LLM_FAILURE';
   if (sendConfirmed === false) return 'NO_SEND';
