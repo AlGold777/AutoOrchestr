@@ -70,6 +70,13 @@
     return parts.length ? parts.filter(part => part.getAttribute('data-message-part-type') === 'answer') : null;
   }
 
+  // Block structure of the flat answer text (M-6): paragraphs, list items, table rows and code keep their line breaks,
+  // so the text the next Basic round gets is not one run-on line. Inline text is still joined by spaces.
+  const PARAGRAPH_TAGS = new Set(['P', 'DIV', 'SECTION', 'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE', 'BLOCKQUOTE',
+    'UL', 'OL', 'TABLE', 'FIGURE', 'HR', 'DL', 'DETAILS', 'SUMMARY', 'MAIN']);
+  const LINE_TAGS = new Set(['LI', 'TR', 'BR', 'DT', 'DD', 'CAPTION', 'FIGCAPTION']);
+  const CELL_TAGS = new Set(['TD', 'TH']);
+
   function linearizeText(element, options = {}) {
     if (!element || element.nodeType !== 1 || isIgnored(element)) return '';
     // Test the page's turn before discarding accessibility nodes. Otherwise the
@@ -78,24 +85,44 @@
     const geminiLabel = geminiTurn?.querySelector('h6.screen-reader-model-response-label');
     const labelText = normalizeText(geminiLabel?.textContent || '');
     if (labelText && normalizeText(geminiTurn.innerText || geminiTurn.textContent || '').endsWith(labelText)) return '';
-    const chunks = [];
     const maxChars = Math.max(1, Number(options.maxChars || 200000));
-    let length = 0;
+    let buf = '';
+    let preDepth = 0;
+    const need = (count) => {
+      buf = buf.replace(/[ \t]+$/, '');
+      const have = (buf.match(/\n*$/) || [''])[0].length;
+      if (buf && have < count) buf += '\n'.repeat(count - have);
+    };
+    const addText = (raw) => {
+      if (preDepth > 0) { buf += raw; return; }
+      const text = String(raw || '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      if (buf && !/\s$/.test(buf)) buf += ' ';
+      buf += text;
+    };
     const visit = (node) => {
-      if (!node || length >= maxChars) return;
+      if (!node || buf.length >= maxChars) return;
       if (node.nodeType === 3) {
-        const text = normalizeText(node.nodeValue || '');
-        if (text) {
-          chunks.push(text);
-          length += text.length + 1;
-        }
+        addText(node.nodeValue || '');
         return;
       }
       if (node.nodeType !== 1 || isIgnored(node)) return;
+      const tag = String(node.tagName || '').toUpperCase();
+      if (CELL_TAGS.has(tag)) {
+        if (buf && !/[\n|]\s*$/.test(buf)) buf += ' | ';
+      } else if (LINE_TAGS.has(tag)) {
+        need(1);
+      } else if (PARAGRAPH_TAGS.has(tag)) {
+        need(2);
+      }
+      if (tag === 'PRE') preDepth += 1;
       Array.from(node.childNodes || []).forEach(visit);
       try {
         if (node.shadowRoot) Array.from(node.shadowRoot.childNodes || []).forEach(visit);
       } catch (_) {}
+      if (tag === 'PRE') preDepth -= 1;
+      if (PARAGRAPH_TAGS.has(tag)) need(2);
+      else if (LINE_TAGS.has(tag)) need(1);
     };
     const parts = getAnswerParts(element);
     if (parts) parts.forEach(visit);
@@ -103,7 +130,10 @@
     try {
       if (element.shadowRoot) Array.from(element.shadowRoot.childNodes || []).forEach(visit);
     } catch (_) {}
-    return normalizeText(chunks.join(' ').slice(0, maxChars));
+    return buf.slice(0, maxChars)
+      .replace(/[ \t\f\v\r]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   function directText(node) {
