@@ -1186,7 +1186,9 @@
             generationEpoch: tracker.generationEpoch,
             rolloutMode: tracker.completionSession?.rolloutMode || 'enforced',
             protocolVersion: CompletionProtocol?.version || null,
-            terminalResult: transition.terminalResult
+            terminalResult: transition.terminalResult,
+            // The only carrier of the text when the stream is held without progress: keep it for the UNCERTAIN answer.
+            answerText: transition.terminalResult.reason === 'stop_stalled' ? (tracker.latestAnswerText || '') : undefined
           }
         });
       } catch (_) {}
