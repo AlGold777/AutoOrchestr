@@ -67,12 +67,26 @@
   // after the label. A short text that ends with the label holds only the thinking.
   const GEMINI_THINKING_ONLY = /^(?:.{0,120}\s)?(?:Ответ Gemini|Gemini said:?)$/i;
 
-  // Progress lines of a thinking/agent block ("Проектируя архитектуру…", "Уточнил риски…").
-  // They are not answers while they are short and carry no delivery token (see TOKEN_RE).
-  const PROGRESS_LINE_PATTERNS = [
-    /^(?:проектир|уточнил|проверю|проверяю|думаю|поиск выполнен|проведён|проведен)/i
-  ];
-  const PROGRESS_LINE_MAX_LENGTH = 200;
+  // Progress lines of a thinking/agent block ("Проектируя архитектуру…", "Проверил и уточнил риски",
+  // "Thinking…"): a process verb at the start, any tense or form. Only the start is checked, so a
+  // text is a progress line when it starts with one, including several such lines glued without dots.
+  // The `u` flag makes \p{L} cover Cyrillic; \b does not, so Cyrillic verbs end on a lookahead.
+  const PROGRESS_START_RE = new RegExp([
+    'проектир\\p{L}*', 'уточн\\p{L}*', 'провер(?:ил|ю|яю|яем|яет|ить|яя|яла|ял|им|ят)(?!\\p{L})',
+    'анализир\\p{L}*', 'сверя\\p{L}*', 'сверил\\p{L}*', 'изуча\\p{L}*', 'обдумыва\\p{L}*',
+    'рассматрива\\p{L}*', 'формулир\\p{L}*', 'сопоставля\\p{L}*', 'собира\\p{L}*', 'оценива\\p{L}*',
+    'разбира\\p{L}*', 'перепровер\\p{L}*', 'вычисля\\p{L}*', 'составля\\p{L}*',
+    'думаю(?!\\p{L})', 'думаем(?!\\p{L})', 'думает(?!\\p{L})', 'ищу(?!\\p{L})', 'ищет(?!\\p{L})', 'ищем(?!\\p{L})',
+    'поиск выполнен', 'провед[её]н(?!\\p{L})',
+    'thinking\\b', 'thought\\b', 'analy[sz](?:ing|ed|es)\\b', 'checking\\b', 'checked\\b', 'reviewing\\b',
+    'reviewed\\b', 'verifying\\b', 'verified\\b', 'considering\\b', 'considered\\b', 'planning\\b',
+    'designing\\b', 'searching\\b', 'searched\\b', 'reasoning\\b', 'researching\\b', 'researched\\b',
+    'comparing\\b', 'compared\\b', 'evaluating\\b', 'evaluated\\b', 'examining\\b', 'examined\\b', 'refining\\b', 'refined\\b'
+  ].join('|'), 'iu');
+  // A short verdict of the reviewer («Замечаний нет.», «Согласен, без правок.») is an answer, not a progress line.
+  const VERDICT_RE = /замечани\p{L}*\s+нет|без\s+(?:правок|замечаний|изменений)|согласен|согласна|согласны|no\s+(?:issues|changes|objections|comments)|looks?\s+good|lgtm|approved/iu;
+  const ENDING_RE = /[.?!…)»"'\]]$/;
+  const PROGRESS_LINE_MAX_LENGTH = 300;
   const DELIVERY_TOKEN_RE = /\[\[AO-[a-z0-9]{6}\]\]/i;
   const DELIVERY_TOKEN_GLOBAL_RE = /\[\[AO-[a-z0-9]{6}\]\]/gi;
 
@@ -140,8 +154,7 @@
     if (GEMINI_THINKING_ONLY.test(norm)) {
       return decide(CLASSES.UI_NOISE, norm, { reason: 'gemini_thinking_only' });
     }
-    if (norm.length < PROGRESS_LINE_MAX_LENGTH && !DELIVERY_TOKEN_RE.test(norm)
-      && PROGRESS_LINE_PATTERNS.some((re) => re.test(norm))) {
+    if (norm.length < PROGRESS_LINE_MAX_LENGTH && !DELIVERY_TOKEN_RE.test(norm) && isProgressLine(norm)) {
       return decide(CLASSES.UI_NOISE, norm, { reason: 'progress_line_without_token' });
     }
     if (norm.length < minValid) {
@@ -158,6 +171,19 @@
     return decide(CLASSES.VALID, norm, { reason: 'valid' });
   }
 
+  // Progress line: starts with a process verb and has no verdict marker.
+  function isProgressLine(text) {
+    const norm = normalize(text);
+    return PROGRESS_START_RE.test(norm) && !VERDICT_RE.test(norm);
+  }
+
+  // A short text that is not a progress line and shows an end: a sentence ending or a verdict.
+  function isMeaningfulShort(text) {
+    const norm = normalize(text);
+    if (!norm || isProgressLine(norm)) return false;
+    return VERDICT_RE.test(norm) || ENDING_RE.test(norm);
+  }
+
   function decide(contentClass, norm, extra = {}) {
     return {
       contentClass,
@@ -171,7 +197,7 @@
     return classify(text, options).terminalEligible;
   }
 
-  const api = Object.freeze({ CLASSES, classify, isTerminalEligible, TERMINAL_ELIGIBLE, stripModelSaidPrefix });
+  const api = Object.freeze({ CLASSES, classify, isTerminalEligible, TERMINAL_ELIGIBLE, stripModelSaidPrefix, isProgressLine, isMeaningfulShort });
   root.AnswerContentClassifier = api;
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
