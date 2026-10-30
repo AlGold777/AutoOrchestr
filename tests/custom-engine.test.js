@@ -545,7 +545,8 @@ describe('Custom engine participants', () => {
       { ref: 'r2', kind: 'round', input: 'previous', models: [expert('expert-C', { input: [{ step: 'r1', participant: 'expert-B' }] })] }
     ] });
     const prompt = calls[1].requests[0].prompt;
-    expect(prompt).toContain('Ответы выбранных источников:\n\nРаунд 1, участник expert-B, визит 1:\nb1');
+    // The label of the participant (its model name) stands in the owner-facing text, not its id (B6).
+    expect(prompt).toContain('Ответы выбранных источников:\n\nРаунд 1, участник Gemini, визит 1:\nb1');
     expect(prompt).not.toContain('a1');
   });
 
