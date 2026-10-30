@@ -28,3 +28,16 @@ describe('simple first pass keeps the visit open while the send is in flight', (
   });
 });
 
+describe('repeat dispatch verifies its own user turn before sending again', () => {
+  const dispatch = section('async function dispatchPromptToTab', 'function queuedTabMessageContextFailure');
+
+  test('repeat reasons check the page first and count it as delivered when the turn is there', () => {
+    expect(dispatch).toContain("['retry_supervisor', 'round2_repair', 'round2_repair_pre_visit', 'manual_resend'].includes(reason)");
+    expect(dispatch).toMatch(/if \(repeatDispatch && await pageHoldsOwnPromptTurn\(tabId, prompt\)\) \{\s*return recoverUndeliveredCommand\(\{ ok: false, reason: 'repeat_own_turn_on_page' \}\);/);
+  });
+
+  test('both delivery call sites go through the verifying wrapper', () => {
+    expect(dispatch.match(/await deliverOrVerifyCommand\(\)/g)).toHaveLength(2);
+    expect(dispatch).not.toMatch(/await recoverUndeliveredCommand\(await deliverAnswerCommand\(\)\)/);
+  });
+});

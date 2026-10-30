@@ -2148,6 +2148,16 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         });
         return { ok: true, accepted: true, response: { accepted: true, dispatchId }, verifiedOnPage: true };
       };
+      // L-6: a repeat of a prompt (after send_not_taken, an undelivered command or a manual
+      // resend) first looks at the page. If this request's own user turn is already there,
+      // the earlier command went through: a repeat would send the prompt twice.
+      const repeatDispatch = ['retry_supervisor', 'round2_repair', 'round2_repair_pre_visit', 'manual_resend'].includes(reason);
+      const deliverOrVerifyCommand = async () => {
+        if (repeatDispatch && await pageHoldsOwnPromptTurn(tabId, prompt)) {
+          return recoverUndeliveredCommand({ ok: false, reason: 'repeat_own_turn_on_page' });
+        }
+        return recoverUndeliveredCommand(await deliverAnswerCommand());
+      };
       const deliverAnswerCommand = async () => {
         if (!isCurrentDispatchContext()) return { ok: false, stale: true, reason: 'session_mismatch' };
         prepareInsertionWaiter();
@@ -2198,7 +2208,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           if (options.deferSendMs) {
             await dispatchSleepMs(options.deferSendMs);
           }
-          commandDeliveryResult = await recoverUndeliveredCommand(await deliverAnswerCommand());
+          commandDeliveryResult = await deliverOrVerifyCommand();
           const commandAccepted = reportCommandDelivered(commandDeliveryResult);
           if (!commandAccepted) settleUndeliveredCommand(commandDeliveryResult);
           if (commandAccepted && postCommandFocusHoldMs > 0) {
@@ -2296,7 +2306,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
         if (options.deferSendMs) {
           await dispatchSleepMs(options.deferSendMs);
         }
-        commandDeliveryResult = await recoverUndeliveredCommand(await deliverAnswerCommand());
+        commandDeliveryResult = await deliverOrVerifyCommand();
         if (!reportCommandDelivered(commandDeliveryResult)) settleUndeliveredCommand(commandDeliveryResult);
       }
       // Not delivered and no acceptance contract to report it below: stop here
