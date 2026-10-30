@@ -4911,7 +4911,7 @@ document.addEventListener('click', (event) => {
         };
         const syncStepErrorBadges = () => {
             if (!pipelinePanel) return;
-            pipelinePanel.querySelectorAll('.step-error-badge').forEach((badge) => badge.remove());
+            pipelinePanel.querySelectorAll('.step-error-badge:not([data-run-failed])').forEach((badge) => badge.remove());
             const errors = basicSchemaLoadErrorList.get(draftPlanStorageKey()) || [];
             if (!errors.length) return;
             const steps = pipelineStore.pipelines?.[pipelineStore.active]?.schema?.steps || [];
@@ -5099,7 +5099,8 @@ document.addEventListener('click', (event) => {
         // element survives the svg redraws). No live or terminal lifecycle (before the run) = every stage and link is pending (gray).
         const PIPELINE_RUN_LIVE_LIFECYCLES = new Set(['STARTING', 'RUNNING', 'PAUSE_REQUESTED', 'QUIESCING', 'PAUSED', 'RECONCILING', 'FINALIZING']);
         const PIPELINE_RUN_TERMINAL_LIFECYCLES = new Set(['COMPLETED', 'CANCELLED', 'FAILED']);
-        const PIPELINE_RUN_STATE_RANK = { pending: 0, done: 1, running: 2 };
+        // failed and stopped: the stage did not finish (its reason is on the failed one); a finished attempt of the same stage wins over them.
+        const PIPELINE_RUN_STATE_RANK = { pending: 0, stopped: 1, failed: 2, done: 3, running: 4 };
         // Custom runs do not write the orchestrator: runCustomFromPage keeps their stage progress here, in the same
         // shape (lifecycle + stages[plannedStageId, status]). Universal, Polishing and Delta runs clear it at start.
         let customRunProgress = null;
@@ -5114,6 +5115,7 @@ document.addEventListener('click', (event) => {
             const isTerminal = PIPELINE_RUN_TERMINAL_LIFECYCLES.has(lifecycle);
             const hasRun = isTerminal || PIPELINE_RUN_LIVE_LIFECYCLES.has(lifecycle);
             const stateByPlannedStage = new Map();
+            const reasonByPlannedStage = new Map();
             if (hasRun) {
                 (Array.isArray(engineState.stages) ? engineState.stages : []).forEach((stage) => {
                     const plannedId = String(stage?.plannedStageId || '');
@@ -5121,17 +5123,33 @@ document.addEventListener('click', (event) => {
                     if (stage?.status === 'completed') state = 'done';
                     // A stopped run must not keep a stage pulsing as if it were still executing.
                     else if (!isTerminal && (stage?.status === 'running' || stage?.status === 'awaiting_participant')) state = 'running';
+                    else if (stage?.status === 'failed' || stage?.status === 'stopped') state = stage.status;
                     if (!plannedId || !state) return;
                     const previous = stateByPlannedStage.get(plannedId);
-                    if (!previous || PIPELINE_RUN_STATE_RANK[state] > PIPELINE_RUN_STATE_RANK[previous]) stateByPlannedStage.set(plannedId, state);
+                    if (!previous || PIPELINE_RUN_STATE_RANK[state] > PIPELINE_RUN_STATE_RANK[previous]) {
+                        stateByPlannedStage.set(plannedId, state);
+                        if (state === 'failed') reasonByPlannedStage.set(plannedId, String(stage.reason || ''));
+                    }
                 });
             }
             // Before the run starts nothing is involved yet: every stage and link is pending (gray).
             const stateOfColumn = (column) => (hasRun
                 ? (stateByPlannedStage.get(pipelinePlannedStageIdFor(column)) || 'pending')
                 : 'pending');
+            // A failed stage carries a «!» badge with its reason; the badge is redrawn with the state.
+            pipelinePanel.querySelectorAll('.step-error-badge[data-run-failed]').forEach((badge) => badge.remove());
             pipelinePanel.querySelectorAll('.stage-column').forEach((column) => {
                 const state = stateOfColumn(column);
+                if (state === 'failed') {
+                    const badge = document.createElement('button');
+                    badge.type = 'button';
+                    badge.className = 'step-error-badge';
+                    badge.dataset.runFailed = '1';
+                    badge.textContent = '!';
+                    const reason = reasonByPlannedStage.get(pipelinePlannedStageIdFor(column)) || '';
+                    setCanvasTooltip(badge, 'Этап не завершён', reason || 'причина не записана');
+                    (column.querySelector('.stage-label') || column).appendChild(badge);
+                }
                 column.querySelectorAll('.model-block').forEach((block) => {
                     Object.keys(PIPELINE_RUN_STATE_RANK).forEach((name) => block.classList.remove(`pipeline-run-${name}`));
                     const inRun = !block.classList.contains('inactive');
@@ -6758,7 +6776,7 @@ document.addEventListener('click', (event) => {
             customDecisionOpen = true;
             const answer = await showConfirm(message, {
                 confirmText: canContinue ? 'Продолжить' : 'Пропустить шаг',
-                cancelText: 'Stop',
+                cancelText: 'Остановить прогон',
                 retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : ''
             });
             customDecisionOpen = false;
@@ -6774,8 +6792,14 @@ document.addEventListener('click', (event) => {
         };
         // The copy of an approved document goes to the documents folder (results/documents-folder.js); the record of the run stays the main store.
         let documentsAccessNoticed = false;
+        // The folder's name in the owner window; without access the window says so instead of showing a folder it cannot write to.
         const documentsFolderName = async () => {
-            try { return (await window.DocumentsFolder?.instance?.folderName?.()) || ''; } catch (_) { return ''; }
+            try {
+                const folder = window.DocumentsFolder?.instance;
+                const name = (await folder?.folderName?.()) || '';
+                if (!name) return '';
+                return (await folder.ensureAccess({ request: false })) === 'denied' ? 'нет доступа' : name;
+            } catch (_) { return ''; }
         };
         const pickDocumentsFolder = async () => {
             try { return (await window.DocumentsFolder.instance.pick()) || null; } catch (error) {
@@ -6796,12 +6820,12 @@ document.addEventListener('click', (event) => {
             }).catch(() => {});
         };
         // Writes the answer of a document into the folder; it never throws. One notice per run for a failure.
-        const saveDocumentCopy = async ({ stepRef, document, answer, startedAt, pipeline }, state) => {
+        const saveDocumentCopy = async ({ stepRef, document, answer, startedAt, pipeline, runId }, state) => {
             const folder = window.DocumentsFolder?.instance;
             if (!folder || typeof answer !== 'string' || !document) return;
             let result;
             try {
-                result = await folder.write({ pipeline, startedAt, name: document.name || stepRef, kind: document.kind, text: answer });
+                result = await folder.write({ pipeline, startedAt, runId, name: document.name || stepRef, kind: document.kind, text: answer });
             } catch (error) {
                 result = { ok: false, reason: 'error', message: String(error?.message || error) };
             }
@@ -6927,6 +6951,17 @@ document.addEventListener('click', (event) => {
                 onButton: () => { line?.querySelector('.basic-run-line-button')?.remove(); void resumeCustomFromPage(record.runId); }
             });
         };
+        // After a reload the feed is empty, but the latest run of the active pipeline may still be resumable: its line comes back.
+        // Only a stopped run (not a finished one) offers it, the same as at the end of the run.
+        const offerStoredResumeLine = async () => {
+            if (!customRunStore || pipelineRunActive) return;
+            try {
+                const record = await customRunStore.latest(customPipelineName());
+                if (record?.stopReason && record.stopReason !== 'steps_done') offerResumeLine(record);
+            } catch (error) {
+                console.warn('[RESULTS] Resume line not restored', error);
+            }
+        };
         // A version that a later decision made stale stays in the feed, marked «устарело»: its answer is kept, not an input.
         const markStaleBasicCards = (steps) => {
             const requests = new Set(steps.filter((item) => item.valid === false)
@@ -6973,6 +7008,9 @@ document.addEventListener('click', (event) => {
                 return false;
             }
             const steps = built.steps;
+            // Owner windows name a step by its title and a participant by its label; the id stays only when nothing else is known.
+            const stepTitleOf = (ref) => String(built.schema?.steps?.find((item) => item.ref === ref)?.title || '').trim() || ref;
+            const participantLabelOf = (ref, id) => String(built.schema?.steps?.find((item) => item.ref === ref)?.models?.find((model) => (model.id ?? model.name) === id)?.label || '').trim() || id;
             // A schema of owner steps only is valid (BasicSchema.validate) and runs: the page refuses only a run with no step at all.
             if (!engine || !steps.length) {
                 showNotification('Basic: выберите модели хотя бы в одном раунде.', 'warn');
@@ -7130,9 +7168,24 @@ document.addEventListener('click', (event) => {
                 stage.status = status;
                 syncPipelineRunStateVisuals();
             };
-            const finishCustomRunProgress = (lifecycle) => {
+            // The reason of a stage that failed: its last attempt that was not accepted (the record keeps every attempt).
+            const stageFailureReason = (index) => {
+                const last = (record?.attempts || []).filter((item) => item.step === index && item.state !== 'sent' && !item.accepted).pop();
+                if (!last) return '';
+                return window.CustomEngine?.REASON_TEXT?.[last.reason] || last.reason || (last.status ? `статус ${last.status}` : '');
+            };
+            const finishCustomRunProgress = (lifecycle, stopReason = '') => {
                 if (!customRunProgress) return;
                 customRunProgress.lifecycle = lifecycle;
+                // A stage that was still sending when the run ended did not finish: it failed, or the run was stopped on it.
+                const failed = lifecycle === 'FAILED' || ['context_full', 'no_decision'].includes(stopReason);
+                if (lifecycle !== 'COMPLETED') {
+                    customRunProgress.stages.forEach((stage, index) => {
+                        if (stage.status !== 'running') return;
+                        stage.status = failed ? 'failed' : 'stopped';
+                        stage.reason = stageFailureReason(index);
+                    });
+                }
                 syncPipelineRunStateVisuals();
             };
             syncPipelineRunStateVisuals();
@@ -7387,7 +7440,7 @@ document.addEventListener('click', (event) => {
                         const { stepRef, task, goal, input, output, document, reason, detail } = request;
                         const folderName = document ? await documentsFolderName() : '';
                         const answer = await askChoiceDialog({
-                            title: `Ответ User: ${stepRef}`,
+                            title: `Ответ User: ${stepTitleOf(stepRef)}`,
                             message: window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }),
                             textInput: document ? null : { label: 'Ответ User', required: true },
                             inputFiles: window.BasicInputFiles ? window.BasicInputFiles.filesFor(steps.find((step) => step.ref === stepRef), 'owner')
@@ -7399,14 +7452,14 @@ document.addEventListener('click', (event) => {
                             ...(document ? { folder: { name: folderName, onPick: pickDocumentsFolder } } : {})
                         });
                         if (typeof answer === 'string' && document) {
-                            void saveDocumentCopy({ stepRef, document, answer, startedAt: runContext.startedAt, pipeline: customPipelineName() }, documentCopyState);
+                            void saveDocumentCopy({ stepRef, document, answer, startedAt: runContext.startedAt, pipeline: customPipelineName(), runId: runContext.pipelineRunId }, documentCopyState);
                         }
                         return answer;
                     },
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
-                        message: `${stepRef}: отправка не подтверждена (${items.map((item) => item.participantId).join(', ')}). ${choices.includes('check') ? 'Проверить, пришёл ли ответ в чате (ничего не отправляется), отправить заново или пропустить?' : 'Отправить заново или пропустить?'}`,
+                        message: `${stepTitleOf(stepRef)}: отправка не подтверждена (${items.map((item) => participantLabelOf(stepRef, item.participantId)).join(', ')}). ${choices.includes('check') ? 'Проверить, пришёл ли ответ в чате (ничего не отправляется), отправить заново или пропустить?' : 'Отправить заново или пропустить?'}`,
                         choices: choices.map((id) => ({ value: id, label: { check: 'Проверить ответ', resend: 'Отправить заново', skip: 'Пропустить' }[id] || id })),
                         cancelText: 'Остановить прогон'
                     }),
@@ -7481,7 +7534,7 @@ document.addEventListener('click', (event) => {
                     }
                 });
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
-                finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED');
+                finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED', result.stopReason);
                 if (record) {
                     // The registry and the state of the run at its end: what a later resume needs (8.2).
                     const CustomRecord = window.CustomRunRecord;
@@ -8977,7 +9030,7 @@ document.addEventListener('click', (event) => {
                     return;
                 }
                 win.style.display = 'none';
-                const done = await importBasicSchemaFile(value, '');
+                const done = await importBasicSchemaFile(value, uniquePipelineName(String(value?.title || '').trim() || 'Новая схема'));
                 if (done && read.notes.length) showNotification(read.notes.join('\n'));
                 if (done) close();
                 else win.style.display = '';
@@ -10202,6 +10255,7 @@ document.addEventListener('click', (event) => {
         setTimeout(() => syncPipelineRoundsToDebateLimit(), 0);
         updatePipelineAll();
         pipelineFeedClearReady = true;
+        void offerStoredResumeLine();
         if (isPipelinePage) {
             let navigationDraftRestored = false;
             pipelineViewDraftHandlers = {
@@ -19524,7 +19578,9 @@ document.addEventListener('click', (event) => {
         };
         const comparison = window.AnswerProofNormalization?.compare?.(expected, observed || {})
             || { status: 'incomparable', reason: 'normalization_unavailable' };
-        const outcome = !panel || (expectedCardId && expectedCardId !== observedCardId)
+        // The expected id is the main-view card («panel-<model>»); a pipeline card has no such id, so an absent id on either side
+        // is not a wrong card: only two different ids are (otherwise a finished answer stayed «pending» with a green indicator).
+        const outcome = !panel || (expectedCardId && observedCardId && expectedCardId !== observedCardId)
             ? 'wrong_card'
             : (!outputElement || !renderedText
                 ? 'empty'
@@ -25046,8 +25102,8 @@ if (smartCompareButton) {
     function showConfirm(message, options = {}) {
         return new Promise((resolve) => {
             if (confirmModal && confirmMessage) {
-                const confirmText = String(options?.confirmText || 'Save');
-                const cancelText = String(options?.cancelText || 'Cancel');
+                const confirmText = String(options?.confirmText || 'Сохранить');
+                const cancelText = String(options?.cancelText || 'Отмена');
                 const retryText = String(options?.retryText || '').trim();
                 confirmMessage.textContent = message;
                 deleteConfirmBtn.textContent = confirmText;
@@ -25086,10 +25142,10 @@ if (smartCompareButton) {
                     deleteConfirmBtn.removeEventListener('click', onConfirm);
                     cancelConfirmBtn.removeEventListener('click', onCancel);
                     retryConfirmBtn?.removeEventListener('click', onRetry);
-                    deleteConfirmBtn.textContent = 'Save';
-                    deleteConfirmBtn.setAttribute('aria-label', 'Save');
-                    cancelConfirmBtn.textContent = 'Cancel';
-                    cancelConfirmBtn.setAttribute('aria-label', 'Cancel');
+                    deleteConfirmBtn.textContent = 'Сохранить';
+                    deleteConfirmBtn.setAttribute('aria-label', 'Сохранить');
+                    cancelConfirmBtn.textContent = 'Отмена';
+                    cancelConfirmBtn.setAttribute('aria-label', 'Отмена');
                     cancelConfirmBtn.disabled = false;
                     if (retryConfirmBtn) {
                         retryConfirmBtn.textContent = 'Повторить ещё раз';
@@ -25113,7 +25169,7 @@ if (smartCompareButton) {
         return new Promise((resolve) => {
             if (promptModal && promptMessage && promptDialogInput) {
                 const options = arguments[2] || {};
-                const okText = String(options?.confirmText || 'OK');
+                const okText = String(options?.confirmText || 'ОК');
                 promptMessage.textContent = message;
                 promptDialogInput.value = String(defaultValue ?? '');
                 if (promptOkBtn) {
@@ -25148,8 +25204,8 @@ if (smartCompareButton) {
                     promptDialogInput.removeEventListener('keydown', onKeyDown);
                     promptModal.removeEventListener('click', onBackdropClick);
                     if (promptOkBtn) {
-                        promptOkBtn.textContent = 'OK';
-                        promptOkBtn.setAttribute('aria-label', 'OK');
+                        promptOkBtn.textContent = 'ОК';
+                        promptOkBtn.setAttribute('aria-label', 'ОК');
                     }
                 };
 

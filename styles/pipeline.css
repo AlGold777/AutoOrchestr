@@ -295,6 +295,21 @@ body.is-resizing {
     50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); }
 }
 
+/* A stage that failed (no accepted answer when the run ended) is red; a stopped one is dashed gray: neither looks «не начат». */
+.pipeline-flow .model-block.pipeline-run-failed {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.14);
+}
+
+.pipeline-flow .model-block.pipeline-run-failed .model-name {
+    color: #991b1b;
+}
+
+.pipeline-flow .model-block.pipeline-run-stopped {
+    border-color: #94a3b8;
+    border-style: dashed;
+}
+
 .pipeline-flow .connector-group.pipeline-link-pending .connector-line,
 .pipeline-flow .connector-group.pipeline-link-pending .merge-line {
     stroke: var(--pipeline-connector);

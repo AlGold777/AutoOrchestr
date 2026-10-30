@@ -78,7 +78,8 @@ describe('Custom run record', () => {
   test('a retry is a new attempt referring to the one it follows; the first stays as it was', async () => {
     const { record } = await recordedRun({ steps: [{ task: 'x', input: 'none', models: ['A'] }], answers: { A: ['', 'a2'] } });
     const attempts = Record.exportRun(record).attempts;
-    expect(attempts.map((item) => [item.attempt, item.retryOf, item.accepted, item.reason])).toEqual([[1, null, false, 'empty'], [2, 1, true, '']]);
+    // An empty answer that came back with a TIMEOUT status is a timeout (B6): the same request still goes out again.
+    expect(attempts.map((item) => [item.attempt, item.retryOf, item.accepted, item.reason])).toEqual([[1, null, false, 'timeout'], [2, 1, true, '']]);
     expect(attempts[1].prompt).toBe(attempts[0].prompt);
     expect(attempts[1].instructions.correction).toBeUndefined();
     const first = record.attempts[0];

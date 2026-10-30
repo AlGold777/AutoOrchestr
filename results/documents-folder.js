@@ -41,6 +41,8 @@
 
   // The folder handle is kept in the store (get() gives a handle or null, set(handle) keeps it).
   function create({ store, picker }) {
+    // Which run wrote each file in this page session (path → run id).
+    const writtenBy = new Map();
     const folderName = async () => {
       const handle = await store.get();
       return handle ? String(handle.name || '') : '';
@@ -71,7 +73,7 @@
       return answer === 'granted' ? 'granted' : 'denied';
     };
 
-    const write = async ({ pipeline, startedAt, name, kind, text }) => {
+    const write = async ({ pipeline, startedAt, name, kind, text, runId = '' }) => {
       const handle = await store.get();
       if (!handle) return { ok: false, reason: 'none' };
       if ((await ensureAccess({ request: false })) !== 'granted') return { ok: false, reason: 'denied' };
@@ -79,11 +81,24 @@
         const { dirs, file } = relativePath({ pipeline, startedAt, name, kind });
         let dir = handle;
         for (const part of dirs) dir = await dir.getDirectoryHandle(part, { create: true });
-        const fileHandle = await dir.getFileHandle(file, { create: true });
+        // A file of the same name written by another run is kept: the copy gets « (2)», « (3)»… A run's own file (the same
+        // run's OK again) and a file this page does not know (after a reload) are overwritten, as before.
+        const dot = file.lastIndexOf('.');
+        const base = file.slice(0, dot);
+        const ext = file.slice(dot);
+        let candidate = file;
+        for (let index = 2; ; index += 1) {
+          const key = [...dirs, candidate].join('/');
+          const taken = await dir.getFileHandle(candidate).then(() => true, () => false);
+          if (!taken || !writtenBy.has(key) || writtenBy.get(key) === runId) break;
+          candidate = `${base} (${index})${ext}`;
+        }
+        const fileHandle = await dir.getFileHandle(candidate, { create: true });
         const writable = await fileHandle.createWritable();
         await writable.write(String(text == null ? '' : text));
         await writable.close();
-        return { ok: true, path: [...dirs, file].join('/') };
+        writtenBy.set([...dirs, candidate].join('/'), runId);
+        return { ok: true, path: [...dirs, candidate].join('/') };
       } catch (error) {
         return { ok: false, reason: 'error', message: String(error?.message || error) };
       }

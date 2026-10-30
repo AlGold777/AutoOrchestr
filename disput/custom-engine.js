@@ -47,6 +47,8 @@
   const DEFAULT_ATTEMPTS = 2;
   const REASON_TEXT = Object.freeze({
     empty: 'пустой',
+    not_sent: 'не отправлено',
+    timeout: 'таймаут',
     token_only: 'без текста',
     too_short: 'слишком короткий',
     truncation_marker: 'оборван',
@@ -56,6 +58,10 @@
     closed_by_owner: 'раунд закрыт User',
     too_long: 'длиннее допустимого',
     missing_section: 'не содержит раздел',
+    missing_sections: 'не содержит нужных разделов',
+    invalid_json: 'не является корректным JSON',
+    invalid_audit_verdict: 'вердикт аудита не в формате',
+    rejected: 'не принят',
     invalid_output: 'не в формате ответа',
     invalid_form: 'опросник не по формату',
     missing_field: 'без обязательного поля',
@@ -165,10 +171,23 @@
   // Default technical check: non-empty text. The page passes the shared acceptance check.
   const defaultAccept = () => ({ ok: true, reason: '' });
 
+  // Why there is no text: the transport's status says whether it was sent (NO_SEND) or timed out; otherwise the model
+  // answered without text (token only) or said nothing.
+  function noAnswerReason(result) {
+    const status = String(result?.status || '').toUpperCase();
+    if (status === 'NO_SEND') return 'not_sent';
+    if (status.includes('TIMEOUT')) return 'timeout';
+    return result?.answered ? 'token_only' : 'empty';
+  }
+  // A reason with no text at all: the same request goes out again, no correction is asked.
+  const isNoAnswer = (reason) => reason === 'empty' || reason === 'not_sent' || reason === 'timeout';
+  // The participant's label in the step (the id when the schema gives none).
+  const participantName = (step, id) => (step?.models || []).find((model) => model.id === id)?.label || id;
+
   // The technical acceptance first, then the check of the output (`check`, when the step has an output).
   function judge(result, accept, check = null) {
     const value = text(result?.text);
-    if (!value) return { ok: false, reason: result?.answered ? 'token_only' : 'empty', text: '' };
+    if (!value) return { ok: false, reason: noAnswerReason(result), text: '' };
     const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '' }) || {};
     if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
     const shape = check ? check(value) : null;
@@ -624,7 +643,7 @@
           if (!answers.length) throw stopped('не дал принятого ответа');
         }
         return answers.map((item) => ({
-          label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,
+          label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${participantName(entry.step, item.participant)}, визит ${entry.visit}`,
           text: item.text, source: item.source, textRef: item.textRef, pointer: '', ...binaryOf(item),
           address: { step: entry.step.ref, participant: item.participant, visit: entry.visit }
         }));
@@ -697,7 +716,7 @@
         const entries = Object.fromEntries(pending.map((model) => {
           const prevAttemptKey = current[model.id]?.previousAttemptKey || (current[model.id]?.retryOf ? JSON.stringify([step.ref, model.id, activeVisit, current[model.id].retryOf, phase]) : null);
           const trig = current[model.id]?.trigger || (tryNo > 1 ? 'automatic_retry' : (initialTriggerInfo?.trigger || 'initial'));
-          const trigReason = current[model.id]?.triggerReason || (tryNo > 1 ? (outcome[model.id]?.reason === 'empty' ? 'empty_answer' : 'rejected_by_judge') : (initialTriggerInfo?.triggerReason || null));
+          const trigReason = current[model.id]?.triggerReason || (tryNo > 1 ? (isNoAnswer(outcome[model.id]?.reason) ? 'empty_answer' : 'rejected_by_judge') : (initialTriggerInfo?.triggerReason || null));
           const entry = { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo,
             retryOf: current[model.id].retryOf || null, prompt: current[model.id].prompt, parts: current[model.id].parts,
             trigger: trig,
@@ -917,8 +936,8 @@
         // the same request goes out again. A correction is for an answer that came back and was not accepted.
         current = Object.fromEntries(pending.map((model) => {
           const prevKey = lastEntries[model.id]?.attemptKey || JSON.stringify([step.ref, model.id, activeVisit, tryNo, phase]);
-          const trigReason = outcome[model.id]?.reason === 'empty' ? 'empty_answer' : 'rejected_by_judge';
-          if (outcome[model.id].reason === 'empty') {
+          const trigReason = isNoAnswer(outcome[model.id]?.reason) ? 'empty_answer' : 'rejected_by_judge';
+          if (isNoAnswer(outcome[model.id].reason)) {
             return [model.id, { ...current[model.id], retryOf: tryNo, trigger: 'automatic_retry', triggerReason: trigReason, previousAttemptKey: prevKey }];
           }
           const correction = correctionPrompt(outcome[model.id].reason, model.discipline?.correction, outcome[model.id].detail);
