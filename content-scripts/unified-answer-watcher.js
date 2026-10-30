@@ -590,15 +590,16 @@
               this.stopStallReported = false;
             }
             const silentMs = Date.now() - this.stopStallSince;
+            const stallVerdict = () => ({
+              status: 'UNCERTAIN',
+              reason: 'stop_stalled',
+              silentMs,
+              textLength: stallLength,
+              stopVisibleSinceMs: this.firstStopSeenAt ? Date.now() - this.firstStopSeenAt : null
+            });
             if (silentMs >= STOP_STALL_MS && !this.stopStallReported) {
               this.stopStallReported = true;
-              this.stopStalled = {
-                status: 'UNCERTAIN',
-                reason: 'stop_visible_text_silent',
-                silentMs,
-                textLength: stallLength,
-                stopVisibleSinceMs: this.firstStopSeenAt ? Date.now() - this.firstStopSeenAt : null
-              };
+              this.stopStalled = stallVerdict();
               this.emitDetectorEvent('STOP_STALLED', this.stopStalled);
             }
             // Generation indicator (Stop) is visible: silence and the soft/own hard timers do not end the wait.
@@ -607,7 +608,13 @@
               ? Date.now() >= generalDeadlineAt
               : ownExpiration.hardExpired;
             if (generalLimitReached) {
-              cleanup(this.buildResult('hard_timeout', 0.3, typingActive, getRecentGrowth(), false));
+              // Same verdict as the protocol's STALLED stop_stalled (UNCERTAIN, text kept, not a plain timeout).
+              if (!this.stopStalled) {
+                this.stopStalled = stallVerdict();
+                this.stopStallReported = true;
+                this.emitDetectorEvent('STOP_STALLED', this.stopStalled);
+              }
+              cleanup(this.buildResult('stop_stalled', 0.3, typingActive, getRecentGrowth(), false));
             }
             return;
           }
@@ -1186,6 +1193,8 @@
         answerSelectors: this.options.answerSelectors,
         anchorAnswerCount: this.anchorAnswerCount,
         minimumTextLength: 1,
+        // Stop visible: the turn is still being written; ChatGPT's final block is awaited (review L-3).
+        stopVisible: this.lastStopVisible === true,
         selectorAllowed: (selector) => !window.SelectorCircuit
           || window.SelectorCircuit.shouldUse(selector, this.platform, 'answer') !== false,
         queryAll: (selector) => deepQuery?.all?.(selector) || this.safeQueryAll(selector),

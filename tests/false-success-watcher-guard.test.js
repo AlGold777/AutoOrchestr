@@ -78,7 +78,7 @@ describe('false success: watcher completion guards', () => {
       expect(document.querySelector('button[data-testid="stop-button"]')).not.toBeNull();
       expect(at20s).toBeNull();
       expect(afterHardDeadline).not.toBeNull();
-      expect(afterHardDeadline.reason).toBe('hard_timeout');
+      expect(afterHardDeadline.reason).toBe('stop_stalled');
       expect(afterHardDeadline.completed).toBe(false);
       expect(watcher.getStopVisible()).toBe(true);
     } finally {

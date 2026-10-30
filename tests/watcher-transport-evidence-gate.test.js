@@ -201,10 +201,10 @@ describe('watcher: transport evidence gates the commit', () => {
       await tick(460);
       expect(settled).toBeNull();
 
-      // 315 s: общий предел достигнут, завершение только как hard_timeout.
+      // 315 s: общий предел достигнут, завершение только как stop_stalled.
       await tick(170);
       expect(settled).not.toBeNull();
-      expect(settled.reason).toBe('hard_timeout');
+      expect(settled.reason).toBe('stop_stalled');
       expect(settled.completed).toBe(false);
       expect(['UNKNOWN', 'SUSPECTED_COMPLETE']).toContain(settled.runProof.type);
       expect(settled.runProof.textReadable).toBe(false);

@@ -32,6 +32,8 @@
     const outputKind = String(meta.outputKind || '').toLowerCase();
     const allowShort = meta.allowShort === true || taskClass === 'direct_answer';
     const minChars = Number(meta.minChars == null ? (allowShort ? 1 : outputKind === 'json' ? 2 : 1) : meta.minChars);
+    // The delivery layer marks a marker that follows only a progress line (review L-2): not an answer.
+    if (String(meta.reason || '') === 'progress_only') return { ok: false, reason: 'progress_only', details: {} };
     if (value.length < minChars) return { ok: false, reason: 'too_short', details: { minChars, actualChars: value.length } };
     // The answer that repeats the start of its request (the page echoes the prompt) is not an answer.
     const promptHead = String(meta.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 60);

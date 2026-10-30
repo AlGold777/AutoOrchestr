@@ -119,7 +119,7 @@ describe('ChatGPT visible Stop ends the wait only at the general limit', () => {
       // The general limit: lifecycle wait 450 s plus the 5 s decision margin (455 s), reached at 460 s.
       for (let i = 0; i < 120; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
       expect(settled).not.toBeNull();
-      expect(settled.reason).toBe('hard_timeout');
+      expect(settled.reason).toBe('stop_stalled');
       expect(settled.completed).toBe(false);
     } finally {
       delete window.ResponseLifecycleDetector;
@@ -152,7 +152,7 @@ describe('ChatGPT visible Stop without a lifecycle detector', () => {
       // Profile hardMax 450 s plus the 5 s margin: 455 s.
       for (let i = 0; i < 320; i += 1) { jest.advanceTimersByTime(500); await Promise.resolve(); }
       expect(settled).not.toBeNull();
-      expect(settled.reason).toBe('hard_timeout');
+      expect(settled.reason).toBe('stop_stalled');
     } finally {
       jest.useRealTimers();
     }
