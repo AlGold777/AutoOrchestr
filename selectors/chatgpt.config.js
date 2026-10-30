@@ -34,6 +34,14 @@
         'section'
       ]
     },
+    // New ChatGPT markup (M-16): no data-message-author-role. Background reads this entry (self.SelectorConfigRegistry.GPT);
+    // content scripts read the same values from content-scripts/answer-pipeline-selectors.js (chatgpt.newMarkup).
+    newMarkup: {
+      turnSelector: 'div[data-turn-key]',
+      turnStateSelector: '[data-talvt-turn-state]',
+      completeState: 'complete',
+      answerSelector: 'div[data-markdown-text-style="assistant-message"]'
+    },
     observationDefaults: {
       rootSelector: 'main',
       targetSelectors: [

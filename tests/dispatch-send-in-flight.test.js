@@ -33,7 +33,7 @@ describe('repeat dispatch verifies its own user turn before sending again', () =
 
   test('repeat reasons check the page first and count it as delivered when the turn is there', () => {
     expect(dispatch).toContain("['retry_supervisor', 'round2_repair', 'round2_repair_pre_visit', 'manual_resend'].includes(reason)");
-    expect(dispatch).toMatch(/if \(repeatDispatch && await pageHoldsOwnPromptTurn\(tabId, prompt\)\) \{\s*return recoverUndeliveredCommand\(\{ ok: false, reason: 'repeat_own_turn_on_page' \}\);/);
+    expect(dispatch).toMatch(/if \(repeatDispatch && await pageHoldsOwnPromptTurn\(tabId, prompt, llmName\)\) \{\s*return recoverUndeliveredCommand\(\{ ok: false, reason: 'repeat_own_turn_on_page' \}\);/);
   });
 
   test('both delivery call sites go through the verifying wrapper', () => {

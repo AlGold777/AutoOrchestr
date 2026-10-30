@@ -519,6 +519,22 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       nodeSelectors.set(latest, '[data-message-author-role="assistant"]');
     }
   }
+  // M-16 (new ChatGPT markup, no data-message-author-role): only the last turn that holds an answer block may give the
+  // answer. Its state (data-talvt-turn-state) is `complete` once written; any other state means it is still being written.
+  let gptTurnState = null;
+  let gptGenerating = false;
+  const gptNewMarkup = normalizedModel === 'gpt' ? manualOptions.gptNewMarkup : null;
+  if (gptNewMarkup?.turnSelector) {
+    const turns = Array.from(document.querySelectorAll(gptNewMarkup.turnSelector));
+    for (let i = turns.length - 1; i >= 0; i -= 1) {
+      const turn = turns[i];
+      if (!nodes.some((node) => turn.contains(node))) continue;
+      const stateNode = turn.querySelector(gptNewMarkup.turnStateSelector || '[data-talvt-turn-state]');
+      gptTurnState = stateNode ? String(stateNode.getAttribute('data-talvt-turn-state') || '') : null;
+      nodes.splice(0, nodes.length, ...nodes.filter((node) => turn.contains(node)));
+      break;
+    }
+  }
   const isRejectedNode = (node) => {
     const tag = String(node?.tagName || '').toLowerCase();
     if (['input', 'textarea', 'button', 'nav', 'header', 'footer', 'form'].includes(tag)) return true;
@@ -609,7 +625,8 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   // A candidate is one answer, never a page or a conversation: a node holding several
   // assistant turns, a user message, the composer or navigation is a container. Same rule
   // as ContentUtils.collectLateSnapshotCandidate; tests/answer-markdown-node-selection.test.js.
-  const ROLE_ASSISTANT = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"]';
+  // The new ChatGPT answer block (M-16) counts as an assistant turn too: a node that holds two of them is a container.
+  const ROLE_ASSISTANT = '[data-message-author-role="assistant"],[data-role="assistant"],[data-author-role="assistant"],[data-markdown-text-style="assistant-message"]';
   const ROLE_USER = '[data-message-author-role="user"],[data-role="user"],[data-author-role="user"]';
   // Inputs inside a code editor of the answer (Monaco/CodeMirror hidden textarea in a diagram) are not the page composer.
   const EDITOR_HOST = 'pre,code,[role="code"],.monaco-editor,.cm-editor,.CodeMirror,[class*="monaco" i],[class*="codemirror" i],[class*="code-editor" i],[data-mode-id]'
@@ -692,6 +709,13 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     .map((candidate) => ({ ...candidate, strategyScore: scoreByStrategy(candidate) }))
     .sort((a, b) => b.strategyScore - a.strategyScore);
   let best = candidates[0] || null;
+  // M-16: a turn that is still being written has no answer yet, even when a reasoning line or a draft is already on the page.
+  // The delivery token at the end of the block is the exception: the final block is there.
+  if (best && gptTurnState !== null && gptTurnState !== (gptNewMarkup?.completeState || 'complete')
+    && !/\[\[AO-[a-z0-9]{6}\]\]/i.test(best.text)) {
+    best = null;
+    gptGenerating = true;
+  }
   let splitAcrossBlocks = false;
   let turnExpanded = false;
   if (best) {
@@ -871,7 +895,7 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
       ok: false,
       length: 0,
       // Only page-level containers matched: say so instead of returning one as the answer.
-      reason: splitAcrossBlocks ? 'answer_split_across_blocks' : (wideRejected > 0 ? 'wide_container_only' : 'no_candidate'),
+      reason: gptGenerating ? 'gpt_turn_generating' : (splitAcrossBlocks ? 'answer_split_across_blocks' : (wideRejected > 0 ? 'wide_container_only' : 'no_candidate')),
       candidates: 0,
       candidateCount: baseCandidates.length,
       // why nothing was chosen: nodes found / dropped as page parts, user or reasoning / dropped as too short or excluded / dropped as containers
@@ -1164,7 +1188,7 @@ async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RE
   const result = await withLateCollectExecutionLock(() => withLateCollectTimeout(chrome.scripting.executeScript({
     target: { tabId },
     func: extractLatestAssistantSnapshotInPage,
-    args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError, enrich }]
+    args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError, enrich, gptNewMarkup: self.SelectorConfigRegistry?.GPT?.newMarkup || null }]
   }), LATE_COLLECT_EXECUTE_TIMEOUT_MS, (err) => ({ ok: false, error: err?.message || 'execute_timeout' })));
   const snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result : null;
   if (snapshot?.ok && snapshot.text) {
@@ -10914,7 +10938,7 @@ async function rereadOwnTurnForBasic(message = {}) {
   if (!isValidTabId(tabId)) return { found: false, reason: 'no_tab' };
   let ownTurn = false;
   for (const prompt of roundPrompts) {
-    if (await pageHoldsOwnPromptTurn(tabId, prompt)) { ownTurn = true; break; }
+    if (await pageHoldsOwnPromptTurn(tabId, prompt, llmName)) { ownTurn = true; break; }
   }
   if (!ownTurn) return { found: false, reason: 'no_own_turn' };
   try {

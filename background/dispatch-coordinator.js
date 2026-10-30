@@ -461,19 +461,25 @@ function answerHasDeliveryToken(llmName, text, tag = '') {
 
 // Runs in the provider page (chrome.scripting): is there a user turn carrying the tag?
 // Self-contained on purpose: it is serialized into the page. Read-only, no focus, no clicks.
-const OWN_PROMPT_TURN_PROBE = (tag) => {
+const OWN_PROMPT_TURN_PROBE = (tag, newMarkup = null) => {
   const needle = String(tag || '').toLowerCase();
   if (!needle) return false;
-  return Array.from(document.querySelectorAll(
+  const legacyUserTurn = Array.from(document.querySelectorAll(
     '[data-testid="user-message"], [data-message-author-role="user"], [data-role="user"], [data-author-role="user"]'
   )).some((node) => (node.textContent || '').toLowerCase().includes(needle));
+  if (legacyUserTurn) return true;
+  // M-16, new ChatGPT markup: the user's turn has no role attribute. A turn with the tag and without an answer block is the user's own.
+  if (!newMarkup?.turnSelector) return false;
+  return Array.from(document.querySelectorAll(newMarkup.turnSelector)).some((turn) => !turn.querySelector(newMarkup.answerSelector)
+    && (turn.textContent || '').toLowerCase().includes(needle));
 };
 
-async function pageHoldsOwnPromptTurn(tabId, prompt) {
+async function pageHoldsOwnPromptTurn(tabId, prompt, llmName = '') {
   const tag = String(String(prompt || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '').toLowerCase();
   if (!tag || !isValidTabId(tabId) || typeof chrome?.scripting?.executeScript !== 'function') return false;
+  const newMarkup = String(llmName || '').toLowerCase() === 'gpt' ? (self.SelectorConfigRegistry?.GPT?.newMarkup || null) : null;
   try {
-    const results = await chrome.scripting.executeScript({ target: { tabId }, func: OWN_PROMPT_TURN_PROBE, args: [tag] });
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: OWN_PROMPT_TURN_PROBE, args: [tag, newMarkup] });
     return results?.[0]?.result === true;
   } catch (_) {
     // The page cannot be read: keep the historical behaviour (settle, then retry).
@@ -2227,7 +2233,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       // would send the prompt twice. Such a command counts as accepted.
       const recoverUndeliveredCommand = async (result) => {
         if (commandWasAccepted(result) || result?.stale) return result;
-        if (!(await pageHoldsOwnPromptTurn(tabId, prompt))) return result;
+        if (!(await pageHoldsOwnPromptTurn(tabId, prompt, llmName))) return result;
         emitTelemetry(llmName, 'DISPATCH_DELIVERY_VERIFIED_ON_PAGE', {
           details: result?.reason || 'command_not_delivered',
           meta: { ...dispatchIdentityMeta, dispatchReason: reason, tabId, attempt: entry.dispatchAttempts },
@@ -2244,7 +2250,7 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
       // the earlier command went through: a repeat would send the prompt twice.
       const repeatDispatch = ['retry_supervisor', 'round2_repair', 'round2_repair_pre_visit', 'manual_resend'].includes(reason);
       const deliverOrVerifyCommand = async () => {
-        if (repeatDispatch && await pageHoldsOwnPromptTurn(tabId, prompt)) {
+        if (repeatDispatch && await pageHoldsOwnPromptTurn(tabId, prompt, llmName)) {
           return recoverUndeliveredCommand({ ok: false, reason: 'repeat_own_turn_on_page' });
         }
         return recoverUndeliveredCommand(await deliverAnswerCommand());

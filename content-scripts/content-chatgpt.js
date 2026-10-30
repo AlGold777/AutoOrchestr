@@ -47,6 +47,20 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     '[role="article"]'
   ];
 
+  // M-16 (new ChatGPT markup, no data-message-author-role): answer candidates are the nodes of the last turn that holds one.
+  // Same rule as TurnResolver.pickChatGptTurn; without the resolver (e.g. a test context) the nodes stay as they are.
+  const scopeToLastGptTurn = (nodes) => {
+    try {
+      const newMarkup = window.AnswerPipelineSelectors?.PLATFORM_SELECTORS?.chatgpt?.newMarkup;
+      const resolver = window.TurnResolver;
+      if (!newMarkup || !resolver?.pickChatGptTurn || !resolver.createDeepQuery) return nodes;
+      const turn = resolver.pickChatGptTurn(resolver.createDeepQuery(document), newMarkup, nodes);
+      return turn ? nodes.filter((node) => turn.turn.contains(node)) : nodes;
+    } catch (_) {
+      return nodes;
+    }
+  };
+
   const buildInlineHtml = (node) => {
     if (!node) return '';
     const builder = window.ContentUtils?.buildInlineHtml;
@@ -91,7 +105,7 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
         } catch (_) {}
       }
       if (!nodes.length) return { html: '', text: '', node: null };
-      const sorted = nodes.slice().sort((a, b) => {
+      const sorted = scopeToLastGptTurn(nodes).slice().sort((a, b) => {
         if (a === b) return 0;
         try {
           const pos = a.compareDocumentPosition(b);
