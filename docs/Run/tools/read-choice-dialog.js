@@ -1,0 +1,1 @@
+(function(){var d=document.querySelector('.choice-dialog');if(!d)return 'none';return JSON.stringify({text:d.innerText.slice(0,700),btns:Array.from(d.querySelectorAll('button')).map(function(b){return b.textContent.trim()})})})()

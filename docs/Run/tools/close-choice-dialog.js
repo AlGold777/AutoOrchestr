@@ -1,0 +1,1 @@
+(function(){var d=document.querySelector('.choice-dialog');if(!d)return 'none';var b=Array.from(d.querySelectorAll('button')).filter(function(x){return x.textContent.trim()==='Закрыть'})[0];if(!b)return 'no close';b.click();return 'closed'})()
