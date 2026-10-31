@@ -7,15 +7,15 @@ const ROUTER_SRC = fs.readFileSync(path.join(__dirname, '..', 'background', 'mes
 const DEVTOOLS_SRC = fs.readFileSync(path.join(__dirname, '..', 'results-devtools.js'), 'utf8');
 
 describe('telemetry Markdown export regression', () => {
-  test('page reload does not clear persisted telemetry', () => {
+  test('a page reload resets the working session and telemetry while preserving pipeline and run history', () => {
     const bootUtilsSrc = fs.readFileSync(path.join(__dirname, '..', 'results', 'boot-utils.js'), 'utf8');
-    expect(RESULTS_SRC).not.toContain('clearTelemetryOnReload');
-    expect(bootUtilsSrc).not.toContain('clearTelemetryOnReload');
-    expect(RESULTS_SRC).not.toContain("detail: { source: 'page_reload' }");
-    expect(RESULTS_SRC).not.toContain("reason: 'page_reload'");
-    expect(bootUtilsSrc).not.toContain('CLEAR_DIAG_EVENTS');
-    // Manual clear button stays.
-    expect(RESULTS_SRC).toContain("runtime.sendMessage({ type: 'CLEAR_DIAG_EVENTS' }");
+    const caseAt = ROUTER_SRC.indexOf("case 'RESET_WORKING_SESSION'");
+    const resetHandler = ROUTER_SRC.slice(caseAt, caseAt + 5000);
+    expect(RESULTS_SRC).toContain('await prepareWorkingSession()');
+    expect(bootUtilsSrc).toContain("type: 'RESET_WORKING_SESSION', reason: 'page_reload'");
+    expect(resetHandler).toContain('writeDiagnosticsEventsToStorage([])');
+    expect(resetHandler).toContain('llmComparatorWorkingSessionStartedAt: startedAt');
+    expect(resetHandler).not.toMatch(/storage\.local\.remove\([^)]*(?:llmComparatorPipelines|customRunRecords\.index)/);
   });
 
   test('All Logs export reads up to 5000 persisted events', () => {

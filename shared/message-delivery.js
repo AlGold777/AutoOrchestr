@@ -112,7 +112,8 @@
     const batch = unconfirmedQueue.slice();
     try {
       await new Promise((resolve) => {
-        runtime.sendMessage({ type: 'DELIVERY_JOURNAL_APPEND', events: batch, producerId }, (res) => {
+        runtime.sendMessage({ type: 'DELIVERY_JOURNAL_APPEND', events: batch, producerId,
+          workingSessionStartedAt: Number(root.__workingSessionStartedAt) || 0 }, (res) => {
           if (appendEpoch === epochAtStart) {
             if (!runtime.lastError && res?.ok) {
               const batchIds = new Set(batch.map((e) => e.eventId));

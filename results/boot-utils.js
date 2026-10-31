@@ -85,6 +85,38 @@
             return false;
         }
     };
+    // Reload starts a new workspace. Finish the background reset before any
+    // page module can hydrate a draft, answers or telemetry from the old one.
+    const prepareWorkingSession = async () => {
+        await (root.StorageKeyMigration?.ready || Promise.resolve());
+        const storage = root.chrome?.storage?.local || globalThis.chrome?.storage?.local;
+        const runtime = root.chrome?.runtime || globalThis.chrome?.runtime;
+        if (!isPageReloadNavigation()) {
+            const saved = storage ? await new Promise((resolve, reject) => {
+                const result = storage.get('llmComparatorWorkingSessionStartedAt', (value) => {
+                    if (runtime?.lastError) reject(new Error(runtime.lastError.message));
+                    else resolve(value || {});
+                });
+                if (result?.then) result.then((value) => resolve(value || {}), reject);
+            }) : {};
+            return { startedAt: Number(saved.llmComparatorWorkingSessionStartedAt) || 0 };
+        }
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('Сброс рабочей сессии не подтверждён. Перезагрузите страницу ещё раз.')), 10000);
+            const fail = (error) => { clearTimeout(timer); reject(error); };
+            try {
+                runtime.sendMessage({ type: 'RESET_WORKING_SESSION', reason: 'page_reload' }, (response) => {
+                    if (runtime.lastError) { fail(new Error(runtime.lastError.message)); return; }
+                    if (!response?.success || !(Number(response.startedAt) > 0)) {
+                        fail(new Error(response?.error || 'Не удалось очистить рабочую сессию.'));
+                        return;
+                    }
+                    clearTimeout(timer);
+                    resolve({ startedAt: Number(response.startedAt) });
+                });
+            } catch (error) { fail(error); }
+        });
+    };
     const clearDebateTranscriptOnReload = () => new Promise((resolve) => {
         if (!isPageReloadNavigation()) {
             resolve(false);
@@ -166,6 +198,7 @@
         resetGeometryState,
         recoverUiIfHidden,
         isPageReloadNavigation,
+        prepareWorkingSession,
         clearDebateTranscriptOnReload,
         normalizeExternalLinkUrl,
         decorateLinksForNewTab,

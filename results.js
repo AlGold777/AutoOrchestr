@@ -62,11 +62,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         resetGeometryState,
         recoverUiIfHidden,
         isPageReloadNavigation,
+        prepareWorkingSession,
         clearDebateTranscriptOnReload,
         normalizeExternalLinkUrl,
         decorateLinksForNewTab,
         openResponseLinkInNewTab
     } = window.ResultsBootUtils;
+    let workingSessionStartedAt = 0;
+    try {
+        ({ startedAt: workingSessionStartedAt } = await prepareWorkingSession());
+        window.__workingSessionStartedAt = workingSessionStartedAt;
+    } catch (error) {
+        console.error('[RESULTS] Working session reset failed', error);
+        alert(`Рабочая сессия не очищена: ${error?.message || error}`);
+        return;
+    }
     const favoritePanelId = 'favorite-panel';
     const favoriteOutputId = 'favorite-output';
     const favoriteSectionId = 'favorites-section';
@@ -1764,6 +1774,7 @@ document.addEventListener('click', (event) => {
     const normalizeCrossViewUiState = (rawState = null) => {
         const normalized = {
             version: 2,
+            workingSessionStartedAt: Number(rawState?.workingSessionStartedAt) || 0,
             savedAt: rawState?.savedAt || 0,
             views: {
                 main: {},
@@ -1842,13 +1853,18 @@ document.addEventListener('click', (event) => {
         // Drain earlier input/change writes before the navigation snapshot, so a
         // slower old write cannot overwrite the draft the destination restores.
         crossViewUiPersistQueue = crossViewUiPersistQueue.catch(() => {}).then(async () => {
-            const stored = await safeStorageLocalGet(crossViewUiStateKey);
-            const nextState = normalizeCrossViewUiState(stored[crossViewUiStateKey]);
+            const stored = await safeStorageLocalGet([crossViewUiStateKey, 'llmComparatorWorkingSessionStartedAt']);
+            if ((Number(stored.llmComparatorWorkingSessionStartedAt) || 0) !== workingSessionStartedAt) return;
+            const previousState = normalizeCrossViewUiState(stored[crossViewUiStateKey]);
+            const nextState = previousState.workingSessionStartedAt === workingSessionStartedAt
+                ? previousState : normalizeCrossViewUiState();
+            nextState.workingSessionStartedAt = workingSessionStartedAt;
             nextState.savedAt = Date.now();
             nextState.views[viewKey] = viewState;
             nextState.shared = nextState.shared && typeof nextState.shared === 'object' ? nextState.shared : {};
             if (Object.keys(shared.outputs || {}).length) nextState.shared.outputs = shared.outputs;
-            if (!hasModifierControls && stored[crossViewUiStateKey]?.views?.[viewKey]?.modifiers) {
+            if (!hasModifierControls && previousState.workingSessionStartedAt === workingSessionStartedAt
+                && stored[crossViewUiStateKey]?.views?.[viewKey]?.modifiers) {
                 nextState.views[viewKey].modifiers = stored[crossViewUiStateKey].views[viewKey].modifiers;
             }
             await safeStorageLocalSet({ [crossViewUiStateKey]: nextState });
@@ -1865,9 +1881,10 @@ document.addEventListener('click', (event) => {
             });
         }, Math.max(0, Number(delayMs) || 0));
     };
-    const applyCrossViewUiState = (rawState = {}) => {
+    const applyCrossViewUiState = (rawState = null) => {
         if (!rawState || typeof rawState !== 'object') return;
         const normalized = normalizeCrossViewUiState(rawState);
+        if (normalized.workingSessionStartedAt !== workingSessionStartedAt) return;
         const state = normalized.views[getCurrentViewKey()] || {};
         if (Object.prototype.hasOwnProperty.call(state, 'modelButtonIds')) {
             delete normalized.views.main.modelButtonIds;
@@ -1921,7 +1938,8 @@ document.addEventListener('click', (event) => {
         }
         checkCompareButtonState();
         renderDiagnosticsModal();
-        notifySelectionChanged();
+        // Provider selection has its own restoration path. Emitting its change
+        // event here would clear answers that arrived during startup hydration.
         syncModeratorSelectors({ preserveRoute: !isPageReloadNavigation() });
         syncModeratorMiniPrompts();
     };
@@ -3532,7 +3550,8 @@ document.addEventListener('click', (event) => {
             const storedProfiles = value.overrides?.profiles && typeof value.overrides.profiles === 'object'
                 ? value.overrides.profiles
                 : {};
-            const storedDraftPlans = value.draftPlans && typeof value.draftPlans === 'object' ? value.draftPlans : {};
+            const storedDraftPlans = (Number(value.workingSessionStartedAt) || 0) === workingSessionStartedAt
+                && value.draftPlans && typeof value.draftPlans === 'object' ? value.draftPlans : {};
             if (value.overrides?.auditors && Object.keys(value.overrides.auditors).length) {
                 console.warn('[Disput migration] overrides.auditors found in stored data — ignored (auditor selector removed).');
             }
@@ -3626,6 +3645,7 @@ document.addEventListener('click', (event) => {
             }
             const payload = {
                 writer: PIPELINE_STORE_WRITER,
+                workingSessionStartedAt,
                 version: PIPELINE_STORE_VERSION,
                 pipelines: pipelineStore.pipelines,
                 order: pipelineStore.order,
@@ -6947,6 +6967,7 @@ document.addEventListener('click', (event) => {
             try {
                 if (!customRunStore) throw new Error('customRunStore is not available');
                 frameRecord = await customRunStore.latest(customPipelineName());
+                if (frameRecord && frameRecord.startedAt < workingSessionStartedAt) frameRecord = null;
             } catch (error) {
                 console.warn('[RESULTS] Document frames not restored', error);
                 frameRecord = null;
@@ -7043,7 +7064,7 @@ document.addEventListener('click', (event) => {
             if (!customRunStore || pipelineRunActive) return;
             try {
                 const record = await customRunStore.latest(customPipelineName());
-                if (record?.stopReason && record.stopReason !== 'steps_done') offerResumeLine(record);
+                if (record?.startedAt >= workingSessionStartedAt && record.stopReason && record.stopReason !== 'steps_done') offerResumeLine(record);
             } catch (error) {
                 console.warn('[RESULTS] Resume line not restored', error);
             }
@@ -9299,6 +9320,7 @@ document.addEventListener('click', (event) => {
 
         const initPipelineList = async () => {
             await readPipelineStore();
+            if (isPageReloadNavigation()) pipelineStore.draftPlans = {};
             ensureDefaultPipelinePresets();
             await seedBuiltinSchemas();
             // A preset is an explicit execution choice. Starting the Disput page
@@ -17527,7 +17549,8 @@ document.addEventListener('click', (event) => {
         if (!Record || !chrome?.storage?.local) return null;
         try {
             const store = Record.createStore({ storage: Record.chromeStorage(chrome.storage.local) });
-            const latest = (await store.list()).sort((a, b) => b.startedAt - a.startedAt)[0];
+            const latest = (await store.list()).filter((entry) => entry.startedAt >= workingSessionStartedAt)
+                .sort((a, b) => b.startedAt - a.startedAt)[0];
             const record = latest ? await store.load(latest.runId) : null;
             return record ? Record.exportRun(record) : null;
         } catch (err) {
@@ -19146,9 +19169,9 @@ document.addEventListener('click', (event) => {
         if (pageWasReloaded || response?.runtimeReset === true || !hasLiveSnapshot) {
             clearLiveResponseCards();
         }
-        // A page reload clears the old DOM, but the answer-bearing background
-        // snapshot is the recovery channel for messages missed during reload.
-        // Only a genuine extension-runtime reset invalidates that snapshot.
+        // The working-session reset was awaited before initialization. During
+        // navigation the snapshot still recovers current-session answers; after
+        // reload the old run has already been cleared in the background.
         const reconciliationState = response?.runtimeReset === true
             ? {}
             : (response?.state || {});
@@ -25924,7 +25947,8 @@ function exportSingleTemplate(templateName, sourceData = null) {
             // optional prompt/modifier hydration so an unrelated load failure
             // cannot leave the control at the HTML default (off).
             await restoreDebateAutoMode();
-            preserveCrossViewStateOnLoad = await consumeCrossViewNavigationIntentOnLoad();
+            const navigationIntent = await consumeCrossViewNavigationIntentOnLoad();
+            preserveCrossViewStateOnLoad = !isPageReloadNavigation() && navigationIntent;
             // Browser Back/Forward has no app navigation intent, but must keep drafts too.
             preserveCrossViewStateOnLoad = preserveCrossViewStateOnLoad
                 || performance?.getEntriesByType?.('navigation')?.[0]?.type === 'back_forward';

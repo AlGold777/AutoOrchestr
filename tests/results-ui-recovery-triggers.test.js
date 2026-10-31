@@ -57,10 +57,20 @@ describe('main-page UI recovery triggers', () => {
     expect(RESULTS_SRC).toContain('const formattedHtml = resolveCompleteAnswerHtml(text, html, markdown);');
   });
 
-  test('results-page reload reconciles persisted answers instead of discarding them', () => {
-    expect(RESULTS_SRC).toContain("const reconciliationState = response?.runtimeReset === true");
-    expect(RESULTS_SRC).toContain('syncStatusFromGlobalState(reconciliationState, { replace: true });');
-    expect(RESULTS_SRC).not.toContain('syncStatusFromGlobalState(pageWasReloaded ? {}');
+  test('results-page reload resets the previous working session before runtime reconciliation', () => {
+    const listenerAt = RESULTS_SRC.indexOf("document.addEventListener('DOMContentLoaded', async () => {");
+    const resetAt = RESULTS_SRC.indexOf('await prepareWorkingSession()', listenerAt);
+    const registerAt = RESULTS_SRC.indexOf("type: 'REGISTER_RESULTS_TAB'", resetAt);
+    const reconciliationAt = RESULTS_SRC.indexOf('const reconciliationState = response?.runtimeReset === true', registerAt);
+    const reconciliation = RESULTS_SRC.slice(registerAt, registerAt + 1600);
+
+    expect(listenerAt).toBeGreaterThanOrEqual(0);
+    expect(resetAt).toBeGreaterThan(listenerAt);
+    expect(registerAt).toBeGreaterThan(resetAt);
+    expect(reconciliationAt).toBeGreaterThan(registerAt);
+    expect(reconciliation).toContain('? {}');
+    expect(reconciliation).toContain('syncStatusFromGlobalState(reconciliationState, { replace: true });');
+    expect(reconciliation).toContain('if (pageWasReloaded || response?.runtimeReset === true || !hasLiveSnapshot)');
   });
 
   test('manual ping success carries and applies the persisted answer as a backup channel', () => {

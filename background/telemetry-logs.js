@@ -237,6 +237,7 @@ function normalizeTelemetryTaxonomy(entry = {}) {
 }
 
 function appendLogEntry(llmName, entry = {}) {
+  if (isPreviousWorkingSessionEvent(entry)) return null;
   const buffer = ensureLogBuffer(llmName);
   if (!buffer) return null;
   const resolvedDispatchId = jobState?.llms?.[llmName]?.lastDispatchMeta?.dispatchId
@@ -398,6 +399,7 @@ function downgradePipelineHardTimeoutStorage(llmName) {
 }
 
 function broadcastDiagnostic(llmName, entry = {}) {
+  if (isPreviousWorkingSessionEvent(entry)) return null;
   if (shouldIgnorePostTerminalDiagnostic(llmName, entry)) return null;
   const saved = appendLogEntry(llmName, entry);
   if (saved) {
@@ -634,6 +636,7 @@ function normalizeTelemetryEntry(entry = {}, llmName) {
 }
 
 async function persistDiagnosticEvent(llmName, entry = {}, { sender, source } = {}) {
+  if (isPreviousWorkingSessionEvent(entry)) return null;
   const normalizedName = resolveLlmName(llmName || entry?.platform || entry?.meta?.platform || entry?.llmName);
   if (shouldIgnorePostTerminalDiagnostic(normalizedName, entry)) return null;
   const evt = Object.assign({}, entry || {}, {
@@ -642,6 +645,7 @@ async function persistDiagnosticEvent(llmName, entry = {}, { sender, source } = 
     source: entry?.source || source || sender?.url || sender?.tab?.url || null
   });
   await mutateDiagnosticsEventsConsistent((arr) => {
+    if (isPreviousWorkingSessionEvent(evt)) return arr;
     let next = trimDiagnosticsBuffer([...arr, evt], DIAGNOSTICS_EVENTS_MAX_ITEMS);
     const stringify = () => JSON.stringify(next);
     while (stringify().length > DIAGNOSTICS_EVENTS_MAX_BYTES && next.length > 1) {
@@ -653,6 +657,7 @@ async function persistDiagnosticEvent(llmName, entry = {}, { sender, source } = 
 }
 
 function dispatchTelemetry(llmName, entry = {}, { sender, source, force = false } = {}) {
+  if (isPreviousWorkingSessionEvent(entry)) return null;
   if (!entry) return null;
   const normalized = normalizeTelemetryEntry(entry, llmName);
   const runEntry = jobState?.llms?.[llmName];
@@ -705,6 +710,25 @@ function dispatchTelemetry(llmName, entry = {}, { sender, source, force = false 
 const DIAGNOSTICS_RING_FLUSH_MS = 400;
 const diagnosticsRingQueue = [];
 let diagnosticsRingTimer = null;
+function discardPendingDiagnostics() {
+  clearTimeout(diagnosticsRingTimer);
+  diagnosticsRingTimer = null;
+  diagnosticsRingQueue.length = 0;
+}
+// Old provider messages may arrive after the reload acknowledgement. Their run
+// identity belongs to the workspace that was cleared, even if arrival is new.
+function isPreviousWorkingSessionEvent(event = {}) {
+  const cutoff = Number(self.__workingSessionStartedAt) || 0;
+  if (!cutoff || !event) return false;
+  const run = Number(event.meta?.runSessionId || event.meta?.sessionId || event.runSessionId || event.sessionId);
+  if (run > 0) return run < cutoff;
+  if (Number(event.ts) > 0 && Number(event.ts) < cutoff) return true;
+  const session = jobState?.session;
+  const currentRun = Number(session?.startTime || session?.runSessionIds?.[session.runSessionIds.length - 1]);
+  return !(currentRun >= cutoff);
+}
+self.discardPendingDiagnostics = discardPendingDiagnostics;
+self.isPreviousWorkingSessionEvent = isPreviousWorkingSessionEvent;
 function flushDiagnosticRingQueue() {
   diagnosticsRingTimer = null;
   diagnosticsRingQueue.splice(0).forEach(([name, evt, opts]) => {

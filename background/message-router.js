@@ -1902,6 +1902,8 @@ function ensureInitialState() {
                 await self.__extensionLifecycleReady;
             }
             await Promise.all([loadJobState(), TabMapManager.load()]);
+            const workingSession = await chrome.storage.local.get('llmComparatorWorkingSessionStartedAt');
+            self.__workingSessionStartedAt = Number(workingSession?.llmComparatorWorkingSessionStartedAt) || 0;
             await loadResolutionMetrics();
             await (self.DispatchCircuit?.loadDispatchCircuitState ? self.DispatchCircuit.loadDispatchCircuitState() : Promise.resolve());
             initialStateReady = true;
@@ -2038,14 +2040,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     }
     if (message?.type === 'DELIVERY_JOURNAL_APPEND') {
-        const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
-        if (!store?.append) {
-            sendResponse({ ok: false, error: 'delivery_store_unavailable' });
-            return false;
-        }
-        store.append(message.events || []).then((res) => {
+        (async () => {
+            await ensureInitialState();
+            if ((Number(self.__workingSessionStartedAt) || 0) !== (Number(message.workingSessionStartedAt) || 0)) {
+                sendResponse({ ok: true, dropped: true });
+                return;
+            }
+            const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+            if (!store?.append) throw new Error('delivery_store_unavailable');
+            const res = await store.append(message.events || []);
             sendResponse(res && typeof res.ok === 'boolean' ? res : { ok: true, ...res });
-        }).catch((err) => {
+        })().catch((err) => {
             sendResponse({ ok: false, error: String(err?.message || err) });
         });
         return true;
@@ -4683,6 +4688,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 (async () => {
                     try {
                         const sourceEvent = message.event || {};
+                        if (self.isPreviousWorkingSessionEvent?.(sourceEvent)) {
+                            sendResponse({ success: true, dropped: true });
+                            return;
+                        }
                         const platform = sourceEvent.platform || message.platform || null;
                         const llmName = typeof resolveLlmName === 'function' ? resolveLlmName(platform) : platform;
                         const currentEntry = llmName ? jobState?.llms?.[llmName] : null;
@@ -4718,6 +4727,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             meta
                         });
                         const appendEvent = (arr) => {
+                            if (self.isPreviousWorkingSessionEvent?.(evt)) return arr;
                             let next = diagTrimDiagnosticsBuffer(
                                 [...arr, evt],
                                 DIAGNOSTICS_EXPORT_MAX_ITEMS
@@ -4814,14 +4824,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         let arr = typeof self?.readDiagnosticsEventsSnapshot === 'function'
                             ? await self.readDiagnosticsEventsSnapshot()
                             : await readDiagnosticsEventsFromStorage();
+                        if (self.isPreviousWorkingSessionEvent) arr = arr.filter((event) => !self.isPreviousWorkingSessionEvent(event));
                         if (Array.isArray(platforms) && platforms.length) {
                             const set = new Set(platforms.map((p) => String(p).toLowerCase()));
                             arr = arr.filter((e) => set.has(String(e?.platform || 'unknown').toLowerCase()));
                         }
-                        // The persisted diagnostics buffer is cleared when a new
-                        // pipeline run starts, not on page reload or browser restart.
-                        // A reload must not resurrect an earlier run, so the export is
-                        // scoped to the run's wave start times (session.runSessionIds;
+                        // Reload resets the working session before page hydration.
+                        // Within that session the export covers the run's wave start times (session.runSessionIds;
                         // a single startTime for sessions without the list). Each wave
                         // of a pipeline run has its own startTime, so all waves stay
                         // in the export. Events that carry no run identity
@@ -4965,6 +4974,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ status: 'evaluator_response_handled' });
                 break;
                 
+            case 'RESET_WORKING_SESSION': {
+                const pageUrl = String(sender?.url || sender?.tab?.url || '').split(/[?#]/)[0];
+                const pages = ['pipeline_panel.html', 'result_new.html'].map((page) => chrome.runtime.getURL(page));
+                if (sender?.id !== chrome.runtime.id || !pages.includes(pageUrl)) {
+                    sendResponse({ success: false, error: 'working_session_sender_not_authorized' });
+                    return false;
+                }
+                (async () => {
+                    try {
+                        const startedAt = Date.now();
+                        self.__workingSessionStartedAt = startedAt;
+                        const previousRunId = jobState?.session?.pipelineRunId;
+                        self.stopAllProcesses('page_reload', { closeTabs: false });
+                        self.jobState = jobState;
+                        await TabMapManager.clear();
+                        if (previousRunId) await self.clearParticipantRun?.(previousRunId);
+                        if (self.PipelineFSM?.persistControlState) {
+                            await self.PipelineFSM.persistControlState(self.PipelineFSM.normalizeControlState({}));
+                        }
+                        self.discardPendingDiagnostics?.();
+                        await writeDiagnosticsEventsToStorage([]);
+                        const deliveryStore = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
+                        if (!deliveryStore?.clear) throw new Error('delivery_store_unavailable');
+                        await deliveryStore.clear();
+                        await chrome.storage.local.remove([
+                            'jobState', 'llmComparatorCrossViewUiState', 'llmComparatorCrossViewNavigationIntent',
+                            'llmSidebarPendingSessionView', 'llmComparatorSelectedModelsByView.main',
+                            'llmComparatorSelectedModelsByView.pipeline', 'aoEngineState.v1'
+                        ]);
+                        await chrome.storage.local.set({ llmComparatorWorkingSessionStartedAt: startedAt });
+                        sendResponse({ success: true, startedAt });
+                    } catch (error) {
+                        sendResponse({ success: false, error: error?.message || String(error) });
+                    }
+                })();
+                return true;
+            }
+
             case 'REGISTER_RESULTS_TAB':
                 resultsTabId = sender.tab.id;
                 globalThis.LLMLog?.debug?.("[BACKGROUND] Registered results tab:", resultsTabId);
