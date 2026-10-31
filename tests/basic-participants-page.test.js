@@ -184,6 +184,38 @@ describe('Basic participant page integration', () => {
     expect(again.steps).toEqual(saved.steps);
   });
 
+  test('schema selection renders a shortened provider-prefixed label without changing saved label', async () => {
+    resetPipelineStore();
+    const name = 'Provider-prefixed participant label';
+    const otherName = 'Other canvas schema';
+    const schema = schemaV2([round('r1', [
+      { id: 'gpt-variant-2', name: 'GPT', label: 'GPT · Вариант 2', enabled: true, onCanvas: true, settingsMode: 'explicit' }
+    ])]);
+    const otherSchema = schemaV2([round('r1', [{ id: 'claude-main', name: 'Claude' }])]);
+    expect(await debug().installBasicSchema(name, schema)).toEqual({ ok: true, errors: [] });
+    expect(await debug().installBasicSchema(otherName, otherSchema)).toEqual({ ok: true, errors: [] });
+
+    const assertCanvasLabel = () => {
+      const block = document.querySelector('#r1-models [data-participant-id="gpt-variant-2"]');
+      expect(block).not.toBeNull();
+      expect(block.querySelector('.model-name').textContent).toBe('GPT');
+      expect(block.querySelector('.model-participant-label').textContent).toBe('Вариант 2');
+      expect(block.dataset.participantLabelValue).toBe('GPT · Вариант 2');
+    };
+
+    await selectPipeline(name);
+    assertCanvasLabel();
+    const activePlan = window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
+    const saved = debug().basicSchemaFromPage(activePlan, null, { forSave: true, basedOn: '' });
+    expect(saved.steps[0].models[0]).toMatchObject({ id: 'gpt-variant-2', name: 'GPT', label: 'GPT · Вариант 2' });
+
+    await selectPipeline(otherName);
+    await selectPipeline(name);
+    assertCanvasLabel();
+    const schemaAfterReselect = debug().getPipelineStoreSnapshot().pipelines[name].schema;
+    expect(schemaAfterReselect.steps[0].models[0]).toMatchObject({ id: 'gpt-variant-2', name: 'GPT', label: 'GPT · Вариант 2' });
+  });
+
   test('Default fills the participant editor draft without saving or enabling Send', async () => {
     resetPipelineStore();
     const name = 'Explicit participant defaults';

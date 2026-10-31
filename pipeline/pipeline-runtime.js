@@ -37,6 +37,22 @@
 
     const getRoundStage = (roundIndex) => roundIndex === 1 ? 'models' : 'judge';
 
+    // Participant labels are stored in full; omit a repeated provider prefix only in the canvas caption.
+    const getParticipantDisplayLabel = (providerName, participantLabel) => {
+        const provider = String(providerName || '').trim();
+        const label = String(participantLabel || '').trim();
+        if (!label || label === provider) return provider;
+        if (!provider) return label;
+        const startsWithProvider = label.slice(0, provider.length).toLocaleLowerCase() === provider.toLocaleLowerCase();
+        if (!startsWithProvider) return label;
+        const rawSuffix = label.slice(provider.length);
+        const suffix = rawSuffix.trimStart();
+        const hasWhitespaceBoundary = rawSuffix.length > 0 && /^\s/.test(rawSuffix) && suffix.length > 0;
+        if (!hasWhitespaceBoundary && !/^[·•:—-]/.test(suffix)) return label;
+        const shortened = /^[·•:—-]/.test(suffix) ? suffix.slice(1).trim() : suffix;
+        return shortened || label;
+    };
+
     const buildJudgePromptOptionsHtml = ({ index = 0, orderedPrompts = [], escapeHtml = escapeFallback } = {}) => {
         const prompts = Array.isArray(orderedPrompts) ? orderedPrompts.filter((prompt) => prompt?.id) : [];
         if (!prompts.length) return '';
@@ -77,11 +93,12 @@
                 : '';
             const inputAttrs = `${isActive ? ' checked' : ''} aria-label="Участие в раунде"`;
             const label = model.label || model.name;
+            const displayLabel = getParticipantDisplayLabel(model.name, label);
             const removeButton = participantControls && model.id !== model.name
                 ? `<button type="button" class="model-participant-remove" data-participant-remove title="Убрать участника из этого раунда" aria-label="Убрать ${escapeHtml(label)} из раунда">×</button>`
                 : '';
             const participantTools = participantControls
-                ? `<span class="model-participant-label-wrap"><button type="button" class="model-participant-label" data-participant-label title="Переименовать участника">${escapeHtml(label === model.name ? '✎' : label)}</button>${removeButton}<button type="button" class="model-participant-add" data-participant-add title="Добавить участника ${escapeHtml(model.name)}" aria-label="Добавить участника ${escapeHtml(model.name)}">+</button></span>`
+                ? `<span class="model-participant-label-wrap"><button type="button" class="model-participant-label" data-participant-label title="Переименовать участника">${escapeHtml(label === model.name ? '✎' : displayLabel)}</button>${removeButton}<button type="button" class="model-participant-add" data-participant-add title="Добавить участника ${escapeHtml(model.name)}" aria-label="Добавить участника ${escapeHtml(model.name)}">+</button></span>`
                 : '';
             return `
                 <div class="model-block ${isActive ? 'active' : 'inactive'}${withRole ? ' with-role' : ''}${model.id !== model.name ? ' is-participant-duplicate' : ''}" data-index="${index}" data-provider-name="${escapeHtml(model.name)}" data-participant-id="${escapeHtml(model.id)}" data-participant-label-value="${escapeHtml(label)}">
@@ -179,6 +196,7 @@
         DEFAULT_LATE_JUDGE_INDICES,
         cloneConfig,
         getRoundStage,
+        getParticipantDisplayLabel,
         buildJudgePromptOptionsHtml,
         buildModelBlocksHtml,
         renderModelStack,

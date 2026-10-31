@@ -33,3 +33,42 @@ describe('model block in a round has no Send checkbox', () => {
     expect(sendModels.length).toBeGreaterThan(0);
   });
 });
+
+describe('participant labels on the Basic canvas', () => {
+  test('hides a repeated provider prefix in the caption while preserving the full saved label and identity', () => {
+    const html = Runtime.buildModelBlocksHtml({
+      items: [{ name: 'GPT', id: 'gpt-variant-2', label: 'GPT · Вариант 2', input: true }],
+      participantControls: true
+    });
+    document.body.innerHTML = `<div id="r1-models">${html}</div>`;
+    const block = document.querySelector('#r1-models .model-block');
+    expect(block.querySelector('.model-name').textContent).toBe('GPT');
+    expect(block.querySelector('.model-participant-label').textContent).toBe('Вариант 2');
+    expect(block.dataset.participantLabelValue).toBe('GPT · Вариант 2');
+    expect(Runtime.captureModelStackState(document, 'r1-models').items[0]).toMatchObject({
+      name: 'GPT', id: 'gpt-variant-2', label: 'GPT · Вариант 2'
+    });
+  });
+
+  test('keeps participant names that do not repeat their provider and preserves the rename pencil', () => {
+    expect(Runtime.buildModelBlocksHtml({
+      items: [{ name: 'GPT', id: 'gpt-editor', label: 'Редактор' }], participantControls: true
+    })).toContain('>Редактор</button>');
+    expect(Runtime.buildModelBlocksHtml({
+      items: [{ name: 'GPT', id: 'gpt', label: 'GPT' }], participantControls: true
+    })).toContain('>✎</button>');
+  });
+
+  test('display helper removes only a provider prefix followed by a separator', () => {
+    expect(Runtime.getParticipantDisplayLabel('GPT', 'GPT · Вариант 2')).toBe('Вариант 2');
+    expect(Runtime.getParticipantDisplayLabel('GPT', 'Редактор')).toBe('Редактор');
+    expect(Runtime.getParticipantDisplayLabel('GPT', 'GPT 2')).toBe('2');
+  });
+
+  test('removes provider prefixes separated from participant labels by a space', () => {
+    expect(Runtime.getParticipantDisplayLabel('Claude', 'Claude 2')).toBe('2');
+    expect(Runtime.getParticipantDisplayLabel('GPT', 'GPT Research')).toBe('Research');
+    expect(Runtime.getParticipantDisplayLabel('GPT', 'GPTish')).toBe('GPTish');
+    expect(Runtime.getParticipantDisplayLabel('Le Chat', 'Le Chaton')).toBe('Le Chaton');
+  });
+});

@@ -4579,7 +4579,8 @@ document.addEventListener('click', (event) => {
                 if (item.label) {
                     block.dataset.participantLabelValue = String(item.label);
                     const label = block.querySelector('.model-participant-label');
-                    if (label) label.textContent = String(item.label) === String(item.name) ? '✎' : String(item.label);
+                    if (label) label.textContent = String(item.label) === String(item.name) ? '✎'
+                        : (PipelineRuntime?.getParticipantDisplayLabel?.(item.name, item.label) || String(item.label));
                 }
                 // A legacy send mark was saved by the position of the block on the canvas.
                 const position = blocks.indexOf(block);
@@ -11139,7 +11140,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.954';
+            const APP_VERSION = '2.81.955';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
