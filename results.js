@@ -6584,7 +6584,8 @@ document.addEventListener('click', (event) => {
                 const roundsOf = steps.filter((step) => step.kind === 'round');
                 roundsOf.forEach((step) => {
                     const stackEl = document.getElementById(`${step.ref}-models`);
-                    const shownKeys = Array.from(stackEl?.querySelectorAll('.model-block') || []).map((block) => modelBlockId(block));
+                    const shownKeys = Array.from(stackEl?.querySelectorAll('.model-block:not(.pipeline-empty-slot)') || [])
+                        .map((block) => modelBlockId(block)).filter(Boolean);
                     step.models.forEach((model, at) => {
                         if (model.enabled === false && shownKeys.includes(model.id ?? model.name)) step.models[at] = { ...model, onCanvas: true };
                     });
