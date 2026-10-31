@@ -3,13 +3,23 @@ const H = require('./helpers/results-page-harness');
 
 const schemaV2 = (steps, extra = {}) => ({ schemaVersion: 2, origin: 'user', steps, ...extra });
 const round = (ref, models, extra = {}) => ({ ref, kind: 'round', models, ...extra });
+const resizeObservers = [];
+const NativeResizeObserver = globalThis.ResizeObserver;
 
 describe('Basic participant page integration', () => {
   beforeAll(async () => {
+    globalThis.ResizeObserver = class ResizeObserverHarness {
+      constructor(callback) { this.callback = callback; this.targets = new Set(); resizeObservers.push(this); }
+      observe(target) { this.targets.add(target); }
+      unobserve(target) { this.targets.delete(target); }
+      disconnect() { this.targets.clear(); }
+    };
     H.renderDebateDom();
     document.body.classList.add('pipeline-page');
     await H.loadResultsScript();
   });
+
+  afterAll(() => { globalThis.ResizeObserver = NativeResizeObserver; });
 
   const debug = () => window.__pipelineLifecycleDebug;
   const selectPipeline = async (name) => {
@@ -86,6 +96,63 @@ describe('Basic participant page integration', () => {
     expect(replacement.label).toBe('Claude 2');
     if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
     else delete globalThis.crypto;
+  });
+
+  test('participant edit actions require a 550ms press and cancel on short press or movement', async () => {
+    resetPipelineStore();
+    const name = 'Participant long press';
+    expect(await debug().installBasicSchema(name, schemaV2([round('r1', [{ id: 'claude-main', name: 'Claude' }])]))).toEqual({ ok: true, errors: [] });
+    await selectPipeline(name);
+
+    const block = document.querySelector('#r1-models [data-participant-id="claude-main"]');
+    const label = block.querySelector('.model-name');
+    const pointer = (target, type, { x = 10, y = 10, pointerId = 1 } = {}) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, 'pointerId', { value: pointerId });
+      target.dispatchEvent(event);
+    };
+
+    pointer(label, 'pointerdown');
+    await H.delay(100);
+    pointer(document, 'pointerup');
+    await H.delay(500);
+    expect(block.classList.contains('is-participant-editing')).toBe(false);
+
+    pointer(label, 'pointerdown', { pointerId: 2 });
+    pointer(document, 'pointermove', { x: 19, y: 10, pointerId: 2 });
+    await H.delay(570);
+    expect(block.classList.contains('is-participant-editing')).toBe(false);
+
+    pointer(label, 'pointerdown', { pointerId: 3 });
+    await H.delay(570);
+    expect(block.classList.contains('is-participant-editing')).toBe(true);
+    pointer(document.body, 'pointerdown', { pointerId: 4 });
+    expect(block.classList.contains('is-participant-editing')).toBe(false);
+  });
+
+  test('canvas alignment ResizeObserver excludes rebuilt owner stacks', async () => {
+    resetPipelineStore();
+    const name = 'Owner ResizeObserver targets';
+    const schema = schemaV2([
+      round('r1', [{ id: 'claude-main', name: 'Claude' }]),
+      { ref: 'owner:a', kind: 'owner', input: [{ step: 'r1', participant: 'claude-main' }], models: [], task: 'Approve the draft.' },
+      { ref: 'owner:b', kind: 'owner', input: [{ step: 'owner:a', participant: 'owner' }], models: [], task: 'Review the approval.' },
+      round('r2', [{ id: 'gpt-main', name: 'GPT' }])
+    ]);
+    expect(await debug().installBasicSchema(name, schema)).toEqual({ ok: true, errors: [] });
+    await selectPipeline(name);
+    await H.delay(30);
+
+    const observer = resizeObservers[0];
+    const ownerStacks = Array.from(document.querySelectorAll('.pipeline-control-step .model-stack'));
+    expect(ownerStacks).toHaveLength(2);
+    expect(Array.from(observer.targets).some((target) => target.closest('.pipeline-control-step'))).toBe(false);
+    expect(Array.from(observer.targets).some((target) => target.matches('#r1-models, #r2-models'))).toBe(true);
+
+    observer.callback([], observer);
+    await H.delay(50);
+    expect(Array.from(observer.targets).some((target) => target.closest('.pipeline-control-step'))).toBe(false);
+    expect(document.querySelectorAll('.pipeline-control-step .model-stack')).toHaveLength(2);
   });
 
   test('schema, canvas, settings and save round-trip keep participant IDs, labels and explicit mode', async () => {

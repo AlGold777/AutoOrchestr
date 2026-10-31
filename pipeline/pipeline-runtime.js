@@ -86,12 +86,14 @@
             return `
                 <div class="model-block ${isActive ? 'active' : 'inactive'}${withRole ? ' with-role' : ''}${model.id !== model.name ? ' is-participant-duplicate' : ''}" data-index="${index}" data-provider-name="${escapeHtml(model.name)}" data-participant-id="${escapeHtml(model.id)}" data-participant-label-value="${escapeHtml(label)}">
                     <div class="model-header">
-                        <span class="status-indicator" data-llm-name="${escapeHtml(model.name)}"></span>
-                        <input type="checkbox" class="model-checkbox model-input-checkbox"${inputAttrs}>
+                        <span class="model-status-slot"><span class="status-indicator" data-llm-name="${escapeHtml(model.name)}"></span></span>
                         <span class="model-name">${escapeHtml(model.name)}</span>
                         ${participantTools}
                     </div>
-                    ${roleHtml}
+                    <div class="model-options">
+                        <input type="checkbox" class="model-checkbox model-input-checkbox"${inputAttrs}>
+                        ${roleHtml}
+                    </div>
                 </div>
             `;
         }).join('');

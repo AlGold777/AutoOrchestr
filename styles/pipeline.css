@@ -367,6 +367,11 @@ body.is-resizing {
     align-items: center;
 }
 
+.stage-column:not(.entry-column) {
+    width: var(--pipeline-block-width);
+    flex: 0 0 var(--pipeline-block-width);
+}
+
 .stage-header-row {
     position: relative;
     display: flex;
@@ -496,6 +501,15 @@ body.is-resizing {
     flex-direction: column;
 }
 
+.model-stack {
+    justify-content: center;
+    width: 100%;
+}
+
+.model-stack > * {
+    flex: 0 0 auto;
+}
+
 .model-block {
     width: var(--pipeline-block-width);
     height: var(--pipeline-block-height);
@@ -505,6 +519,7 @@ body.is-resizing {
     border-radius: 8px;
     transition: all 0.3s;
     cursor: pointer;
+    user-select: none;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -551,6 +566,37 @@ body.is-resizing {
     box-sizing: border-box;
 }
 
+.model-status-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    flex: 0 0 13px;
+}
+
+.model-options {
+    display: grid;
+    grid-template-columns: 13px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.model-options .role-selector {
+    margin-top: 0;
+    min-width: 0;
+}
+
+.model-block .model-participant-add,
+.model-block .model-participant-remove {
+    display: none;
+}
+
+.model-block.is-participant-editing .model-participant-add,
+.model-block.is-participant-editing .model-participant-remove {
+    display: inline-block;
+}
+
 .model-checkbox {
     width: 13px;
     height: 13px;
@@ -580,7 +626,8 @@ body.is-resizing {
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
 }
 .model-participant-label,
 .model-participant-add,
@@ -603,6 +650,7 @@ body.is-resizing {
 }
 .model-participant-add,
 .model-participant-remove {
+    flex: 0 0 18px;
     width: 18px;
     height: 18px;
     padding: 0;
@@ -1370,6 +1418,10 @@ body.is-resizing {
 .pipeline-control-title {
     font-size: 12px;
     font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .pipeline-control-delete-btn {

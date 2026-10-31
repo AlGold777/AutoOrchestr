@@ -3988,20 +3988,17 @@ document.addEventListener('click', (event) => {
                 const items = Array.from(stack.children)
                     .filter((node) => node.nodeType === 1 && !isHiddenFromPipelineLayout(node));
                 if (!items.length) return;
-                const lastItem = items[items.length - 1];
-                const lastStyle = window.getComputedStyle(lastItem);
-                const marginBottom = parseFloat(lastStyle.marginBottom) || 0;
-                const stackRect = stack.getBoundingClientRect();
-                const lastRect = lastItem.getBoundingClientRect();
-                const measuredHeight = (lastRect.bottom - stackRect.top) + marginBottom;
-                const estimatedHeight = (items.length * resolvedBlockHeight)
-                    + (Math.max(0, items.length - 1) * resolvedBlockGap);
-                const plausibleMeasured = measuredHeight > 0
-                    && measuredHeight <= estimatedHeight + resolvedBlockHeight;
-                const stackHeight = plausibleMeasured ? measuredHeight : estimatedHeight;
+                // Measure the cards themselves: the stack already includes the shared centering space.
+                const stackHeight = items.reduce((sum, item, index) => {
+                    const style = window.getComputedStyle(item);
+                    const cardHeight = item.getBoundingClientRect().height || parseFloat(style.height) || resolvedBlockHeight;
+                    const gap = index < items.length - 1 ? (parseFloat(style.marginBottom) || resolvedBlockGap) : 0;
+                    return sum + cardHeight + gap;
+                }, 0);
                 if (stackHeight > maxHeight) maxHeight = stackHeight;
             });
             const height = Math.max(BASE_STACK_HEIGHT, maxHeight || BASE_STACK_HEIGHT);
+            stacks.forEach((stack) => { stack.style.height = `${height}px`; });
             pipelinePanel.querySelectorAll('.connector-svg').forEach((svg) => {
                 if (isHiddenFromPipelineLayout(svg)) return;
                 svg.style.height = `${height}px`;
@@ -4854,7 +4851,7 @@ document.addEventListener('click', (event) => {
             return column;
         };
         const syncControlColumns = () => {
-            if (!pipelinePanel) return;
+            if (!pipelinePanel) return [];
             pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
             const editable = !pipelineRunActive;
             const entries = getCustomControls();
@@ -4882,6 +4879,9 @@ document.addEventListener('click', (event) => {
                 if (last) last.round = round;
                 if (last) drawn.push({ outgoing: true, column: last.column, round });
             }
+            return drawn;
+        };
+        const drawControlColumnLinks = (drawn) => {
             // Links: into each control from its anchor; out of the last control of a chain to the next round.
             drawn.forEach((link) => {
                 if (!link.outgoing) {
@@ -5048,9 +5048,10 @@ document.addEventListener('click', (event) => {
         pipelinePanel?.addEventListener('click', (event) => { if (event.target?.closest?.(BASIC_STRUCTURE_CONTROLS)) touchBasicStructure(); });
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             if (basicStructureTouched) persistBasicStructureSoon();
-            syncControlColumns();
+            const controlLinks = syncControlColumns();
             syncDocumentFrames();
             updatePipelineLayout();
+            drawControlColumnLinks(controlLinks);
             syncCustomRoleOption();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 const inputCb = block.querySelector('.model-input-checkbox');
@@ -5089,7 +5090,9 @@ document.addEventListener('click', (event) => {
             syncCanvasTooltips();
             syncStepErrorBadges();
             syncBasicInputCanvas();
-            pipelinePanel?.querySelectorAll('.model-stack').forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
+            // Owner columns are rebuilt on every pass; observing each new stack would schedule another pass forever.
+            pipelinePanel?.querySelectorAll('.stage-column:not(.pipeline-control-step) .model-stack')
+                .forEach((stack) => pipelineAlignmentResizeObserver?.observe(stack));
             if (deferFinalLayout && typeof window.requestAnimationFrame === 'function') {
                 if (deferredPipelineLayoutFrame) window.cancelAnimationFrame?.(deferredPipelineLayoutFrame);
                 deferredPipelineLayoutFrame = window.requestAnimationFrame(() => {
@@ -9863,6 +9866,43 @@ document.addEventListener('click', (event) => {
         };
 
         const BLOCK_CONTROL_SELECTOR = 'input, select, textarea, button, label, a, [contenteditable="true"], .role-selector, .status-indicator';
+        let participantPress = null;
+        const cancelParticipantPress = () => {
+            if (participantPress) clearTimeout(participantPress.timer);
+            participantPress = null;
+        };
+        const hideParticipantActions = () => {
+            pipelinePanel.querySelectorAll('.is-participant-editing').forEach((block) => block.classList.remove('is-participant-editing'));
+        };
+        pipelinePanel.addEventListener('pointerdown', (event) => {
+            cancelParticipantPress();
+            const block = event.target?.closest?.('.model-block');
+            if (pipelineRunActive || !isCustomEnginePipeline() || !block || event.button !== 0
+                || event.target.closest(BLOCK_CONTROL_SELECTOR) || !block.querySelector('[data-participant-add]')) return;
+            const press = { block, x: event.clientX, y: event.clientY, pointerId: event.pointerId, timer: null };
+            press.timer = setTimeout(() => {
+                if (!block.isConnected || pipelineRunActive) return;
+                hideParticipantActions();
+                block.classList.add('is-participant-editing');
+            }, 550);
+            participantPress = press;
+        });
+        document.addEventListener('pointermove', (event) => {
+            if (participantPress && (event.pointerId !== participantPress.pointerId
+                || Math.hypot(event.clientX - participantPress.x, event.clientY - participantPress.y) > 8)) cancelParticipantPress();
+        });
+        document.addEventListener('pointerup', cancelParticipantPress);
+        document.addEventListener('pointercancel', cancelParticipantPress);
+        window.addEventListener('blur', () => { cancelParticipantPress(); hideParticipantActions(); });
+        document.addEventListener('pointerdown', (event) => {
+            if (!event.target?.closest?.('.model-block.is-participant-editing')) hideParticipantActions();
+        }, true);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') { cancelParticipantPress(); hideParticipantActions(); }
+        });
+        pipelinePanel.addEventListener('contextmenu', (event) => {
+            if (event.target?.closest?.('.model-block.is-participant-editing')) event.preventDefault();
+        });
         pipelinePanel.addEventListener('dblclick', (event) => {
             const target = event.target;
             if (!target?.closest) return;
@@ -11073,7 +11113,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.912';
+            const APP_VERSION = '2.81.953';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');

@@ -6,6 +6,7 @@
   const text = (value) => typeof value === 'string' ? value.trim() : '';
   const idOf = (model) => text(model?.id) || text(model?.name);
   const syncByPanel = new WeakMap();
+  let nextMarkerId = 0;
   const controlColumn = (panel, ref) => Array.from(panel.querySelectorAll('.pipeline-control-step[data-control-ref]'))
     .find((column) => column.dataset.controlRef === ref) || null;
   const controlCard = (column, ref) => Array.from(column?.querySelectorAll('[data-control-card]') || [])
@@ -21,7 +22,7 @@
     const column = stepColumn(panel, step);
     if (!column) return null;
     if (step?.kind === 'owner') return controlCard(column, step.ref) || column;
-    return participant ? modelBlock(column, participant) : column;
+    return participant ? modelBlock(column, participant) : (column.querySelector('.model-stack') || column);
   };
 
   const modelBlock = (column, participant) => {
@@ -38,13 +39,28 @@
       if (previous.resize) panel.ownerDocument.defaultView?.removeEventListener('resize', previous.resize);
       if (previous.frame && panel.ownerDocument.defaultView?.cancelAnimationFrame) panel.ownerDocument.defaultView.cancelAnimationFrame(previous.frame);
     }
+    // Keep document buttons and their handlers when only attachments are refreshed.
+    panel.querySelectorAll('.basic-input-canvas-layer .pipeline-doc-frame').forEach((frame) => frame.closest('.stage-column')?.appendChild(frame));
     panel.querySelectorAll('.basic-input-canvas-layer, .basic-input-canvas-chip, .basic-input-canvas-svg').forEach((node) => node.remove());
     const canvas = panel.querySelector('.pipeline-canvas') || panel;
     const steps = list(schema?.steps).filter(object);
     const byRef = new Map(steps.map((step) => [step.ref, step]));
     const position = new Map(steps.map((step, index) => [step.ref, index]));
     const chipByArtifact = new Map();
+    const rows = new Map();
+    const usedDocumentFrames = new Set();
     let chipCount = 0;
+
+    const artifactRow = (column) => {
+      if (!column) return null;
+      if (!rows.has(column)) {
+        const row = panel.ownerDocument.createElement('div');
+        row.className = 'basic-input-canvas-layer';
+        column.appendChild(row);
+        rows.set(column, row);
+      }
+      return rows.get(column);
+    };
 
     const makeChip = (host, { name, type = 'artifact', description = '', key = '', file = null } = {}) => {
       if (!host || !text(name)) return null;
@@ -66,14 +82,14 @@
     const inColumn = panel.querySelector('.entry-column');
     list(attachments).forEach((attachment, index) => {
       const file = object(attachment) ? attachment : { name: String(attachment || '') };
-      makeChip(inColumn, { name: file.name || file.filename, type: 'file', file: { ...file, id: file.id || `attachment-${index + 1}` } });
+      makeChip(artifactRow(inColumn), { name: file.name || file.filename, type: 'file', file: { ...file, id: file.id || `attachment-${index + 1}` } });
     });
 
     steps.forEach((step) => {
       const column = stepColumn(panel, step);
       if (!column) return;
       const stepFiles = list(step.files);
-      stepFiles.forEach((file, index) => makeChip(column, { name: file?.name, type: 'file', file: { ...file, id: file?.id || `${step.ref}-file-${index + 1}` } }));
+      stepFiles.forEach((file, index) => makeChip(artifactRow(column), { name: file?.name, type: 'file', file: { ...file, id: file?.id || `${step.ref}-file-${index + 1}` } }));
       const round = /^r\d+$/.test(step.ref || '');
       if (round) {
         list(step.models).forEach((model) => {
@@ -84,20 +100,32 @@
 
       const declarations = [];
       if (step.kind === 'owner') {
-        list(step.output?.artifacts).forEach((artifact) => declarations.push({ artifact, participant: 'owner', host: controlCard(column, step.ref) || column }));
+        list(step.output?.artifacts).forEach((artifact) => declarations.push({ artifact, participant: 'owner' }));
       } else if (round) {
         list(step.models).forEach((model) => {
           if (model?.enabled === false) return;
           const participant = idOf(model);
           const ownOutput = object(model?.output) ? model.output : null;
           const output = ownOutput || step.output;
-          list(output?.artifacts).forEach((artifact) => declarations.push({ artifact, participant, host: modelBlock(column, participant) || column }));
+          list(output?.artifacts).forEach((artifact) => declarations.push({ artifact, participant }));
         });
       }
-      declarations.forEach(({ artifact, participant, host }) => {
+      declarations.forEach(({ artifact, participant }) => {
         if (!object(artifact) || !text(artifact.id)) return;
         const key = JSON.stringify([step.ref, participant, artifact.id]);
-        const chip = makeChip(host, { name: artifact.name || artifact.id, description: artifact.description, key });
+        const host = artifactRow(column);
+        const frame = Array.from(column.querySelectorAll('.pipeline-doc-frame'))
+          .find((item) => item.dataset.docId === artifact.id && !usedDocumentFrames.has(item));
+        let chip;
+        if (frame) {
+          usedDocumentFrames.add(frame);
+          frame.dataset.artifactKey = key;
+          host.appendChild(frame);
+          chip = frame;
+          chipCount += 1;
+        } else {
+          chip = makeChip(host, { name: artifact.name || artifact.id, description: artifact.description, key });
+        }
         if (chip) chipByArtifact.set(key, chip);
       });
     });
@@ -108,6 +136,7 @@
     svg.dataset.hidden = String(canvas.classList.contains('arrows-hidden'));
     canvas.appendChild(svg);
     const links = [];
+    const markerId = `basic-input-arrow-${++nextMarkerId}`;
     const addInputs = (consumer, sources, participant = '') => {
       const target = stepTarget(panel, consumer, participant);
       if (!target) return;
@@ -145,6 +174,21 @@
       svg.setAttribute('width', String(width));
       svg.setAttribute('height', String(height));
       while (svg.firstChild) svg.removeChild(svg.firstChild);
+      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+      marker.id = markerId;
+      marker.setAttribute('viewBox', '0 0 8 8');
+      marker.setAttribute('refX', '8');
+      marker.setAttribute('refY', '4');
+      marker.setAttribute('markerWidth', '5');
+      marker.setAttribute('markerHeight', '5');
+      marker.setAttribute('orient', 'auto');
+      const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      head.setAttribute('points', '0,0 8,4 0,8');
+      head.setAttribute('fill', '#94a3b8');
+      marker.appendChild(head);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
       links.forEach(({ source, target }) => {
         const a = source.getBoundingClientRect();
         const b = target.getBoundingClientRect();
@@ -156,8 +200,9 @@
         const bend = Math.max(12, Math.abs(x2 - x1) * 0.35);
         path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
         path.setAttribute('class', 'basic-input-canvas-link');
+        path.setAttribute('marker-end', `url(#${markerId})`);
         const endpointId = (element) => element.dataset.participantId || element.dataset.controlCard || element.dataset.controlRef
-          || (element.dataset.round ? `r${element.dataset.round}` : '');
+          || (element.closest('[data-round]') ? `r${element.closest('[data-round]').dataset.round}` : '');
         path.dataset.source = endpointId(source);
         path.dataset.target = endpointId(target);
         svg.appendChild(path);
