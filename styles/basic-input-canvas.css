@@ -32,15 +32,20 @@
     margin-top: 12px;
 }
 
-.basic-input-canvas-layer > .basic-input-canvas-chip,
-.basic-input-canvas-layer > .pipeline-doc-frame {
+.pipeline-canvas .basic-input-canvas-layer > .basic-input-canvas-chip,
+.pipeline-canvas .basic-input-canvas-layer > .pipeline-doc-frame {
     display: block;
     flex: 1 1 0;
     width: 0;
     min-width: 0;
     max-width: none;
     margin: 0;
-    padding: 5px 3px;
+    height: 18px;
+    min-height: 0;
+    padding: 0 3px;
+    border-color: #88888866;
+    opacity: 1;
+    font-size: 11px;
     line-height: 16px;
     border-radius: 6px;
     text-align: center;

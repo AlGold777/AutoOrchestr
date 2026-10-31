@@ -9,8 +9,6 @@
   let nextMarkerId = 0;
   const controlColumn = (panel, ref) => Array.from(panel.querySelectorAll('.pipeline-control-step[data-control-ref]'))
     .find((column) => column.dataset.controlRef === ref) || null;
-  const controlCard = (column, ref) => Array.from(column?.querySelectorAll('[data-control-card]') || [])
-    .find((card) => card.dataset.controlCard === ref) || null;
 
   const stepColumn = (panel, step) => {
     const round = /^r(\d+)$/.exec(step?.ref || '');
@@ -18,11 +16,11 @@
     return controlColumn(panel, step?.ref || '');
   };
 
-  const stepTarget = (panel, step, participant = '') => {
+  const stepJunction = (panel, step) => {
     const column = stepColumn(panel, step);
     if (!column) return null;
-    if (step?.kind === 'owner') return controlCard(column, step.ref) || column;
-    return participant ? modelBlock(column, participant) : (column.querySelector('.model-stack') || column);
+    const incoming = column.previousElementSibling;
+    return incoming?.matches('.connector-group') ? incoming.querySelector('[data-artifact-junction]') : null;
   };
 
   const modelBlock = (column, participant) => {
@@ -47,6 +45,7 @@
     const byRef = new Map(steps.map((step) => [step.ref, step]));
     const position = new Map(steps.map((step, index) => [step.ref, index]));
     const chipByArtifact = new Map();
+    const artifactSources = [];
     const rows = new Map();
     const usedDocumentFrames = new Set();
     let chipCount = 0;
@@ -126,7 +125,10 @@
         } else {
           chip = makeChip(host, { name: artifact.name || artifact.id, description: artifact.description, key });
         }
-        if (chip) chipByArtifact.set(key, chip);
+        if (chip) {
+          chipByArtifact.set(key, chip);
+          artifactSources.push({ ref: step.ref, participant, key, element: chip });
+        }
       });
     });
 
@@ -136,40 +138,49 @@
     svg.dataset.hidden = String(canvas.classList.contains('arrows-hidden'));
     canvas.appendChild(svg);
     const links = [];
+    const seenLinks = new Set();
     const markerId = `basic-input-arrow-${++nextMarkerId}`;
-    const addInputs = (consumer, sources, participant = '') => {
-      const target = stepTarget(panel, consumer, participant);
+    const addInputs = (consumer, sources) => {
+      const target = stepJunction(panel, consumer);
       if (!target) return;
       list(sources).forEach((source) => {
         const sourceRef = typeof source === 'string' ? source : (source?.artifact?.step || source?.step);
         if (!byRef.has(sourceRef) || position.get(sourceRef) >= position.get(consumer.ref)) return;
-        let sourceElement = null;
-        if (typeof source === 'string') {
-          const producer = byRef.get(source);
-          if (producer) sourceElement = stepTarget(panel, producer);
-        } else if (object(source) && object(source.artifact)) {
+        let producers;
+        if (object(source) && object(source.artifact)) {
           const address = source.artifact;
-          sourceElement = chipByArtifact.get(JSON.stringify([address.step, address.participant, address.id])) || null;
-        } else if (object(source) && text(source.step)) {
-          const producer = byRef.get(source.step);
-          if (producer) sourceElement = stepTarget(panel, producer, source.participant || '');
+          const key = JSON.stringify([address.step, address.participant, address.id]);
+          producers = chipByArtifact.has(key) ? artifactSources.filter((item) => item.key === key) : [];
+        } else {
+          const wanted = object(source) ? text(source.participant) : '';
+          producers = artifactSources.filter((item) => item.ref === sourceRef && (!wanted || item.participant === wanted));
         }
-        if (sourceElement && sourceElement !== target) links.push({ source: sourceElement, target });
+        producers.forEach((producer) => {
+          const key = JSON.stringify([producer.key, consumer.ref]);
+          if (seenLinks.has(key)) return;
+          seenLinks.add(key);
+          links.push({ source: producer.element, target, artifact: producer, targetRef: consumer.ref });
+        });
       });
     };
     steps.forEach((consumer) => {
-      addInputs(consumer, consumer.input);
       if (/^r\d+$/.test(consumer.ref || '')) {
         list(consumer.models).forEach((model) => {
-          if (model?.enabled !== false) addInputs(consumer, model.input, idOf(model));
+          if (model?.enabled !== false) addInputs(consumer, model.input === undefined ? consumer.input : model.input);
         });
-      }
+      } else addInputs(consumer, consumer.input);
     });
 
     const draw = () => {
       const bounds = canvas.getBoundingClientRect();
-      const width = Math.max(canvas.scrollWidth || 0, bounds.width || 0, 1);
-      const height = Math.max(canvas.scrollHeight || 0, bounds.height || 0, 1);
+      const pointX = (x) => x - bounds.left + canvas.scrollLeft;
+      const pointY = (y) => y - bounds.top + canvas.scrollTop;
+      const flow = canvas.querySelector('.pipeline-flow') || canvas;
+      const flowBounds = flow.getBoundingClientRect();
+      const routes = links.filter(({ source, target }) => source.isConnected && target.isConnected);
+      const obstacles = Array.from(canvas.querySelectorAll('.basic-input-canvas-layer > *'), (element) => ({ element, rect: element.getBoundingClientRect() }));
+      const width = Math.max(bounds.width || 0, pointX(flowBounds.right) + 16, 1);
+      const height = Math.max(bounds.height || 0, pointY(flowBounds.bottom) + 10, 1);
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       svg.setAttribute('width', String(width));
       svg.setAttribute('height', String(height));
@@ -189,22 +200,37 @@
       marker.appendChild(head);
       defs.appendChild(marker);
       svg.appendChild(defs);
-      links.forEach(({ source, target }) => {
+      routes.forEach(({ source, target, artifact, targetRef }) => {
         const a = source.getBoundingClientRect();
         const b = target.getBoundingClientRect();
-        const x1 = a.right - bounds.left + canvas.scrollLeft;
-        const y1 = a.top + a.height / 2 - bounds.top + canvas.scrollTop;
-        const x2 = b.left - bounds.left + canvas.scrollLeft;
-        const y2 = b.top + b.height / 2 - bounds.top + canvas.scrollTop;
+        const x1 = pointX(a.right);
+        const y1 = pointY(a.top + a.height / 2);
+        const x2 = pointX(b.left + b.width / 2);
+        const y2 = pointY(b.top + b.height / 2);
+        // Keep the horizontal route at the artifact's center, taking any intervening artifacts from above.
+        const bypasses = obstacles.filter(({ element, rect }) => element !== source && rect.width > 0 && rect.height > 0
+          && pointX(rect.right) > x1 && pointX(rect.left) < x2
+          && pointY(rect.top) <= y1 && pointY(rect.bottom) >= y1)
+          .map(({ rect }) => ({ left: Math.max(x1, pointX(rect.left) - 2), right: Math.min(x2, pointX(rect.right) + 2), top: pointY(rect.top) - 6 }))
+          .sort((left, right) => left.left - right.left);
+        const spans = [];
+        bypasses.forEach((span) => {
+          const previous = spans[spans.length - 1];
+          if (previous && span.left <= previous.right) {
+            previous.right = Math.max(previous.right, span.right);
+            previous.top = Math.min(previous.top, span.top);
+          } else spans.push({ ...span });
+        });
+        let route = `M ${x1} ${y1}`;
+        spans.forEach((span) => { route += ` H ${span.left} V ${span.top} H ${span.right} V ${y1}`; });
+        route += ` H ${x2} V ${y2}`;
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const bend = Math.max(12, Math.abs(x2 - x1) * 0.35);
-        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+        path.setAttribute('d', route);
         path.setAttribute('class', 'basic-input-canvas-link');
         path.setAttribute('marker-end', `url(#${markerId})`);
-        const endpointId = (element) => element.dataset.participantId || element.dataset.controlCard || element.dataset.controlRef
-          || (element.closest('[data-round]') ? `r${element.closest('[data-round]').dataset.round}` : '');
-        path.dataset.source = endpointId(source);
-        path.dataset.target = endpointId(target);
+        path.dataset.source = artifact.participant === 'owner' ? artifact.ref : artifact.participant;
+        path.dataset.sourceArtifact = artifact.key;
+        path.dataset.target = targetRef;
         svg.appendChild(path);
       });
     };

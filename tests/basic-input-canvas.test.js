@@ -9,12 +9,15 @@ const panelHtml = () => `
           <div class="model-block" data-participant-id="claude-id"><span class="model-name">Claude</span></div>
           <div class="model-block" data-participant-id="gpt-id"><span class="model-name">GPT</span></div>
         </div>
+        <div class="connector-group"><svg><line data-artifact-junction="true"></line></svg></div>
         <div class="stage-column" data-round="2">
           <div class="model-block" data-participant-id="gemini-id"><span class="model-name">Gemini</span></div>
         </div>
+        <div class="connector-group"><svg><line data-artifact-junction="true"></line></svg></div>
         <div class="stage-column pipeline-control-step" data-control-ref="owner:approve">
           <button class="pipeline-control-card" data-control-card="owner:approve">Owner</button>
         </div>
+        <div class="connector-group"><svg><line data-artifact-junction="true"></line></svg></div>
         <div class="stage-column pipeline-control-step" data-control-ref="owner:review">
           <button class="pipeline-control-card" data-control-card="owner:review">Reviewer</button>
         </div>
@@ -62,25 +65,20 @@ describe('Basic input canvas', () => {
       { ref: 'r2', kind: 'round', input: [
         { artifact: { step: 'r1', participant: 'claude-id', id: 'draft' }, version: 'latest', required: true },
         { step: 'r1', participant: 'gpt-id', required: true }
-      ], models: [{ id: 'gemini-id', name: 'Gemini', input: [{ step: 'r1', participant: 'claude-id', required: true }] }] },
-      { ref: 'owner:approve', kind: 'owner', input: [{ step: 'r2', required: true }], models: [] }
+      ], models: [{ id: 'gemini-id', name: 'Gemini', input: [{ artifact: { step: 'r1', participant: 'claude-id', id: 'draft' }, version: 'latest' }] }] },
+      { ref: 'owner:approve', kind: 'owner', input: [{ step: 'r2', required: true }], output: { artifacts: [{ id: 'decision', name: 'Decision' }] }, models: [] }
     ] } });
-    expect(result.links).toBe(4);
+    expect(result.links).toBe(1);
     const paths = Array.from(panel.querySelectorAll('.basic-input-canvas-svg path'));
-    expect(paths).toHaveLength(4);
-    expect(paths.find((path) => path.dataset.target === 'gemini-id')?.dataset.source).toBe('claude-id');
-    expect(paths.find((path) => path.dataset.target === 'owner:approve')?.dataset.source).toBe('r2');
+    expect(paths).toHaveLength(1);
+    expect(paths[0]?.dataset.source).toBe('claude-id');
+    expect(paths[0]?.dataset.sourceArtifact).toBe(JSON.stringify(['r1', 'claude-id', 'draft']));
+    expect(paths[0]?.dataset.target).toBe('r2');
   });
 
   test('owner inputs terminate at the User card', () => {
     BasicInputCanvas.sync({ panel, schema: { steps: [
-      { ref: 'owner:approve', kind: 'owner', input: [{ step: 'r1', participant: 'owner', required: true }], models: [] },
-      { ref: 'r1', kind: 'round', models: [{ id: 'claude-id', name: 'Claude' }] }
-    ] } });
-    // Backwards links are not emitted by the canvas; a valid owner consumer is tested below.
-    expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(0);
-    BasicInputCanvas.sync({ panel, schema: { steps: [
-      { ref: 'r1', kind: 'round', models: [{ id: 'claude-id', name: 'Claude' }] },
+      { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'spec', name: 'Spec' }] }, models: [{ id: 'claude-id', name: 'Claude' }] },
       { ref: 'owner:approve', kind: 'owner', input: [{ step: 'r1', participant: 'claude-id', required: true }], models: [] }
     ] } });
     const path = panel.querySelector('.basic-input-canvas-svg path');
@@ -90,9 +88,9 @@ describe('Basic input canvas', () => {
 
   test('owner links start and end at centered cards between rounds', () => {
     const result = BasicInputCanvas.sync({ panel, schema: { steps: [
-      { ref: 'r1', kind: 'round', models: [{ id: 'claude-id', name: 'Claude' }] },
-      { ref: 'owner:approve', kind: 'owner', input: [{ step: 'r1', participant: 'claude-id' }], models: [] },
-      { ref: 'owner:review', kind: 'owner', input: [{ step: 'owner:approve', participant: 'owner' }], models: [] },
+      { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'draft', name: 'Draft' }] }, models: [{ id: 'claude-id', name: 'Claude' }] },
+      { ref: 'owner:approve', kind: 'owner', input: [{ step: 'r1', participant: 'claude-id' }], output: { artifacts: [{ id: 'decision', name: 'Decision' }] }, models: [] },
+      { ref: 'owner:review', kind: 'owner', input: [{ step: 'owner:approve', participant: 'owner' }], output: { artifacts: [{ id: 'review', name: 'Review' }] }, models: [] },
       { ref: 'r2', kind: 'round', models: [{ id: 'gemini-id', name: 'Gemini', input: [{ step: 'owner:review', participant: 'owner' }] }] }
     ] } });
 
@@ -100,10 +98,14 @@ describe('Basic input canvas', () => {
       left, right, top, height, width: right - left, bottom: top + height, x: left, y: top, toJSON: () => ({})
     });
     panel.querySelector('.pipeline-canvas').getBoundingClientRect = () => bounds(0, 400, 0, 400);
-    panel.querySelector('.model-block[data-participant-id="claude-id"]').getBoundingClientRect = () => bounds(10, 40, 20, 40);
-    panel.querySelector('[data-control-card="owner:approve"]').getBoundingClientRect = () => bounds(70, 100, 100, 60);
-    panel.querySelector('[data-control-card="owner:review"]').getBoundingClientRect = () => bounds(130, 160, 200, 80);
-    panel.querySelector('.model-block[data-participant-id="gemini-id"]').getBoundingClientRect = () => bounds(190, 220, 300, 20);
+    const chips = Array.from(panel.querySelectorAll('.basic-input-canvas-layer [data-artifact-key]'));
+    chips[0].getBoundingClientRect = () => bounds(20, 40, 50, 18);
+    chips[1].getBoundingClientRect = () => bounds(80, 120, 120, 18);
+    chips[2].getBoundingClientRect = () => bounds(140, 180, 220, 18);
+    const junctions = Array.from(panel.querySelectorAll('[data-artifact-junction]'));
+    junctions[0].getBoundingClientRect = () => bounds(190, 220, 310, 0);
+    junctions[1].getBoundingClientRect = () => bounds(70, 100, 130, 0);
+    junctions[2].getBoundingClientRect = () => bounds(130, 160, 240, 0);
     result.redraw();
 
     const paths = Array.from(panel.querySelectorAll('.basic-input-canvas-svg path'));
@@ -111,13 +113,90 @@ describe('Basic input canvas', () => {
     expect(paths.map((path) => [path.dataset.source, path.dataset.target])).toEqual([
       ['claude-id', 'owner:approve'],
       ['owner:approve', 'owner:review'],
-      ['owner:review', 'gemini-id']
+      ['owner:review', 'r2']
     ]);
+    expect(paths.every((path) => path.dataset.sourceArtifact)).toBe(true);
     expect(paths.map((path) => path.getAttribute('d'))).toEqual([
-      'M 40 40 C 52 40, 58 130, 70 130',
-      'M 100 130 C 112 130, 118 240, 130 240',
-      'M 160 240 C 172 240, 178 310, 190 310'
+      'M 40 59 H 85 V 130',
+      'M 120 129 H 145 V 240',
+      'M 180 229 H 205 V 310'
     ]);
+  });
+
+  test('step references resolve to declared artifacts, duplicate refs dedupe, and missing outputs have no links', () => {
+    const schema = { steps: [
+      { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'draft', name: 'Draft' }] }, models: [{ id: 'claude-id', name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [
+        { id: 'gemini-id', name: 'Gemini', input: ['r1', { step: 'r1' }, { artifact: { step: 'r1', participant: 'claude-id', id: 'draft' } }] },
+        { id: 'gpt-id', name: 'GPT', input: ['r1'] },
+        { id: 'deepseek-id', name: 'DeepSeek', input: ['r1'] }
+      ] }
+    ] };
+    const result = BasicInputCanvas.sync({ panel, schema });
+    expect(result.links).toBe(1);
+    expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(1);
+
+    const noOutput = BasicInputCanvas.sync({ panel, schema: { steps: [
+      { ref: 'r1', kind: 'round', models: [{ id: 'claude-id', name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [{ id: 'gemini-id', name: 'Gemini', input: ['r1'] }] }
+    ] } });
+    expect(noOutput.links).toBe(0);
+    expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(0);
+
+    panel.querySelector('.stage-column[data-round="2"]').previousElementSibling.remove();
+    const noJunction = BasicInputCanvas.sync({ panel, schema: { steps: [
+      { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'draft', name: 'Draft' }] }, models: [{ id: 'claude-id', name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [{ id: 'gemini-id', name: 'Gemini', input: ['r1'] }] }
+    ] } });
+    expect(noJunction.links).toBe(0);
+    expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(0);
+  });
+
+  test('a disconnected artifact source is dropped on redraw instead of drawing from the page origin', () => {
+    const result = BasicInputCanvas.sync({ panel, schema: { steps: [
+      { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'draft', name: 'Draft' }] }, models: [{ id: 'claude-id', name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [{ id: 'gemini-id', name: 'Gemini', input: ['r1'] }] }
+    ] } });
+    const source = panel.querySelector('[data-artifact-key]');
+    expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(1);
+
+    source.remove();
+    result.redraw();
+
+    expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(0);
+  });
+
+  test('an intervening artifact gets a top bypass and each path ends at the shared junction midpoint', () => {
+    const result = BasicInputCanvas.sync({ panel, schema: { steps: [
+      { ref: 'r1', kind: 'round', models: [
+        { id: 'claude-id', name: 'Claude', output: { artifacts: [{ id: 'first', name: 'First' }] } },
+        { id: 'gpt-id', name: 'GPT', output: { artifacts: [{ id: 'second', name: 'Second' }] } }
+      ] },
+      { ref: 'r2', kind: 'round', models: [
+        { id: 'gemini-id', name: 'Gemini', input: ['r1'] },
+        { id: 'deepseek-id', name: 'DeepSeek', input: ['r1'] },
+        { id: 'qwen-id', name: 'Qwen', input: ['r1'] }
+      ] }
+    ] } });
+    const bounds = (left, right, top, height) => ({ left, right, top, height, width: right - left, bottom: top + height, x: left, y: top, toJSON: () => ({}) });
+    const canvas = panel.querySelector('.pipeline-canvas');
+    canvas.getBoundingClientRect = () => bounds(0, 400, 0, 200);
+    const chips = Array.from(panel.querySelectorAll('.basic-input-canvas-layer [data-artifact-key]'));
+    chips[0].getBoundingClientRect = () => bounds(20, 50, 50, 18);
+    chips[1].getBoundingClientRect = () => bounds(70, 100, 50, 18);
+    const junction = panel.querySelector('.stage-column[data-round="2"]').previousElementSibling.querySelector('[data-artifact-junction]');
+    junction.getBoundingClientRect = () => bounds(140, 160, 90, 20);
+    result.redraw();
+
+    const paths = Array.from(panel.querySelectorAll('.basic-input-canvas-svg path'));
+    expect(result.links).toBe(2);
+    expect(paths).toHaveLength(2);
+    expect(paths.map((path) => path.dataset.target)).toEqual(['r2', 'r2']);
+    expect(paths.map((path) => path.getAttribute('d'))).toEqual([
+      'M 50 59 H 68 V 44 H 102 V 59 H 150 V 100',
+      'M 100 59 H 150 V 100'
+    ]);
+    expect(paths[0].getAttribute('d')).toContain('V 44');
   });
 
   test('global attachment names appear under In without inferred links', () => {
@@ -170,6 +249,42 @@ describe('Basic input canvas', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  test('a document frame recreated by the run-record lifecycle is reclaimed on the next canvas sync', () => {
+    const schema = { steps: [
+      { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'spec', name: 'Spec' }] }, models: [
+        { id: 'claude-id', name: 'Claude' }
+      ] },
+      { ref: 'r2', kind: 'round', input: [
+        { artifact: { step: 'r1', participant: 'claude-id', id: 'spec' }, version: 'latest' }
+      ], models: [{ id: 'gemini-id', name: 'Gemini' }] }
+    ] };
+    const column = panel.querySelector('.stage-column[data-round="1"]');
+    const original = document.createElement('button');
+    original.className = 'pipeline-doc-frame is-pending';
+    original.dataset.docId = 'spec';
+    original.textContent = 'Spec';
+    column.appendChild(original);
+
+    BasicInputCanvas.sync({ panel, schema });
+    expect(column.querySelector('.basic-input-canvas-layer .pipeline-doc-frame')).toBe(original);
+    expect(panel.querySelector('.basic-input-canvas-link')?.dataset.source).toBe('claude-id');
+
+    // syncDocumentFrames removes every old frame and appends fresh frames directly to the round column.
+    original.remove();
+    const restored = document.createElement('button');
+    restored.className = 'pipeline-doc-frame is-ready';
+    restored.dataset.docId = 'spec';
+    restored.textContent = 'Spec v1';
+    column.appendChild(restored);
+
+    BasicInputCanvas.sync({ panel, schema });
+    expect(column.querySelectorAll('.basic-input-canvas-layer')).toHaveLength(1);
+    expect(column.querySelectorAll('.basic-input-canvas-layer .pipeline-doc-frame')).toHaveLength(1);
+    expect(column.querySelector('.basic-input-canvas-layer .pipeline-doc-frame')).toBe(restored);
+    expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(1);
+    expect(panel.querySelector('.basic-input-canvas-svg path')?.dataset.source).toBe('claude-id');
+  });
+
   test('repeated sync replaces its own chips and links, and respects the hidden-arrows class', () => {
     const schema = { steps: [
       { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'draft', name: 'Draft' }] }, models: [{ id: 'claude-id', name: 'Claude' }] },
@@ -192,11 +307,11 @@ describe('Basic input canvas', () => {
 
   test('resize redraws explicit connectors from the current element positions', () => {
     BasicInputCanvas.sync({ panel, schema: { steps: [
-      { ref: 'r1', kind: 'round', models: [{ id: 'claude-id', name: 'Claude' }] },
-      { ref: 'r2', kind: 'round', input: [{ step: 'r1', required: true }], models: [{ id: 'gemini-id', name: 'Gemini' }] }
+      { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'draft', name: 'Draft' }] }, models: [{ id: 'claude-id', name: 'Claude' }] },
+      { ref: 'r2', kind: 'round', models: [{ id: 'gemini-id', name: 'Gemini', input: [{ step: 'r1', required: true }] }] }
     ] } });
-    const source = panel.querySelector('.stage-column[data-round="1"]');
-    const target = panel.querySelector('.stage-column[data-round="2"]');
+    const source = panel.querySelector('.stage-column[data-round="1"] [data-artifact-key]');
+    const target = panel.querySelector('.stage-column[data-round="2"]').previousElementSibling.querySelector('[data-artifact-junction]');
     const bounds = (left, right) => ({ left, right, top: 0, height: 20, width: right - left, bottom: 20, x: left, y: 0, toJSON: () => ({}) });
     jest.spyOn(source, 'getBoundingClientRect').mockReturnValue(bounds(10, 20));
     jest.spyOn(target, 'getBoundingClientRect').mockReturnValue(bounds(100, 110));
@@ -206,6 +321,6 @@ describe('Basic input canvas', () => {
     window.dispatchEvent(new Event('resize'));
     const second = panel.querySelector('.basic-input-canvas-link').getAttribute('d');
     expect(first).not.toBe(second);
-    expect(second.endsWith('200 10')).toBe(true);
+    expect(second.endsWith('H 205 V 10')).toBe(true);
   });
 });

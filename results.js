@@ -4643,6 +4643,23 @@ document.addEventListener('click', (event) => {
             return Object.keys(overrides).length ? overrides : null;
         };
 
+        // The anchor is halfway along the entire visible common trunk, including its single-card ends.
+        const artifactJunctionMarkup = (points) => {
+            const lengths = points.slice(1).map((point, index) => Math.hypot(point[0] - points[index][0], point[1] - points[index][1]));
+            let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
+            for (let index = 0; index < lengths.length; index += 1) {
+                const length = lengths[index];
+                if (remaining <= length) {
+                    const ratio = length ? remaining / length : 0;
+                    const x = points[index][0] + (points[index + 1][0] - points[index][0]) * ratio;
+                    const y = points[index][1] + (points[index + 1][1] - points[index][1]) * ratio;
+                    return `<circle data-artifact-junction="true" cx="${x}" cy="${y}" r="0.5" fill="none" stroke="none"/>`;
+                }
+                remaining -= length;
+            }
+            return '';
+        };
+
         const drawInputSplitConnector = (svgId, targetStackId, colorClass) => {
             const svg = document.getElementById(svgId);
             const entryPoint = document.getElementById('entryPoint');
@@ -4683,6 +4700,7 @@ document.addEventListener('click', (event) => {
             const activePath = targetIndices.length > 0;
             const connectorClass = activePath ? colorClass : 'inactive';
             html += `<line x1="0" y1="${targetMidY}" x2="${splitX}" y2="${targetMidY}" class="connector-line ${connectorClass}${activePath ? ' flow-anim' : ''}"/>`;
+            html += artifactJunctionMarkup([[0, targetMidY], [targetYs.length === 1 ? W : splitX, targetMidY]]);
 
             if (targetYs.length > 1) {
                 html += `<line x1="${splitX}" y1="${targetMinY}" x2="${splitX}" y2="${targetMaxY}" class="merge-line ${connectorClass}"/>`;
@@ -4773,6 +4791,11 @@ document.addEventListener('click', (event) => {
             }
 
             html += `<line x1="${mergeX}" y1="${sourceMidY}" x2="${splitX}" y2="${targetMidY}" class="connector-line ${connectorClass}${activePath ? ' flow-anim' : ''}"/>`;
+            html += artifactJunctionMarkup([
+                [sourceYs.length === 1 ? 0 : mergeX, sourceMidY],
+                [mergeX, sourceMidY], [splitX, targetMidY],
+                [targetYs.length === 1 ? W : splitX, targetMidY]
+            ]);
 
             if (targetYs.length > 1) {
                 html += `<line x1="${splitX}" y1="${targetMinY}" x2="${splitX}" y2="${targetMaxY}" class="merge-line ${connectorClass}"/>`;
@@ -4913,7 +4936,7 @@ document.addEventListener('click', (event) => {
             const approved = (record.snapshot?.results || []).some((item) => item?.owner?.approved?.id === artifactId);
             return { name: entries[entries.length - 1].name, approved };
         };
-        const syncDocumentFrames = () => {
+        const syncDocumentFrames = ({ syncCanvas = true } = {}) => {
             if (!pipelinePanel) return;
             // The frames are drawn again from the canvas: a frame of a pipeline that no longer has its document goes.
             pipelinePanel.querySelectorAll('.pipeline-doc-frame').forEach((node) => node.remove());
@@ -4936,9 +4959,12 @@ document.addEventListener('click', (event) => {
                 frame.dataset.docRef = step.ref;
                 frame.dataset.docId = artifact.id;
                 frame.textContent = !frameState ? (artifact.name || artifact.id) : `${frameState.name}${state === 'approved' ? ' · утверждено' : ''}`;
+                setCanvasTooltip(frame, artifact.name || artifact.id, artifact.description);
                 if (frameState) frame.addEventListener('click', () => { void openDocumentFrame(artifact.id); });
                 column.append(frame);
             });
+            // A refreshed run record replaces the buttons too: replace their SVG endpoints in the same pass.
+            if (syncCanvas) syncBasicInputCanvas();
         };
 
         // Tooltips of the canvas: a name for each element and, where the schema has one, a description (ResultsTooltips shows both).
@@ -5049,7 +5075,7 @@ document.addEventListener('click', (event) => {
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             if (basicStructureTouched) persistBasicStructureSoon();
             const controlLinks = syncControlColumns();
-            syncDocumentFrames();
+            syncDocumentFrames({ syncCanvas: false });
             updatePipelineLayout();
             drawControlColumnLinks(controlLinks);
             syncCustomRoleOption();
@@ -11113,7 +11139,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.953';
+            const APP_VERSION = '2.81.954';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');

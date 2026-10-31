@@ -382,6 +382,7 @@ async function loadResultsScript(seededPipelineStore = null) {
   // The same order as pipeline_panel.html: the modules the engine uses come before it.
   ['stage-markers', 'debate-response-acceptance', 'basic-output', 'basic-artifacts', 'custom-engine', 'basic-schema', 'schema-text-reader', 'custom-run-record'].filter((mod) => fs.existsSync(path.join(__dirname, '..', 'disput', `${mod}.js`))).forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'disput', `${mod}.js`), 'utf8')); });
   ['boot-utils', 'dom-utils', 'attachments', 'pasted-text', 'tooltips', 'debate-ui', 'debate-transport', 'debate-controller', 'debate-renderer', 'debate-sessions-store', 'debate-export'].forEach((mod) => { window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', `${mod}.js`), 'utf8')); });
+  window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'basic-input-canvas.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'utils', 'selection-block-format.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'owner-ask.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'choice-dialog.js'), 'utf8'));
@@ -3856,6 +3857,134 @@ describe('Pipeline debate favorites view', () => {
           const frame = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-pending');
           expect(frame).not.toBeNull();
           expect(frame.textContent).toBe('ТЗ');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('A07 documents: run-record frame replacement keeps the artifact row and its declared input link in sync', async () => {
+        const h = setupCustomInheritance('Doc frame lifecycle');
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+            docRound,
+            { ref: 'r2', kind: 'round', input: [
+              { artifact: { step: 'r1', participant: 'Claude', id: 'spec' }, version: 'latest', required: true }
+            ], models: [{ name: 'GPT' }] }
+          ] };
+          expect((await h.debug.installBasicSchema('Doc frame lifecycle', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Doc frame lifecycle"]').click();
+          await settleCustomCard();
+
+          const original = document.querySelector('.pipeline-doc-frame');
+          // Restoring the selected pipeline's last run replaces the frame asynchronously.
+          // No manual canvas sync should be needed to restore its row and incoming link.
+          await h.debug.restoreDocumentFrames();
+          const restored = document.querySelector('.pipeline-doc-frame');
+          expect(restored).not.toBe(original);
+          restored.getBoundingClientRect = () => ({ left: 140, right: 180, top: 100, bottom: 118, width: 40, height: 18 });
+          window.dispatchEvent(new Event('resize'));
+
+          const column = document.querySelector('.stage-column[data-round="1"]');
+          const frame = column.querySelector('.basic-input-canvas-layer .pipeline-doc-frame');
+          expect(frame?.textContent).toBe('ТЗ');
+          expect(frame).not.toBe(original);
+          expect(column.querySelectorAll('.basic-input-canvas-layer')).toHaveLength(1);
+          expect(column.querySelectorAll('.pipeline-doc-frame')).toHaveLength(1);
+          const paths = document.querySelectorAll('.basic-input-canvas-svg path');
+          expect(paths).toHaveLength(1);
+          expect(paths[0].dataset.sourceArtifact).toBe(JSON.stringify(['r1', 'Claude', 'spec']));
+          expect(paths[0].dataset.target).toBe('r2');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('artifact junctions mark the midpoint of each visible shared connector span', async () => {
+        const h = setupCustomInheritance('Artifact junction geometry');
+        try {
+          const round = (ref, models, inputRef = null) => ({
+            ref, kind: 'round', output: { artifacts: [{ id: `${ref}-artifact`, name: `${ref} artifact`, pointer: '' }] },
+            models: models.map((name) => ({ name, ...(inputRef ? { input: [inputRef] } : {}) }))
+          });
+          const steps = [
+            round('r1', ['Claude']),
+            round('r2', ['GPT', 'Gemini', 'DeepSeek'], 'r1'),
+            round('r3', ['Qwen'], 'r2'),
+            round('r4', ['Claude'], 'r3'),
+            round('r5', ['GPT', 'Gemini', 'DeepSeek'], 'r4'),
+            round('r6', ['Qwen', 'Claude', 'Grok'], 'r5')
+          ];
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps };
+          expect((await h.debug.installBasicSchema('Artifact junction geometry', schema)).ok).toBe(true);
+          document.querySelector('.pipeline-item[data-name="Artifact junction geometry"]').click();
+          await settleCustomCard();
+          const originalGetRect = HTMLElement.prototype.getBoundingClientRect;
+          const box = (top, height = 20) => ({ left: 0, right: 100, top, bottom: top + height, width: 100, height, x: 0, y: top, toJSON: () => ({}) });
+          HTMLElement.prototype.getBoundingClientRect = function () {
+            if (this.classList?.contains('connector-svg')) return box(0, 400);
+            if (this.classList?.contains('model-block')) {
+              const roundNumber = Number(this.closest('.stage-column[data-round]')?.dataset.round) || 1;
+              const index = Array.from(this.parentElement.querySelectorAll('.model-block')).indexOf(this);
+              const top = roundNumber === 1 ? 80 : ([2, 5, 6].includes(roundNumber) ? 40 + index * 60 : 160);
+              return box(top);
+            }
+            return originalGetRect.call(this);
+          };
+          try {
+            window.__updatePipelineAll();
+            await settleCustomCard();
+          } finally { HTMLElement.prototype.getBoundingClientRect = originalGetRect; }
+
+          const midpoint = (points) => {
+            const lengths = points.slice(1).map((point, index) => Math.hypot(point[0] - points[index][0], point[1] - points[index][1]));
+            let remaining = lengths.reduce((sum, length) => sum + length, 0) / 2;
+            for (let index = 0; index < lengths.length; index += 1) {
+              if (remaining <= lengths[index]) {
+                const ratio = lengths[index] ? remaining / lengths[index] : 0;
+                return [points[index][0] + (points[index + 1][0] - points[index][0]) * ratio,
+                  points[index][1] + (points[index + 1][1] - points[index][1]) * ratio];
+              }
+              remaining -= lengths[index];
+            }
+            return points.at(-1);
+          };
+          const cases = [
+            { from: 1, to: 2, sources: 1, targets: 3 },
+            { from: 2, to: 3, sources: 3, targets: 1 },
+            { from: 3, to: 4, sources: 1, targets: 1 },
+            { from: 4, to: 5, sources: 1, targets: 3 },
+            { from: 5, to: 6, sources: 3, targets: 3 }
+          ];
+          cases.forEach(({ from, to, sources, targets }) => {
+            const svg = document.getElementById(`svg-r${from}-r${to}`);
+            const junction = svg?.querySelector('[data-artifact-junction]');
+            const central = Array.from(svg?.querySelectorAll('line.connector-line') || [])
+              .find((line) => Number(line.getAttribute('x1')) === 15 && Number(line.getAttribute('x2')) === 35);
+            expect(junction).not.toBeNull();
+            expect(central).toBeDefined();
+            const sourceY = Number(central.getAttribute('y1'));
+            const targetY = Number(central.getAttribute('y2'));
+            if (from === 1 && to === 2) expect(sourceY).not.toBe(targetY);
+            const expected = midpoint([
+              [sources === 1 ? 0 : 15, sourceY], [15, sourceY], [35, targetY], [targets === 1 ? 50 : 35, targetY]
+            ]);
+            expect(Number(junction.getAttribute('cx'))).toBeCloseTo(expected[0], 5);
+            expect(Number(junction.getAttribute('cy'))).toBeCloseTo(expected[1], 5);
+            if (sources === 1) {
+              expect(Array.from(svg.querySelectorAll('line.connector-line')).some((line) =>
+                Number(line.getAttribute('x1')) === 0 && Number(line.getAttribute('x2')) === 15
+                && Number(line.getAttribute('y1')) === sourceY)).toBe(true);
+            } else {
+              expect(Array.from(svg.querySelectorAll('line.merge-line')).some((line) =>
+                Number(line.getAttribute('x1')) === 15 && Number(line.getAttribute('x2')) === 15
+                && Number(line.getAttribute('y1')) <= sourceY && Number(line.getAttribute('y2')) >= sourceY)).toBe(true);
+            }
+            if (targets === 1) {
+              expect(Array.from(svg.querySelectorAll('line.connector-line')).some((line) =>
+                Number(line.getAttribute('x1')) === 35 && Number(line.getAttribute('x2')) === 44
+                && Number(line.getAttribute('y1')) === targetY)).toBe(true);
+            } else {
+              expect(Array.from(svg.querySelectorAll('line.merge-line')).some((line) =>
+                Number(line.getAttribute('x1')) === 35 && Number(line.getAttribute('x2')) === 35
+                && Number(line.getAttribute('y1')) <= targetY && Number(line.getAttribute('y2')) >= targetY)).toBe(true);
+            }
+          });
         } finally { h.cleanup(); }
       }, 30000);
 
