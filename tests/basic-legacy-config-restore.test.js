@@ -68,7 +68,9 @@ describe('Basic legacy pipeline restore', () => {
     expect(stackIds(1)).toEqual(['gpt-planner', 'claude-author', 'claude-reviewer']);
     expect(stackIds(2)).toEqual(['gemini-review', 'claude-reviewer']);
     const reviewer = document.querySelector('#r1-models [data-participant-id="claude-reviewer"]');
-    expect(reviewer.querySelector('.model-participant-label').textContent).toBe('Claude reviewer');
+    expect(reviewer.querySelector('.model-name').textContent).toBe('Claude');
+    expect(reviewer.querySelector('.model-participant-label').textContent).toBe('reviewer');
+    expect(reviewer.dataset.participantLabelValue).toBe('Claude reviewer');
     expect(reviewer.querySelector('.model-input-checkbox').checked).toBe(false);
     expect(reviewer.querySelector('.role-selector').value).toBe('interaction_meta_synthesis');
     expect(document.querySelector('#r1-models [data-participant-id="claude-author"] .role-selector').value).toBe('interaction_meta_synthesis');
@@ -135,6 +137,7 @@ describe('Basic legacy pipeline restore', () => {
         ['claude-reviewer', false, null]
       ]);
       expect(saved.steps[1].models.find((model) => model.id === 'claude-reviewer').role).toBe('interaction_meta_synthesis');
+      expect(saved.steps[0].models.find((model) => model.id === 'claude-reviewer').label).toBe('Claude reviewer');
     } finally {
       window.MessageDelivery = oldMessageDelivery;
       debug.pipelineWaiter.reset();
