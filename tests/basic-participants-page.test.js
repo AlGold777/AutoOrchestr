@@ -207,6 +207,27 @@ describe('Basic participant page integration', () => {
     expect(document.querySelectorAll('.pipeline-control-step .model-stack')).toHaveLength(2);
   });
 
+  test('an owner card is not taller than the model blocks of its round together', async () => {
+    resetPipelineStore();
+    const name = 'Owner card height';
+    const schema = schemaV2([
+      round('r1', [{ id: 'claude-main', name: 'Claude' }, { id: 'gpt-main', name: 'GPT' }]),
+      { ref: 'owner:a', kind: 'owner', input: [{ step: 'r1', participant: 'claude-main' }], models: [], task: 'Approve the draft.' },
+      round('r2', [{ id: 'gemini-main', name: 'Gemini' }])
+    ]);
+    const heightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return this.classList.contains('model-block') ? 40 : 0; } });
+    try {
+      expect(await debug().installBasicSchema(name, schema)).toEqual({ ok: true, errors: [] });
+      await selectPipeline(name);
+      await H.delay(30);
+      const card = document.querySelector('.pipeline-control-card');
+      expect(card.style.maxHeight).toBe('80px');
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', heightDescriptor);
+    }
+  });
+
   test('schema, canvas, settings and save round-trip keep participant IDs, labels and explicit mode', async () => {
     resetPipelineStore();
     const name = 'Participants round trip';

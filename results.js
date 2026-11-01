@@ -4894,6 +4894,20 @@ document.addEventListener('click', (event) => {
             column.append(header, stack);
             return column;
         };
+        // The owner/control card is never taller than the model blocks of its round together; a longer text scrolls inside it.
+        const capControlCardHeights = () => {
+            pipelinePanel?.querySelectorAll('.pipeline-control-step').forEach((column) => {
+                const card = column.querySelector('.pipeline-control-card');
+                if (!card) return;
+                card.style.maxHeight = '';
+                card.style.overflowY = '';
+                const blocks = Array.from(document.querySelectorAll(`#r${column.dataset.controlRound}-models .model-block`));
+                const total = blocks.reduce((sum, block) => sum + block.offsetHeight, 0);
+                if (!total) return;
+                card.style.maxHeight = `${total}px`;
+                card.style.overflowY = 'auto';
+            });
+        };
         const syncControlColumns = () => {
             if (!pipelinePanel) return [];
             pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
@@ -4913,6 +4927,7 @@ document.addEventListener('click', (event) => {
                     group.className = 'connector-group pipeline-control-link';
                     group.innerHTML = `<svg class="connector-svg" id="${controlLinkId(item.step.ref)}"></svg>`;
                     const card = buildControlColumn(item.step, editable);
+                    card.dataset.controlRound = String(round);
                     column.after(group, card);
                     drawn.push({ ref: item.step.ref, from: anchor });
                     anchor = item.step.ref;
@@ -5096,6 +5111,7 @@ document.addEventListener('click', (event) => {
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
             if (basicStructureTouched) persistBasicStructureSoon();
             const controlLinks = syncControlColumns();
+            capControlCardHeights();
             syncDocumentFrames({ syncCanvas: false });
             updatePipelineLayout();
             drawControlColumnLinks(controlLinks);
