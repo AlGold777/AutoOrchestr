@@ -4599,8 +4599,7 @@ document.addEventListener('click', (event) => {
                 if (item.label) {
                     block.dataset.participantLabelValue = String(item.label);
                     const label = block.querySelector('.model-participant-label');
-                    if (label) label.textContent = String(item.label) === String(item.name) ? '✎'
-                        : (PipelineRuntime?.getParticipantDisplayLabel?.(item.name, item.label) || String(item.label));
+                    if (label) label.textContent = '✎';
                 }
                 // A legacy send mark was saved by the position of the block on the canvas.
                 const position = blocks.indexOf(block);
@@ -9605,7 +9604,7 @@ document.addEventListener('click', (event) => {
             modal.setAttribute('aria-labelledby', 'pipeline-block-info-title');
             content.innerHTML = `
                 <header class="custom-card-top ${pipelineDefaults ? 'custom-defaults-top' : ''}">
-                    <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Basic' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml(block.dataset.participantLabelValue || modelName)} · ${escapeHtml(preview.label)}</span>`}</h3>
+                    <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Basic' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml([PipelineRuntime?.getParticipantDisplayLabel?.(modelName, block.dataset.participantLabelValue || modelName), preview.label].filter((part) => part && part !== modelName).join(' · '))}</span>`}</h3>
                     ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${explicitParticipant ? '' : general}" aria-describedby="custom-card-length-note"> слов</div>`}
                     ${pipelineDefaults ? '' : '<div class="basic-input-files-slot"></div>'}
                     ${pipelineDefaults ? '' : '<button type="button" class="modal-button" id="custom-card-default">Default</button>'}

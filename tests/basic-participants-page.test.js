@@ -272,7 +272,7 @@ describe('Basic participant page integration', () => {
       const block = document.querySelector('#r1-models [data-participant-id="gpt-variant-2"]');
       expect(block).not.toBeNull();
       expect(block.querySelector('.model-name').textContent).toBe('GPT');
-      expect(block.querySelector('.model-participant-label').textContent).toBe('Вариант 2');
+      expect(block.querySelector('.model-participant-label').textContent).toBe('✎');
       expect(block.dataset.participantLabelValue).toBe('GPT · Вариант 2');
     };
 

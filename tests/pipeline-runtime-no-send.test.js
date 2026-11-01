@@ -43,17 +43,17 @@ describe('participant labels on the Basic canvas', () => {
     document.body.innerHTML = `<div id="r1-models">${html}</div>`;
     const block = document.querySelector('#r1-models .model-block');
     expect(block.querySelector('.model-name').textContent).toBe('GPT');
-    expect(block.querySelector('.model-participant-label').textContent).toBe('Вариант 2');
+    expect(block.querySelector('.model-participant-label').textContent).toBe('✎');
     expect(block.dataset.participantLabelValue).toBe('GPT · Вариант 2');
     expect(Runtime.captureModelStackState(document, 'r1-models').items[0]).toMatchObject({
       name: 'GPT', id: 'gpt-variant-2', label: 'GPT · Вариант 2'
     });
   });
 
-  test('keeps participant names that do not repeat their provider and preserves the rename pencil', () => {
+  test('shows only the rename pencil in the block, never the participant name', () => {
     expect(Runtime.buildModelBlocksHtml({
       items: [{ name: 'GPT', id: 'gpt-editor', label: 'Редактор' }], participantControls: true
-    })).toContain('>Редактор</button>');
+    })).not.toContain('>Редактор</button>');
     expect(Runtime.buildModelBlocksHtml({
       items: [{ name: 'GPT', id: 'gpt', label: 'GPT' }], participantControls: true
     })).toContain('>✎</button>');
