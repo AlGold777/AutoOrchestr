@@ -2707,6 +2707,30 @@ describe('Pipeline debate favorites view', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
 
+  test('the role of a block is chosen in the model card; the block shows it and «- -» when none', async () => {
+    const h = setupCustomInheritance('Card role test');
+    try {
+      const block = canvasBlock('r2-models', 'GPT');
+      const label = block.querySelector('[data-role-label]');
+      expect(block.querySelector('.role-selector').hidden).toBe(true);
+      expect(label.textContent).toBe('- -');
+      block.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      const modal = document.getElementById('pipeline-block-info-modal');
+      const controls = modal.querySelector('.custom-card-controls');
+      expect(modal.querySelector('.custom-card-top').nextElementSibling).toBe(controls);
+      expect([...controls.children].map((node) => node.className)).toEqual(['custom-card-role', 'custom-card-length', 'basic-input-files-slot']);
+      expect(modal.querySelector('.custom-card-top .custom-card-length')).toBeNull();
+      const role = modal.querySelector('#custom-card-role');
+      role.value = 'interaction_critical_audit';
+      role.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(block.querySelector('.role-selector').value).toBe('interaction_critical_audit');
+      expect(label.textContent).toBe('Critique');
+      role.value = '';
+      role.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(label.textContent).toBe('- -');
+    } finally { h.cleanup(); }
+  });
+
   test('Custom block role reaches its model as extra; the round card sets one role for all blocks after confirmation', async () => {
     const h = setupCustomInheritance('Role test');
     try {

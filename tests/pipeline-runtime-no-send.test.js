@@ -72,3 +72,30 @@ describe('participant labels on the Basic canvas', () => {
     expect(Runtime.getParticipantDisplayLabel('Le Chat', 'Le Chaton')).toBe('Le Chaton');
   });
 });
+
+describe('role in a model block', () => {
+  const prompts = [{ id: 'critical', label: 'Critic', text: 'x' }];
+
+  test('the block keeps its select hidden and shows «- -» until a role is chosen', () => {
+    document.body.innerHTML = `<div id="r1-models">${Runtime.buildModelBlocksHtml({ activeIndices: [0], withRole: true, orderedPrompts: prompts })}</div>`;
+    const block = document.querySelector('#r1-models .model-block');
+    expect(block.querySelector('.role-selector').hidden).toBe(true);
+    const label = block.querySelector('[data-role-label]');
+    expect(label.textContent).toBe('- -');
+    expect(label.classList.contains('is-empty')).toBe(true);
+    expect(label.matches('button, a, select, input')).toBe(false);
+  });
+
+  test('syncRoleLabel shows the chosen role and goes back to «- -»', () => {
+    document.body.innerHTML = `<div id="r1-models">${Runtime.buildModelBlocksHtml({ activeIndices: [0], withRole: true, orderedPrompts: prompts })}</div>`;
+    const block = document.querySelector('#r1-models .model-block');
+    const select = block.querySelector('.role-selector');
+    select.value = 'critical';
+    Runtime.syncRoleLabel(block);
+    expect(block.querySelector('[data-role-label]').textContent).toBe('Critic');
+    expect(block.querySelector('[data-role-label]').classList.contains('is-empty')).toBe(false);
+    select.value = '';
+    Runtime.syncRoleLabel(block);
+    expect(block.querySelector('[data-role-label]').textContent).toBe('- -');
+  });
+});

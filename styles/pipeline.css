@@ -592,6 +592,19 @@ body.is-resizing {
     margin-top: 0;
     min-width: 0;
 }
+.model-role-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 20px;
+    color: var(--pipeline-text);
+    cursor: inherit;
+}
+.model-role-label.is-empty { color: #b8c0cc; }
+.model-block.inactive .model-role-label { color: var(--pipeline-muted); }
+.model-block.inactive .model-role-label.is-empty { color: #cdd3dc; }
 
 .model-block .model-participant-add,
 .model-block .model-participant-switch,
@@ -1128,7 +1141,6 @@ body.is-resizing {
 
 @media (max-width: 600px) {
     .custom-card-top { grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding: 12px 16px; }
-    .custom-card-top .custom-card-length { grid-row: 2; grid-column: 1 / -1; }
     .custom-card-model { flex-wrap: wrap; font-size: 18px; }
     .custom-card-marks { grid-template-columns: 1fr; }
     .custom-card-body { padding: 14px 16px; }
@@ -1532,3 +1544,22 @@ body.is-resizing {
 .custom-model-card .custom-card-top #custom-card-save { background: #617f99; border-color: #617f99; color: #fff; }
 .custom-model-card .custom-card-top #custom-card-save:hover { background: #55728b; }
 .custom-model-card .custom-card-top #custom-card-default:hover { background: #fafbfc; }
+
+/* Card row under the header: role at the left, answer length in the centre, input files at the right. */
+.custom-card-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--pipeline-border);
+    flex-shrink: 0;
+}
+.custom-card-controls .custom-card-role { display: flex; align-items: center; gap: 8px; justify-self: start; font-size: 13px; font-weight: 600; }
+.custom-card-controls .custom-card-length { justify-self: center; }
+.custom-card-controls .basic-input-files-slot { justify-self: end; max-width: 100%; min-width: 0; }
+.custom-card-controls .basic-input-files-list { max-width: 100%; overflow: hidden; }
+@media (max-width: 600px) {
+    .custom-card-controls { grid-template-columns: 1fr; justify-items: start; gap: 8px; padding: 10px 16px; }
+    .custom-card-controls .custom-card-length, .custom-card-controls .basic-input-files-slot { justify-self: start; }
+}

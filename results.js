@@ -4622,6 +4622,7 @@ document.addEventListener('click', (event) => {
                     // A saved None: no mini prompt for this block.
                     role.value = '';
                 }
+                PipelineRuntime?.syncRoleLabel?.(block);
             });
         };
 
@@ -5116,6 +5117,7 @@ document.addEventListener('click', (event) => {
             drawControlColumnLinks(controlLinks);
             syncCustomRoleOption();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
+                PipelineRuntime?.syncRoleLabel?.(block);
                 const inputCb = block.querySelector('.model-input-checkbox');
                 const sel = block.querySelector('.role-selector');
                 const indicator = block.querySelector('.status-indicator');
@@ -9386,6 +9388,12 @@ document.addEventListener('click', (event) => {
             return match ? `r${match[1]}` : '';
         };
         const customBlockModel = (block) => block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '';
+        // The role of a block is chosen in the model card; the block's own select only keeps the value (hidden) and the label shows it.
+        const customCardRoleOptions = (block) => {
+            const current = block.querySelector('.role-selector')?.value || '';
+            return [{ id: '', label: 'None' }, ...getRoleOptionPrompts()]
+                .map((prompt) => `<option value="${escapeHtml(prompt.id)}"${prompt.id === current ? ' selected' : ''}>${escapeHtml(prompt.label || prompt.id)}</option>`).join('');
+        };
         const customBlockParticipantId = (block) => block.dataset.participantId || customBlockModel(block);
         // The fields of a participant the model card writes; Save of the card keeps every other field of the participant.
         const CARD_EDITED_FIELDS = Object.freeze(['label', 'settingsMode', 'promptTemplate', 'maxWords', 'files', 'task', 'discipline']);
@@ -9605,11 +9613,14 @@ document.addEventListener('click', (event) => {
             content.innerHTML = `
                 <header class="custom-card-top ${pipelineDefaults ? 'custom-defaults-top' : ''}">
                     <h3 class="custom-card-model" id="pipeline-block-info-title">${pipelineDefaults ? '▶ Basic' : `${modelIconData[modelName] ? `<img src="${modelIconData[modelName]}" alt="" width="26" height="26">` : ''}${escapeHtml(modelName)}<span class="custom-card-where">${escapeHtml([PipelineRuntime?.getParticipantDisplayLabel?.(modelName, block.dataset.participantLabelValue || modelName), preview.label].filter((part) => part && part !== modelName).join(' · '))}</span>`}</h3>
-                    ${pipelineDefaults ? '' : `<div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${explicitParticipant ? '' : general}" aria-describedby="custom-card-length-note"> слов</div>`}
-                    ${pipelineDefaults ? '' : '<div class="basic-input-files-slot"></div>'}
                     ${pipelineDefaults ? '' : '<button type="button" class="modal-button" id="custom-card-default">Default</button>'}
                     <button type="button" class="modal-button accent" id="custom-card-save">Save</button>
                 </header>
+                ${pipelineDefaults ? '' : `<div class="custom-card-controls">
+                    <label class="custom-card-role">Роль <select id="custom-card-role" class="stage-card-role-select">${customCardRoleOptions(block)}</select></label>
+                    <div class="custom-card-length"><label for="custom-card-length">Длина ответа:</label> <input id="custom-card-length" type="number" min="1" step="1" inputmode="numeric" placeholder="${explicitParticipant ? '' : general}" aria-describedby="custom-card-length-note"> слов</div>
+                    <div class="basic-input-files-slot"></div>
+                </div>`}
                 <div class="custom-card-body">
                     ${pipelineDefaults ? basicDescriptionBlock() : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
@@ -9654,6 +9665,16 @@ document.addEventListener('click', (event) => {
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const inputFilesSlot = content.querySelector('.basic-input-files-slot');
+            const cardRole = content.querySelector('#custom-card-role');
+            const blockRole = block?.querySelector('.role-selector') || null;
+            if (cardRole) {
+                cardRole.disabled = pipelineRunActive || !blockRole;
+                cardRole.addEventListener('change', () => {
+                    if (!blockRole) return;
+                    blockRole.value = cardRole.value;
+                    blockRole.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            }
             if (inputFilesSlot && window.InputFilesUI && window.BasicInputFiles) {
                 try {
                     window.InputFilesUI.mount({
@@ -10281,6 +10302,7 @@ document.addEventListener('click', (event) => {
                             const hasOption = Array.from(selector.options).some((opt) => opt.value === targetPromptId);
                             if (hasOption) selector.value = targetPromptId;
                         });
+                        modelStack.querySelectorAll('.model-block').forEach((item) => PipelineRuntime?.syncRoleLabel?.(item));
                     }
                 }
             }

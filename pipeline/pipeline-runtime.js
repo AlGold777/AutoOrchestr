@@ -70,6 +70,16 @@
         return `<option value="" selected>None</option>${options}`;
     };
 
+    // The role is chosen in the model card; the block shows the chosen one (a light «- -» for none) and stays clickable as a whole.
+    const syncRoleLabel = (block) => {
+        const select = block?.querySelector?.('.role-selector');
+        const label = block?.querySelector?.('[data-role-label]');
+        if (!select || !label) return;
+        const chosen = select.value ? (select.selectedOptions?.[0]?.textContent || '').trim() : '';
+        label.textContent = chosen || '- -';
+        label.classList.toggle('is-empty', !chosen);
+    };
+
     const buildModelBlocksHtml = ({
         activeIndices = DEFAULT_MODEL_INDICES,
         withRole = false,
@@ -89,7 +99,7 @@
             .map(({ model, index, item }) => {
             const isActive = typeof item?.send === 'boolean' ? item.send : (typeof item?.input === 'boolean' ? item.input : activeSet.has(index));
             const roleHtml = withRole
-                ? `<select class="role-selector judge-prompt-selector"${isActive || participantControls ? '' : ' disabled'}>${buildJudgePromptOptionsHtml({ index, orderedPrompts, escapeHtml })}</select>`
+                ? `<select class="role-selector judge-prompt-selector" hidden aria-hidden="true" tabindex="-1"${isActive || participantControls ? '' : ' disabled'}>${buildJudgePromptOptionsHtml({ index, orderedPrompts, escapeHtml })}</select><span class="model-role-label is-empty" data-role-label>- -</span>`
                 : '';
             const inputAttrs = `${isActive ? ' checked' : ''} aria-label="Участие в раунде"`;
             const label = model.label || model.name;
@@ -196,6 +206,7 @@
         cloneConfig,
         getRoundStage,
         getParticipantDisplayLabel,
+        syncRoleLabel,
         buildJudgePromptOptionsHtml,
         buildModelBlocksHtml,
         renderModelStack,
