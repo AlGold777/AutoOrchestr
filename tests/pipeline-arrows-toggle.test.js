@@ -16,9 +16,9 @@ describe('pipeline canvas arrows toggle', () => {
     expect(button[0]).toMatch(/aria-label="Стрелки"/);
   });
 
-  test('the stylesheet fades the connector arrows out and animates the fade', () => {
+  test('hiding arrows removes only the artifact lines; lines between blocks stay', () => {
     const css = read('styles', 'pipeline.css');
-    expect(css).toMatch(/\.pipeline-canvas\.arrows-hidden\s+\.connector-svg\s*\{[^}]*opacity:\s*0/);
-    expect(css).toMatch(/\.connector-svg\s*\{[^}]*transition:\s*opacity/);
+    expect(css).not.toMatch(/arrows-hidden\s+\.connector-svg/);
+    expect(read('styles', 'basic-input-canvas.css')).toMatch(/arrows-hidden\s+\.basic-input-canvas-svg\s*\{[^}]*display:\s*none/);
   });
 });

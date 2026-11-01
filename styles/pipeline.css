@@ -715,10 +715,6 @@ body.is-resizing {
     transition: opacity 0.3s ease;
 }
 
-.pipeline-canvas.arrows-hidden .connector-svg {
-    opacity: 0;
-}
-
 #pipeline-arrows-toggle[aria-pressed="false"] {
     opacity: 0.45;
 }
