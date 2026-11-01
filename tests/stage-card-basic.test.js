@@ -204,7 +204,7 @@ describe('Owner window of Basic: model and edits', () => {
     const model = StageCard.ownerWindowModel(owner);
     expect(model.task).toBe('Передайте текст');
     expect(model.output).toEqual({ name: 'Итог', form: '', sections: 'Вывод', strictLength: false, json: true });
-    expect(StageCard.controlSummary(owner)).toBe('задание: Передайте текст');
+    expect(StageCard.controlSummary(owner)).toBe('Передайте текст');
     expect(StageCard.controlSummary({ ref: 'owner:2', kind: 'owner', models: [] })).toBe('задание не задано');
   });
 

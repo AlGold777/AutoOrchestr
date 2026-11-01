@@ -605,7 +605,7 @@
 
   // The text of an owner step on its canvas card (the owner's words).
   function controlSummary(step = {}) {
-    if (step.kind === 'owner') return step.task ? `задание: ${String(step.task).split('\n')[0]}` : 'задание не задано';
+    if (step.kind === 'owner') return step.task ? String(step.task).split('\n')[0] : 'задание не задано';
     return '';
   }
 
