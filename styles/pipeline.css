@@ -531,6 +531,7 @@ body.is-resizing {
     justify-content: center;
     margin-bottom: var(--pipeline-block-gap);
     box-sizing: border-box;
+    box-shadow: 3px 4px 8px rgba(15, 23, 42, 0.16);
 }
 
 .model-block:last-child {
@@ -550,6 +551,7 @@ body.is-resizing {
 
 .model-block.pipeline-empty-slot {
     display: flex;
+    box-shadow: none;
     border-style: dashed;
     background: #f8fafc;
     opacity: 0.72;
