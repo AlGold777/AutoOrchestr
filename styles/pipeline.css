@@ -601,11 +601,11 @@ body.is-resizing {
     white-space: nowrap;
     font-size: 12px;
     line-height: 20px;
-    color: var(--pipeline-text);
+    color: #64748b;
     cursor: inherit;
 }
 .model-role-label.is-empty { color: #b8c0cc; }
-.model-block.inactive .model-role-label { color: var(--pipeline-muted); }
+.model-block.inactive .model-role-label { color: #64748b; }
 .model-block.inactive .model-role-label.is-empty { color: #cdd3dc; }
 
 .model-block .model-participant-add,
@@ -642,9 +642,9 @@ body.is-resizing {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--pipeline-text);
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172ad1;
 }
 
 .model-participant-label-wrap {
@@ -688,7 +688,7 @@ body.is-resizing {
 }
 
 .model-block.inactive .model-name {
-    color: var(--pipeline-text);
+    color: #0f172ad1;
 }
 
 .role-selector {
