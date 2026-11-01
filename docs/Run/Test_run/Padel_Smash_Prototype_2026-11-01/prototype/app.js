@@ -113,7 +113,7 @@
     sec.innerHTML =
       '<div class="top"><span class="ttl">PADEL COACH · Прототип</span></div>' +
       '<div class="seg" id="roles"><button data-r="athlete" class="' + (coach ? '' : 'on') + '">Спортсмен</button><button data-r="coach" class="' + (coach ? 'on' : '') + '">Тренер</button></div>' +
-      (ST.flash ? '<div class="plate" style="color:var(--ok);background:#0c2a1e;border-color:#1d6b4a">' + esc(ST.flash) + '</div>' : '') +
+      (ST.flash ? '<div class="plate" style="color:var(--ok);background:#e1f6ec;border-color:#8fd3b2">' + esc(ST.flash) + '</div>' : '') +
       '<div class="card"><h2>Упражнение «Смэш»</h2><p class="small mut">' + esc(D.exercise.name) + '</p>' +
       '<p>Эталон v' + ref.version + (ref.source === 'demo' ? ' <span class="badge">Демо</span>' : ' <span class="badge ok">записан</span>') + '</p>' +
       '<button class="btn sec" id="refplay">Эталон</button></div>' +
