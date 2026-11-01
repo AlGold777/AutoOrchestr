@@ -7,6 +7,7 @@
 | Файл | О чём |
 |---|---|
 | [run-brief-template.md](run-brief-template.md) | единое задание агенту: общий регламент и условия конкретного запуска |
+| [manual-run-orchestration.md](manual-run-orchestration.md) | ручной прогон вкладок без панели: порядок отправки, обход вкладок, прокрутка до начала ответа, приёмка |
 | [run-organization.md](run-organization.md) | навигация к единому регламенту и справочникам без дублирования правил |
 | [run-procedure.md](run-procedure.md) | процедура от подготовки до разбора, правила, что делать при окнах и сбоях |
 | [run-report-template.md](run-report-template.md) | шаблон заметки о прогоне (`notes/run-report.md` в папке прогона) |
