@@ -594,6 +594,7 @@ body.is-resizing {
 }
 .model-role-label {
     min-width: 0;
+    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
