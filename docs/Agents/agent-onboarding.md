@@ -55,6 +55,8 @@
 
 ## 4. Браузер: что делать самому и что поручать User
 
+Для поиска, обхода и сохранения страниц Notion используйте [инструкцию по Notion](agent-notion.md).
+
 **Нужна проверка страницы расширения? Полная спецификация элементов и поведения обеих страниц (`pipeline_panel.html` и `result_new.html`) — [agent-extension-pages-spec.md](agent-extension-pages-spec.md). Рецепт отдельного Chrome с расширением — [agent-live-chrome.md](agent-live-chrome.md) (CDP, `Extensions.loadUnpacked`). Для CUA, селекторов и публичных методов `pipeline_panel.html` — [agent-extension-page-control.md](agent-extension-page-control.md). Если нужно взаимодействовать именно с обычным Chrome User’а — [agent-real-chrome-control.md](agent-real-chrome-control.md). Для теста с реальными сайтами моделей нужны авторизованные model tabs, тестовый prompt и отдельное разрешение на отправку.**
 
 Обычный Chrome User’а используйте самостоятельно при наличии подходящего инструмента, в рамках задачи. Отдельный профиль нужен для изолированных проверок; авторизация моделей в новом профиле обычно отсутствует.
