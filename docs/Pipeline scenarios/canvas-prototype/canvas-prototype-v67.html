@@ -76,6 +76,25 @@
         .proto-art-version { flex: 0 0 auto; font-weight: 600; color: #94a3b8; }
         .proto-art-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
         .proto-art-line { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-linejoin: round; }
+        /* Карточки ответов (артефакты под блоками моделей) — в стиле dialog-modal.html. */
+        .proto-artifacts { display: flex; flex-direction: column; width: 100%; margin-top: 10px; }
+        .proto-artifacts-row { display: flex; flex-direction: column; gap: 6px; }
+        .proto-artifact {
+            display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+            padding: 6px 10px; border: 1px solid #e2e7ec; border-radius: 7px; background: #ffffff;
+            box-shadow: 0 1px 2px #26374b0d; color: #273341; font-size: 13px; cursor: default;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .proto-artifact:hover { border-color: #92aec8; background: #f8fbfd; }
+        .proto-artifact-title {
+            flex: 1 1 auto; min-width: 0; height: 18px; line-height: 18px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 570;
+        }
+        .proto-artifact-version {
+            flex: 0 0 auto; padding: 0 6px; border-radius: 5px; background: #edf3f9; color: #345f83;
+            font-size: 12px; line-height: 18px; font-weight: 650; font-variant-numeric: tabular-nums;
+        }
+        .proto-artifacts-empty { display: block; padding: 6px 0; text-align: center; color: #8a96a2; font-size: 13px; }
         /* Блок человека (owner, form): зелёная рамка и бейдж. Селектор длиннее .model-block.inactive из styles/pipeline.css. */
         .model-block.inactive.proto-human { border: 3px solid #16a34a; background: #f0fdf4; opacity: 1; }
         .round-badge.proto-stand-kind.proto-human-kind { background: #dcfce7; color: #166534; }
@@ -1423,6 +1442,12 @@ body.is-resizing {
     min-height: 0;
     background: none;
     flex: 1 1 auto;
+    cursor: grab;
+}
+
+.pipeline-canvas.is-panning {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .pipeline-flow {
@@ -1461,6 +1486,21 @@ body.is-resizing {
 @keyframes pipelineBlockPulse {
     0%, 100% { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14); }
     50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0); }
+}
+
+/* A stage that failed (no accepted answer when the run ended) is red; a stopped one is dashed gray: neither looks «не начат». */
+.pipeline-flow .model-block.pipeline-run-failed {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.14);
+}
+
+.pipeline-flow .model-block.pipeline-run-failed .model-name {
+    color: #991b1b;
+}
+
+.pipeline-flow .model-block.pipeline-run-stopped {
+    border-color: #94a3b8;
+    border-style: dashed;
 }
 
 .pipeline-flow .connector-group.pipeline-link-pending .connector-line,
@@ -1518,6 +1558,11 @@ body.is-resizing {
     display: flex;
     flex-direction: column;
     align-items: center;
+}
+
+.stage-column:not(.entry-column) {
+    width: var(--pipeline-block-width);
+    flex: 0 0 var(--pipeline-block-width);
 }
 
 .stage-header-row {
@@ -1649,6 +1694,15 @@ body.is-resizing {
     flex-direction: column;
 }
 
+.model-stack {
+    justify-content: center;
+    width: 100%;
+}
+
+.model-stack > * {
+    flex: 0 0 auto;
+}
+
 .model-block {
     width: var(--pipeline-block-width);
     height: var(--pipeline-block-height);
@@ -1658,6 +1712,7 @@ body.is-resizing {
     border-radius: 8px;
     transition: all 0.3s;
     cursor: pointer;
+    user-select: none;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -1704,6 +1759,39 @@ body.is-resizing {
     box-sizing: border-box;
 }
 
+.model-status-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    flex: 0 0 13px;
+}
+
+.model-options {
+    display: grid;
+    grid-template-columns: 13px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.model-options .role-selector {
+    margin-top: 0;
+    min-width: 0;
+}
+
+.model-block .model-participant-add,
+.model-block .model-participant-switch,
+.model-block .model-participant-remove {
+    display: none;
+}
+
+.model-block.is-participant-editing .model-participant-add,
+.model-block.is-participant-editing .model-participant-switch,
+.model-block.is-participant-editing .model-participant-remove {
+    display: inline-block;
+}
+
 .model-checkbox {
     width: 13px;
     height: 13px;
@@ -1726,6 +1814,57 @@ body.is-resizing {
     white-space: nowrap;
     font-size: 12px;
     font-weight: 400;
+    color: var(--pipeline-text);
+}
+
+.model-participant-label-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+.model-participant-label,
+.model-participant-add,
+.model-participant-switch,
+.model-participant-remove {
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--pipeline-muted, #64748b);
+    font: inherit;
+    line-height: 18px;
+    cursor: pointer;
+}
+.model-participant-label {
+    max-width: 82px;
+    overflow: hidden;
+    padding: 0 3px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+}
+.model-participant-add,
+.model-participant-switch,
+.model-participant-remove {
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+.model-participant-add:hover,
+.model-participant-switch:hover,
+.model-participant-remove:hover,
+.model-participant-label:hover {
+    background: rgba(100, 116, 139, .12);
+    color: var(--pipeline-text);
+}
+.model-block.inactive .model-participant-label,
+.model-block.inactive .model-participant-add,
+.model-block.inactive .model-participant-switch,
+.model-block.inactive .model-participant-remove {
     color: var(--pipeline-text);
 }
 
@@ -1991,13 +2130,23 @@ body.is-resizing {
 .pipeline-items {
     display: grid;
     grid-auto-flow: column;
-    grid-template-rows: repeat(3, max-content);
-    grid-auto-columns: 170px;
-    column-gap: 12px;
+    /* --pipeline-rows = ceil(N/2), выставляет renderPipelineList: ровно две колонки, заполнение сверху вниз. */
+    grid-template-rows: repeat(var(--pipeline-rows, 8), max-content);
+    grid-auto-columns: minmax(0, 1fr);
+    column-gap: 16px;
     row-gap: 6px;
     margin-left: 20px;
-    justify-content: start;
+    width: calc(100% - 20px);
+    box-sizing: border-box;
+    justify-content: stretch;
     align-items: start;
+}
+
+#pipelineItems .pipeline-item {
+    width: 100%;
+    max-width: none;
+    flex: none;
+    min-width: 0;
 }
 
 .pipeline-items-row {
@@ -2106,7 +2255,7 @@ body.is-resizing {
 
 .custom-card-top {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     align-items: center;
     gap: 16px;
     padding: 14px 24px;
@@ -2160,6 +2309,7 @@ body.is-resizing {
 .custom-card-discipline textarea:focus-visible { outline: 2px solid #86b9aa; outline-offset: 1px; }
 .custom-card-body code { color: #237565; font-size: 12px; }
 .custom-card-top #custom-card-save { justify-self: end; border-radius: 9px; padding: 6px 18px; background: #2597f4; color: #fff; }
+.custom-card-top #custom-card-default { justify-self: end; border-radius: 9px; padding: 6px 14px; }
 .custom-defaults-card .modal-content { width: 978px; height: min(760px, calc(100dvh - 32px)); }
 .custom-defaults-top { grid-template-columns: 1fr auto; }
 #entryPoint[role="button"] { cursor: pointer; }
@@ -2167,7 +2317,7 @@ body.is-resizing {
 .custom-card-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
 @media (max-width: 600px) {
-    .custom-card-top { grid-template-columns: 1fr auto; gap: 8px; padding: 12px 16px; }
+    .custom-card-top { grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding: 12px 16px; }
     .custom-card-top .custom-card-length { grid-row: 2; grid-column: 1 / -1; }
     .custom-card-model { flex-wrap: wrap; font-size: 18px; }
     .custom-card-marks { grid-template-columns: 1fr; }
@@ -2467,6 +2617,10 @@ body.is-resizing {
 .pipeline-control-title {
     font-size: 12px;
     font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .pipeline-control-delete-btn {
@@ -2604,6 +2758,7 @@ body.is-resizing {
     display: block;
     width: 26.6px;
     height: 28.29px;
+    transform: translateY(4px);
     color: currentColor;
     flex: 0 0 auto;
 }
@@ -4934,8 +5089,7 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     border-radius: 13px;
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
-#disput-tabpanel #disput-basic,
-#disput-tabpanel #disput-extract {
+#disput-tabpanel #disput-basic {
     margin: 0;
     min-height: 34px;
     padding: 8px 20px;
@@ -4950,37 +5104,19 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     box-shadow: 0 2px 4px rgba(37, 99, 235, 0.18);
     transition: background 150ms ease, box-shadow 150ms ease;
 }
-#disput-tabpanel #disput-basic:hover,
-#disput-tabpanel #disput-extract:hover {
+#disput-tabpanel #disput-basic:hover {
     transform: none;
     background: #1d4ed8;
     box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
 }
-#disput-tabpanel #disput-basic:active,
-#disput-tabpanel #disput-extract:active {
+#disput-tabpanel #disput-basic:active {
     background: #1e40af;
 }
-#disput-tabpanel #disput-extract-type {
-    min-width: 112px;
-    min-height: 34px;
-    margin: 0;
-    padding: 6px 12px;
-    border: none;
-    border-radius: 9px;
-    background-color: transparent;
-    color: #334155;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-}
-#disput-tabpanel #disput-basic:focus-visible,
-#disput-tabpanel #disput-extract:focus-visible,
-#disput-tabpanel #disput-extract-type:focus-visible {
+#disput-tabpanel #disput-basic:focus-visible {
     outline: 2px solid #60a5fa;
     outline-offset: 2px;
 }
-#disput-tabpanel #disput-basic:disabled,
-#disput-tabpanel #disput-extract:disabled {
+#disput-tabpanel #disput-basic:disabled {
     opacity: 0.6;
     cursor: wait;
 }
@@ -6413,28 +6549,6 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   border-color: #d18b2c;
   background: color-mix(in srgb, #d18b2c 12%, var(--surface-color, #fff));
 }
-.disput-health-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 8px;
-}
-
-.disput-health-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 9px 10px;
-  border: 1px solid var(--border-color, #d8dee8);
-  border-radius: 8px;
-  background: var(--surface-muted, rgba(127, 127, 127, 0.06));
-}
-
-.disput-health-label { font-size: 11px; opacity: 0.72; }
-.disput-health-value { font-size: 13px; overflow-wrap: anywhere; }
-.disput-health-warning, .disput-severity-warning td { color: #9a6700; }
-.disput-health-high, .disput-severity-high td { color: #b54708; }
-.disput-health-critical, .disput-severity-critical td { color: #c62828; }
-.disput-trace-table { min-width: 720px; }
 /* Post-completion updates (technical messages): one badge right of the message time,
    one popover with a tab per update. */
 .post-terminal-badge-wrap {
@@ -8232,6 +8346,11 @@ body.pro-features-hidden .comparison-section {
     line-height: 1.1;
     cursor: default;
 }
+.debate-model-card-participant:not([hidden]) {
+    color: var(--text-muted, #64748b);
+    font-size: 11px;
+    line-height: 1.1;
+}
 .debate-model-card .debate-model-card-round {
     display: inline-flex;
     box-sizing: border-box;
@@ -8408,6 +8527,8 @@ body.pro-features-hidden .comparison-section {
     color: #4b5563;
     max-height: calc(var(--debate-card-line-height) * 5);
     overflow: hidden;
+    /* Скопированная разметка ответа несёт позиционированные потомки; без contain они выходят за обрезку карточки и раздувают ленту. */
+    contain: paint;
     white-space: pre-wrap;
     word-break: break-word;
     text-align: left !important;
@@ -9624,6 +9745,15 @@ hr.section-divider {
     z-index: var(--pipeline-cover-z);
     transform: translateY(var(--pipeline-cover-y, 0px));
 }
+.pipeline-cover-host > .basic-run-line:not(:has(.basic-run-line-button)) { display: none; }
+/* A run line with «Продолжить прогон» is the only way to resume: it stays visible as a bar at the bottom of the feed, outside the deck. */
+.pipeline-cover-host > .basic-run-line:has(.basic-run-line-button) {
+    grid-area: 1 / 1;
+    align-self: end;
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+}
 .pipeline-cover-card[data-cover-state="hidden"] { visibility: hidden; }
 .pipeline-cover-card[data-cover-state="moving"] { pointer-events: none; }
 .pipeline-cover-host > .pipeline-cover-card.is-expanded .debate-model-card-output {
@@ -9634,6 +9764,13 @@ hr.section-divider {
     overscroll-behavior-y: auto;
 }
 .pipeline-cover-host > .pipeline-cover-card .debate-model-card-header { flex-shrink: 0; }
+
+/* L-20: a participant card whose attempt was not accepted says so (results/basic-card-verdict.js). */
+.debate-model-card > .basic-card-verdict {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #b45309;
+}
 
 </style>
 </head>
@@ -9768,6 +9905,16 @@ window.ProtoState = {
     all: 'все модели независимо', lead: 'ведущая модель', review: 'проверяющая модель', gate: 'моделей нет — ворота'
   };
   const list = (value) => (Array.isArray(value) ? value.filter(Boolean).map(String) : []);
+  const participantLabel = (participant) => {
+    const label = String(participant?.label || '').trim();
+    const name = String(participant?.name || '').trim();
+    const id = String(participant?.id || participant?.participantId || '').trim();
+    const display = label || name;
+    // Duplicate provider names are separate participants; show their stable key only
+    // when the visible label alone cannot tell them apart.
+    const duplicates = participant?.duplicateLabel;
+    return display && duplicates && id ? `${display} · ${id.slice(0, 8)}` : display;
+  };
 
   // round: canvas round number; templateStage: ArchitectureFramework stage or null;
   // participants: [{ name, send }] from the round's model stack; stageRun: the engine's
@@ -9779,8 +9926,20 @@ window.ProtoState = {
   // inheritedTask (the text the round would take), first (the first round: nothing to feed in), disabled.
   // They give the input and the round's task.
   function buildModel({ round, templateStage = null, participants = [], stageRun = null, roleChoice = null } = {}) {
-    const working = list(participants.filter((item) => item && item.send).map((item) => item.name));
-    const waiting = list(participants.filter((item) => item && !item.send).map((item) => item.name));
+    const participantItems = participants.filter((item) => item && (item.name || item.label));
+    const duplicateLabels = new Set();
+    const labelCounts = new Map();
+    participantItems.forEach((item) => {
+      const key = String(item.label || item.name || '').trim();
+      labelCounts.set(key, (labelCounts.get(key) || 0) + 1);
+    });
+    participantItems.forEach((item) => {
+      const key = String(item.label || item.name || '').trim();
+      if (labelCounts.get(key) > 1) duplicateLabels.add(item);
+    });
+    const showParticipant = (item) => participantLabel({ ...item, duplicateLabel: duplicateLabels.has(item) });
+    const working = list(participantItems.filter((item) => item.send).map(showParticipant));
+    const waiting = list(participantItems.filter((item) => !item.send).map(showParticipant));
     const gate = templateStage?.who === 'gate';
     const statusCode = gate && !stageRun ? 'gate' : String(stageRun?.status || 'pending');
     const model = {
@@ -9838,7 +9997,7 @@ window.ProtoState = {
     return model;
   }
 
-  const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы предыдущего шага', all: 'Всё принятое за все предыдущие шаги' };
+  const INPUT_LABELS = { none: 'Ничего', previous: 'Ответы последнего этапа с принятым результатом', all: 'Всё принятое за все предыдущие шаги' };
   const STEPS_LABEL = 'Выбранные этапы';
   const isPlain = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -9846,10 +10005,30 @@ window.ProtoState = {
   // (a participant, an artifact written in JSON) stay in place. Returns the new list for the step ref.
   function stepsAfterToggle(current, ref, checked) {
     const list = Array.isArray(current) ? current.slice() : [];
-    const at = list.indexOf(ref);
+    const at = list.findIndex((item) => inputStepRef(item) === ref);
     if (checked && at < 0) list.push(ref);
     if (!checked && at >= 0) list.splice(at, 1);
     return list;
+  }
+
+  function inputStepRef(item) {
+    if (typeof item === 'string') return item;
+    if (isPlain(item) && typeof item.step === 'string' && !item.participant && !item.artifact && !item.revisionOf) return item.step;
+    return '';
+  }
+
+  // Promote a selected string to a required whole-step source, or update an existing whole-step object in place.
+  function stepRequiredAfterToggle(current, ref, required) {
+    const next = Array.isArray(current) ? current.slice() : [];
+    const at = next.findIndex((item) => inputStepRef(item) === ref);
+    if (at < 0) return next;
+    const item = next[at];
+    if (typeof item === 'string') {
+      if (required) next[at] = { step: ref, required: true };
+    } else {
+      next[at] = { ...item, required: Boolean(required) };
+    }
+    return next;
   }
 
   // The owner's edit of the output: name, form, sections (non-empty lines) and strictLength replace their values;
@@ -9888,7 +10067,6 @@ window.ProtoState = {
     const picked = Array.isArray(input) ? input : [];
     const defaultInput = 'previous';
     const stepsMode = Array.isArray(input) || input === 'steps' || drafts.input === 'steps';
-    const refs = picked.filter((item) => typeof item === 'string');
     const options = [
       { value: '', label: `По умолчанию (${INPUT_LABELS[defaultInput].toLowerCase()})` },
       ...Object.entries(INPUT_LABELS).map(([value, label]) => ({ value, label })),
@@ -9898,10 +10076,12 @@ window.ProtoState = {
       value: stepsMode ? 'steps' : input,
       options,
       steps: earlier.map((item) => {
-        const at = refs.indexOf(item.ref);
-        return { ref: item.ref, label: item.label, disabled: !item.enabled, checked: at >= 0, number: at >= 0 ? at + 1 : 0 };
+        const at = picked.findIndex((source) => inputStepRef(source) === item.ref);
+        const source = at >= 0 ? picked[at] : null;
+        return { ref: item.ref, label: item.label, disabled: !item.enabled, checked: at >= 0,
+          required: isPlain(source) && source.required === true, number: at >= 0 ? at + 1 : 0 };
       }),
-      objectRefs: picked.length - refs.length
+      objectRefs: picked.filter((source) => !inputStepRef(source)).length
     };
   }
 
@@ -9936,21 +10116,35 @@ window.ProtoState = {
     container.append(wrap);
   }
 
-  // The list of steps of the input «выбранные этапы». emit('steps', { ref, checked }) — the page keeps the order of choice.
+  // The list of steps of the input «выбранные этапы». The page keeps the source order.
   // The number is the place of the step in the owner's list; a switched-off step is marked, not hidden.
   function renderSteps(container, input, emit, disabled = false) {
     const doc = container.ownerDocument;
     const box = el(doc, 'fieldset', 'stage-card-steps');
-    box.append(el(doc, 'legend', '', 'Этапы для входа (номер — порядок выбора)'));
+    box.append(el(doc, 'legend', '', 'Этапы для входа (номер — порядок выбора)'),
+      el(doc, 'p', 'stage-card-muted', 'Вход «Ответы последнего этапа с принятым результатом» пропускает этапы без ответа. Здесь можно выбрать этапы явно и сделать каждый обязательным: без результата прогон остановится.'));
     if (!input.steps.length) box.append(el(doc, 'p', 'stage-card-muted', 'Раньше этих шагов нет.'));
     input.steps.forEach((item) => {
-      const row = el(doc, 'label', 'stage-card-step-option');
+      const row = el(doc, 'div', 'stage-card-step-option');
       const check = el(doc, 'input');
       check.type = 'checkbox';
       check.checked = item.checked;
       check.disabled = Boolean(disabled);
       check.addEventListener('change', () => emit('steps', { ref: item.ref, checked: check.checked }));
-      row.append(check, doc.createTextNode(` ${item.label}${item.disabled ? ' (выключен)' : ''}${item.number ? ` · ${item.number}` : ''}`));
+      const selectLabel = el(doc, 'label');
+      selectLabel.append(check, doc.createTextNode(` ${item.label}${item.disabled ? ' (выключен)' : ''}${item.number ? ` · ${item.number}` : ''}`));
+      row.append(selectLabel);
+      if (item.checked) {
+        const required = el(doc, 'input', 'stage-card-step-required');
+        required.type = 'checkbox';
+        required.checked = item.required;
+        required.disabled = Boolean(disabled);
+        required.setAttribute('aria-label', `Обязательный этап: ${item.label}`);
+        required.addEventListener('change', () => emit('stepRequired', { ref: item.ref, required: required.checked }));
+        const requiredLabel = el(doc, 'label', 'stage-card-step-required-label');
+        requiredLabel.append(required, doc.createTextNode(' Обязательный'));
+        row.append(requiredLabel);
+      }
       box.append(row);
     });
     if (input.objectRefs) box.append(el(doc, 'p', 'stage-card-muted', `Ссылки на участников и артефакты (${input.objectRefs}) заданы в JSON и сохраняются.`));
@@ -10296,11 +10490,11 @@ window.ProtoState = {
 
   // The text of an owner step on its canvas card (the owner's words).
   function controlSummary(step = {}) {
-    if (step.kind === 'owner') return step.task ? `задание: ${String(step.task).split('\n')[0]}` : 'задание не задано';
+    if (step.kind === 'owner') return step.task ? String(step.task).split('\n')[0] : 'задание не задано';
     return '';
   }
 
-  const api = Object.freeze({ buildModel, render, stepsAfterToggle, outputAfterEdit, STATUS, feed,
+  const api = Object.freeze({ buildModel, render, stepsAfterToggle, stepRequiredAfterToggle, outputAfterEdit, STATUS, feed,
     controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -10793,7 +10987,7 @@ window.ProtoState = {
         const items = artifacts.length
             ? artifacts.map((a) => `<span class="proto-artifact" title="${esc(a.title)} v${esc(a.version)}"><span class="proto-artifact-title">${esc(a.title)}</span><span class="proto-artifact-version">v${esc(a.version)}</span></span>`).join('')
             : '<span class="proto-artifacts-empty">—</span>';
-        return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-label">Артефакты</div><div class="proto-artifacts-row">${items}</div></div>`;
+        return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-row">${items}</div></div>`;
     };
 
     const roundHtml = (round, i, total) => {
@@ -11154,11 +11348,17 @@ window.ProtoState = {
   function parseJsonAnswer(raw) {
     const body = String(raw == null ? '' : raw).trim();
     const fenced = JSON_FENCE.exec(body);
+    const text = fenced ? fenced[1] : body;
     let value;
     try {
-      value = JSON.parse(fenced ? fenced[1] : body);
+      value = JSON.parse(text);
     } catch (_) {
-      return null;
+      // A chat page that shows JSON as ordinary text sets typographic quotes (Claude: “items”); they are read as plain ones.
+      try {
+        value = JSON.parse(text.replace(/[\u201C\u201D\u201E\u201F]/g, '"'));
+      } catch (__) {
+        return null;
+      }
     }
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
   }
@@ -11200,7 +11400,7 @@ window.ProtoState = {
     const escaped = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const block = new RegExp(`\\[\\[DOC:\\s*${escaped}\\s*\\]\\]([\\s\\S]*?)\\[\\[\\/DOC\\]\\]`).exec(String(answer == null ? '' : answer));
     if (!block) return null;
-    const text = block[1].trim();
+    const text = stripDocumentMarks(block[1]).trim();
     return text === '' ? null : text;
   }
 
@@ -11247,7 +11447,15 @@ window.ProtoState = {
     return result;
   }
 
-  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, extractDocument, checkAnswer });
+  // The text an answer hands on (to the next step, to the record): the delivery mark at its end ([[AO-…]]) and the document
+  // marks ([[DOC: id]], [[/DOC]]) are service text. Document extraction reads the raw answer, so it runs before this.
+  const DELIVERY_MARK = /\s*\[\[AO-[^\]]*\]\]\s*$/;
+  const DOCUMENT_MARK = /\[\[\/?DOC(?::[^\]]*)?\]\]/g;
+  // A document (the text to show, record and write to a file) has no document marks, whatever the raw answer held.
+  function stripDocumentMarks(raw) { return String(raw == null ? '' : raw).replace(DOCUMENT_MARK, ''); }
+  const cleanAnswer = (raw) => String(raw == null ? '' : raw).replace(DELIVERY_MARK, '').replace(DOCUMENT_MARK, '').trim();
+
+  const api = Object.freeze({ countWords, readPointer, parseJsonAnswer, formProblem, extractDocument, checkAnswer, cleanAnswer, stripDocumentMarks });
   root.BasicOutput = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -11302,7 +11510,25 @@ window.ProtoState = {
       && entry.source.step === address.step && entry.source.participant === address.participant && entry.source.visit === address.visit) || null;
   }
 
-  const api = Object.freeze({ createRegistry, register, latest, version, lineKey });
+  // The documents for reading (output.document: read) of a run at its end: the last valid version of each line, in the order
+  // of registration. A line is a document when the output of its author (the participant's own, else the step's) says so.
+  // `steps` are the steps of the run (BasicSchema.assemble); the copy on disk ends with this version, not with the approved one.
+  function finalDocuments(steps, entries) {
+    const isDocument = (lineage) => {
+      const step = (Array.isArray(steps) ? steps : []).find((item) => item && item.ref === lineage.step);
+      if (!step) return false;
+      const author = (Array.isArray(step.models) ? step.models : []).find((model) => model && (model.id ?? model.name) === lineage.participant);
+      const output = author && author.output !== undefined ? author.output : step.output;
+      return Boolean(output) && output.document === 'read' && output.format !== 'json';
+    };
+    const last = new Map();
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+      if (entry && entry.valid !== false && isDocument(entry.lineage)) last.set(lineKey(entry.lineage), entry);
+    });
+    return [...last.values()];
+  }
+
+  const api = Object.freeze({ createRegistry, register, latest, version, lineKey, finalDocuments });
   root.BasicArtifacts = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -11356,20 +11582,35 @@ window.ProtoState = {
   const Output = root.BasicOutput || (typeof require === 'function' ? require('./basic-output') : null);
   const Artifacts = root.BasicArtifacts || (typeof require === 'function' ? require('./basic-artifacts') : null);
   const DEFAULT_ATTEMPTS = 2;
+  // M-11: the rejections whose text may already be complete on the page: it is read again before the correction is sent.
+  const PARTIAL_REREAD_REASONS = new Set(['capped_unproven', 'partial_unproven', 'unproven_status', 'incomplete_ending', 'truncation_marker']);
   const REASON_TEXT = Object.freeze({
     empty: 'пустой',
+    not_sent: 'не отправлено',
+    timeout: 'таймаут',
     token_only: 'без текста',
-    too_short: 'слишком короткий',
+    too_short: 'слишком короткий и без признаков конца ответа (строка состояния?)',
+    progress_only: 'строка прогресса с меткой доставки, а не ответ',
+    capped_unproven: 'оборван по лимиту времени: нет метки доставки в конце ответа',
     truncation_marker: 'оборван',
     incomplete_ending: 'оборван на середине',
+    partial_unproven: 'не завершён: нет подтверждения окончания',
+    unproven_status: 'не подтверждено окончание:',
+    prompt_echo: 'повторяет запрос вместо ответа',
     error_output: 'ошибка вместо ответа',
     closed_by_owner: 'раунд закрыт User',
     too_long: 'длиннее допустимого',
     missing_section: 'не содержит раздел',
+    missing_sections: 'не содержит нужных разделов',
+    invalid_json: 'не является корректным JSON',
+    invalid_audit_verdict: 'вердикт аудита не в формате',
+    rejected: 'не принят',
     invalid_output: 'не в формате ответа',
     invalid_form: 'опросник не по формату',
     missing_field: 'без обязательного поля',
-    missing_artifact: 'без объявленного артефакта'
+    missing_artifact: 'без объявленного артефакта',
+    usage_limit: 'лимит использования модели',
+    captcha_required: 'модель просит пройти проверку (CAPTCHA) — пройдите её во вкладке'
   });
   const STOP_TEXT = Object.freeze({
     steps_done: 'все шаги пройдены',
@@ -11391,7 +11632,10 @@ window.ProtoState = {
   const modeOf = (spec) => (Array.isArray(spec) ? 'sources' : spec);
   // The output a participant answers with (3.2): its own declaration replaces the step's one as a whole, nothing is merged.
   // Works on the schema's steps and on the normalized ones: a participant's output sits on the participant.
-  const outputOf = (step, model) => (model && typeof model === 'object' && model.output != null ? model.output : (step.output ?? null));
+  const outputOf = (step, model) => {
+    if (model?.settingsMode === 'explicit') return model.output ?? null;
+    return (model && typeof model === 'object' && model.output != null ? model.output : (step.output ?? null));
+  };
   // The input of a participant: its own when it has one, else the input of the step.
   const specOf = (step, model) => (model && model.input !== undefined ? model.input : step.input);
   const numbered = (items) => items.map((item, index) => `Ответ ${index + 1}:\n${item.text}`).join('\n\n');
@@ -11404,6 +11648,20 @@ window.ProtoState = {
       if (typeof value === 'string' && value.trim()) return { value, source };
     }
     return { value: fallback, source: 'code' };
+  }
+
+  // Diagnostics for an explicit participant request. `hasInput` is nullable: a preview
+  // cannot know whether an earlier stage will produce an accepted answer, while the run can.
+  function requestDiagnostics({ model = {}, hasInput = null, hasTask = undefined, hasRole = undefined } = {}) {
+    const request = typeof model.promptTemplate === 'string' ? model.promptTemplate : '';
+    if (!request.trim()) return { errors: [], warnings: [] };
+    const errors = [];
+    const warnings = [];
+    if (hasInput === true && !request.includes('{вход}')) errors.push('Есть входные данные, но в запросе нет {вход}.');
+    if (!request.includes('{задача}')) warnings.push('В запросе нет {задача}: задача пользователя не попадёт в запрос.');
+    if (hasRole === undefined ? text(model.extra) : hasRole) warnings.push('Роль игнорируется при личном запросе.');
+    if (hasTask === undefined ? text(model.task) : hasTask) warnings.push('Задание модели или шага игнорируется при личном запросе.');
+    return { errors, warnings };
   }
 
   // The block «Формат ответа»: the form of the step, its sections, and the fields of a json answer.
@@ -11458,12 +11716,39 @@ window.ProtoState = {
   // Default technical check: non-empty text. The page passes the shared acceptance check.
   const defaultAccept = () => ({ ok: true, reason: '' });
 
+  // Why there is no text: the transport's status says whether it was sent (NO_SEND) or timed out; otherwise the model
+  // answered without text (token only) or said nothing.
+  function noAnswerReason(result) {
+    const status = String(result?.status || '').toUpperCase();
+    if (status === 'NO_SEND') return 'not_sent';
+    if (status.includes('TIMEOUT')) return 'timeout';
+    return result?.answered ? 'token_only' : 'empty';
+  }
+  // The account's usage limit (the transport reason usage_limit or usage_limit:HH:MM): the request is not repeated before the reset.
+  const USAGE_LIMIT_RE = /^usage_limit(?::(\d{1,2}:\d{2}))?$/;
+  function usageLimitOf(result) {
+    const match = USAGE_LIMIT_RE.exec(String(result?.reason || ''));
+    return match ? { detail: match[1] ? `сброс в ${match[1]}` : '' } : null;
+  }
+  // A reason with no text at all: the same request goes out again, no correction is asked.
+  const isNoAnswer = (reason) => reason === 'empty' || reason === 'not_sent' || reason === 'timeout';
+  // The participant's label in the step (the id when the schema gives none).
+  const participantName = (step, id) => (step?.models || []).find((model) => model.id === id)?.label || id;
+
   // The technical acceptance first, then the check of the output (`check`, when the step has an output).
   function judge(result, accept, check = null) {
     const value = text(result?.text);
-    if (!value) return { ok: false, reason: result?.answered ? 'token_only' : 'empty', text: '' };
-    const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '' }) || {};
-    if (verdict.ok === false) return { ok: false, reason: verdict.reason || 'rejected', text: value };
+    if (!value) {
+      const usage = usageLimitOf(result);
+      if (usage) return { ok: false, reason: 'usage_limit', detail: usage.detail, text: '' };
+      if (String(result?.reason || '') === 'captcha_required') return { ok: false, reason: 'captcha_required', text: '' };
+      return { ok: false, reason: noAnswerReason(result), text: '' };
+    }
+    const verdict = accept({ text: value, completion: result?.completion || '', status: result?.status || '', prompt: result?.sentPrompt || '', reason: result?.reason || '' }) || {};
+    if (verdict.ok === false) {
+      const status = verdict.details?.status ? `статус ${verdict.details.status}` : '';
+      return { ok: false, reason: verdict.reason || 'rejected', detail: status, text: value };
+    }
     const shape = check ? check(value) : null;
     if (shape && !shape.ok) return { ok: false, reason: shape.reason, detail: shape.detail || '', text: value };
     return { ok: true, reason: '', text: value };
@@ -11512,11 +11797,16 @@ window.ProtoState = {
         output: step.output ?? null,
         ...(Array.isArray(step.files) ? { files: JSON.parse(JSON.stringify(step.files)) } : {}),
         document: kind === 'owner' && typeof step.document === 'string' && step.document ? step.document : null,
+        ...(kind === 'owner' && typeof step.goal === 'string' && step.goal.trim() ? { goal: step.goal } : {}),
+        ...(kind === 'round' && Array.isArray(step.off) && step.off.length ? { off: step.off.map((model) => ({ id: model.id ?? model.name, name: model.name, ...(model.output !== undefined ? { output: model.output } : {}) })) } : {}),
         // continue: the participant keeps its chat; new: a new chat on the first request of each visit (4.2).
         chat: step.chat === 'new' ? 'new' : 'continue',
         approve: step.owner === 'approve',
         models: (step.models || []).map((model) => (typeof model === 'string' ? { name: model, id: model, extra: '' } : {
-          name: model.name, id: model.id ?? model.name, extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
+          name: model.name, id: model.id ?? model.name, label: typeof model.label === 'string' ? model.label : model.name,
+          settingsMode: model.settingsMode === 'explicit' ? 'explicit' : null,
+          ...(model.requestInput === 'lenient' ? { requestInput: 'lenient' } : {}),
+          extra: text(model.extra), task: typeof model.task === 'string' ? model.task : null, promptTemplate: typeof model.promptTemplate === 'string' ? model.promptTemplate : null,
           discipline: model.discipline ? { ...model.discipline } : null,
           maxWords: Number.isSafeInteger(model.maxWords) && model.maxWords > 0 ? model.maxWords : null,
           ...(model.input !== undefined ? { input: Array.isArray(model.input) ? model.input.slice() : model.input } : {}),
@@ -11664,11 +11954,13 @@ window.ProtoState = {
             if (from >= index) throw new EngineError('invalid_input', address, `шаг «${ref}» стоит не раньше этого шага`);
             if (participant === undefined) return;
             // The owner step has one participant, the owner (3.3); a model of a round keeps its own id.
+            // A switched-off participant (`off`) is declared too: it gives no answer, so the source is empty or missing (5.5, 5.7).
+            const off = Array.isArray(steps[from].off) ? steps[from].off : [];
             const declared = steps[from].kind === 'owner' ? [OWNER_PARTICIPANT]
-              : (Array.isArray(steps[from].models) ? steps[from].models : []).map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
+              : [...(Array.isArray(steps[from].models) ? steps[from].models : []), ...off].map((model) => (typeof model === 'string' ? model : (model?.id ?? model?.name)));
             if (!declared.includes(participant)) throw new EngineError('invalid_input', address, `участник «${participant}» не объявлен в шаге «${ref}»`);
             // The artifact is declared in the output of that participant (3.2): its own, or the step's when it has none.
-            const author = (Array.isArray(steps[from].models) ? steps[from].models : []).find((model) => model && typeof model === 'object' && (model.id ?? model.name) === participant);
+            const author = [...(Array.isArray(steps[from].models) ? steps[from].models : []), ...off].find((model) => model && typeof model === 'object' && (model.id ?? model.name) === participant);
             if (artifactId !== null && !(outputOf(steps[from], author)?.artifacts || []).some((item) => item && item.id === artifactId)) {
               throw new EngineError('invalid_input', address, `артефакт «${artifactId}» не объявлен в шаге «${ref}»`);
             }
@@ -11688,7 +11980,7 @@ window.ProtoState = {
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
+    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
@@ -11753,6 +12045,8 @@ window.ProtoState = {
       steps: plan.map((step) => ({ step: step.index, ref: step.ref, label: stepLabel(step), input: modeOf(step.input), models: step.models.map((model) => model.name) })) });
 
     class StopRun extends Error { constructor(reason, detail = '') { super(reason); this.stopReason = reason; this.stopDetail = detail; } }
+    // The detail of context_full: where, and how far over the budget the request is.
+    const overBudget = (step, model, chars) => `шаг «${step.ref}» · модель «${model.name}»: запрос ${chars} символов, бюджет ${maxPromptChars}`;
 
     // The live state for a checkpoint (8.2): plain data only. The pointer is the step in progress (or the next one between steps);
     // a pending owner interaction and the pending participants of a send are named, so a reload can show them.
@@ -11908,7 +12202,7 @@ window.ProtoState = {
           if (!answers.length) throw stopped('не дал принятого ответа');
         }
         return answers.map((item) => ({
-          label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${item.participant}, визит ${entry.visit}`,
+          label: `${stepLabel(entry.step)}${entry.step.output?.name ? ` («${entry.step.output.name}»)` : ''}, участник ${participantName(entry.step, item.participant)}, визит ${entry.visit}`,
           text: item.text, source: item.source, textRef: item.textRef, pointer: '', ...binaryOf(item),
           address: { step: entry.step.ref, participant: item.participant, visit: entry.visit }
         }));
@@ -11956,10 +12250,52 @@ window.ProtoState = {
     function promptFor(step, model) {
       const spec = specOf(step, model);
       const input = inputFor(step, spec, { model });
+      const requestCheck = requestDiagnostics({ model, hasInput: input.length > 0 });
+      // A schema of format 1 keeps running its own request as written (requestInput: lenient), the page warns before the run.
+      if (requestCheck.errors.length && model.requestInput !== 'lenient') {
+        throw new EngineError('invalid_request', `шаг «${step.ref}» · модель «${model.name}»`, requestCheck.errors.join(' '));
+      }
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec),
         ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
-      if (prompt.length > maxPromptChars) throw new StopRun('context_full');
+      if (prompt.length > maxPromptChars) throw new StopRun('context_full', overBudget(step, model, prompt.length));
       return { prompt, parts: partsFor(step, model, input, spec) };
+    }
+
+    // The last request of a participant that was sent: its prompt carries the delivery token, its answer is the text already held.
+    const lastSent = (participantId) => [...history].reverse().find((entry) => entry.participant === participantId && entry.sentPrompt) || null;
+    // Every request of the participant in this round (the original and its corrections): each carries its own delivery token,
+    // and the page may hold the answer of any of them.
+    const roundPrompts = (participantId, step) => [...new Set(history
+      .filter((entry) => entry.participant === participantId && entry.ref === step.ref && entry.visit === activeVisit && entry.sentPrompt)
+      .map((entry) => entry.sentPrompt))];
+
+    // M-11: reads the page for the answer of the requests of each participant (the host's reread callback, which checks the
+    // request's own user turn and takes an answer that ends with the token of any request of the round). Returns the answers found
+    // on the page: participant id → a reply for the acceptance. The others are sent again by the caller. Every read is a journal
+    // event (retry_reread_page: outcome accepted | resent).
+    async function rereadOwnTurns(models, step, tryNo) {
+      const found = {};
+      if (typeof reread !== 'function') return found;
+      for (const model of models) {
+        const prev = lastSent(model.id);
+        let reply = null;
+        if (prev) {
+          try {
+            reply = await reread({ participantId: model.id, modelName: model.name, stepRef: step.ref, visit: activeVisit, attempt: tryNo,
+              sentPrompt: prev.sentPrompt, sentPrompts: roundPrompts(model.id, step), previousText: text(prev.answer) });
+          } catch (error) {
+            reply = { found: false, reason: String(error?.message || error) };
+          }
+        }
+        const got = Boolean(reply?.found) && Boolean(text(reply.text));
+        if (got) {
+          found[model.id] = { text: text(reply.text), status: reply.status || 'PARTIAL', completion: reply.completion || (reply.confirmed ? 'complete' : 'partial'),
+            answered: true, transportRequestId: prev.transportRequestId || '', sentPrompt: prev.sentPrompt, attribution: 'reread', reason: reply.reason || '' };
+        }
+        await emit('retry_reread_page', { step: step.index, ref: step.ref, label: stepLabel(step), visit: activeVisit, model: model.name, participant: model.id,
+          attempt: tryNo, outcome: got ? 'accepted' : 'resent', reason: reply?.reason || (prev ? null : 'no_sent_prompt') });
+      }
+      return found;
     }
 
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
@@ -11968,25 +12304,35 @@ window.ProtoState = {
       const phase = 'answer';
       let pending = models.slice();
       let current = requests; // participant id → { prompt, parts, retryOf, trigger, triggerReason, previousAttemptKey }
+      // Participants whose page was read after their last answer (the partial read below): not read again before the next send.
+      const readBeforeSend = new Set();
       for (let tryNo = firstAttempt; pending.length && tryNo < firstAttempt + maxAttempts; tryNo += 1) {
         if (aborted()) throw new StopRun('cancelled');
         // The budget is checked before every send, a correction request included.
-        if (pending.some((model) => String(current[model.id].prompt || '').length > maxPromptChars)) throw new StopRun('context_full');
+        const tooLong = pending.find((model) => String(current[model.id].prompt || '').length > maxPromptChars);
+        if (tooLong) throw new StopRun('context_full', overBudget(step, tooLong, String(current[tooLong.id].prompt || '').length));
+        // M-11: a repeat of a request («Повторить», a retry after an empty answer, a correction) reads the page first. An answer of
+        // any request of this round that is already there is judged like any reply and nothing is sent for it.
+        const rereadNeeded = pending.filter((model) => current[model.id]?.retryOf && !readBeforeSend.has(model.id));
+        readBeforeSend.clear();
+        const rereadFound = rereadNeeded.length ? await rereadOwnTurns(rereadNeeded, step, tryNo) : {};
+        const toSend = pending.filter((model) => !rereadFound[model.id]);
         const entries = Object.fromEntries(pending.map((model) => {
           const prevAttemptKey = current[model.id]?.previousAttemptKey || (current[model.id]?.retryOf ? JSON.stringify([step.ref, model.id, activeVisit, current[model.id].retryOf, phase]) : null);
           const trig = current[model.id]?.trigger || (tryNo > 1 ? 'automatic_retry' : (initialTriggerInfo?.trigger || 'initial'));
-          const trigReason = current[model.id]?.triggerReason || (tryNo > 1 ? (outcome[model.id]?.reason === 'empty' ? 'empty_answer' : 'rejected_by_judge') : (initialTriggerInfo?.triggerReason || null));
+          const trigReason = current[model.id]?.triggerReason || (tryNo > 1 ? (isNoAnswer(outcome[model.id]?.reason) ? 'empty_answer' : 'rejected_by_judge') : (initialTriggerInfo?.triggerReason || null));
           const entry = { step: step.index, ref: step.ref, kind: step.kind, label: stepLabel(step), model: model.name, participant: model.id, attempt: tryNo,
             retryOf: current[model.id].retryOf || null, prompt: current[model.id].prompt, parts: current[model.id].parts,
             trigger: trig,
             triggerReason: trigReason,
             previousAttemptKey: prevAttemptKey,
             phase, visit: activeVisit, state: 'sent', sentAt: Date.now() };
+          if (rereadFound[model.id]) entry.trigger = 'page_reread';
           history.push(entry);
-          if (typeof onRequest === 'function') onRequest(entry);
+          if (typeof onRequest === 'function' && !rereadFound[model.id]) onRequest(entry);
           return [model.id, entry];
         }));
-        inFlight = pending.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit }));
+        inFlight = toSend.map((model) => ({ participantId: model.id, attempt: tryNo, phase, stepRef: step.ref, visit: activeVisit }));
         await checkpointNow('send');
         const processed = new Set();
         const retry = [];
@@ -12002,7 +12348,10 @@ window.ProtoState = {
           outcome[model.id] = { ...verdict, model: model.name, participant: model.id, status: result.status || '', attempt: tryNo, transportRequestId: result.transportRequestId || '' };
           // An accepted answer is stored once, then each artifact it declares is registered (one line, one version).
           if (verdict.ok) {
-            const answerRef = putText(verdict.text);
+            // The answer goes on without its service marks (delivery mark, document marks); a document is taken from the raw answer.
+            const answerText = Output.cleanAnswer(verdict.text);
+            outcome[model.id].text = answerText;
+            const answerRef = putText(answerText);
             outcome[model.id].textRef = answerRef;
             const items = current[model.id].parts?.input?.items || [];
             const inputs = items.filter((item) => item.artifact).map((item) => item.artifact);
@@ -12033,8 +12382,16 @@ window.ProtoState = {
             accepted: verdict.ok, reason: verdict.reason || null, status: result.status || null,
             transportRequestId: result.transportRequestId || null, promptChars: String(current[model.id].prompt || '').length });
           inFlight = inFlight.filter((item) => item.participantId !== model.id);
-          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN') retry.push(model);
+          // A usage limit does not clear by a repeat: the round ends without this answer and the owner decides.
+          if (!verdict.ok && !(reply?.closedByOwner || wasClosedByOwner) && !viaCheck && result.status !== 'UNCERTAIN' && verdict.reason !== 'usage_limit' && verdict.reason !== 'captcha_required') retry.push(model);
         };
+
+        // The answers read from the page are judged now; a rejected one takes its correction like any other.
+        pending.forEach((model) => {
+          if (!rereadFound[model.id] || processed.has(model.id)) return;
+          processed.add(model.id);
+          processParticipantResult(model, rereadFound[model.id]);
+        });
 
         const dispatched = new Set();
         let waveDispatchedExplicit = false;
@@ -12120,24 +12477,28 @@ window.ProtoState = {
         const correctionOf = Object.fromEntries(pending.map((model) => [model.id, Boolean(current[model.id].parts?.correction)]));
         try {
           const found = prefetched ? Object.fromEntries(pending.filter((model) => prefetched[model.id]).map((model) => [model.id, prefetched[model.id]])) : {};
-          if (pending.length && pending.every((model) => found[model.id])) {
+          if (!toSend.length) {
+            // Every answer was read from the page (M-11): nothing is sent.
+            byId = {};
+            reply = {};
+          } else if (pending.length && pending.every((model) => found[model.id])) {
             byId = found;
             viaCheck = true;
             reply = {};
             pending.forEach((model) => { delete prefetched[model.id]; });
             if (!Object.keys(prefetched).length) prefetched = null;
           } else if (participants) {
-            reply = await sendParticipants(pending.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
+            reply = await sendParticipants(toSend.map((model) => ({ participantId: model.id, modelName: model.name, prompt: current[model.id].prompt,
               // A new chat starts on the first request of the visit only; a correction or a retry inside the visit goes to it.
               chat: step.chat === 'new' && tryNo === 1 ? 'new' : 'continue', stepRef: step.ref, visit: activeVisit, attempt: tryNo })),
             { ...meta, maxWordsByParticipant: maxWordsOf, correctionByParticipant: correctionOf });
             byId = reply?.byParticipant || (reply && typeof reply === 'object' && !('byParticipant' in reply) ? reply : {});
           } else {
-            reply = await send(pending.map((model) => model.name), Object.fromEntries(pending.map((model) => [model.name, current[model.id].prompt])),
+            reply = await send(toSend.map((model) => model.name), Object.fromEntries(toSend.map((model) => [model.name, current[model.id].prompt])),
               { ...meta,
-                maxWordsByModel: Object.fromEntries(pending.map((model) => [model.name, model.maxWords || null])),
-                correctionByModel: Object.fromEntries(pending.map((model) => [model.name, correctionOf[model.id]])) });
-            byId = Object.fromEntries(pending.map((model) => [model.id, reply?.byModel?.[model.name]]));
+                maxWordsByModel: Object.fromEntries(toSend.map((model) => [model.name, model.maxWords || null])),
+                correctionByModel: Object.fromEntries(toSend.map((model) => [model.name, correctionOf[model.id]])) });
+            byId = Object.fromEntries(toSend.map((model) => [model.id, reply?.byModel?.[model.name]]));
           }
         } catch (error) {
           if (error instanceof StopRun) throw error;
@@ -12153,7 +12514,7 @@ window.ProtoState = {
               }
             });
             inFlight = [];
-            throw new StopRun('context_full');
+            throw new StopRun('context_full', `шаг «${step.ref}»: запрос с меткой доставки не помещается в бюджет транспорта`);
           }
           if (error?.name === 'AbortError' || aborted()) {
             if (participants) {
@@ -12187,6 +12548,19 @@ window.ProtoState = {
           const stepEntry = { step, visit: activeVisit, outcome, skipped: false, valid: true };
           await settleUnknown(step, stepEntry, uncertain.map((m) => ({ participantId: m.id, attempt: tryNo })));
         }
+        // M-11 / M-17: a rejected answer that is partial or empty is read again before the next request and before the owner window:
+        // the page may have grown after the reply (the same collection as Get it). A longer or complete text is judged first;
+        // the correction stays for a text that is still not accepted. One read per participant and round.
+        const partialRead = retry.filter((model) => PARTIAL_REREAD_REASONS.has(outcome[model.id]?.reason) || isNoAnswer(outcome[model.id]?.reason));
+        if (partialRead.length && !(reply?.closedByOwner || wasClosedByOwner)) {
+          const read = await rereadOwnTurns(partialRead, step, tryNo);
+          partialRead.forEach((model) => {
+            readBeforeSend.add(model.id);
+            if (!read[model.id]) return;
+            retry.splice(retry.indexOf(model), 1);
+            processParticipantResult(model, read[model.id]);
+          });
+        }
         if (reply?.closedByOwner || wasClosedByOwner) return { closedByOwner: true };
         pending = retry.filter((m) => !outcome[m.id]?.ok);
         if (!pending.length) break;
@@ -12195,8 +12569,8 @@ window.ProtoState = {
         // the same request goes out again. A correction is for an answer that came back and was not accepted.
         current = Object.fromEntries(pending.map((model) => {
           const prevKey = lastEntries[model.id]?.attemptKey || JSON.stringify([step.ref, model.id, activeVisit, tryNo, phase]);
-          const trigReason = outcome[model.id]?.reason === 'empty' ? 'empty_answer' : 'rejected_by_judge';
-          if (outcome[model.id].reason === 'empty') {
+          const trigReason = isNoAnswer(outcome[model.id]?.reason) ? 'empty_answer' : 'rejected_by_judge';
+          if (isNoAnswer(outcome[model.id].reason)) {
             return [model.id, { ...current[model.id], retryOf: tryNo, trigger: 'automatic_retry', triggerReason: trigReason, previousAttemptKey: prevKey }];
           }
           const correction = correctionPrompt(outcome[model.id].reason, model.discipline?.correction, outcome[model.id].detail);
@@ -12257,8 +12631,10 @@ window.ProtoState = {
       if (source.models.length !== 1) throw new EngineError('invalid_document', at, 'документ для User даёт одна модель');
       const output = outputOf(source, source.models[0]);
       const kind = output?.document === 'form' ? 'form' : 'read';
+      // A round without an accepted answer (a skipped or a failed one) gives no document: the run stops as on a missing
+      // required input (missing_input), for both kinds. A wrong reference or a lost stored text stays invalid_document.
+      const items = sourceItems([{ step: source.ref, required: true }], step);
       if (kind === 'form') {
-        const items = sourceItems([{ step: source.ref, required: true }], step);
         const answer = items.find((item) => !item.binary);
         if (!answer) throw new EngineError('invalid_document', at, 'у раунда нет принятого ответа');
         const form = Output.parseJsonAnswer(answer.text);
@@ -12267,12 +12643,18 @@ window.ProtoState = {
       }
       const declaration = (output?.artifacts || [])[0];
       if (!declaration) throw new EngineError('invalid_document', at, 'документ для чтения: один артефакт в выходе раунда');
-      const lineage = { step: source.ref, participant: source.models[0].id, id: declaration.id };
+      const lineage = documentLineage(source, declaration);
       const found = Artifacts.latest(registry, lineage);
       if (!found || !found.valid) throw new EngineError('invalid_document', at, 'у раунда нет актуальной версии документа');
       const stored = getText(found.content.answerRef);
       if (stored === undefined || stored === null) throw new EngineError('invalid_document', at, 'текст документа не найден в записи прогона');
       return { ref: source.ref, kind: 'read', text: contentOf(stored, found.content.pointer, at), id: found.id, name: found.name };
+    }
+    // The line of the document a round wrote: its own line, or the line it revises (a declaration with revisionOf registers its
+    // versions in the line of the revised artifact). The owner reads and edits the latest version of that line.
+    function documentLineage(source, declaration) {
+      const written = registry.entries.filter((entry) => entry.source.step === source.ref && entry.source.participant === source.models[0].id && entry.id === declaration.id).pop();
+      return written ? { ...written.lineage } : { step: source.ref, participant: source.models[0].id, id: declaration.id };
     }
     async function ownerAnswer(step, entry) {
       let reason = '';
@@ -12304,7 +12686,9 @@ window.ProtoState = {
           await checkpointNow('judge', { pendingOwner: null });
           return entry.owner;
         }
-        const textRef = putText(verdict.text);
+        // The owner's text is shown and kept as a document: the document marks are service text, not part of it.
+        const ownerText = Output.stripDocumentMarks(verdict.text);
+        const textRef = putText(ownerText);
         (step.output?.artifacts || []).forEach((declaration) => {
           // A revision joins the line of the artifact the owner got; any other artifact starts the owner's own line.
           const revision = declaration.revisionOf ? revisionItem(declaration, items) : null;
@@ -12320,14 +12704,15 @@ window.ProtoState = {
           approved = { id: document.id };
           if (verdict.text !== document.text) {
             const source = plan.find((item) => item.ref === step.document);
-            const lineage = { step: source.ref, participant: source.models[0].id, id: document.id };
+            const declared = (outputOf(source, source.models[0])?.artifacts || [])[0];
+            const lineage = declared ? documentLineage(source, declared) : { step: source.ref, participant: source.models[0].id, id: document.id };
             const previous = Artifacts.latest(registry, lineage);
             Artifacts.register(registry, { id: document.id, name: document.name, lineage,
               source: { step: step.ref, participant: OWNER_PARTICIPANT, visit: entry.visit }, answerRef: textRef, pointer: '',
               inputs: previous ? [{ lineage: { ...previous.lineage }, source: { ...previous.source } }] : [], description: '' });
           }
         }
-        entry.owner = { text: verdict.text, textRef, ...(verdict.file ? { file: verdict.file } : {}), ...(approved ? { approved } : {}) };
+        entry.owner = { text: ownerText, textRef, ...(verdict.file ? { file: verdict.file } : {}), ...(approved ? { approved } : {}) };
         emit('custom_owner', { step: step.index, ref: step.ref, visit: entry.visit, accepted: true, reason: null });
         await checkpointNow('judge', { pendingOwner: null });
         return entry.owner;
@@ -12561,22 +12946,28 @@ window.ProtoState = {
             emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
             if (enough && !semiAuto && !approve) break;
             if (enough && semiAuto && last && !failed.length && !approve) break;
-            // Without every answer "continue" is not offered: the owner repeats, skips or stops the step.
-            const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip', 'stop'];
+            // Without every answer "continue" is not offered: the owner repeats, skips the participants without an answer
+            // (the accepted answers stay), skips the whole step (it passes nothing on) or stops the step.
+            const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip_participant', 'skip', 'stop'];
             const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             const action = typeof decide === 'function'
               ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
-                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])) }), { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res) })
+                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])),
+                details: Object.fromEntries(failed.map((id) => [id, outcome[id]?.detail || ''])) }), { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res) })
               : null;
             // The fallback "the answers go on" holds only when every answer is accepted and no approval is asked.
             if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
+            // Skipping the participants without an answer goes on with the accepted answers; with none it is the whole step.
+            const skipParticipants = action === 'skip_participant' && accepted.length > 0;
+            const effective = action === 'skip_participant' && !skipParticipants ? 'skip' : action;
             // A decision that ends the step is saved before the checkpoint: a reload does not ask it again.
-            if (action === 'continue' || action === 'skip') state.decisions[decidedKey] = action;
+            if (skipParticipants) state.decisions[decidedKey] = 'continue';
+            else if (effective === 'continue' || effective === 'skip') state.decisions[decidedKey] = effective;
             if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: null });
             emit('custom_decision', { step: step.index, action });
-            if (action === 'continue') break;
-            if (action === 'stop') throw new StopRun('stopped');
-            if (action === 'skip') { entry.skipped = true; break; }
+            if (effective === 'continue' || skipParticipants) break;
+            if (effective === 'stop') throw new StopRun('stopped');
+            if (effective === 'skip') { entry.skipped = true; break; }
             const firstAttempt = Math.max(0, ...failed.map((id) => outcome[id]?.attempt || 0)) + 1;
             await execute(step, step.models.filter((model) => failed.includes(model.id)), outcome, firstAttempt, { trigger: 'user_retry', triggerReason: 'user_decision' });
           }
@@ -12637,13 +13028,15 @@ window.ProtoState = {
     'Предел длины ответа — по настройке модели или pipeline.',
     'Метка доставки создаётся транспортом; инструкцию можно изменить у модели.'
   ]);
-  function previewPrompt({ task, steps = [], stepIndex = 0, modelName = '', semiAuto = false, askInstruction = '' }) {
+  function previewPrompt({ task, steps = [], stepIndex = 0, modelName = '', participantId = null, semiAuto = false, askInstruction = '' }) {
     const plan = normalizeSteps(steps);
     const step = plan.find((item) => item.index === stepIndex) || plan[stepIndex];
     if (!step) return null;
     // A step the run would refuse, and an owner step (it sends nothing to a model), have no prompt to show.
-    if (unexecutedOf(steps[stepIndex], stepIndex) || step.kind === 'owner') return null;
-    const model = step.models.find((item) => item.name === modelName) || { name: modelName, extra: '' };
+    if (unexecutedOf(steps[stepIndex], stepIndex, { participants: participantId != null }) || step.kind === 'owner') return null;
+    const model = step.models.find((item) => participantId != null
+      ? (item.id ?? item.participantId ?? item.name) === participantId
+      : item.name === modelName) || { name: modelName, extra: '' };
     const spec = specOf(step, model);
     const input = spec === 'none' || !plan.some((item) => item.index < step.index) ? []
       : [{ label: 'Вход', text: PLACEHOLDER[modeOf(spec)] || PLACEHOLDER.previous }];
@@ -12653,10 +13046,11 @@ window.ProtoState = {
       : buildPrompt({ task: '{задача}', step, model, input: input.length ? [{ label: 'Вход', text: '{вход}' }] : [],
         inputMode: modeOf(spec), output: outputOf(step, model) });
     return { label: stepLabel(step), inputMode: modeOf(spec), prompt, template, transportLines: TRANSPORT_LINES.slice(),
+      requestDiagnostics: requestDiagnostics({ model, hasInput: null }),
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : '') } };
   }
 
-  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -12670,8 +13064,9 @@ window.ProtoState = {
 // validate() runs before the first request. Rules: docs/Pipeline scenarios/basic-developer.md,
 // field reference and how to write a schema: docs/Pipeline scenarios/basic-schema-guide.md.
 //
-// Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, defaults?, steps }
+// Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, comment?, defaults?, steps }
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
+//   comment: the text the model wrote around the schema JSON (kept when the schema is pasted); shown under the description, never read by the engine
 //   run: { policy?: 'auto' | 'manual', maxWords?, strictLength? } — the run policy, the shared answer limit and the strict length check
 //   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
@@ -12692,9 +13087,9 @@ window.ProtoState = {
 
   const Engine = root.CustomEngine || (typeof require === 'function' ? require('./custom-engine') : null);
 
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
   // Every released version stays supported; a newer one than this Basic is refused.
-  const SUPPORTED_VERSIONS = Object.freeze([1]);
+  const SUPPORTED_VERSIONS = Object.freeze([1, 2]);
   const ORIGINS = Object.freeze(['builtin', 'user']);
   const KINDS = Object.freeze(['round', 'owner']);
   // The step the owner (User) does itself; it has no models. There is no branch and no transition: steps run in their order.
@@ -12720,6 +13115,8 @@ window.ProtoState = {
   });
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
+  // The shared answer limits the page offers (its length select); the request to models names the same list.
+  const RUN_WORDS = Object.freeze([300, 500, 700, 1000]);
   const OUTPUT_FORMATS = Object.freeze(['json']);
   const OWNER_STEPS = Object.freeze(['approve']);
   const CHAT_MODES = Object.freeze(['continue', 'new']);
@@ -12759,16 +13156,24 @@ window.ProtoState = {
   // The value of one card: model → round (reserved for the round card) → ▶ → Basic.
   // `model` is { task?, discipline? }, `defaults` is the ▶ layer of the schema. `kind` is the kind of the step: every
   // step with models is a round, so its task inherits roundTask.
+  // The delivery mark and the correction request are never empty: the transport needs the mark, a correction needs a text.
+  // An empty one is inheritance there (the page reads them the same way), every other empty text is a value.
+  const NEVER_EMPTY = Object.freeze(['delivery', 'correction']);
+  const valueOf = (key, value) => (NEVER_EMPTY.includes(key) && value === '' ? undefined : value);
   function resolveFields(model = {}, kind = 'round', round = {}, defaults = {}) {
     return {
       task: pick([['model', model?.task], ['round', round?.task], ['pipeline', defaults?.roundTask]], DEFAULTS.roundTask),
       discipline: Object.fromEntries(Object.entries(DEFAULTS.discipline).map(([key, fallback]) => [key,
-        pick([['model', model?.discipline?.[key]], ['round', round?.discipline?.[key]], ['pipeline', defaults?.discipline?.[key]]], fallback)]))
+        pick([['model', valueOf(key, model?.discipline?.[key])], ['round', valueOf(key, round?.discipline?.[key])], ['pipeline', valueOf(key, defaults?.discipline?.[key])]], fallback)]))
     };
   }
 
-  // Only the very first step of the schema has nothing to take; any model step after another step (an owner step too) gets the previous step.
-  const defaultInput = (position) => (position === 0 ? 'none' : 'previous');
+  // A step that runs: an owner step, or a round with an enabled model. A switched-off round gives nothing.
+  const runnable = (step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
+    || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false)));
+  // Only a step with no runnable step before it has nothing to take (the first step that runs, the steps switched off before it);
+  // any later model step (after an owner step too) gets the previous step.
+  const defaultInputOf = (steps, position) => ((Array.isArray(steps) ? steps : []).slice(0, position).some(runnable) ? 'previous' : 'none');
 
   // With input none only a task written by the owner (on the model or the step) goes to the model; ▶ and Basic values do not.
   const writtenTask = (field) => field.source === 'model' || field.source === 'round';
@@ -12783,6 +13188,8 @@ window.ProtoState = {
     if ('files' in step) out.files = clone(step.files);
     if (typeof step.task === 'string') out.task = step.task;
     if (typeof step.document === 'string') out.document = step.document;
+    // The purpose of the step: the owner window shows it first («Назначение: …»); the requests to models never read it.
+    if (typeof step.goal === 'string' && step.goal.trim()) out.goal = step.goal;
     return { ...out, models: [] };
   }
 
@@ -12793,7 +13200,7 @@ window.ProtoState = {
     return schema.steps.map((step, position) => {
       if (CONTROL_KINDS.includes(step.kind)) return assembleControl(step);
       const roundIndex = rounds++;
-      const input = step.input || defaultInput(position);
+      const input = step.input || defaultInputOf(schema.steps, position);
       const stepFields = resolveFields({ task: step.task }, step.kind, {}, defaults);
       // The number a round keeps even when the rounds before it are switched off.
       const out = { kind: step.kind, ref: step.ref, round: roundIndex + 1 };
@@ -12804,20 +13211,27 @@ window.ProtoState = {
       // A list of sources goes to the engine as it is.
       out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
       out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
-        const resolved = resolveFields(model, step.kind, { task: step.task }, defaults);
-        const lines = [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
+        const explicit = model.settingsMode === 'explicit';
+        const resolved = explicit
+          ? { task: { value: typeof model.task === 'string' ? model.task : '', source: 'model' }, discipline: Object.fromEntries(Object.keys(DEFAULTS.discipline).map((key) => [key, { value: typeof model.discipline?.[key] === 'string' ? model.discipline[key] : '', source: 'model' }])) }
+          : resolveFields(model, step.kind, { task: step.task }, defaults);
+        const lines = explicit ? [...(model.discipline?.lines || [])] : [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
         // The input of the participant (when it has its own) decides whether an inherited task is dropped, as the step input does.
-        const own = 'input' in model ? model.input : input;
+        const own = explicit ? ('input' in model ? model.input : 'none') : ('input' in model ? model.input : input);
         return {
           name: model.name,
           id: idOf(model),
+          ...(typeof model.label === 'string' ? { label: model.label } : {}),
           ...('files' in model ? { files: clone(model.files) } : {}),
-          ...('input' in model ? { input: Array.isArray(model.input) ? JSON.parse(JSON.stringify(model.input)) : model.input } : {}),
+          ...(explicit ? { settingsMode: 'explicit' } : {}),
+          ...(explicit || 'input' in model ? { input: Array.isArray(own) ? JSON.parse(JSON.stringify(own)) : own } : {}),
           ...('output' in model ? { output: clone(model.output) } : {}),
           // An own request, an empty one included, is a value; a missing one is the automatic request.
           promptTemplate: typeof model.request === 'string' ? model.request : null,
+          // Format 1: an own request without {вход} runs as before (the input is not in it); format 2 stops it (invalid_request).
+          ...(typeof model.request === 'string' && !(schema.schemaVersion >= 2) ? { requestInput: 'lenient' } : {}),
           maxWords: 'maxWords' in model ? model.maxWords : null,
-          extra: roleText(model.role || '', step.ref) || '',
+          extra: explicit ? '' : (roleText(model.role || '', step.ref) || ''),
           task: own === 'none' && !writtenTask(resolved.task) ? '' : resolved.task.value,
           discipline: {
             ...Object.fromEntries(Object.entries(resolved.discipline).map(([key, item]) => [key, item.value])),
@@ -12825,6 +13239,10 @@ window.ProtoState = {
           }
         };
       });
+      // A switched-off participant stays declared (R12): a source may name it, it gives no answer (5.5, 5.7).
+      const off = (step.models || []).filter((model) => isObject(model) && model.enabled === false)
+        .map((model) => ({ id: idOf(model), name: model.name, ...('output' in model ? { output: clone(model.output) } : {}) }));
+      if (off.length) out.off = off;
       return out;
     }).filter((step) => step.models.length || CONTROL_KINDS.includes(step.kind));
   }
@@ -12880,6 +13298,12 @@ window.ProtoState = {
       fail(at, `участник «${participant}» не объявлен в шаге «${steps[position].ref}»`);
       return false;
     };
+    // A required source needs an answer: a switched-off participant gives none, so the run would stop before its request (missing_input).
+    const requiredOffAt = (position, participant, at, required) => {
+      if (required !== true || steps[position].kind === 'owner') return;
+      const off = (Array.isArray(steps[position].models) ? steps[position].models : []).some((model) => isObject(model) && idOf(model) === participant && model.enabled === false);
+      if (off) fail(at, `участник «${participant}» выключен (enabled: false), а вход required: включите его или снимите required`);
+    };
     const checkRequired = (value, at) => { if ('required' in value && typeof value.required !== 'boolean') fail(`${at}.required`, 'ожидается true или false'); };
     const failed = () => errors.length > mark;
 
@@ -12894,7 +13318,10 @@ window.ProtoState = {
       unknown(address, ['step', 'participant', 'id'], `${path}.artifact`);
       const position = stepAt(address.step, `${path}.artifact.step`);
       if (position >= 0 && !('participant' in address)) fail(`${path}.artifact.participant`, 'участник не указан');
-      else if (position >= 0) participantAt(position, address.participant, `${path}.artifact.participant`);
+      else if (position >= 0) {
+        participantAt(position, address.participant, `${path}.artifact.participant`);
+        requiredOffAt(position, address.participant, `${path}.artifact.participant`, source.required);
+      }
       if (position >= 0 && !('id' in address)) fail(`${path}.artifact.id`, 'ID артефакта не указан');
       const output = position >= 0 ? outputOf(steps[position], address.participant) : null;
       const declared = isObject(output) && Array.isArray(output.artifacts) && output.artifacts.some((item) => isObject(item) && item.id === address.id);
@@ -12918,7 +13345,10 @@ window.ProtoState = {
     checkRequired(source, path);
     const position = stepAt(source.step, `${path}.step`);
     // Without a participant the source is the whole accepted result of the step (3.1).
-    if (position >= 0 && 'participant' in source) participantAt(position, source.participant, `${path}.participant`);
+    if (position >= 0 && 'participant' in source) {
+      participantAt(position, source.participant, `${path}.participant`);
+      requiredOffAt(position, source.participant, `${path}.participant`, source.required);
+    }
     if (failed()) return null;
     return addressOf(source);
   }
@@ -12926,9 +13356,7 @@ window.ProtoState = {
   // The one check of executability (R09) for validate and toCanvas: an owner step runs by itself; a round runs with an enabled model.
   // A pipeline without a round is valid; an empty one or one with no runnable step is named at `steps`.
   function executabilityErrors(steps) {
-    const runnable = steps.some((step) => isObject(step) && (CONTROL_KINDS.includes(step.kind)
-      || (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false))));
-    if (runnable) return [];
+    if (steps.some(runnable)) return [];
     return [{ path: 'steps', message: 'нет исполнимого шага: нужен раунд с включённой моделью или шаг User' }];
   }
 
@@ -12942,12 +13370,15 @@ window.ProtoState = {
 
     if (!isObject(schema)) return [{ path: '', message: 'схема должна быть объектом' }];
     if (!Number.isInteger(schema.schemaVersion)) fail('schemaVersion', 'версия формата не указана');
-    else if (schema.schemaVersion > Math.max(...SUPPORTED_VERSIONS)) fail('schemaVersion', `схема создана более новой версией Basic (формат ${schema.schemaVersion}); обновите расширение`);
+    else if (schema.schemaVersion > Math.max(...SUPPORTED_VERSIONS)) {
+      return [{ path: 'schemaVersion', message: `схема создана более новой версией Basic (формат ${schema.schemaVersion}); обновите расширение` }];
+    }
     else if (!SUPPORTED_VERSIONS.includes(schema.schemaVersion)) fail('schemaVersion', `версия формата ${schema.schemaVersion} не поддерживается`);
     oneOf(schema.origin, ORIGINS, 'origin', 'происхождение');
     if (schema.basedOn != null) text(schema.basedOn, 'basedOn');
-    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'description', 'run', 'defaults', 'spec', 'steps'], '');
+    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'description', 'comment', 'run', 'defaults', 'spec', 'steps'], '');
     if ('description' in schema) text(schema.description, 'description');
+    if ('comment' in schema) text(schema.comment, 'comment');
     if ('spec' in schema) {
       if (!isObject(schema.spec)) fail('spec', 'ожидается объект');
       else {
@@ -12961,6 +13392,7 @@ window.ProtoState = {
         unknownKeys(schema.run, ['policy', 'maxWords', 'strictLength'], 'run');
         if ('policy' in schema.run) oneOf(schema.run.policy, POLICIES, 'run.policy', 'политика запуска');
         if ('maxWords' in schema.run && !(Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0)) fail('run.maxWords', 'ожидается положительное целое число слов');
+        else if ('maxWords' in schema.run && !RUN_WORDS.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${RUN_WORDS.join(', ')}`);
         if ('strictLength' in schema.run && typeof schema.run.strictLength !== 'boolean') fail('run.strictLength', 'ожидается true или false');
       }
     }
@@ -13013,6 +13445,8 @@ window.ProtoState = {
     const positions = new Map();
     schema.steps.forEach((step, at) => { if (isObject(step) && typeof step.ref === 'string' && !positions.has(step.ref)) positions.set(step.ref, at); });
     const namesById = new Map();
+    const labelsById = new Map();
+    const idsByProviderLabel = new Map();
     const contextAt = (index) => ({ fail, errors, steps: schema.steps, positions, index });
     const checkInputList = (list, path, index) => {
       if (!list.length) { fail(path, 'ожидается непустой список источников'); return; }
@@ -13145,14 +13579,31 @@ window.ProtoState = {
       step.models.forEach((model, at) => {
         const modelPath = `${path}.models[${at}]`;
         if (!isObject(model)) { fail(modelPath, 'ожидается объект'); return; }
-        unknownKeys(model, ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files'], modelPath);
+        unknownKeys(model, schema.schemaVersion >= 2
+          ? ['name', 'id', 'label', 'settingsMode', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files']
+          : ['name', 'id', 'enabled', 'onCanvas', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files'], modelPath);
         if ('files' in model) checkFiles(model.files, `${modelPath}.files`);
         if ('output' in model) checkOutput(model.output, `${modelPath}.output`, step, index, [model]);
         if ('enabled' in model && typeof model.enabled !== 'boolean') fail(`${modelPath}.enabled`, 'ожидается true или false');
         if ('onCanvas' in model && typeof model.onCanvas !== 'boolean') fail(`${modelPath}.onCanvas`, 'ожидается true или false');
         if (typeof model.name !== 'string' || !model.name.trim()) fail(`${modelPath}.name`, 'имя модели не указано');
-        // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
         const id = idOf(model);
+        if (schema.schemaVersion >= 2) {
+          if (typeof model.id !== 'string' || !model.id.trim()) fail(`${modelPath}.id`, 'в формате 2 требуется постоянный ID участника');
+          if ('label' in model && (typeof model.label !== 'string' || !model.label.trim())) fail(`${modelPath}.label`, 'подпись участника: непустой текст');
+          if ('settingsMode' in model && model.settingsMode !== 'explicit') fail(`${modelPath}.settingsMode`, 'допустимо explicit');
+          if (typeof id === 'string' && typeof model.name === 'string') {
+            const label = model.label ?? model.name;
+            const labelKey = `${model.name}\u0000${label}`;
+            const sameIdLabel = labelsById.get(id);
+            if (sameIdLabel !== undefined && sameIdLabel !== label) fail(`${modelPath}.label`, `ID участника «${id}» уже использует подпись «${sameIdLabel}»`);
+            else labelsById.set(id, label);
+            const otherId = idsByProviderLabel.get(labelKey);
+            if (otherId !== undefined && otherId !== id) fail(`${modelPath}.label`, `подпись «${label}» у модели «${model.name}» уже занята участником «${otherId}»`);
+            else idsByProviderLabel.set(labelKey, id);
+          }
+        }
+        // One participant is one id in a step; a repeated name is fine when the ids differ. One id keeps one name in all steps.
         if ('id' in model && (typeof model.id !== 'string' || !model.id.trim())) fail(`${modelPath}.id`, 'ID участника: непустой текст');
         else if (typeof id === 'string') {
           if (ids.has(id)) fail(`${modelPath}.${'id' in model ? 'id' : 'name'}`, 'id' in model ? `участник «${id}» повторяется в шаге` : `модель «${model.name}» повторяется в шаге`);
@@ -13169,6 +13620,65 @@ window.ProtoState = {
         if ('discipline' in model) checkDiscipline(model.discipline, `${modelPath}.discipline`);
       });
       if (CONTROL_KINDS.includes(step.kind)) checkControl(step, path, index);
+    });
+    // A personal request must carry declared incoming answers itself. The first round
+    // defaults to `none`; disabled rounds cannot provide input, and participant input
+    // overrides the round input. This is a possibility check against the schema, not
+    // a guess based only on the participant's position in the list.
+    const steps = Array.isArray(schema.steps) ? schema.steps : [];
+    const couldProduceAnswer = (step, participant) => {
+      if (step?.kind === 'owner') return true;
+      if (step?.kind !== 'round' || !Array.isArray(step.models)) return false;
+      return step.models.some((source) => isObject(source) && source.enabled !== false
+        && (participant == null || idOf(source) === participant));
+    };
+    const couldProduceArtifact = (step, address, { participant = null, revision = false } = {}) => {
+      if (step?.kind !== 'round' || !Array.isArray(step.models)) return false;
+      return step.models.some((author) => {
+        if (!isObject(author) || author.enabled === false) return false;
+        if (participant != null && idOf(author) !== participant) return false;
+        const output = Object.hasOwn(author, 'output') ? author.output : step.output;
+        return Array.isArray(output?.artifacts) && output.artifacts.some((declaration) => (!revision && declaration?.id === address.id)
+          || (declaration?.revisionOf?.artifact?.step === address.step
+            && declaration.revisionOf.artifact.participant === address.participant
+            && declaration.revisionOf.artifact.id === address.id));
+      });
+    };
+    const hasPossibleInput = (spec, index) => {
+      if (spec === 'none' || index <= 0) return false;
+      const earlier = steps.slice(0, index);
+      if (spec === 'previous' || spec === 'all') return earlier.some((step) => couldProduceAnswer(step));
+      if (!Array.isArray(spec)) return false;
+      return spec.some((source) => {
+        if (typeof source === 'string') {
+          const sourceIndex = earlier.findIndex((step) => isObject(step) && step.ref === source);
+          return sourceIndex >= 0 && couldProduceAnswer(earlier[sourceIndex]);
+        }
+        if (!isObject(source)) return false;
+        const address = source.artifact || source;
+        const sourceIndex = earlier.findIndex((step) => isObject(step) && step.ref === address.step);
+        if (sourceIndex < 0) return false;
+        if (source.artifact) {
+          const versionParticipant = isObject(source.version) ? source.version.participant : null;
+          return earlier.slice(sourceIndex, index).some((candidate, offset) => couldProduceArtifact(candidate, address, {
+            participant: offset === 0 ? address.participant : versionParticipant,
+            revision: offset > 0
+          }));
+        }
+        return couldProduceAnswer(earlier[sourceIndex], address.participant);
+      });
+    };
+    // Format 1 keeps its meaning (a schema already saved must keep reading): an own request without {вход} is a warning of the
+    // page there, not an error of the schema.
+    if (schema.schemaVersion >= 2) steps.forEach((step, index) => {
+      if (!isObject(step) || step.kind !== 'round' || !Array.isArray(step.models)) return;
+      step.models.forEach((model, modelIndex) => {
+        if (!isObject(model) || model.enabled === false || typeof model.request !== 'string' || !model.request.trim()) return;
+        const spec = Object.hasOwn(model, 'input') ? model.input : (Object.hasOwn(step, 'input') ? step.input : defaultInputOf(steps, index));
+        if (hasPossibleInput(spec, index) && !model.request.includes('{вход}')) {
+          fail(`steps[${index}].models[${modelIndex}].request`, 'есть возможный вход из более раннего шага, но в запросе нет {вход}');
+        }
+      });
     });
     errors.push(...executabilityErrors(schema.steps));
     return errors;
@@ -13190,7 +13700,11 @@ window.ProtoState = {
       fields.forEach((key) => { if (key in step) own[key] = JSON.parse(JSON.stringify(step[key])); });
       if (Object.keys(own).length) (step.kind === 'round' ? customRoundSettings : customStepSettings)[step.ref] = own;
       (step.models || []).forEach((model) => {
-        const participant = {};
+        const participant = { name: model.name };
+        if (typeof model.label === 'string') participant.label = model.label;
+        if (typeof model.settingsMode === 'string') participant.settingsMode = model.settingsMode;
+        if (typeof model.role === 'string') participant.role = model.role;
+        if (typeof model.onCanvas === 'boolean') participant.onCanvas = model.onCanvas;
         if (typeof model.request === 'string') participant.promptTemplate = model.request;
         if ('maxWords' in model) participant.maxWords = model.maxWords;
         if (typeof model.task === 'string') participant.task = model.task;
@@ -13235,19 +13749,20 @@ window.ProtoState = {
     executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
-    // A model is on the canvas when a round sends it or when its onCanvas mark stands (a switched-off model on the canvas).
-    const selectedModels = models.filter((name) => rounds.some((step) => enabledOf(step).some((model) => model.name === name)
-      || (step.models || []).some((model) => model.name === name && model.onCanvas === true)));
-    // Each round's stack: its enabled participants in the order of the schema, then the other selected models of the canvas.
+    // Each round's stack holds only the participants of that round: enabled ones, then its switched-off ones with onCanvas.
+    // A participant of another round never stands in this stack, whatever its id or its mark in that round.
     const stacks = Object.fromEntries(rounds.map((step, index) => {
-      const own = enabledOf(step);
-      const ownNames = new Set(own.map((model) => model.name));
-      const items = [
-        ...own.map((model) => ({ name: model.name, id: idOf(model), input: true, send: true, role: model.role || null })),
-        ...selectedModels.filter((name) => !ownNames.has(name)).map((name) => ({ name, id: name, input: false, send: false, role: null }))
-      ];
-      return [`r${index + 1}-models`, { items }];
+      const items = (step.models || []).filter((model) => model.enabled !== false || model.onCanvas === true).map((model) => {
+        const on = model.enabled !== false;
+        return { name: model.name, id: idOf(model), ...(model.label ? { label: model.label } : {}), input: on, send: on, role: (on && model.role) || null };
+      });
+      // The enabled ones first, then the switched-off ones, each group in the order of the schema.
+      const ordered = [...items.filter((item) => item.send), ...items.filter((item) => !item.send)];
+      return [`r${index + 1}-models`, { items: ordered }];
     }));
+    // A model is selected when a stack of some round shows it.
+    const shownNames = new Set(Object.values(stacks).flatMap((stack) => stack.items.map((item) => item.name)));
+    const selectedModels = models.filter((name) => shownNames.has(name));
     return { errors, roundCounter: rounds.length, selectedModels, stacks, controls,
       rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })) };
   }
@@ -13259,9 +13774,69 @@ window.ProtoState = {
     strictLength: typeof schema.run?.strictLength === 'boolean' ? schema.run.strictLength : DEFAULTS.run.strictLength
   });
 
+  // Remarks about a valid schema that do not block it (the author decides): [{ path, message }]. Three patterns that lose
+  // the author's intent silently: a participant's own task replaces the step's task; an owner answer that no later step
+  // reads (an owner step at the end may close the schema); a placeholder instead of a text.
+  const PLACEHOLDER_TEXT = /^(?:\.{3}|…|todo|tbd|и\s*т\.\s*д\.?)$/i;
+  const placeholder = (value) => typeof value === 'string' && (PLACEHOLDER_TEXT.test(value.trim()) || /(?:\.{3}|…)$/.test(value.trim()));
+  function warnings(schema) {
+    const out = [];
+    const steps = isObject(schema) && Array.isArray(schema.steps) ? schema.steps : [];
+    const warn = (path, message) => out.push({ path, message });
+    const enabledOf = (step) => (Array.isArray(step.models) ? step.models : []).filter((model) => isObject(model) && model.enabled !== false);
+    if (placeholder(schema?.description)) warn('description', 'похоже на заглушку вместо текста');
+    if (isObject(schema) && !(typeof schema.description === 'string' && schema.description.trim())) warn('description', 'у схемы нет description: презентация для человека');
+    // The request allows two steps of User at most; the canvas does not refuse more, so it is a remark.
+    if (steps.filter((step) => isObject(step) && step.kind === 'owner').length > 2) warn('steps', 'шагов User больше двух: запрос разрешает не больше двух');
+    // The rounds are numbered r1…rN in order. The canvas refuses another order; the validator names it as a remark.
+    let roundNumber = 0;
+    steps.forEach((step, index) => {
+      if (!isObject(step)) return;
+      const path = `steps[${index}]`;
+      if (step.kind === 'round') {
+        roundNumber += 1;
+        if (step.ref !== `r${roundNumber}`) warn(`${path}.ref`, `ref раунда должен быть «r${roundNumber}»`);
+      }
+      ['task', 'goal'].forEach((key) => { if (placeholder(step[key])) warn(`${path}.${key}`, 'похоже на заглушку вместо текста'); });
+      if (step.kind === 'round' && Array.isArray(step.models) && step.models.some((model) => isObject(model) && model.enabled !== false)
+        && !(typeof step.task === 'string' && step.task.trim())) warn(`${path}.task`, 'у раунда нет task: общее задание шага не задано');
+      // An empty personal task is a value: it replaces the shared task with nothing.
+      (Array.isArray(step.models) ? step.models : []).forEach((model, at) => {
+        if (isObject(model) && model.task === '') warn(`${path}.models[${at}].task`, `пустой task у участника «${idOf(model)}»: общее задание шага ему не отправляется`);
+      });
+      enabledOf(step).forEach((model, at) => {
+        if (placeholder(model.task)) warn(`${path}.models[${at}].task`, 'похоже на заглушку вместо текста');
+        if (step.kind === 'round' && typeof model.task === 'string' && model.task.trim() && typeof step.task === 'string' && step.task.trim()) {
+          warn(`${path}.models[${at}].task`, `личное задание заменяет общее task шага целиком: участнику «${idOf(model)}» общее задание не отправляется`);
+        }
+      });
+    });
+    // The inputs of a step: its own and the ones of its enabled participants (an owner step has only its own).
+    const specsOf = (step, position) => [step.kind === 'owner' ? (step.input ?? 'none') : (step.input ?? defaultInputOf(steps, position)),
+      ...(step.kind === 'owner' ? [] : enabledOf(step).filter((model) => 'input' in model).map((model) => model.input))];
+    steps.forEach((owner, index) => {
+      if (!isObject(owner) || owner.kind !== 'owner' || index === steps.length - 1) return;
+      const read = steps.slice(index + 1).some((step, offset) => isObject(step) && specsOf(step, index + 1 + offset).some((spec) => {
+        if (spec === 'all') return true;
+        // previous: the owner is the nearest earlier step that runs.
+        if (spec === 'previous') return !steps.slice(index + 1, index + 1 + offset).some(runnable);
+        if (!Array.isArray(spec)) return false;
+        return spec.some((source) => {
+          if (typeof source === 'string') return source === owner.ref;
+          if (!isObject(source)) return false;
+          // The owner's edit of a document is a new version of the document's line: a later reference to that line reads it.
+          if (isObject(source.artifact)) return source.artifact.step === owner.ref || (owner.document && source.artifact.step === owner.document);
+          return source.step === owner.ref;
+        });
+      }));
+      if (!read) warn(`steps[${index}]`, `ответ User «${owner.ref}» не читает ни один шаг ниже`);
+    });
+    return out;
+  }
+
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, assemble, resolveRun, toSettings, toCanvas, validate, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, toSettings, toCanvas, validate, warnings, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -13573,6 +14148,15 @@ window.ProtoState = {
           step.task = [`Критерии проверки: ${list(st.criteria).filter(own).join('; ') || 'ответ полный'}`, own(st.task) ? st.task : ''].filter(Boolean).join('\n\n');
           warnings.push('Проверка Basic импортирована как обычный этап: ветвление по вердикту не перенесено.');
         } else if (own(st.task)) step.task = st.task;
+        const labeledParticipants = list(st.models).filter((m) => isObj(m) && own(m.name)
+          && ((own(m.id) && m.id !== m.name) || (own(m.label) && m.label !== m.name) || m.settingsMode === 'explicit'));
+        if (labeledParticipants.length) {
+          warnings.push(`Шаг ${st.ref}: ID, подписи или пустые настройки формата 2 не представлены на стенде; при импорте участники станут обычными моделями, возможен обмен с потерей данных.`);
+        }
+        const providerNames = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => m.name);
+        if (new Set(providerNames).size !== providerNames.length) {
+          warnings.push(`Шаг ${st.ref}: несколько участников одного provider не различаются на стенде; обратный экспорт может быть отклонён Basic.`);
+        }
         step.models = list(st.models).filter((m) => isObj(m) && own(m.name)).map((m) => {
           const model = { name: m.name };
           if (m.enabled === false) model.enabled = false;
@@ -13631,7 +14215,7 @@ window.ProtoState = {
 (function initProtoStand(root) {
   'use strict';
 
-  const STAND_VERSION = '66';
+  const STAND_VERSION = '67';
   const S = () => root.ProtoState;
   const cards = () => root.ProtoCards || {};
   const canvas = () => root.ProtoCanvas || {};

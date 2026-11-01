@@ -78,6 +78,25 @@
         .proto-art-version { flex: 0 0 auto; font-weight: 600; color: #94a3b8; }
         .proto-art-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
         .proto-art-line { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-linejoin: round; }
+        /* Карточки ответов (артефакты под блоками моделей) — в стиле dialog-modal.html. */
+        .proto-artifacts { display: flex; flex-direction: column; width: 100%; margin-top: 10px; }
+        .proto-artifacts-row { display: flex; flex-direction: column; gap: 6px; }
+        .proto-artifact {
+            display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+            padding: 6px 10px; border: 1px solid #e2e7ec; border-radius: 7px; background: #ffffff;
+            box-shadow: 0 1px 2px #26374b0d; color: #273341; font-size: 13px; cursor: default;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .proto-artifact:hover { border-color: #92aec8; background: #f8fbfd; }
+        .proto-artifact-title {
+            flex: 1 1 auto; min-width: 0; height: 18px; line-height: 18px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 570;
+        }
+        .proto-artifact-version {
+            flex: 0 0 auto; padding: 0 6px; border-radius: 5px; background: #edf3f9; color: #345f83;
+            font-size: 12px; line-height: 18px; font-weight: 650; font-variant-numeric: tabular-nums;
+        }
+        .proto-artifacts-empty { display: block; padding: 6px 0; text-align: center; color: #8a96a2; font-size: 13px; }
         /* Блок человека (owner, form): зелёная рамка и бейдж. Селектор длиннее .model-block.inactive из styles/pipeline.css. */
         .model-block.inactive.proto-human { border: 3px solid #16a34a; background: #f0fdf4; opacity: 1; }
         .round-badge.proto-stand-kind.proto-human-kind { background: #dcfce7; color: #166534; }

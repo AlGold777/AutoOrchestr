@@ -40,7 +40,7 @@
         const items = artifacts.length
             ? artifacts.map((a) => `<span class="proto-artifact" title="${esc(a.title)} v${esc(a.version)}"><span class="proto-artifact-title">${esc(a.title)}</span><span class="proto-artifact-version">v${esc(a.version)}</span></span>`).join('')
             : '<span class="proto-artifacts-empty">—</span>';
-        return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-label">Артефакты</div><div class="proto-artifacts-row">${items}</div></div>`;
+        return `<div class="proto-artifacts" aria-disabled="true"><div class="proto-artifacts-row">${items}</div></div>`;
     };
 
     const roundHtml = (round, i, total) => {
