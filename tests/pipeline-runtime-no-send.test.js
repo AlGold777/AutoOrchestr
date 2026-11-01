@@ -43,20 +43,20 @@ describe('participant labels on the Basic canvas', () => {
     document.body.innerHTML = `<div id="r1-models">${html}</div>`;
     const block = document.querySelector('#r1-models .model-block');
     expect(block.querySelector('.model-name').textContent).toBe('GPT');
-    expect(block.querySelector('.model-participant-label').textContent).toBe('✎');
+    expect(block.querySelector('.model-participant-label')).toBeNull();
     expect(block.dataset.participantLabelValue).toBe('GPT · Вариант 2');
     expect(Runtime.captureModelStackState(document, 'r1-models').items[0]).toMatchObject({
       name: 'GPT', id: 'gpt-variant-2', label: 'GPT · Вариант 2'
     });
   });
 
-  test('shows only the rename pencil in the block, never the participant name', () => {
+  test('has no rename button and never shows the participant name in the block', () => {
     expect(Runtime.buildModelBlocksHtml({
       items: [{ name: 'GPT', id: 'gpt-editor', label: 'Редактор' }], participantControls: true
     })).not.toContain('>Редактор</button>');
     expect(Runtime.buildModelBlocksHtml({
       items: [{ name: 'GPT', id: 'gpt', label: 'GPT' }], participantControls: true
-    })).toContain('>✎</button>');
+    })).not.toMatch(/✎|data-participant-label[ >]/);
   });
 
   test('display helper removes only a provider prefix followed by a separator', () => {

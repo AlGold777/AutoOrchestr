@@ -4598,8 +4598,6 @@ document.addEventListener('click', (event) => {
                 if (!block) return;
                 if (item.label) {
                     block.dataset.participantLabelValue = String(item.label);
-                    const label = block.querySelector('.model-participant-label');
-                    if (label) label.textContent = '✎';
                 }
                 // A legacy send mark was saved by the position of the block on the canvas.
                 const position = blocks.indexOf(block);
@@ -5761,7 +5759,7 @@ document.addEventListener('click', (event) => {
             if (!pipelinePanel) return;
             const disabled = !enabled;
                 pipelinePanel
-                .querySelectorAll('.model-input-checkbox, .role-selector, .model-participant-add, .model-participant-label, .model-participant-remove, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
+                .querySelectorAll('.model-input-checkbox, .role-selector, .model-participant-add, .model-participant-remove, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
                 .forEach((el) => {
                     el.disabled = disabled;
                 });
@@ -9469,30 +9467,6 @@ document.addEventListener('click', (event) => {
             }
             if (await applyParticipantSchemaEdit(schema)) showNotification(`${label} добавлен с выключенным Send.`, 'info');
         };
-        const renameBasicParticipant = async (block) => {
-            if (pipelineRunActive || !window.BasicSchema || !block) return;
-            const id = customBlockParticipantId(block);
-            const currentLabel = block.dataset.participantLabelValue || customBlockModel(block);
-            const value = await showPrompt('Имя участника', currentLabel);
-            if (value === null) return;
-            const label = String(value || '').trim();
-            if (!label) { showNotification('Имя участника не может быть пустым.', 'warn'); return; }
-            const schema = sourceSchemaForParticipantEdit();
-            const providerName = customBlockModel(block);
-            const duplicate = (schema.steps || []).flatMap((step) => step.models || []).some((model) => model.name === providerName
-                && (model.id || model.name) !== id && String(model.label || model.name).trim() === label);
-            if (duplicate) { showNotification('Это имя уже используется другим участником схемы.', 'warn'); return; }
-            upgradeParticipantSchemaForCanvas(schema);
-            schema.steps.forEach((step) => (step.models || []).forEach((model) => {
-                if ((model.id || model.name) === id) model.label = label;
-            }));
-            const settings = getCustomCardSettings();
-            Object.values(settings).forEach((participants) => {
-                if (participants?.[id]) participants[id].label = label;
-            });
-            customCardSettings.set(draftPlanStorageKey(), settings);
-            if (await applyParticipantSchemaEdit(schema)) showNotification('Имя участника обновлено.', 'info');
-        };
         // A participant keeps its ID, settings and place in every round; only its model (name) changes.
         const switchBasicParticipantModel = async (block) => {
             if (pipelineRunActive || !window.BasicSchema || !block) return;
@@ -10189,14 +10163,13 @@ document.addEventListener('click', (event) => {
         });
 
         pipelinePanel.addEventListener('click', (event) => {
-            const participantAction = event.target?.closest?.('[data-participant-add], [data-participant-label], [data-participant-remove], [data-participant-switch]');
+            const participantAction = event.target?.closest?.('[data-participant-add], [data-participant-remove], [data-participant-switch]');
             if (participantAction && pipelinePanel.contains(participantAction)) {
                 event.preventDefault();
                 event.stopPropagation();
                 if (!isCustomEnginePipeline()) return;
                 const block = participantAction.closest('.model-block');
                 if (participantAction.hasAttribute('data-participant-add')) void addBasicParticipant(block);
-                else if (participantAction.hasAttribute('data-participant-label')) void renameBasicParticipant(block);
                 else if (participantAction.hasAttribute('data-participant-remove')) void removeBasicParticipantFromRound(block);
                 else if (participantAction.hasAttribute('data-participant-switch')) void switchBasicParticipantModel(block);
                 return;

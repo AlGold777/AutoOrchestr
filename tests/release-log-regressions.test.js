@@ -609,7 +609,7 @@ describe('release log regression guards', () => {
     const css = readResolvedCss();
 
     expect(css).toContain('.model-header {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    width: 100%;\n    min-width: 0;');
-    expect(css).toContain('.model-name {\n    min-width: 0;\n    flex: 1 1 auto;\n    text-align: left;\n    overflow: hidden;');
+    expect(css).toContain('.model-name {\n    min-width: 0;\n    flex: 1 1 auto;\n    margin-left: 7px;\n    text-align: left;\n    overflow: hidden;');
     expect(css).toContain('.model-checkbox {\n    width: 13px;\n    height: 13px;\n    flex: 0 0 13px;\n    margin: 0;');
   });
 

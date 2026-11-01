@@ -107,7 +107,7 @@
                 ? `<button type="button" class="model-participant-remove" data-participant-remove title="Убрать участника из этого раунда" aria-label="Убрать ${escapeHtml(label)} из раунда">×</button>`
                 : '';
             const participantTools = participantControls
-                ? `<span class="model-participant-label-wrap"><button type="button" class="model-participant-label" data-participant-label title="Переименовать участника">✎</button>${removeButton}<button type="button" class="model-participant-switch" data-participant-switch title="Сменить модель участника" aria-label="Сменить модель ${escapeHtml(label)}">⇄</button><button type="button" class="model-participant-add" data-participant-add title="Добавить участника ${escapeHtml(model.name)}" aria-label="Добавить участника ${escapeHtml(model.name)}">+</button></span>`
+                ? `<span class="model-participant-label-wrap">${removeButton}<button type="button" class="model-participant-switch" data-participant-switch title="Сменить модель участника" aria-label="Сменить модель ${escapeHtml(label)}">⇄</button><button type="button" class="model-participant-add" data-participant-add title="Добавить участника ${escapeHtml(model.name)}" aria-label="Добавить участника ${escapeHtml(model.name)}">+</button></span>`
                 : '';
             return `
                 <div class="model-block ${isActive ? 'active' : 'inactive'}${withRole ? ' with-role' : ''}${model.id !== model.name ? ' is-participant-duplicate' : ''}" data-index="${index}" data-provider-name="${escapeHtml(model.name)}" data-participant-id="${escapeHtml(model.id)}" data-participant-label-value="${escapeHtml(label)}">
@@ -148,7 +148,7 @@
             return {
                 name: block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '',
                 id: block.dataset.participantId || block.dataset.providerName || block.querySelector('.model-name')?.textContent?.trim() || '',
-                label: block.dataset.participantLabelValue || block.querySelector('.model-participant-label')?.textContent?.trim() || '',
+                label: block.dataset.participantLabelValue || '',
                 input: !!inputCb?.checked,
                 send: !!inputCb?.checked,
                 // None (empty value) is stored as no role.

@@ -594,6 +594,7 @@ body.is-resizing {
 }
 .model-role-label {
     min-width: 0;
+    margin-left: 7px;
     text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -636,6 +637,7 @@ body.is-resizing {
 .model-name {
     min-width: 0;
     flex: 1 1 auto;
+    margin-left: 7px;
     text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -652,7 +654,6 @@ body.is-resizing {
     flex: 0 1 auto;
     min-width: 0;
 }
-.model-participant-label,
 .model-participant-add,
 .model-participant-switch,
 .model-participant-remove {
@@ -663,14 +664,6 @@ body.is-resizing {
     font: inherit;
     line-height: 18px;
     cursor: pointer;
-}
-.model-participant-label {
-    max-width: 82px;
-    overflow: hidden;
-    padding: 0 3px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10px;
 }
 .model-participant-add,
 .model-participant-switch,
@@ -684,12 +677,10 @@ body.is-resizing {
 }
 .model-participant-add:hover,
 .model-participant-switch:hover,
-.model-participant-remove:hover,
-.model-participant-label:hover {
+.model-participant-remove:hover {
     background: rgba(100, 116, 139, .12);
     color: var(--pipeline-text);
 }
-.model-block.inactive .model-participant-label,
 .model-block.inactive .model-participant-add,
 .model-block.inactive .model-participant-switch,
 .model-block.inactive .model-participant-remove {

@@ -69,7 +69,7 @@ describe('Basic legacy pipeline restore', () => {
     expect(stackIds(2)).toEqual(['gemini-review', 'claude-reviewer']);
     const reviewer = document.querySelector('#r1-models [data-participant-id="claude-reviewer"]');
     expect(reviewer.querySelector('.model-name').textContent).toBe('Claude');
-    expect(reviewer.querySelector('.model-participant-label').textContent).toBe('✎');
+    expect(reviewer.querySelector('.model-participant-label')).toBeNull();
     expect(reviewer.dataset.participantLabelValue).toBe('Claude reviewer');
     expect(reviewer.querySelector('.model-input-checkbox').checked).toBe(false);
     expect(reviewer.querySelector('.role-selector').value).toBe('interaction_meta_synthesis');
