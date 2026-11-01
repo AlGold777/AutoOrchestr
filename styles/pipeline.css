@@ -622,6 +622,7 @@ body.is-resizing {
 .model-name {
     min-width: 0;
     flex: 1 1 auto;
+    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
