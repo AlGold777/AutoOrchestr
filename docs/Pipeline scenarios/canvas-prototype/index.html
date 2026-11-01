@@ -97,6 +97,70 @@
             font-size: 12px; line-height: 18px; font-weight: 650; font-variant-numeric: tabular-nums;
         }
         .proto-artifacts-empty { display: block; padding: 6px 0; text-align: center; color: #8a96a2; font-size: 13px; }
+        /* Карточка модели / ▶ Basic — в стиле dialog-modal.html. Только прототип; перекрывает styles/pipeline.css. */
+        .modal.custom-model-card { background: rgba(38, 55, 75, 0.22); }
+        .custom-model-card .modal-content {
+            border: 1px solid #e0e5eb; border-radius: 15px; background: #fff; color: #273341;
+            box-shadow: 0 18px 60px #26374b16;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+        }
+        .custom-model-card .custom-card-top { padding: 16px 20px 14px; gap: 14px; align-items: center; border-bottom: 1px solid #eef0f3; }
+        .custom-model-card .custom-card-model { gap: 10px; font-size: 19px; font-weight: 650; color: #273341; }
+        .custom-model-card .custom-card-where { padding: 2px 9px; border-radius: 6px; background: #edf3f9; color: #345f83; font-size: 12px; font-weight: 650; }
+        .custom-model-card .custom-card-length { gap: 8px; font-size: 13px; color: #647282; }
+        .custom-model-card .custom-card-length input,
+        .custom-model-card .stage-card-role-select {
+            padding: 6px 9px; border: 1px solid #e2e7ec; border-radius: 7px; background: #fff; color: #273341; font: inherit; font-size: 13px;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .custom-model-card .custom-card-length input { width: 76px; }
+        .custom-model-card .custom-card-body { padding: 16px 20px 20px; gap: 0; background: #fff; }
+        .custom-model-card .custom-card-head { gap: 10px; margin-bottom: 8px; font-size: 13px; font-weight: 650; color: #273341; }
+        .custom-model-card .custom-card-head span { font-size: 12px; color: #8a96a2; }
+        .custom-model-card .custom-card-field textarea,
+        .custom-model-card .custom-card-discipline textarea {
+            border: 1px solid #e2e7ec; border-radius: 10px; background: #fafbfc; color: #273341;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .custom-model-card .custom-card-field textarea { padding: 14px 16px; font-size: 14px; line-height: 1.65; }
+        .custom-model-card .custom-card-discipline textarea { padding: 8px 11px; font-size: 13px; line-height: 1.5; min-height: 54px; border-radius: 8px; }
+        .custom-model-card .custom-card-discipline textarea[readonly] { background: #fafbfc; border-color: #eef0f3; color: #556372; }
+        .custom-model-card .custom-card-field textarea:focus-visible, .custom-model-card .custom-card-discipline textarea:focus-visible,
+        .custom-model-card textarea:focus, .custom-model-card textarea:focus-visible,
+        .custom-model-card .custom-card-length input:focus-visible, .custom-model-card .stage-card-role-select:focus-visible {
+            outline: none; box-shadow: none; background: #edf3f9; border-color: #92aec8;
+        }
+        .custom-model-card label.custom-card-head { align-items: center; margin-bottom: 12px; }
+        .custom-model-card .stage-card-role-select { width: auto; min-width: 150px; flex: 0 0 auto; }
+        .custom-model-card textarea::selection { background: #6c9dcc; color: #fff; }
+        .custom-model-card .custom-card-field textarea::placeholder, .custom-model-card .custom-card-discipline textarea::placeholder { color: #a9b3bf; }
+        .custom-model-card .custom-card-note { margin-top: 8px; font-size: 12px; color: #8a96a2; }
+        .custom-model-card .custom-card-note button { color: #345f83; }
+        .custom-model-card .custom-card-note button:hover { text-decoration: underline; }
+        .custom-model-card .custom-card-body code { padding: 1px 5px; border-radius: 4px; background: #edf3f9; color: #345f83; font-size: 12px; }
+        .custom-model-card .custom-card-marks { gap: 2px 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #eef0f3; color: #8a96a2; }
+        .custom-model-card .custom-card-marks strong { margin-bottom: 2px; font-size: 14px; font-weight: 650; color: #273341; }
+        .custom-model-card .custom-card-discipline { margin-top: 8px; }
+        .custom-model-card .custom-card-discipline-head { margin-bottom: 5px; }
+        .custom-model-card .custom-card-discipline-head label, .custom-model-card .custom-card-discipline-head > span { font-size: 13px; color: #556372; }
+        .custom-model-card .custom-card-actions { gap: 3px; }
+        .custom-model-card .custom-card-actions button {
+            width: 26px; height: 26px; border: 1px solid transparent; border-radius: 7px; color: #8a96a2; font-size: 15px; line-height: 1;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .custom-model-card .custom-card-actions button:hover { background: #edf3f9; border-color: #e2e7ec; color: #345f83; }
+        .custom-model-card .custom-card-actions .custom-card-clear:hover { color: #b94a4a; background: #fbf1f1; border-color: #f0dcdc; }
+        .custom-model-card .custom-card-actions .custom-card-commit:hover { color: #3f7a5f; background: #eff7f2; border-color: #d6e8dd; }
+        .custom-model-card .custom-card-actions .custom-card-clear, .custom-model-card .custom-card-actions .custom-card-commit { color: #8a96a2; }
+        .custom-model-card #custom-card-line-add { width: 100%; height: 30px; margin-top: 8px; border: 1px dashed #d4dbe3; color: #647282; font-size: 17px; }
+        .custom-model-card .custom-card-actions:has(#custom-card-line-add) { grid-column: 1 / -1; }
+        .custom-model-card .custom-card-top #custom-card-save,
+        .custom-model-card .custom-card-top #custom-card-default {
+            padding: 8px 19px; border: 1px solid #dfe5eb; border-radius: 8px; background: #fff; color: #4d5c69; font-size: 14px; font-weight: 400; cursor: pointer;
+        }
+        .custom-model-card .custom-card-top #custom-card-save { background: #617f99; border-color: #617f99; color: #fff; }
+        .custom-model-card .custom-card-top #custom-card-save:hover { background: #55728b; }
+        .custom-model-card .custom-card-top #custom-card-default:hover { background: #fafbfc; }
         /* Блок человека (owner, form): зелёная рамка и бейдж. Селектор длиннее .model-block.inactive из styles/pipeline.css. */
         .model-block.inactive.proto-human { border: 3px solid #16a34a; background: #f0fdf4; opacity: 1; }
         .round-badge.proto-stand-kind.proto-human-kind { background: #dcfce7; color: #166534; }
