@@ -1,6 +1,6 @@
 /** @jest-environment node */
-// Diagnostics export covers every wave of one pipeline run, never another run,
-// and the diagnostics ring survives browser start/install.
+// Diagnostics export covers every wave of one pipeline run, never another run;
+// extension reload clears its ring while ordinary worker wakes preserve it.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -125,17 +125,18 @@ describe('GET_DIAG_EVENTS run scope', () => {
   });
 });
 
-describe('diagnostics ring survives browser start and install', () => {
-  test('startup and install listeners no longer clear the ring', () => {
+describe('diagnostics ring lifecycle retention', () => {
+  test('the router does not independently clear diagnostics on startup or install', () => {
     expect(ROUTER_SRC).not.toContain('clearDiagnosticsStorageOnStartup');
     expect(ROUTER_SRC).not.toMatch(/runtime\.onStartup\.addListener\(\s*clearDiagnostics/);
     expect(ROUTER_SRC).not.toMatch(/runtime\.onInstalled\.addListener\(\s*clearDiagnostics/);
   });
 
-  test('the ring key is not a volatile local key', () => {
+  test('the extension lifecycle reset includes persisted telemetry and delivery mirror', () => {
     const block = INDEX_SRC.slice(INDEX_SRC.indexOf('const EXTENSION_VOLATILE_LOCAL_KEYS = ['));
     const arr = block.slice(0, block.indexOf('];'));
-    expect(arr).not.toContain("'__diagnostics_events__'");
+    expect(arr).toContain("'__diagnostics_events__'");
+    expect(arr).toContain("'messageDelivery.journal.v2.local'");
     expect(arr).toContain("'jobState'");
   });
 

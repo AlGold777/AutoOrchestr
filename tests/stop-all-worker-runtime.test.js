@@ -19,7 +19,7 @@ function createEvent() {
   };
 }
 
-function createStorageArea(seed = {}) {
+function createStorageArea(seed = {}, { beforeRemove } = {}) {
   const values = { ...seed };
   const select = (keys) => {
     if (keys == null) return { ...values };
@@ -45,8 +45,12 @@ function createStorageArea(seed = {}) {
       return Promise.resolve();
     },
     remove(keys, callback) {
-      (Array.isArray(keys) ? keys : [keys]).forEach((key) => delete values[key]);
-      callback?.();
+      const apply = () => {
+        (Array.isArray(keys) ? keys : [keys]).forEach((key) => delete values[key]);
+        callback?.();
+      };
+      if (beforeRemove) return beforeRemove(keys, apply);
+      apply();
       return Promise.resolve();
     },
     clear(callback) {
@@ -57,9 +61,9 @@ function createStorageArea(seed = {}) {
   };
 }
 
-function createWorkerRuntime() {
-  const local = createStorageArea({ tos_acknowledged_v1: true });
-  const session = createStorageArea({ __llm_extension_runtime_epoch_v1: 1 });
+function createWorkerRuntime({ localSeed = {}, sessionSeed = {}, beforeLocalRemove } = {}) {
+  const local = createStorageArea({ tos_acknowledged_v1: true, ...localSeed }, { beforeRemove: beforeLocalRemove });
+  const session = createStorageArea({ __llm_extension_runtime_epoch_v1: 1, ...sessionSeed });
   const runtime = {
     id: 'test-extension',
     lastError: null,
@@ -197,6 +201,109 @@ function createWorkerRuntime() {
 }
 
 describe('full MV3 worker stop lifecycle', () => {
+  test('RESET_WORKING_SESSION ACKs through all imported worker listeners and clears only current data', async () => {
+    const savedPipeline = { version: 2, pipelines: { Saved: { name: 'Saved', schema: { schemaVersion: 2, steps: [] } } } };
+    const savedArchiveIndex = { version: 2, runs: ['saved-run'] };
+    const savedArchiveRecord = { runId: 'saved-run', status: 'complete' };
+    const { context, chrome, runtime, sendMessage } = createWorkerRuntime({
+      localSeed: {
+        __diagnostics_events__: [{ ts: Date.now(), label: 'old-session' }],
+        'messageDelivery.journal.v2.local': { version: 2, events: [{ eventId: 'old-delivery' }], collection: {} },
+        'llmComparatorPipelines': savedPipeline,
+        'customRunRecords.index': savedArchiveIndex,
+        'customRunRecord.saved-run': savedArchiveRecord
+      },
+      sessionSeed: {
+        'messageDelivery.journal.v2': { version: 2, events: [{ eventId: 'old-delivery' }], collection: {} }
+      }
+    });
+    await vm.runInContext('ensureInitialState()', context);
+
+    const response = await sendMessage({ type: 'RESET_WORKING_SESSION', reason: 'page_reload' }, {
+      id: runtime.id,
+      url: runtime.getURL('pipeline_panel.html'),
+      tab: { id: 900, url: runtime.getURL('pipeline_panel.html') }
+    });
+
+    expect(response).toMatchObject({ success: true, startedAt: expect.any(Number) });
+    expect(response.status).toBeUndefined();
+    expect(chrome.storage.local.values.__diagnostics_events__).toEqual([]);
+    expect(chrome.storage.local.values['messageDelivery.journal.v2.local']).toBeUndefined();
+    expect(chrome.storage.session.values['messageDelivery.journal.v2']).toBeUndefined();
+    expect(chrome.storage.local.values.llmComparatorPipelines).toEqual(savedPipeline);
+    expect(chrome.storage.local.values['customRunRecords.index']).toEqual(savedArchiveIndex);
+    expect(chrome.storage.local.values['customRunRecord.saved-run']).toEqual(savedArchiveRecord);
+    await expect(sendMessage({ type: 'GET_DIAG_EVENTS' })).resolves.toMatchObject({ success: true, events: [] });
+    await expect(sendMessage({ type: 'DELIVERY_JOURNAL_SNAPSHOT' }))
+      .resolves.toMatchObject({ ok: true, snapshot: { events: [] } });
+  });
+
+  test('extension update waits for volatile local clear before budget cleanup and preserves saved data', async () => {
+    const now = Date.now();
+    const savedPipeline = { version: 2, pipelines: { Saved: { name: 'Saved', schema: { schemaVersion: 2, steps: [] } } } };
+    const savedArchiveIndex = { version: 2, runs: ['saved-run'] };
+    const savedArchiveRecord = { runId: 'saved-run', status: 'complete' };
+    let releaseRemove;
+    let removedKeys;
+    let startedRemove;
+    const removeStarted = new Promise((resolve) => { startedRemove = resolve; });
+    const { context, chrome, runtime, sendMessage } = createWorkerRuntime({
+      localSeed: {
+        __diagnostics_events__: [
+          { ts: now - 30 * 24 * 60 * 60 * 1000, label: 'expired-old-diagnostic' },
+          { ts: now, label: 'fresh-old-diagnostic' }
+        ],
+        'messageDelivery.journal.v2.local': { version: 2, events: [{ eventId: 'old-delivery' }], collection: {} },
+        'aoEngineState.v1': { transcript: 'old transcript' },
+        llmComparatorCrossViewNavigationIntent: { view: 'pipeline' },
+        llmComparatorPipelines: savedPipeline,
+        'customRunRecords.index': savedArchiveIndex,
+        'customRunRecord.saved-run': savedArchiveRecord
+      },
+      sessionSeed: {
+        'messageDelivery.journal.v2': { version: 2, events: [{ eventId: 'old-delivery' }], collection: {} }
+      },
+      beforeLocalRemove: (keys, apply) => {
+        removedKeys = keys;
+        releaseRemove = apply;
+        startedRemove();
+      }
+    });
+    const cleanupStorage = context.computeStorageCleanup;
+    const cleanupSpy = jest.fn((...args) => cleanupStorage(...args));
+    context.computeStorageCleanup = cleanupSpy;
+
+    runtime.onInstalled.listeners.forEach((listener) => listener({ reason: 'update' }));
+    await removeStarted;
+    expect(removedKeys).toEqual(expect.arrayContaining([
+      '__diagnostics_events__',
+      'messageDelivery.journal.v2.local',
+      'aoEngineState.v1',
+      'llmComparatorCrossViewNavigationIntent'
+    ]));
+    expect(cleanupSpy).not.toHaveBeenCalled();
+
+    releaseRemove();
+    await context.__extensionLifecycleReady;
+    for (let attempt = 0; attempt < 50 && cleanupSpy.mock.calls.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    expect(cleanupSpy).toHaveBeenCalled();
+    expect(chrome.storage.local.values.__diagnostics_events__).toBeUndefined();
+    expect(chrome.storage.local.values['messageDelivery.journal.v2.local']).toBeUndefined();
+    expect(chrome.storage.local.values['aoEngineState.v1']).toBeUndefined();
+    expect(chrome.storage.local.values.llmComparatorCrossViewNavigationIntent).toBeUndefined();
+    expect(chrome.storage.local.values.llmComparatorWorkingSessionStartedAt).toEqual(expect.any(Number));
+    expect(chrome.storage.session.values['messageDelivery.journal.v2']).toBeUndefined();
+    expect(chrome.storage.local.values.llmComparatorPipelines).toEqual(savedPipeline);
+    expect(chrome.storage.local.values['customRunRecords.index']).toEqual(savedArchiveIndex);
+    expect(chrome.storage.local.values['customRunRecord.saved-run']).toEqual(savedArchiveRecord);
+
+    await expect(sendMessage({ type: 'GET_DIAG_EVENTS' })).resolves.toMatchObject({ success: true, events: [] });
+    await expect(sendMessage({ type: 'DELIVERY_JOURNAL_SNAPSHOT' }))
+      .resolves.toMatchObject({ ok: true, snapshot: { events: [] } });
+  });
+
   test('active run state identifies the owner when older sessions lack sourceView', async () => {
     const { context, sendMessage } = createWorkerRuntime();
     await vm.runInContext('ensureInitialState()', context);

@@ -54,6 +54,7 @@ function isTabSessionCompleted(tabId) {
 
 async function cleanupStorageBudgets() {
   try {
+    if (self.__extensionLifecycleReady) await self.__extensionLifecycleReady;
     const now = Date.now();
     const { __PRAGMATIST_BUDGETS: budgets = {} } = globalThis || {};
     const timing = budgets?.timing || {};

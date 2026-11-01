@@ -16,9 +16,14 @@ const EXTENSION_VOLATILE_LOCAL_KEYS = [
   'llmTabMap',
   'llmParticipantTabMap',
   'jobState',
+  '__diagnostics_events__',
+  'messageDelivery.journal.v2.local',
+  'aoEngineState.v1',
   'llmComparatorSelectedModelsByView.main',
   'llmComparatorSelectedModelsByView.pipeline',
   'llmComparatorCrossViewUiState',
+  'llmComparatorCrossViewNavigationIntent',
+  'llmSidebarPendingSessionView',
   'llm_saved_sessions_v1'
 ];
 
@@ -44,6 +49,7 @@ self.__extensionLifecycleReady = new Promise((resolve) => {
     // Chrome dispatches onInstalled(update). Cancel the tentative normal wake so
     // stale jobState cannot be hydrated while reload cleanup is still pending.
     clearTimeout(normalStartTimer);
+    clearTimeout(fallbackTimer);
     resetPromise = (async () => {
       const localError = await new Promise((done) => chrome.storage.local.remove(
         EXTENSION_VOLATILE_LOCAL_KEYS,
@@ -59,7 +65,16 @@ self.__extensionLifecycleReady = new Promise((resolve) => {
           });
         }));
       }
-      const error = localError || sessionError || null;
+      const startedAt = Date.now();
+      let markerError = null;
+      if (!localError && !sessionError) {
+        markerError = await new Promise((done) => chrome.storage.local.set(
+          { llmComparatorWorkingSessionStartedAt: startedAt },
+          () => done(chrome.runtime.lastError?.message || null)
+        ));
+      }
+      const error = localError || sessionError || markerError || null;
+      if (!error) self.__workingSessionStartedAt = startedAt;
       const result = { reset: !error, reason, error };
       settle(result);
       return result;

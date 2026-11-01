@@ -108,7 +108,10 @@
                 runtime.sendMessage({ type: 'RESET_WORKING_SESSION', reason: 'page_reload' }, (response) => {
                     if (runtime.lastError) { fail(new Error(runtime.lastError.message)); return; }
                     if (!response?.success || !(Number(response.startedAt) > 0)) {
-                        fail(new Error(response?.error || 'Не удалось очистить рабочую сессию.'));
+                        const message = response?.status === 'unknown_message'
+                            ? 'Фоновый процесс расширения ещё не обновлён. Выполните chrome://extensions → Reload, затем обновите страницу.'
+                            : 'Фоновый процесс не подтвердил очистку. Выполните chrome://extensions → Reload, затем обновите страницу.';
+                        fail(new Error(response?.error || message));
                         return;
                     }
                     clearTimeout(timer);

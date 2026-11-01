@@ -163,6 +163,73 @@ describe('working session reload reset', () => {
 
     await expect(boot.prepareWorkingSession()).rejects.toThrow();
   });
+
+  test('an old background worker gives a reload instruction when it does not know the reset message', async () => {
+    Object.defineProperty(performance, 'getEntriesByType', {
+      configurable: true,
+      value: () => [{ type: 'reload' }]
+    });
+    chrome.runtime.sendMessage.mockImplementation((_message, callback) => callback({
+      success: false,
+      status: 'unknown_message'
+    }));
+
+    await expect(boot.prepareWorkingSession()).rejects.toThrow(
+      'Фоновый процесс расширения ещё не обновлён. Выполните chrome://extensions → Reload, затем обновите страницу.'
+    );
+  });
+
+  test('malformed reload acknowledgements reject instead of reporting a successful reset', async () => {
+    Object.defineProperty(performance, 'getEntriesByType', {
+      configurable: true,
+      value: () => [{ type: 'reload' }]
+    });
+    chrome.runtime.sendMessage.mockImplementation((_message, callback) => callback({ success: true }));
+
+    await expect(boot.prepareWorkingSession()).rejects.toThrow(
+      'Фоновый процесс не подтвердил очистку. Выполните chrome://extensions → Reload, затем обновите страницу.'
+    );
+  });
+
+  test('an explicit background reset error is preserved in the rejected result', async () => {
+    Object.defineProperty(performance, 'getEntriesByType', {
+      configurable: true,
+      value: () => [{ type: 'reload' }]
+    });
+    chrome.runtime.sendMessage.mockImplementation((_message, callback) => callback({
+      success: false,
+      error: 'storage_clear_denied'
+    }));
+
+    await expect(boot.prepareWorkingSession()).rejects.toThrow('storage_clear_denied');
+  });
+
+  test('a missing reload acknowledgement times out and does not claim success', async () => {
+    jest.useFakeTimers();
+    Object.defineProperty(performance, 'getEntriesByType', {
+      configurable: true,
+      value: () => [{ type: 'reload' }]
+    });
+    chrome.runtime.sendMessage.mockImplementation(() => {});
+    try {
+      const pending = boot.prepareWorkingSession();
+      for (let turn = 0; turn < 8; turn += 1) {
+        await Promise.resolve();
+        await jest.advanceTimersByTimeAsync(0);
+      }
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        { type: 'RESET_WORKING_SESSION', reason: 'page_reload' },
+        expect.any(Function)
+      );
+      let settled = false;
+      pending.catch(() => { settled = true; });
+      await jest.advanceTimersByTimeAsync(10000);
+      expect(settled).toBe(true);
+      await expect(pending).rejects.toThrow('Сброс рабочей сессии не подтверждён. Перезагрузите страницу ещё раз.');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 describe('working session startup wiring', () => {
