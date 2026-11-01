@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Padel Coach — прототип</title>
+<style>
+:root{--bg:#0f1720;--card:#18232f;--line:#2a3a4a;--tx:#e8eef4;--mut:#8da2b5;--acc:#4aa3ff;--ok:#3ecf8e;--bad:#ff5a5f;--warn:#ffd23f}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+body{overflow-x:hidden}
+#app{max-width:480px;margin:0 auto;min-height:100vh;padding:12px 16px 32px}
+h1{font-size:18px;margin:0}h2{font-size:17px;margin:0 0 8px}h3{font-size:14px;margin:0}
+p{margin:6px 0}
+.mut{color:var(--mut)}.small{font-size:13px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+.top .ttl{font-weight:700;letter-spacing:.04em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+.btn{display:block;width:100%;border:0;border-radius:10px;padding:13px 14px;font:inherit;font-weight:600;background:var(--acc);color:#04121f;cursor:pointer;margin:8px 0;text-align:center}
+.btn.sec{background:transparent;color:var(--tx);border:1px solid var(--line)}
+.btn.bad{background:var(--bad);color:#fff}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;background:transparent;color:var(--mut);border:0;padding:8px 10px;font:inherit;cursor:pointer}
+.seg button.on{background:var(--acc);color:#04121f;font-weight:600}
+.badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#33270a;color:var(--warn);border:1px solid #6b5410}
+.badge.ok{background:#0c2a1e;color:var(--ok);border-color:#1d6b4a}
+.plate{background:#33270a;border:1px solid #6b5410;color:var(--warn);border-radius:10px;padding:8px 10px;margin:8px 0;font-size:13px}
+.att{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:12px;margin:6px 0;font:inherit;cursor:pointer}
+#banner{background:#3a1416;border:1px solid #7a2a2e;color:#ffb4b6;border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:13px}
+.stage{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+.stage video,.stage svg.frame-svg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.stage .grid{position:absolute;inset:0;background:linear-gradient(#fff2 1px,transparent 1px) 0 0/100% 33.3%,linear-gradient(90deg,#fff2 1px,transparent 1px) 0 0/33.3% 100%;pointer-events:none}
+.stage .role{position:absolute;left:8px;top:8px;background:#000a;padding:3px 8px;border-radius:99px;font-size:12px}
+.stage .rec{position:absolute;right:8px;top:8px;background:#000a;padding:3px 8px;border-radius:99px;font-size:12px;color:var(--bad)}
+.stage .sil{position:absolute;inset:8% 34%;border:2px dashed #fff5;border-radius:40% 40% 8% 8%;pointer-events:none}
+.stage .hint{position:absolute;left:8px;right:8px;bottom:6px;font-size:12px;text-align:center;color:#fffc;text-shadow:0 1px 2px #000}
+.frames{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.frames.one{grid-template-columns:1fr}
+.fr{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px;cursor:zoom-in}
+.fr .stage{border-radius:6px}
+.fr .cap{font-size:12px;color:var(--mut);margin-top:4px;text-align:center}
+.acc{border:1px solid var(--line);border-radius:10px;margin:6px 0;background:var(--card)}
+.acc>button{width:100%;text-align:left;background:transparent;border:0;color:var(--tx);font:inherit;padding:10px 12px;cursor:pointer}
+.acc.open{border-color:var(--acc)}
+.acc .body{padding:0 12px 12px}
+.acc .advice{background:#0c2038;border-radius:8px;padding:8px 10px;margin:8px 0;font-weight:600}
+.prog{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin:12px 0}
+.prog>i{display:block;height:100%;background:var(--acc);transition:width .4s}
+.modal{position:fixed;inset:0;background:#000c;display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.modal[hidden]{display:none}
+.modal .box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;width:100%;max-width:460px;max-height:90vh;overflow:auto}
+.modal video{width:100%;border-radius:8px;background:#000}
+.poster{aspect-ratio:16/9;background:#000;border-radius:8px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);padding:12px}
+label.opt{display:flex;gap:8px;align-items:center;padding:6px 0}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main id="app">
+  <div id="banner" hidden></div>
+  <section class="screen" id="s01" hidden></section>
+  <section class="screen" id="s02" hidden></section>
+  <section class="screen" id="s03" hidden></section>
+  <section class="screen" id="s04" hidden></section>
+  <section class="screen" id="s05" hidden></section>
+</main>
+<div id="modal" class="modal" hidden></div>
+<script>
+/* Заготовленные данные демо. Формат — раздел 5 проекта (proposal_final.md). */
+window.DEMO_DATA = (function () {
+  var fs = { athlete: { width: 1280, height: 720, rotation: 0 }, reference: { width: 1280, height: 720, rotation: 0 } };
+  function ev(a, r, hl) {
+    return { type: 'svg-preset', athletePose: a, referencePose: r,
+      athleteFrameAsset: 'frames/' + a + '.svg', referenceFrameAsset: 'frames/' + r + '.svg', highlightJoints: hl };
+  }
+  function scenario(errors) {
+    return { schemaVersion: '1.1', mode: 'mock', status: 'ready', analysisVersion: 'mock-1',
+      coordinateSystem: 'normalized-top-left-y-down', frameSpec: fs, qualityWarnings: [], unassessablePhases: [], errors: errors };
+  }
+  return {
+    schemaVersion: '1.1',
+    exercise: { id: 'padel-smash-flat', name: 'Плоский смэш', shotType: 'remate_plano' },
+    activeReferenceId: 'ref-001',
+    references: [{
+      id: 'ref-001', version: 1, status: 'active', videoId: 'coach-demo-001', role: 'coach', viewpoint: 'side',
+      handedness: 'right', durationMs: 14000, source: 'demo',
+      shots: [
+        { index: 1, phasesMs: { preparation: 1300, contact: 2100, follow: 2500, recovery: 3200 } },
+        { index: 2, phasesMs: { preparation: 7000, contact: 7800, follow: 8200, recovery: 8900 } }]
+    }],
+    attempts: [
+      { id: 'attempt-001', videoId: 'athlete-demo-001', referenceId: 'ref-001', durationMs: 12000, shotCount: 2, source: 'demo', mockScenarioId: 'scenario-1' },
+      { id: 'attempt-002', videoId: 'athlete-demo-002', referenceId: 'ref-001', durationMs: 11000, shotCount: 2, source: 'demo', mockScenarioId: 'scenario-2' }],
+    mockScenarios: {
+      'scenario-1': scenario([
+        { id: 'err-001', code: 'SM01', shotIndex: 1, referenceShotIndex: 1, phase: 'preparation', athleteMs: 1600, referenceMs: 1300,
+          evidence: ev('late-preparation', 'early-preparation', ['rightShoulder', 'rightElbow']) },
+        { id: 'err-002', code: 'SM04', shotIndex: 1, referenceShotIndex: 1, phase: 'contact', athleteMs: 2400, referenceMs: 2100,
+          evidence: ev('low-contact', 'high-contact', ['rightElbow', 'rightWrist']) },
+        { id: 'err-003', code: 'SM06', shotIndex: 2, referenceShotIndex: 2, phase: 'follow', athleteMs: 8700, referenceMs: 8200,
+          evidence: ev('leaning-back', 'balanced-finish', ['leftHip', 'rightHip']) }]),
+      'scenario-2': scenario([
+        { id: 'err-004', code: 'SM05', shotIndex: 2, referenceShotIndex: 2, phase: 'contact', athleteMs: 7500, referenceMs: 7800,
+          evidence: ev('contact-behind', 'high-contact', ['rightShoulder', 'rightWrist']) }])
+    },
+    phaseNames: { preparation: 'Подготовка', contact: 'Контакт', follow: 'Сопровождение', recovery: 'Возврат' },
+    catalog: [
+      { code: 'SM01', title: 'Поздняя подготовка', sign: 'Ракетка поднимается прямо перед контактом', cause: 'Не хватает времени на согласованное движение', fix: 'Начинать подготовку сразу после распознавания высокого мяча', advice: 'Подними ракетку раньше — до того, как мяч начнёт падать', phase: 'preparation', viewpointLimited: false },
+      { code: 'SM02', title: 'Недостаточный разворот корпуса', sign: 'Плечи почти не развёрнуты боком перед ударом', cause: 'Корпус не участвует в ударе', fix: 'Ранний боковой разворот плеч', advice: 'Разверни плечи боком ещё до замаха', phase: 'preparation', viewpointLimited: true,
+        note: 'Это для базового плоского смэша. В игровых ситуациях допустима открытая стойка — решает тренер.' },
+      { code: 'SM03', title: 'Пассивная свободная рука', sign: 'Нерабочая рука опущена вдоль тела', cause: 'Теряется ориентир на мяч', fix: 'Поднять свободную руку к мячу', advice: 'Направь свободную руку к мячу при подготовке', phase: 'preparation', viewpointLimited: false },
+      { code: 'SM04', title: 'Низкая точка контакта', sign: 'Локоть согнут, мяч встречен ниже верхней точки', cause: 'Снижается высота контакта', fix: 'Раньше занять позицию, вытянуть ударную руку', advice: 'Встречай мяч выше, с вытянутой рукой', phase: 'contact', viewpointLimited: false },
+      { code: 'SM05', title: 'Контакт за корпусом', sign: 'Мяч встречен позади линии ударного плеча', cause: 'Игрок не успел встать под мяч', fix: 'Раньше сместиться под траекторию мяча', advice: 'Займи позицию так, чтобы мяч был чуть впереди', phase: 'contact', viewpointLimited: true },
+      { code: 'SM06', title: 'Потеря баланса', sign: 'После удара корпус отклоняется назад', cause: 'Нарушен перенос веса', fix: 'Стабилизировать опору, вести движение вперёд', advice: 'Сохраняй баланс, выходи из удара вперёд', phase: 'follow', viewpointLimited: true },
+      { code: 'SM07', title: 'Оборванное сопровождение', sign: 'Ракетка останавливается сразу после контакта', cause: 'Движение прервано', fix: 'Продолжить траекторию ракетки через корпус', advice: 'Не обрывай удар сразу после контакта', phase: 'follow', viewpointLimited: false },
+      { code: 'SM08', title: 'Нет восстановления позиции', sign: 'Игрок стоит после удара', cause: 'Задерживается готовность к следующему мячу', fix: 'Встать в игровую стойку', advice: 'После смэша сразу готовься к следующему удару', phase: 'recovery', viewpointLimited: false }
+    ]
+  };
+})();
+
+/* Схематические позы (нормализованные координаты 0..1, начало слева сверху, Y вниз). */
+(function () {
+  var base = {
+    head: [0.42, 0.18], neck: [0.42, 0.27],
+    rightShoulder: [0.44, 0.30], rightElbow: [0.50, 0.40], rightWrist: [0.55, 0.32],
+    leftShoulder: [0.40, 0.30], leftElbow: [0.37, 0.40], leftWrist: [0.40, 0.50],
+    rightHip: [0.43, 0.55], leftHip: [0.40, 0.55],
+    rightKnee: [0.47, 0.72], leftKnee: [0.38, 0.72],
+    rightAnkle: [0.48, 0.90], leftAnkle: [0.36, 0.90]
+  };
+  function pose(o) { var r = {}, k; for (k in base) r[k] = base[k].slice(); for (k in o) r[k] = o[k]; return r; }
+  window.POSES = {
+    'late-preparation': pose({ rightElbow: [0.48, 0.42], rightWrist: [0.50, 0.53], leftWrist: [0.40, 0.55] }),
+    'early-preparation': pose({ rightElbow: [0.47, 0.20], rightWrist: [0.51, 0.10], leftElbow: [0.46, 0.22], leftWrist: [0.54, 0.12] }),
+    'low-contact': pose({ rightElbow: [0.50, 0.30], rightWrist: [0.54, 0.20] }),
+    'high-contact': pose({ rightElbow: [0.47, 0.18], rightWrist: [0.49, 0.05] }),
+    'leaning-back': pose({ head: [0.33, 0.19], neck: [0.36, 0.28], rightShoulder: [0.38, 0.31], leftShoulder: [0.34, 0.31],
+      rightElbow: [0.42, 0.40], rightWrist: [0.48, 0.46], leftElbow: [0.31, 0.40], leftWrist: [0.33, 0.50],
+      rightHip: [0.46, 0.56], leftHip: [0.43, 0.56] }),
+    'balanced-finish': pose({ head: [0.46, 0.20], neck: [0.45, 0.28], rightShoulder: [0.47, 0.31], leftShoulder: [0.43, 0.31],
+      rightElbow: [0.53, 0.40], rightWrist: [0.56, 0.48] }),
+    'contact-behind': pose({ rightElbow: [0.42, 0.20], rightWrist: [0.40, 0.11] })
+  };
+  window.POSE_EDGES = [
+    ['head', 'neck'], ['neck', 'rightShoulder'], ['neck', 'leftShoulder'],
+    ['rightShoulder', 'rightElbow'], ['rightElbow', 'rightWrist'], ['leftShoulder', 'leftElbow'], ['leftElbow', 'leftWrist'],
+    ['rightShoulder', 'rightHip'], ['leftShoulder', 'leftHip'], ['rightHip', 'leftHip'],
+    ['rightHip', 'rightKnee'], ['rightKnee', 'rightAnkle'], ['leftHip', 'leftKnee'], ['leftKnee', 'leftAnkle']
+  ];
+})();
+
+/* IndexedDB: видео, попытки, эталоны, мета. Видео и метаданные пишутся одной транзакцией. */
+window.Store = (function () {
+  var db = null;
+  function open() {
+    return new Promise(function (res, rej) {
+      if (!window.indexedDB) return rej(new Error('IndexedDB недоступна'));
+      var r;
+      try { r = indexedDB.open('padel-coach', 1); } catch (e) { return rej(e); }
+      r.onupgradeneeded = function () {
+        var d = r.result;
+        ['videos', 'attempts', 'references'].forEach(function (n) { d.createObjectStore(n, { keyPath: 'id' }); });
+        d.createObjectStore('meta', { keyPath: 'key' });
+      };
+      r.onsuccess = function () { db = r.result; res(); };
+      r.onerror = function () { rej(r.error || new Error('IndexedDB не открылась')); };
+      r.onblocked = function () { rej(new Error('IndexedDB заблокирована')); };
+    });
+  }
+  function tx(stores, mode, fn) {
+    return new Promise(function (res, rej) {
+      if (!db) return rej(new Error('IndexedDB недоступна'));
+      var t, out;
+      try { t = db.transaction(stores, mode); out = fn(t); } catch (e) { return rej(e); }
+      t.oncomplete = function () { res(out && 'result' in out ? out.result : out); };
+      t.onerror = t.onabort = function () { rej(t.error || new Error('Запись прервана (возможно, нет места)')); };
+    });
+  }
+  function all(store) { return tx([store], 'readonly', function (t) { return t.objectStore(store).getAll(); }); }
+  function get(store, id) { return tx([store], 'readonly', function (t) { return t.objectStore(store).get(id); }); }
+  function putAttempt(a) { return tx(['attempts'], 'readwrite', function (t) { t.objectStore('attempts').put(a); }); }
+
+  function saveAttempt(attempt, video) {
+    return tx(['videos', 'attempts'], 'readwrite', function (t) {
+      t.objectStore('videos').put(video);
+      var s = t.objectStore('attempts');
+      s.put(Object.assign({}, attempt, { status: 'saving' }));
+      s.put(Object.assign({}, attempt, { status: 'saved' }));
+    });
+  }
+  function saveReference(ref, video, oldRef) {
+    return tx(['videos', 'references', 'meta'], 'readwrite', function (t) {
+      t.objectStore('videos').put(video);
+      var s = t.objectStore('references');
+      s.put(Object.assign({}, ref, { status: 'saving' }));
+      s.put(Object.assign({}, ref, { status: 'active' }));
+      if (oldRef && oldRef.source !== 'demo') s.put(Object.assign({}, oldRef, { status: 'archived' }));
+      t.objectStore('meta').put({ key: 'activeReferenceId', value: ref.id });
+    });
+  }
+  /* Убирает записи, прерванные посреди сохранения, и видео без владельца. */
+  function cleanup() {
+    return tx(['videos', 'attempts', 'references'], 'readwrite', function (t) {
+      var att = t.objectStore('attempts'), refs = t.objectStore('references'), vids = t.objectStore('videos');
+      var ra = att.getAll(), rr = refs.getAll(), rv = vids.getAllKeys();
+      var done = 0;
+      function fin() {
+        if (++done < 3) return;
+        var keep = {};
+        ra.result.forEach(function (a) { if (a.status === 'saving') att.delete(a.id); else keep[a.videoId] = 1; });
+        rr.result.forEach(function (r) { if (r.status === 'saving') refs.delete(r.id); else keep[r.videoId] = 1; });
+        rv.result.forEach(function (k) { if (!keep[k]) vids.delete(k); });
+      }
+      ra.onsuccess = rr.onsuccess = rv.onsuccess = fin;
+    });
+  }
+  return { open: open, all: all, get: get, putAttempt: putAttempt, saveAttempt: saveAttempt, saveReference: saveReference, cleanup: cleanup };
+})();
+
+/* Провайдер анализа. Контракт:
+   analyze({attemptId, referenceId, videoBlob, mockScenarioId?, simulateFail?}, onProgress) -> Promise<AnalysisResult>
+   Настоящий PoseAnalysisProvider реализует тот же контракт; выбор — одна строка ниже. */
+window.MockAnalysisProvider = {
+  name: 'mock',
+  analyze: function (req, onProgress) {
+    var steps = ['Подготовка кадров', 'Сопоставление фаз с эталоном', 'Подготовка разбора'];
+    return new Promise(function (resolve, reject) {
+      var i = 0;
+      (function next() {
+        if (i >= steps.length) {
+          var sc = window.DEMO_DATA.mockScenarios[req.mockScenarioId];
+          if (!sc) return reject(new Error('Нет демо-сценария ' + req.mockScenarioId));
+          onProgress && onProgress(1, 'Готово');
+          return resolve(JSON.parse(JSON.stringify(sc)));
+        }
+        onProgress && onProgress(i / steps.length, steps[i]);
+        if (req.simulateFail && i === 1) return setTimeout(function () { reject(new Error('Демо-сбой анализа')); }, 900);
+        i++;
+        setTimeout(next, 1000);
+      })();
+    });
+  }
+};
+window.ANALYSIS_PROVIDER = window.MockAnalysisProvider;
+
+window.FRAMES={"balanced-finish":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgwIDcyMCI+PHJlY3Qgd2lkdGg9IjEyODAiIGhlaWdodD0iNzIwIiBmaWxsPSIjMWIyYTNhIi8+PHJlY3QgeT0iNjQwIiB3aWR0aD0iMTI4MCIgaGVpZ2h0PSI4MCIgZmlsbD0iIzIzNDA1YSIvPjxsaW5lIHgxPSIwIiB5MT0iNjQwIiB4Mj0iMTI4MCIgeTI9IjY0MCIgc3Ryb2tlPSIjNWI3ZjllIiBzdHJva2Utd2lkdGg9IjQiLz48bGluZSB4MT0iNjQwIiB5MT0iNjQwIiB4Mj0iNjQwIiB5Mj0iNzIwIiBzdHJva2U9IiM1YjdmOWUiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjQwIiB5PSI3MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDQiIGZpbGw9IiM3ZjliYjUiPtCR0LDQu9Cw0L3RgSDQv9C+0YHQu9C1INGD0LTQsNGA0LA8L3RleHQ+PHRleHQgeD0iNDAiIHk9IjEyMCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMzAiIGZpbGw9IiM1YjdmOWUiPtGB0YXQtdC80LDRgtC40YfQtdGB0LrQuNC5INC60LDQtNGAPC90ZXh0Pjwvc3ZnPg==","contact-behind":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgwIDcyMCI+PHJlY3Qgd2lkdGg9IjEyODAiIGhlaWdodD0iNzIwIiBmaWxsPSIjMWIyYTNhIi8+PHJlY3QgeT0iNjQwIiB3aWR0aD0iMTI4MCIgaGVpZ2h0PSI4MCIgZmlsbD0iIzIzNDA1YSIvPjxsaW5lIHgxPSIwIiB5MT0iNjQwIiB4Mj0iMTI4MCIgeTI9IjY0MCIgc3Ryb2tlPSIjNWI3ZjllIiBzdHJva2Utd2lkdGg9IjQiLz48bGluZSB4MT0iNjQwIiB5MT0iNjQwIiB4Mj0iNjQwIiB5Mj0iNzIwIiBzdHJva2U9IiM1YjdmOWUiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjQwIiB5PSI3MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDQiIGZpbGw9IiM3ZjliYjUiPtCa0L7QvdGC0LDQutGCINC30LAg0LrQvtGA0L/Rg9GB0L7QvDwvdGV4dD48dGV4dCB4PSI0MCIgeT0iMTIwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIzMCIgZmlsbD0iIzViN2Y5ZSI+0YHRhdC10LzQsNGC0LjRh9C10YHQutC40Lkg0LrQsNC00YA8L3RleHQ+PC9zdmc+","early-preparation":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgwIDcyMCI+PHJlY3Qgd2lkdGg9IjEyODAiIGhlaWdodD0iNzIwIiBmaWxsPSIjMWIyYTNhIi8+PHJlY3QgeT0iNjQwIiB3aWR0aD0iMTI4MCIgaGVpZ2h0PSI4MCIgZmlsbD0iIzIzNDA1YSIvPjxsaW5lIHgxPSIwIiB5MT0iNjQwIiB4Mj0iMTI4MCIgeTI9IjY0MCIgc3Ryb2tlPSIjNWI3ZjllIiBzdHJva2Utd2lkdGg9IjQiLz48bGluZSB4MT0iNjQwIiB5MT0iNjQwIiB4Mj0iNjQwIiB5Mj0iNzIwIiBzdHJva2U9IiM1YjdmOWUiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjQwIiB5PSI3MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDQiIGZpbGw9IiM3ZjliYjUiPtCf0L7QtNCz0L7RgtC+0LLQutCwICjRgNCw0L3Qvik8L3RleHQ+PHRleHQgeD0iNDAiIHk9IjEyMCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMzAiIGZpbGw9IiM1YjdmOWUiPtGB0YXQtdC80LDRgtC40YfQtdGB0LrQuNC5INC60LDQtNGAPC90ZXh0Pjwvc3ZnPg==","high-contact":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgwIDcyMCI+PHJlY3Qgd2lkdGg9IjEyODAiIGhlaWdodD0iNzIwIiBmaWxsPSIjMWIyYTNhIi8+PHJlY3QgeT0iNjQwIiB3aWR0aD0iMTI4MCIgaGVpZ2h0PSI4MCIgZmlsbD0iIzIzNDA1YSIvPjxsaW5lIHgxPSIwIiB5MT0iNjQwIiB4Mj0iMTI4MCIgeTI9IjY0MCIgc3Ryb2tlPSIjNWI3ZjllIiBzdHJva2Utd2lkdGg9IjQiLz48bGluZSB4MT0iNjQwIiB5MT0iNjQwIiB4Mj0iNjQwIiB5Mj0iNzIwIiBzdHJva2U9IiM1YjdmOWUiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjQwIiB5PSI3MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDQiIGZpbGw9IiM3ZjliYjUiPtCa0L7QvdGC0LDQutGCICjQstGL0YHQvtC60L4pPC90ZXh0Pjx0ZXh0IHg9IjQwIiB5PSIxMjAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjMwIiBmaWxsPSIjNWI3ZjllIj7RgdGF0LXQvNCw0YLQuNGH0LXRgdC60LjQuSDQutCw0LTRgDwvdGV4dD48L3N2Zz4=","late-preparation":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgwIDcyMCI+PHJlY3Qgd2lkdGg9IjEyODAiIGhlaWdodD0iNzIwIiBmaWxsPSIjMWIyYTNhIi8+PHJlY3QgeT0iNjQwIiB3aWR0aD0iMTI4MCIgaGVpZ2h0PSI4MCIgZmlsbD0iIzIzNDA1YSIvPjxsaW5lIHgxPSIwIiB5MT0iNjQwIiB4Mj0iMTI4MCIgeTI9IjY0MCIgc3Ryb2tlPSIjNWI3ZjllIiBzdHJva2Utd2lkdGg9IjQiLz48bGluZSB4MT0iNjQwIiB5MT0iNjQwIiB4Mj0iNjQwIiB5Mj0iNzIwIiBzdHJva2U9IiM1YjdmOWUiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjQwIiB5PSI3MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDQiIGZpbGw9IiM3ZjliYjUiPtCf0L7QtNCz0L7RgtC+0LLQutCwICjQv9C+0LfQtNC90L4pPC90ZXh0Pjx0ZXh0IHg9IjQwIiB5PSIxMjAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjMwIiBmaWxsPSIjNWI3ZjllIj7RgdGF0LXQvNCw0YLQuNGH0LXRgdC60LjQuSDQutCw0LTRgDwvdGV4dD48L3N2Zz4=","leaning-back":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgwIDcyMCI+PHJlY3Qgd2lkdGg9IjEyODAiIGhlaWdodD0iNzIwIiBmaWxsPSIjMWIyYTNhIi8+PHJlY3QgeT0iNjQwIiB3aWR0aD0iMTI4MCIgaGVpZ2h0PSI4MCIgZmlsbD0iIzIzNDA1YSIvPjxsaW5lIHgxPSIwIiB5MT0iNjQwIiB4Mj0iMTI4MCIgeTI9IjY0MCIgc3Ryb2tlPSIjNWI3ZjllIiBzdHJva2Utd2lkdGg9IjQiLz48bGluZSB4MT0iNjQwIiB5MT0iNjQwIiB4Mj0iNjQwIiB5Mj0iNzIwIiBzdHJva2U9IiM1YjdmOWUiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjQwIiB5PSI3MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDQiIGZpbGw9IiM3ZjliYjUiPtCe0YLQutC70L7QvSDQvdCw0LfQsNC0PC90ZXh0Pjx0ZXh0IHg9IjQwIiB5PSIxMjAiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjMwIiBmaWxsPSIjNWI3ZjllIj7RgdGF0LXQvNCw0YLQuNGH0LXRgdC60LjQuSDQutCw0LTRgDwvdGV4dD48L3N2Zz4=","low-contact":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjgwIDcyMCI+PHJlY3Qgd2lkdGg9IjEyODAiIGhlaWdodD0iNzIwIiBmaWxsPSIjMWIyYTNhIi8+PHJlY3QgeT0iNjQwIiB3aWR0aD0iMTI4MCIgaGVpZ2h0PSI4MCIgZmlsbD0iIzIzNDA1YSIvPjxsaW5lIHgxPSIwIiB5MT0iNjQwIiB4Mj0iMTI4MCIgeTI9IjY0MCIgc3Ryb2tlPSIjNWI3ZjllIiBzdHJva2Utd2lkdGg9IjQiLz48bGluZSB4MT0iNjQwIiB5MT0iNjQwIiB4Mj0iNjQwIiB5Mj0iNzIwIiBzdHJva2U9IiM1YjdmOWUiIHN0cm9rZS13aWR0aD0iNCIvPjx0ZXh0IHg9IjQwIiB5PSI3MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDQiIGZpbGw9IiM3ZjliYjUiPtCa0L7QvdGC0LDQutGCICjQvdC40LfQutC+KTwvdGV4dD48dGV4dCB4PSI0MCIgeT0iMTIwIiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIzMCIgZmlsbD0iIzViN2Y5ZSI+0YHRhdC10LzQsNGC0LjRh9C10YHQutC40Lkg0LrQsNC00YA8L3RleHQ+PC9zdmc+"};
+/* Padel Coach — кликабельный прототип. Анализ — имитация на заготовках (см. provider-mock.js). */
+(function () {
+  'use strict';
+  var D = window.DEMO_DATA, POSES = window.POSES, EDGES = window.POSE_EDGES, Store = window.Store;
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var lsGet = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var lsSet = function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* без хранилища работаем дальше */ } };
+  var ST = {
+    role: lsGet('pc.role') === 'coach' ? 'coach' : 'athlete',
+    refs: JSON.parse(JSON.stringify(D.references)),
+    attempts: JSON.parse(JSON.stringify(D.attempts)),
+    activeRefId: D.activeReferenceId,
+    idbOk: false,
+    recKind: 'attempt', pending: null, blobs: {}, flash: '',
+    cur: { attemptId: null, selectedErrorId: null, view: 'both', side: 'athlete' },
+    s04: { simulateFail: false, scenario: 'scenario-1' }
+  };
+  var cat = {}; D.catalog.forEach(function (c) { cat[c.code] = c; });
+
+  /* ---------- проверка данных при загрузке ---------- */
+  function validate() {
+    var bad = [], refs = {};
+    D.references.forEach(function (r) { refs[r.id] = r; });
+    D.attempts.forEach(function (a) {
+      if (!refs[a.referenceId]) bad.push('попытка ' + a.id + ': нет эталона ' + a.referenceId);
+      if (!D.mockScenarios[a.mockScenarioId]) bad.push('попытка ' + a.id + ': нет сценария ' + a.mockScenarioId);
+    });
+    Object.keys(D.mockScenarios).forEach(function (sid) {
+      D.mockScenarios[sid].errors.forEach(function (e) {
+        var c = cat[e.code], ref = refs[D.activeReferenceId], shot = ref.shots[e.referenceShotIndex - 1];
+        if (!c) bad.push(e.id + ': нет кода ' + e.code);
+        else if (c.phase !== e.phase) bad.push(e.id + ': фаза не совпадает с каталогом');
+        if (!POSES[e.evidence.athletePose] || !POSES[e.evidence.referencePose]) bad.push(e.id + ': нет ключа позы');
+        if (e.evidence.athleteFrameAsset !== 'frames/' + e.evidence.athletePose + '.svg' ||
+            e.evidence.referenceFrameAsset !== 'frames/' + e.evidence.referencePose + '.svg') bad.push(e.id + ': путь подложки');
+        if (!shot || shot.phasesMs[e.phase] !== e.referenceMs) bad.push(e.id + ': referenceMs не совпадает с меткой эталона');
+        D.attempts.forEach(function (a) { if (a.mockScenarioId === sid && e.athleteMs > a.durationMs) bad.push(e.id + ': athleteMs больше длительности'); });
+      });
+    });
+    return bad;
+  }
+
+  /* ---------- помощники ---------- */
+  function fmt(ms) {
+    var s = ms / 1000, m = Math.floor(s / 60), r = s - m * 60;
+    return ('0' + m).slice(-2) + ':' + (r < 10 ? '0' : '') + r.toFixed(1);
+  }
+  function go(id) { if (location.hash === '#' + id) route(); else location.hash = '#' + id; }
+  function attemptNo(a) { return ST.attempts.indexOf(a) + 1; }
+  function getAttempt(id) { return ST.attempts.filter(function (a) { return a.id === id; })[0]; }
+  function activeRef() { return ST.refs.filter(function (r) { return r.id === ST.activeRefId; })[0]; }
+  function analysisOf(a) { return a.analysis || (a.mockScenarioId && a.source === 'demo' ? D.mockScenarios[a.mockScenarioId] : null); }
+  function errCount(a) { var r = analysisOf(a); return r ? r.errors.length : null; }
+
+  function modal(html, onClose) {
+    var m = $('#modal'); m.innerHTML = '<div class="box">' + html + '</div>'; m.hidden = false;
+    function close() { m.hidden = true; m.innerHTML = ''; onClose && onClose(); }
+    m.onclick = function (e) { if (e.target === m) close(); };
+    var c = m.querySelector('[data-close]'); if (c) c.onclick = close;
+    return { el: m, close: close };
+  }
+  function getBlob(videoId) {
+    if (ST.blobs[videoId]) return Promise.resolve(ST.blobs[videoId]);
+    return Store.get('videos', videoId).then(function (v) { return v ? v.blob : null; });
+  }
+  function openPlayer(videoId, label, atMs, demoNote) {
+    var m = modal('<h3>' + esc(label) + '</h3><div id="pl"></div><button class="btn sec" data-close>Закрыть</button>');
+    var url = null;
+    function done() { if (url) URL.revokeObjectURL(url); }
+    m.el.querySelector('[data-close]').onclick = function () { done(); m.close(); };
+    getBlob(videoId).catch(function () { return null; }).then(function (b) {
+      var pl = $('#pl'); if (!pl) return;
+      if (!b) {
+        pl.innerHTML = '<div class="poster">Демо: видео не записывалось.<br>' + (atMs != null ? 'Момент ' + fmt(atMs) : '') + (demoNote ? '<br>' + esc(demoNote) : '') + '</div>';
+        return;
+      }
+      url = URL.createObjectURL(b);
+      pl.innerHTML = '<video controls playsinline src="' + url + '"></video>';
+      var v = pl.querySelector('video');
+      if (atMs != null) v.addEventListener('loadedmetadata', function () {
+        try { var d = isFinite(v.duration) ? v.duration : atMs / 1000; v.currentTime = Math.min(atMs / 1000, d); } catch (e) { /* не критично */ }
+      });
+    });
+  }
+
+  /* ---------- SVG кадра ---------- */
+  function frameSvg(poseKey, hl, limited, side, spec) {
+    var W = spec.width, H = spec.height, P = POSES[poseKey];
+    var c = { n: side === 'athlete' ? '#4aa3ff' : '#3ecf8e', h: side === 'athlete' ? '#ff5a5f' : '#ffd23f' };
+    var s = '<svg class="frame-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" data-pose="' + poseKey + '">' +
+      '<image href="' + window.FRAMES[poseKey] + '" width="' + W + '" height="' + H + '"/><g fill="none" stroke-linecap="round">';
+    EDGES.forEach(function (e) {
+      var a = P[e[0]], b = P[e[1]], on = hl.indexOf(e[0]) >= 0 && hl.indexOf(e[1]) >= 0;
+      s += '<line x1="' + a[0] * W + '" y1="' + a[1] * H + '" x2="' + b[0] * W + '" y2="' + b[1] * H + '" stroke="' + (on ? c.h : c.n) + '" stroke-width="' + (on ? 9 : 6) + '"/>';
+    });
+    Object.keys(P).forEach(function (k) {
+      var on = hl.indexOf(k) >= 0;
+      s += '<circle cx="' + P[k][0] * W + '" cy="' + P[k][1] * H + '" r="' + (on ? 20 : 10) + '" fill="' + (on ? 'none' : c.n) + '"' +
+        (on ? ' stroke="' + c.h + '" stroke-width="7"' + (limited ? ' stroke-dasharray="10 8"' : '') : '') + '/>';
+    });
+    return s + '</g></svg>';
+  }
+
+  /* ---------- S01 ---------- */
+  function renderS01() {
+    var sec = $('#s01'), ref = activeRef(), coach = ST.role === 'coach';
+    var list = ST.attempts.map(function (a, i) {
+      var n = errCount(a);
+      return '<button class="att" data-att="' + a.id + '"><span>Попытка ' + (i + 1) + (a.source === 'demo' ? ' <span class="badge">Демо</span>' : '') +
+        '</span><span class="mut small">' + (n == null ? 'не разобрана' : 'замечаний: ' + n) + '</span></button>';
+    }).join('') || '<p class="mut">Попыток пока нет.</p>';
+    sec.innerHTML =
+      '<div class="top"><span class="ttl">PADEL COACH · Прототип</span></div>' +
+      '<div class="seg" id="roles"><button data-r="athlete" class="' + (coach ? '' : 'on') + '">Спортсмен</button><button data-r="coach" class="' + (coach ? 'on' : '') + '">Тренер</button></div>' +
+      (ST.flash ? '<div class="plate" style="color:var(--ok);background:#0c2a1e;border-color:#1d6b4a">' + esc(ST.flash) + '</div>' : '') +
+      '<div class="card"><h2>Упражнение «Смэш»</h2><p class="small mut">' + esc(D.exercise.name) + '</p>' +
+      '<p>Эталон v' + ref.version + (ref.source === 'demo' ? ' <span class="badge">Демо</span>' : ' <span class="badge ok">записан</span>') + '</p>' +
+      '<button class="btn sec" id="refplay">Эталон</button></div>' +
+      '<button class="btn" id="main">' + (coach ? (ref.source === 'demo' && ST.refs.length === 1 ? 'Записать эталон' : 'Заменить эталон') : 'Снять подход') + '</button>' +
+      '<h3 style="margin-top:14px">Мои попытки</h3>' + list;
+    ST.flash = '';
+    sec.querySelectorAll('#roles button').forEach(function (b) {
+      b.onclick = function () { ST.role = b.dataset.r; lsSet('pc.role', ST.role); renderS01(); };
+    });
+    $('#refplay', sec).onclick = function () { openPlayer(ref.videoId, 'Эталон v' + ref.version, null, 'Демо-эталон'); };
+    $('#main', sec).onclick = function () {
+      if (!coach) { ST.recKind = 'attempt'; go('s02'); return; }
+      var replace = !(ref.source === 'demo' && ST.refs.length === 1);
+      var begin = function () { ST.recKind = 'reference'; go('s02'); };
+      if (!replace) return begin();
+      var m = modal('<h3>Заменить эталон?</h3><p class="small">Будет создана новая версия. Старые версии и попытки сохранятся.</p>' +
+        '<button class="btn" id="yes">Заменить</button><button class="btn sec" data-close>Отмена</button>');
+      $('#yes', m.el).onclick = function () { m.close(); begin(); };
+    };
+    sec.querySelectorAll('.att').forEach(function (b) {
+      b.onclick = function () {
+        ST.cur = { attemptId: b.dataset.att, selectedErrorId: null, view: 'both', side: 'athlete' };
+        go(analysisOf(getAttempt(b.dataset.att)) ? 's05' : 's04');
+      };
+    });
+  }
+
+  /* ---------- S02 ---------- */
+  var cam = { stream: null, rec: null, chunks: [], t0: 0, timer: null };
+  function stopCamera() {
+    clearInterval(cam.timer);
+    if (cam.rec && cam.rec.state !== 'inactive') { cam.rec.onstop = null; try { cam.rec.stop(); } catch (e) { /* уже остановлена */ } }
+    if (cam.stream) cam.stream.getTracks().forEach(function (t) { t.stop(); });
+    cam = { stream: null, rec: null, chunks: [], t0: 0, timer: null };
+  }
+  function renderS02() {
+    var sec = $('#s02'), label = ST.recKind === 'reference' ? 'Эталон тренера' : 'Подход спортсмена';
+    sec.innerHTML =
+      '<div class="top"><span class="ttl">Камера</span></div>' +
+      '<div class="stage"><video id="cv" muted playsinline></video><div class="grid"></div><div class="sil"></div>' +
+      '<span class="role">' + label + '</span><span class="rec" id="rec" hidden>● REC <span id="tm">00:00</span></span>' +
+      '<div class="hint">Поместите в кадр всё тело, ракетку и зону удара</div></div>' +
+      '<div id="ctl"></div><div id="err"></div>';
+    var ctl = $('#ctl', sec);
+    function setCtl(state) {
+      if (state === 'prep') ctl.innerHTML = '<button class="btn" id="go">Начать</button><button class="btn sec" id="cancel">Отмена</button>';
+      if (state === 'rec') ctl.innerHTML = '<button class="btn bad" id="stop">Остановить</button><button class="btn sec" id="cancel">Отмена</button>';
+      if (state === 'none') ctl.innerHTML = '<button class="btn sec" id="cancel">Отмена</button>';
+      var c = $('#cancel', sec); if (c) c.onclick = function () { go('s01'); };
+    }
+    function fail(msg) {
+      stopCamera();
+      $('#rec', sec).hidden = true;
+      setCtl('none');
+      $('#cv', sec).hidden = true;
+      var st = sec.querySelector('.stage');
+      st.insertAdjacentHTML('beforeend', frameSvg('high-contact', [], false, 'reference', { width: 1280, height: 720 }).replace('class="frame-svg"', 'class="frame-svg" style="opacity:.5"'));
+      $('#err', sec).innerHTML = '<div class="plate">' + esc(msg) + '</div>' +
+        '<label class="btn" style="cursor:pointer">Выбрать файл<input type="file" accept="video/*" id="file" hidden></label>' +
+        (ST.recKind === 'attempt' ? '<div class="row"><button class="btn sec" data-demo="attempt-001">Демо-попытка 1</button><button class="btn sec" data-demo="attempt-002">Демо-попытка 2</button></div>' : '');
+      $('#file', sec).onchange = function (e) {
+        var f = e.target.files && e.target.files[0]; if (!f) return; /* отмена выбора — остаёмся в ошибке S02 */
+        ST.pending = { blob: f, mime: f.type, durationMs: null, kind: ST.recKind, source: 'imported' };
+        go('s03');
+      };
+      sec.querySelectorAll('[data-demo]').forEach(function (b) {
+        b.onclick = function () { ST.cur = { attemptId: b.dataset.demo, selectedErrorId: null, view: 'both', side: 'athlete' }; go('s04'); };
+      });
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      return fail('Запись с камеры недоступна в этом браузере или режиме (нужен HTTPS или localhost).');
+    }
+    setCtl('prep');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(function (stream) {
+      if (location.hash !== '#s02') { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+      cam.stream = stream;
+      var v = $('#cv', sec); v.srcObject = stream; v.play().catch(function () { });
+    }, function (e) {
+      fail(e && e.name === 'NotAllowedError' ? 'Нет доступа к камере. Разрешите её в настройках браузера или выберите файл.' : 'Камера недоступна: ' + (e && e.name || 'ошибка') + '.');
+    });
+    sec.onclick = function (e) {
+      var t = e.target.closest('button'); if (!t) return;
+      if (t.id === 'go' && cam.stream) {
+        var mimes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+        var mime = mimes.filter(function (m) { return MediaRecorder.isTypeSupported(m); })[0];
+        try { cam.rec = mime ? new MediaRecorder(cam.stream, { mimeType: mime }) : new MediaRecorder(cam.stream); }
+        catch (err) { return fail('Не удалось начать запись: ' + err.name + '.'); }
+        cam.chunks = [];
+        cam.rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) cam.chunks.push(ev.data); };
+        cam.rec.onstop = function () {
+          var ms = Date.now() - cam.t0, type = cam.rec.mimeType || mime || 'video/webm', blob = new Blob(cam.chunks, { type: type });
+          if (!blob.size) return fail('Запись получилась пустой. Повторите или выберите файл.');
+          stopCamera();
+          ST.pending = { blob: blob, mime: type, durationMs: ms, kind: ST.recKind, source: 'recorded' };
+          go('s03');
+        };
+        cam.rec.start(); cam.t0 = Date.now();
+        $('#rec', sec).hidden = false; setCtl('rec');
+        cam.timer = setInterval(function () {
+          var s = Math.floor((Date.now() - cam.t0) / 1000);
+          $('#tm', sec).textContent = ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + s % 60).slice(-2);
+        }, 250);
+      } else if (t.id === 'stop' && cam.rec) {
+        cam.rec.stop();
+      }
+    };
+  }
+
+  /* ---------- S03 ---------- */
+  function renderS03() {
+    var sec = $('#s03'), p = ST.pending;
+    if (!p) return go('s01');
+    var isRef = p.kind === 'reference', label = isRef ? 'Эталон' : 'Попытка ' + (ST.attempts.length + 1);
+    var url = URL.createObjectURL(p.blob);
+    sec.innerHTML =
+      '<div class="top"><span class="ttl">Просмотр</span><span class="badge">' + label + '</span></div>' +
+      '<video id="pv" controls playsinline src="' + url + '" style="width:100%;border-radius:10px;background:#000"></video>' +
+      '<p class="small mut">Длительность: <span id="dur">' + (p.durationMs ? fmt(p.durationMs) : '…') + '</span></p><div id="msg"></div>' +
+      '<button class="btn" id="save">' + (isRef ? 'Сохранить эталон' : 'Сохранить и анализировать') + '</button>' +
+      '<button class="btn sec" id="redo">Переснять</button>';
+    var v = $('#pv', sec);
+    v.addEventListener('loadedmetadata', function () {
+      if (!p.durationMs && isFinite(v.duration)) { p.durationMs = Math.round(v.duration * 1000); $('#dur', sec).textContent = fmt(p.durationMs); }
+    });
+    $('#redo', sec).onclick = function () { URL.revokeObjectURL(url); ST.pending = null; ST.recKind = p.kind; go('s02'); };
+    $('#save', sec).onclick = function () {
+      var btn = this; btn.disabled = true; $('#msg', sec).innerHTML = '';
+      var stamp = Date.now().toString(36), video = { id: 'vid-' + stamp, blob: p.blob, mime: p.mime }, dur = p.durationMs || 0;
+      var job;
+      if (isRef) {
+        var old = activeRef(), ver = Math.max.apply(null, ST.refs.map(function (r) { return r.version; })) + 1;
+        var ref = { id: 'ref-' + ('00' + ver).slice(-3), version: ver, status: 'active', videoId: video.id, role: 'coach', viewpoint: 'side',
+          handedness: 'right', durationMs: dur, source: p.source, shots: [], createdAt: Date.now() };
+        job = Store.saveReference(ref, video, old).then(function () {
+          old.status = 'archived'; ST.refs.push(ref); ST.activeRefId = ref.id; ST.blobs[video.id] = p.blob; ST.flash = 'Эталон готов (версия ' + ver + ')'; return 's01';
+        });
+      } else {
+        var att = { id: 'attempt-' + stamp, videoId: video.id, referenceId: ST.activeRefId, durationMs: dur, shotCount: null,
+          source: p.source, mockScenarioId: null, createdAt: Date.now() };
+        job = Store.saveAttempt(att, video).then(function () {
+          att.status = 'saved'; ST.attempts.push(att); ST.blobs[video.id] = p.blob;
+          ST.cur = { attemptId: att.id, selectedErrorId: null, view: 'both', side: 'athlete' }; return 's04';
+        });
+      }
+      job.then(function (next) { ST.pending = null; URL.revokeObjectURL(url); go(next); }, function (e) {
+        btn.disabled = false;
+        $('#msg', sec).innerHTML = '<div class="plate">Не удалось сохранить: ' + esc(e && e.message || e) + '. Анализ не запускается.</div>' +
+          '<button class="btn sec" id="retry">Повторить</button><a class="btn sec" href="' + url + '" download="padel-' + stamp + '.webm">Экспорт файла</a>';
+        $('#retry', sec).onclick = function () { $('#save', sec).click(); };
+      });
+    };
+  }
+
+  /* ---------- S04 ---------- */
+  var runId = 0;
+  function renderS04() {
+    var sec = $('#s04'), a = getAttempt(ST.cur.attemptId);
+    if (!a) return go('s01');
+    var ref = ST.refs.filter(function (r) { return r.id === a.referenceId; })[0];
+    var head = '<div class="top"><span class="ttl">Анализ смэша</span><span class="badge">Демо</span></div><p class="small mut">Используются заранее подготовленные данные</p>';
+    if (!ref) {
+      sec.innerHTML = head + '<div class="plate">Нет валидного эталона. Анализ не запускается.</div><button class="btn" id="back">К попыткам</button>';
+      $('#back', sec).onclick = function () { go('s01'); }; return;
+    }
+    if (!a.mockScenarioId && !analysisOf(a)) return choice();
+    run(false);
+
+    function choice() {
+      sec.innerHTML = head +
+        '<div class="plate">Ошибки не вычисляются по вашей записи. Выберите демо-сценарий, который покажет приложение.</div>' +
+        '<label class="opt"><input type="radio" name="sc" value="scenario-1"' + (ST.s04.scenario === 'scenario-1' ? ' checked' : '') + '> Демо-сценарий 1 (3 замечания)</label>' +
+        '<label class="opt"><input type="radio" name="sc" value="scenario-2"' + (ST.s04.scenario === 'scenario-2' ? ' checked' : '') + '> Демо-сценарий 2 (1 замечание)</label>' +
+        '<label class="opt small mut"><input type="checkbox" id="fail"' + (ST.s04.simulateFail ? ' checked' : '') + '> Демо: имитировать сбой анализа</label>' +
+        '<button class="btn" id="goan">Показать разбор</button><button class="btn sec" id="back">К попыткам</button>';
+      $('#goan', sec).onclick = function () {
+        ST.s04.scenario = sec.querySelector('input[name=sc]:checked').value; ST.s04.simulateFail = $('#fail', sec).checked;
+        a.mockScenarioId = ST.s04.scenario;
+        var p = a.source === 'demo' ? Promise.resolve() : Store.putAttempt(Object.assign({}, a, { status: 'saved' })).catch(function () { });
+        p.then(function () { run(ST.s04.simulateFail); });
+      };
+      $('#back', sec).onclick = function () { go('s01'); };
+    }
+    function run(fail) {
+      var my = ++runId;
+      sec.innerHTML = head + '<div class="prog"><i id="bar" style="width:0"></i></div><p id="step" class="mut small">Старт…</p>';
+      getBlob(a.videoId).catch(function () { return null; }).then(function (blob) {
+        return window.ANALYSIS_PROVIDER.analyze({ attemptId: a.id, referenceId: a.referenceId, videoBlob: blob, mockScenarioId: a.mockScenarioId, simulateFail: fail }, function (f, t) {
+          if (my !== runId || location.hash !== '#s04') return;
+          $('#bar', sec).style.width = Math.round(f * 100) + '%'; $('#step', sec).textContent = t;
+        });
+      }).then(function (res) {
+        if (my !== runId || location.hash !== '#s04') return;
+        a.analysis = res;
+        if (a.source !== 'demo') Store.putAttempt(Object.assign({}, a, { status: 'saved' })).catch(function () { });
+        ST.cur.selectedErrorId = null; go('s05');
+      }, function (e) {
+        if (my !== runId || location.hash !== '#s04') return;
+        sec.innerHTML = head + '<div class="plate">Анализ не удался: ' + esc(e && e.message || e) + '</div>' +
+          '<button class="btn" id="retry">Повторить анализ</button><button class="btn sec" id="demo">Открыть демо-разбор</button><button class="btn sec" id="back">К попыткам</button>';
+        $('#retry', sec).onclick = function () { run(false); };
+        $('#demo', sec).onclick = function () { ST.s04.simulateFail = false; a.mockScenarioId = null; choice(); };
+        $('#back', sec).onclick = function () { go('s01'); };
+      });
+    }
+  }
+
+  /* ---------- S05 ---------- */
+  function renderS05() {
+    var sec = $('#s05'), a = getAttempt(ST.cur.attemptId), res = a && analysisOf(a);
+    if (!res) return go(a ? 's04' : 's01');
+    var errs = res.errors, k = errs.length, cur = ST.cur;
+    var sel = errs.filter(function (e) { return e.id === cur.selectedErrorId; })[0] || errs[0];
+    if (sel) cur.selectedErrorId = sel.id;
+    var spec = res.frameSpec;
+    var imported = a.source !== 'demo';
+    var html = '<div class="top"><span class="ttl">Разбор смэша · Попытка ' + attemptNo(a) + '</span><span class="badge">Демо</span></div>' +
+      '<p><b>' + (k ? 'Найдено ' + k + ' ' + (k === 1 ? 'замечание' : k < 5 ? 'замечания' : 'замечаний') : 'В демо-данных замечаний нет') + '</b></p>' +
+      (imported ? '<div class="plate">Ошибки не вычислены по вашей записи, показан демо-сценарий ' + esc(String(a.mockScenarioId).replace('scenario-', '')) + '</div>' : '');
+    if (sel) {
+      var c = cat[sel.code], ev = sel.evidence, hl = ev.highlightJoints;
+      var seg = '<div class="seg" style="margin:8px 0"><button data-v="both" class="' + (cur.view === 'both' ? 'on' : '') + '">Рядом</button><button data-v="one" class="' + (cur.view === 'one' ? 'on' : '') + '">По одному</button></div>';
+      var fa = '<div class="fr" data-zoom="athlete"><div class="stage">' + frameSvg(ev.athletePose, hl, c.viewpointLimited, 'athlete', spec.athlete) + '</div><div class="cap">Спортсмен · ' + fmt(sel.athleteMs) + '</div></div>';
+      var fr = '<div class="fr" data-zoom="ref"><div class="stage">' + frameSvg(ev.referencePose, hl, c.viewpointLimited, 'ref', spec.reference) + '</div><div class="cap">Эталон · ' + fmt(sel.referenceMs) + '</div></div>';
+      var one = cur.view === 'one';
+      html += '<div id="frames">' + seg +
+        (one ? '<div class="seg" style="margin:0 0 8px"><button data-s="athlete" class="' + (cur.side === 'athlete' ? 'on' : '') + '">Спортсмен</button><button data-s="ref" class="' + (cur.side === 'ref' ? 'on' : '') + '">Эталон</button></div>' : '') +
+        '<div class="frames' + (one ? ' one' : '') + '">' + (one ? (cur.side === 'ref' ? fr : fa) : fa + fr) + '</div>' +
+        '<p class="small mut">Фаза: ' + D.phaseNames[sel.phase] + ' · спортсмен ' + fmt(sel.athleteMs) + ', эталон ' + fmt(sel.referenceMs) + '</p>' +
+        '<p class="small mut">Схематические кадры и позы, не результат анализа реального видео.</p>' +
+        (c.viewpointLimited ? '<div class="plate">Условная демонстрация: ракурс сбоку ограничивает оценку</div>' : '') + '</div>';
+    }
+    html += '<div id="errs" style="margin-top:10px">';
+    errs.forEach(function (e) {
+      var c = cat[e.code], open = e.id === cur.selectedErrorId;
+      html += '<div class="acc' + (open ? ' open' : '') + '"><button data-e="' + e.id + '"><b>' + esc(c.title) + '</b><br><span class="small mut">Удар ' + e.shotIndex + ' · ' + fmt(e.athleteMs) + '</span></button>' +
+        (open ? '<div class="body"><p class="small">' + esc(c.sign) + '</p><div class="advice">' + esc(c.advice) + '</div>' +
+          '<p class="small mut">Причина: ' + esc(c.cause) + '. Исправление: ' + esc(c.fix) + '.</p>' +
+          (c.note ? '<p class="small mut">' + esc(c.note) + '</p>' : '') +
+          '<button class="btn sec" data-look="' + e.id + '">Смотреть момент</button></div>' : '') + '</div>';
+    });
+    html += '</div><button class="btn" id="again">Повторить подход</button><button class="btn sec" id="all">Все попытки</button>';
+    sec.innerHTML = html;
+
+    sec.onclick = function (ev) {
+      var t = ev.target.closest('[data-e],[data-v],[data-s],[data-zoom],[data-look],#again,#all'); if (!t) return;
+      if (t.dataset.e) { cur.selectedErrorId = t.dataset.e; renderS05(); var f = $('#frames', sec); if (f) f.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+      else if (t.dataset.v) { cur.view = t.dataset.v; renderS05(); }
+      else if (t.dataset.s) { cur.side = t.dataset.s; renderS05(); }
+      else if (t.dataset.zoom) {
+        var big = t.querySelector('.stage').innerHTML, m = modal('<div class="stage" style="aspect-ratio:16/9">' + big + '</div><p class="small mut">Схематический кадр, не результат анализа реального видео.</p><button class="btn sec" data-close>Закрыть</button>');
+      }
+      else if (t.dataset.look) {
+        var e = errs.filter(function (x) { return x.id === t.dataset.look; })[0];
+        openPlayer(a.videoId, 'Попытка ' + attemptNo(a) + ' · ' + cat[e.code].title, e.athleteMs, 'Метка демонстрационная');
+      }
+      else if (t.id === 'again') { ST.recKind = 'attempt'; go('s02'); }
+      else if (t.id === 'all') go('s01');
+    };
+  }
+
+  /* ---------- маршрутизатор ---------- */
+  var ROUTES = { s01: renderS01, s02: renderS02, s03: renderS03, s04: renderS04, s05: renderS05 };
+  function route() {
+    var id = (location.hash || '#s01').slice(1);
+    if (!ROUTES[id]) id = 's01';
+    stopCamera(); $('#modal').hidden = true;
+    document.querySelectorAll('.screen').forEach(function (s) { s.hidden = s.id !== id; s.onclick = null; });
+    ROUTES[id]();
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- запуск ---------- */
+  function boot() {
+    var bad = validate();
+    if (bad.length) { var b = $('#banner'); b.hidden = false; b.textContent = 'Данные демо не прошли проверку: ' + bad.join('; '); }
+    Store.open().then(function () { ST.idbOk = true; return Store.cleanup(); }).then(function () {
+      return Promise.all([Store.all('references'), Store.all('attempts'), Store.all('meta')]);
+    }).then(function (r) {
+      r[0].filter(function (x) { return x.status !== 'saving'; }).forEach(function (x) {
+        var i = ST.refs.map(function (y) { return y.id; }).indexOf(x.id); if (i < 0) ST.refs.push(x); else ST.refs[i] = x;
+      });
+      r[1].filter(function (x) { return x.status === 'saved'; }).sort(function (x, y) { return x.createdAt - y.createdAt; }).forEach(function (x) { ST.attempts.push(x); });
+      var m = r[2].filter(function (x) { return x.key === 'activeReferenceId'; })[0];
+      if (m) { ST.activeRefId = m.value; ST.refs.forEach(function (x) { x.status = x.id === m.value ? 'active' : 'archived'; }); }
+    }).catch(function (e) {
+      var b = $('#banner'); b.hidden = false; b.textContent = 'Хранилище недоступно (' + (e && e.message || e) + '). Просмотр демо работает, сохранение записей — нет.';
+    }).then(function () {
+      window.addEventListener('hashchange', route);
+      route();
+    });
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
