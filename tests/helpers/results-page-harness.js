@@ -194,6 +194,7 @@ function renderDebateDom() {
         <button type="button" id="pipeline-add-round-btn">+</button>
         <button type="button" id="removeRoundBtn">−</button>
         <button type="button" id="pipeline-add-btn">+</button><button type="button" id="pipeline-save-btn">Save</button><button type="button" id="pipeline-import-btn">Import</button><button type="button" id="pipeline-export-all-btn">Export all</button><button type="button" id="pipeline-profile-btn">Paste</button>
+        <div class="pipeline-canvas">
         <div class="stage-column" id="round1" data-round="1">
           <div class="model-stack" id="r1-models">
             <div class="model-block">
@@ -215,6 +216,7 @@ function renderDebateDom() {
           <div class="model-stack" id="r2-models"></div>
         </div>
         <div id="insertionPoint"></div>
+        </div>
         <div class="pipeline-items" id="pipelineItems">
           <div class="pipeline-item active" data-name="Research & Analysis">
             <input type="radio" name="pipeline" class="pipeline-radio" checked>

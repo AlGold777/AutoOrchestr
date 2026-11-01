@@ -9944,6 +9944,32 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
+        // The canvas is panned by dragging any empty place of it (not a block, a card, a badge or a control).
+        const CANVAS_PAN_BLOCKERS = '.model-block, .pipeline-control-card, .round-badge, input, select, textarea, button, label, a, [contenteditable="true"]';
+        let canvasPan = null;
+        pipelineCanvas?.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0 || event.target.closest(CANVAS_PAN_BLOCKERS)) return;
+            canvasPan = { id: event.pointerId, x: event.clientX, y: event.clientY, left: pipelineCanvas.scrollLeft, top: pipelineCanvas.scrollTop, moved: false };
+        });
+        document.addEventListener('pointermove', (event) => {
+            if (!canvasPan || event.pointerId !== canvasPan.id) return;
+            const dx = event.clientX - canvasPan.x;
+            const dy = event.clientY - canvasPan.y;
+            if (!canvasPan.moved && Math.hypot(dx, dy) < 4) return;
+            if (!canvasPan.moved) { canvasPan.moved = true; pipelineCanvas.classList.add('is-panning'); }
+            pipelineCanvas.scrollLeft = canvasPan.left - dx;
+            pipelineCanvas.scrollTop = canvasPan.top - dy;
+        });
+        const endCanvasPan = () => {
+            if (!canvasPan) return;
+            const moved = canvasPan.moved;
+            canvasPan = null;
+            pipelineCanvas?.classList.remove('is-panning');
+            // The click that ends a drag must not open anything under the pointer.
+            if (moved) document.addEventListener('click', (event) => event.stopPropagation(), { capture: true, once: true });
+        };
+        document.addEventListener('pointerup', endCanvasPan);
+        document.addEventListener('pointercancel', endCanvasPan);
         const BLOCK_CONTROL_SELECTOR = 'input, select, textarea, button, label, a, [contenteditable="true"], .role-selector, .status-indicator';
         let participantPress = null;
         const cancelParticipantPress = () => {

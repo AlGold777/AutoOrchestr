@@ -124,6 +124,32 @@ describe('Basic participant page integration', () => {
     expect(document.querySelector('#r2-models [data-participant-id="Claude"]').dataset.providerName).toBe('Gemini');
   });
 
+  test('dragging an empty place of the canvas scrolls it; dragging a block does not', async () => {
+    resetPipelineStore();
+    const name = 'Canvas pan';
+    expect(await debug().installBasicSchema(name, schemaV2([round('r1', [{ id: 'claude-main', name: 'Claude' }])]))).toEqual({ ok: true, errors: [] });
+    await selectPipeline(name);
+    const canvas = document.querySelector('#pipeline-panel .pipeline-canvas');
+    const pointer = (target, type, x, y) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, 'pointerId', { value: 7 });
+      target.dispatchEvent(event);
+    };
+    canvas.scrollLeft = 100; canvas.scrollTop = 50;
+    pointer(canvas, 'pointerdown', 200, 200);
+    pointer(document, 'pointermove', 150, 170);
+    expect([canvas.scrollLeft, canvas.scrollTop]).toEqual([150, 80]);
+    expect(canvas.classList.contains('is-panning')).toBe(true);
+    pointer(document, 'pointerup', 150, 170);
+    expect(canvas.classList.contains('is-panning')).toBe(false);
+
+    canvas.scrollLeft = 100;
+    pointer(document.querySelector('#r1-models .model-block'), 'pointerdown', 200, 200);
+    pointer(document, 'pointermove', 150, 200);
+    pointer(document, 'pointerup', 150, 200);
+    expect(canvas.scrollLeft).toBe(100);
+  });
+
   test('participant edit actions require a 550ms press and cancel on short press or movement', async () => {
     resetPipelineStore();
     const name = 'Participant long press';

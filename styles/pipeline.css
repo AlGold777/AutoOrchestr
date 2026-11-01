@@ -255,6 +255,12 @@ body.is-resizing {
     min-height: 0;
     background: none;
     flex: 1 1 auto;
+    cursor: grab;
+}
+
+.pipeline-canvas.is-panning {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .pipeline-flow {
