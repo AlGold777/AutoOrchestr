@@ -588,11 +588,13 @@ body.is-resizing {
 }
 
 .model-block .model-participant-add,
+.model-block .model-participant-switch,
 .model-block .model-participant-remove {
     display: none;
 }
 
 .model-block.is-participant-editing .model-participant-add,
+.model-block.is-participant-editing .model-participant-switch,
 .model-block.is-participant-editing .model-participant-remove {
     display: inline-block;
 }
@@ -631,6 +633,7 @@ body.is-resizing {
 }
 .model-participant-label,
 .model-participant-add,
+.model-participant-switch,
 .model-participant-remove {
     border: 0;
     border-radius: 4px;
@@ -649,6 +652,7 @@ body.is-resizing {
     font-size: 10px;
 }
 .model-participant-add,
+.model-participant-switch,
 .model-participant-remove {
     flex: 0 0 18px;
     width: 18px;
@@ -658,6 +662,7 @@ body.is-resizing {
     font-weight: 600;
 }
 .model-participant-add:hover,
+.model-participant-switch:hover,
 .model-participant-remove:hover,
 .model-participant-label:hover {
     background: rgba(100, 116, 139, .12);
@@ -665,6 +670,7 @@ body.is-resizing {
 }
 .model-block.inactive .model-participant-label,
 .model-block.inactive .model-participant-add,
+.model-block.inactive .model-participant-switch,
 .model-block.inactive .model-participant-remove {
     color: var(--pipeline-text);
 }

@@ -9470,6 +9470,35 @@ document.addEventListener('click', (event) => {
             customCardSettings.set(draftPlanStorageKey(), settings);
             if (await applyParticipantSchemaEdit(schema)) showNotification('Имя участника обновлено.', 'info');
         };
+        // A participant keeps its ID, settings and place in every round; only its model (name) changes.
+        const switchBasicParticipantModel = async (block) => {
+            if (pipelineRunActive || !window.BasicSchema || !block) return;
+            const id = customBlockParticipantId(block);
+            const oldName = customBlockModel(block);
+            const names = (PipelineRuntime?.MODELS || []).map((model) => model.name).filter((name) => name && name !== oldName);
+            const chosen = await askChoiceDialog({
+                title: 'Сменить модель',
+                message: `Участник «${block.dataset.participantLabelValue || oldName}»: ${oldName} → …`,
+                choices: names.map((name) => ({ value: name, label: name })),
+                cancelText: 'Отмена'
+            });
+            if (!chosen) return;
+            const schema = sourceSchemaForParticipantEdit();
+            upgradeParticipantSchemaForCanvas(schema);
+            const oldLabel = String(block.dataset.participantLabelValue || oldName);
+            const newLabel = oldLabel === oldName ? chosen : oldLabel;
+            schema.steps.forEach((step) => (step.models || []).forEach((model) => {
+                if ((model.id || model.name) !== id) return;
+                model.name = chosen;
+                if (String(model.label || oldName) === oldName) model.label = newLabel;
+            }));
+            const settings = getCustomCardSettings();
+            Object.values(settings).forEach((participants) => {
+                if (participants?.[id] && participants[id].label === oldName) participants[id].label = newLabel;
+            });
+            customCardSettings.set(draftPlanStorageKey(), settings);
+            if (await applyParticipantSchemaEdit(schema)) showNotification(`Участник: ${oldName} → ${chosen}.`, 'info');
+        };
         const removeBasicParticipantFromRound = async (block) => {
             if (pipelineRunActive || !window.BasicSchema || !block) return;
             const id = customBlockParticipantId(block);
@@ -10098,7 +10127,7 @@ document.addEventListener('click', (event) => {
         });
 
         pipelinePanel.addEventListener('click', (event) => {
-            const participantAction = event.target?.closest?.('[data-participant-add], [data-participant-label], [data-participant-remove]');
+            const participantAction = event.target?.closest?.('[data-participant-add], [data-participant-label], [data-participant-remove], [data-participant-switch]');
             if (participantAction && pipelinePanel.contains(participantAction)) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -10107,6 +10136,7 @@ document.addEventListener('click', (event) => {
                 if (participantAction.hasAttribute('data-participant-add')) void addBasicParticipant(block);
                 else if (participantAction.hasAttribute('data-participant-label')) void renameBasicParticipant(block);
                 else if (participantAction.hasAttribute('data-participant-remove')) void removeBasicParticipantFromRound(block);
+                else if (participantAction.hasAttribute('data-participant-switch')) void switchBasicParticipantModel(block);
                 return;
             }
             const controlCard = event.target?.closest?.('.pipeline-control-card');

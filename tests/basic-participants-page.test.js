@@ -98,6 +98,32 @@ describe('Basic participant page integration', () => {
     else delete globalThis.crypto;
   });
 
+  test('the switch button changes the model of a participant in every round and keeps its ID', async () => {
+    resetPipelineStore();
+    const name = 'Switch participant model';
+    const schema = schemaV2([
+      round('r1', [{ id: 'Claude', name: 'Claude' }, { id: 'GPT', name: 'GPT' }]),
+      round('r2', [{ id: 'Claude', name: 'Claude' }])
+    ]);
+    expect(await debug().installBasicSchema(name, schema)).toEqual({ ok: true, errors: [] });
+    await selectPipeline(name);
+
+    const ask = jest.fn().mockResolvedValue('Gemini');
+    window.ChoiceDialog = { ask };
+    document.querySelector('#r1-models [data-participant-id="Claude"] [data-participant-switch]').click();
+    await H.delay(30);
+
+    expect(ask.mock.calls[0][0].choices.map((choice) => choice.value)).not.toContain('Claude');
+    const saved = debug().basicSchemaFromPage(
+      window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()), null, { forSave: true, basedOn: '' }
+    );
+    expect(saved.steps.map((step) => step.models.map((model) => [model.id, model.name]))).toEqual([
+      [['Claude', 'Gemini'], ['GPT', 'GPT']],
+      [['Claude', 'Gemini']]
+    ]);
+    expect(document.querySelector('#r2-models [data-participant-id="Claude"]').dataset.providerName).toBe('Gemini');
+  });
+
   test('participant edit actions require a 550ms press and cancel on short press or movement', async () => {
     resetPipelineStore();
     const name = 'Participant long press';
