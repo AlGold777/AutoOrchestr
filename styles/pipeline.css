@@ -253,7 +253,15 @@ body.is-resizing {
     overflow-y: auto;
     position: relative;
     min-height: 0;
-    background: none;
+    /* Фон из orchestrator-pipeline-2026.html: сетка 24 px на светлом поле с двумя мягкими пятнами; сетка движется вместе с холстом. */
+    background-color: #f7f9fc;
+    background-image:
+        linear-gradient(rgba(98, 111, 138, .055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(98, 111, 138, .055) 1px, transparent 1px),
+        radial-gradient(circle at 15% 10%, rgba(101, 125, 255, .07), transparent 28%),
+        radial-gradient(circle at 80% 10%, rgba(74, 202, 171, .06), transparent 24%);
+    background-size: 24px 24px, 24px 24px, auto, auto;
+    background-attachment: local, local, scroll, scroll;
     flex: 1 1 auto;
     cursor: grab;
 }
