@@ -381,9 +381,7 @@ describe('release log regression guards', () => {
     expect(css).toContain('.pipeline-item-delete {');
     expect(css).toContain('margin-left: 5px;');
     expect(css).toContain('.pipeline-items {');
-    expect(css).toContain('grid-auto-flow: column;');
-    expect(css).toContain('grid-template-rows: repeat(var(--pipeline-rows, 8), max-content);');
-    expect(css).toContain('grid-auto-columns: minmax(0, 1fr);');
+    expect(css).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(css).toContain('.pipeline-items-row {');
     expect(css).toContain('display: contents;');
     expect(css).toContain('width: 220px;');

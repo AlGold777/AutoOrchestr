@@ -8644,6 +8644,23 @@ document.addEventListener('click', (event) => {
             return `${cleanNames.join('|')}|${activeName || ''}|${lastSavedName || ''}|${protocolHash}`;
         };
 
+        // Three columns of four: items fill the first column from the top, then the second, then the third;
+        // the next twelve start a new row of columns below.
+        const PIPELINE_ITEMS_PER_COLUMN = 4;
+        const PIPELINE_ITEM_COLUMNS = 3;
+        const layoutPipelineItems = () => {
+            if (!pipelineItems) return;
+            const perBlock = PIPELINE_ITEMS_PER_COLUMN * PIPELINE_ITEM_COLUMNS;
+            pipelineItems.querySelectorAll(':scope > .pipeline-item').forEach((item, index) => {
+                const inBlock = index % perBlock;
+                item.style.gridColumn = String(Math.floor(inBlock / PIPELINE_ITEMS_PER_COLUMN) + 1);
+                item.style.gridRow = String(Math.floor(index / perBlock) * PIPELINE_ITEMS_PER_COLUMN + (inBlock % PIPELINE_ITEMS_PER_COLUMN) + 1);
+            });
+        };
+        if (pipelineItems && typeof MutationObserver === 'function') {
+            new MutationObserver(layoutPipelineItems).observe(pipelineItems, { childList: true });
+        }
+
         const renderPipelineList = (names = [], activeName = '', lastSavedName = '') => {
             if (!pipelineItems) return;
             const uniqueNames = normalizePipelineOrder(names);
@@ -8668,7 +8685,7 @@ document.addEventListener('click', (event) => {
                 pipelineFragment.appendChild(item);
             });
             pipelineItems.replaceChildren(pipelineFragment);
-            pipelineItems.style.setProperty('--pipeline-rows', String(Math.max(1, Math.ceil(uniqueNames.length / 2))));
+            layoutPipelineItems();
             pipelineItems.dataset.pipelineHash = nextHash;
             alignPipelineDeleteColumn();
             setPipelineHeaderName(activeName);

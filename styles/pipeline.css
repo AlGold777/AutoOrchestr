@@ -954,10 +954,9 @@ body.is-resizing {
 
 .pipeline-items {
     display: grid;
-    grid-auto-flow: column;
-    /* --pipeline-rows = ceil(N/2), выставляет renderPipelineList: ровно две колонки, заполнение сверху вниз. */
-    grid-template-rows: repeat(var(--pipeline-rows, 8), max-content);
-    grid-auto-columns: minmax(0, 1fr);
+    /* Три колонки по четыре схемы; когда все двенадцать заполнены, ниже начинается следующий ряд колонок.
+       Место каждой схемы выставляет layoutPipelineItems (results.js). */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     column-gap: 16px;
     row-gap: 6px;
     margin-left: 20px;
