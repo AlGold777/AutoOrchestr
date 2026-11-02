@@ -1668,6 +1668,7 @@ body.is-resizing {
 .pipeline-page .control-buttons {
     justify-content: flex-start;
     min-height: calc(100dvh - var(--pipeline-top-bar-bottom, 89px) - 8px);
+    margin-bottom: calc(-1 * var(--pipeline-tail-trim, 0px));
 }
 .pipeline-page .pipeline-panel.pipeline-panel-inline:not(.is-popout) {
     position: sticky;

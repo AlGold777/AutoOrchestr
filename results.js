@@ -10002,6 +10002,25 @@ document.addEventListener('click', (event) => {
         if (stickyTopBar && typeof ResizeObserver === 'function') new ResizeObserver(syncTopBarBottom).observe(stickyTopBar);
         window.addEventListener('resize', syncTopBarBottom);
 
+        // The page must end where the scheme stops under the bar: the space under the container is trimmed
+        // (otherwise the last scroll pushes the scheme up beneath the bar).
+        const syncTailTrim = () => {
+            const host = pipelinePanel?.parentElement;
+            if (!host) return;
+            const root = document.documentElement;
+            const trim = -(parseFloat(getComputedStyle(host).marginBottom) || 0);
+            const hostBottom = host.getBoundingClientRect().bottom + window.scrollY;
+            const tail = Math.max(0, root.scrollHeight + trim - hostBottom);
+            root.style.setProperty('--pipeline-tail-trim', `${Math.round(tail)}px`);
+        };
+        syncTailTrim();
+        window.addEventListener('resize', syncTailTrim);
+        if (typeof ResizeObserver === 'function') {
+            const tailObserver = new ResizeObserver(syncTailTrim);
+            tailObserver.observe(document.body);
+            if (pipelinePanel?.parentElement) tailObserver.observe(pipelinePanel.parentElement);
+        }
+
         // The «Pipelines» header is as high as the header of the scheme.
         const schemeHeader = pipelinePanel?.querySelector('.panel-header');
         const syncListHeaderHeight = () => {

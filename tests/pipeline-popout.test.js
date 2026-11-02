@@ -91,3 +91,10 @@ describe('the Pipelines header is as high as the scheme header', () => {
     expect(read('results.js')).toContain("setProperty('--panel-header-height'");
   });
 });
+
+describe('the page ends where the scheme stops under the bar', () => {
+  test('the space under the scheme container is trimmed by a measured variable', () => {
+    expect(read('styles/pipeline.css')).toContain('margin-bottom: calc(-1 * var(--pipeline-tail-trim, 0px));');
+    expect(read('results.js')).toContain("setProperty('--pipeline-tail-trim'");
+  });
+});
