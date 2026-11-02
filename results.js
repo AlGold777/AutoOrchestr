@@ -4868,9 +4868,10 @@ document.addEventListener('click', (event) => {
             label.className = 'stage-label';
             const title = document.createElement('span');
             title.className = 'pipeline-control-title';
-            let order = -1;
-            try { order = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []).findIndex((item) => item.ref === step.ref); } catch (_) { order = -1; }
-            title.textContent = order >= 0 ? `R${order + 1}` : (CONTROL_TITLE[step.kind] || step.kind);
+            // Round numbers are fixed by their refs, so a User step takes the next free numbers after the last round.
+            const controls = getCustomControls();
+            const order = controls.findIndex((item) => item.step.ref === step.ref);
+            title.textContent = order >= 0 ? `R${Math.max(0, ...Array.from(pipelinePanel.querySelectorAll('.stage-column[data-round]:not(.pipeline-control-step)'), (column) => Number(column.dataset.round) || 0)) + 1 + order}` : (CONTROL_TITLE[step.kind] || step.kind);
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'pipeline-control-delete-btn';
