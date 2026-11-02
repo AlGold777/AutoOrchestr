@@ -1616,3 +1616,35 @@ body.is-resizing {
 }
 .stage-header-row .pipeline-control-delete-btn { position: absolute; right: 0; opacity: 0; pointer-events: none; }
 .pipeline-control-step.is-control-editing .pipeline-control-delete-btn:not(:disabled) { opacity: 1; pointer-events: auto; }
+
+/* Строка значков раундов остаётся наверху при прокрутке холста. */
+.pipeline-canvas .stage-header-row,
+.pipeline-canvas .entry-column > .stage-label {
+    position: sticky;
+    top: -10px;
+    z-index: 3;
+}
+.control-card-mark .status-indicator { display: block; }
+
+/* Схема в отдельном окне: до 80% ширины и высоты экрана, высота по блокам всех моделей. */
+.pipeline-popout-backdrop { position: fixed; inset: 0; z-index: 1190; background: rgba(38, 55, 75, 0.22); }
+.pipeline-panel.is-popout {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1191;
+    width: max-content;
+    min-width: 320px;
+    max-width: 80vw;
+    min-height: 0;
+    height: auto;
+    max-height: 80vh;
+    border: 1px solid #e0e5eb;
+    border-radius: 15px;
+    background: #fff;
+    box-shadow: 0 18px 60px #26374b16;
+}
+.pipeline-panel.is-popout .panel-header { margin-top: 0; flex: 0 0 auto; }
+.pipeline-panel.is-popout .pipeline-canvas { flex: 1 1 auto; min-height: 0; }
+.pipeline-panel.is-popout .pipeline-list { display: none; }

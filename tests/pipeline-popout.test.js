@@ -1,0 +1,36 @@
+const fs = require('fs');
+const path = require('path');
+
+const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
+
+describe('scheme in its own window', () => {
+  test('the button stands right after the Pipeline icon block', () => {
+    const html = read('pipeline_panel.html');
+    const pipeline = html.indexOf('id="right-sidebar-toggle"');
+    const popout = html.indexOf('id="pipeline-popout-btn"');
+    expect(pipeline).toBeGreaterThan(-1);
+    expect(popout).toBeGreaterThan(pipeline);
+    expect(html.slice(pipeline, popout)).not.toMatch(/<button[^>]*id="(?!telemetry-toggle-btn)/);
+    expect(html).toMatch(/<button[^>]*id="pipeline-popout-btn"[^>]*aria-label="Схема во весь экран"/);
+  });
+
+  test('the window is at most 80% of the screen wide and high; the canvas keeps its header on top', () => {
+    const css = read('styles', 'pipeline.css');
+    expect(css).toMatch(/\.pipeline-panel\.is-popout\s*\{[^}]*max-width:\s*80vw[^}]*max-height:\s*80vh/s);
+    expect(css).toMatch(/\.pipeline-panel\.is-popout \.pipeline-list\s*\{\s*display:\s*none/);
+    expect(css).toMatch(/\.pipeline-canvas \.stage-header-row[^{]*\{[^}]*position:\s*sticky/s);
+  });
+
+  test('the page code toggles the window by the button, the backdrop and Escape', () => {
+    const js = read('results.js');
+    expect(js).toContain("document.getElementById('pipeline-popout-btn')");
+    expect(js).toContain("pipelinePanel.classList.add('is-popout')");
+    expect(js).toMatch(/event\.key === 'Escape' && pipelinePanel\?\.classList\.contains\('is-popout'\)/);
+  });
+
+  test('the User block shows a status indicator, not a text dot', () => {
+    const js = read('results.js');
+    expect(js).toContain("line('indicator'");
+    expect(js).not.toContain("line('●'");
+  });
+});

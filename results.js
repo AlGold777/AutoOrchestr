@@ -4895,13 +4895,18 @@ document.addEventListener('click', (event) => {
                 row.className = `control-card-line ${className}`;
                 const icon = document.createElement('span');
                 icon.className = 'control-card-mark';
-                icon.textContent = mark;
+                if (mark === 'indicator') {
+                    const dot = document.createElement('span');
+                    dot.className = 'status-indicator';
+                    dot.setAttribute('aria-hidden', 'true');
+                    icon.append(dot);
+                } else icon.textContent = mark;
                 const label = document.createElement('span');
                 label.textContent = text;
                 row.append(icon, label);
                 return row;
             };
-            card.append(line('●', CONTROL_TITLE[step.kind] || step.kind, 'control-card-name'), line('✅', step.title || '- -', `control-card-role${step.title ? '' : ' is-empty'}`));
+            card.append(line('indicator', CONTROL_TITLE[step.kind] || step.kind, 'control-card-name'), line('✅', step.title || '- -', `control-card-role${step.title ? '' : ' is-empty'}`));
             stack.append(card);
             column.append(header, stack);
             return column;
@@ -9967,6 +9972,42 @@ document.addEventListener('click', (event) => {
             modal.setAttribute('aria-hidden', 'false');
             document.body.classList.add('modal-open');
         };
+
+        // The scheme in its own window: the panel (header + canvas) lifts over the page, 80% of the screen at most.
+        const popoutBtn = document.getElementById('pipeline-popout-btn');
+        let popoutBackdrop = null;
+        let popoutPlaceholder = null;
+        const relayoutPipeline = () => {
+            window.dispatchEvent(new Event('resize'));
+            requestAnimationFrame(() => { try { updatePipelineAll(); } catch (_) { /* the canvas redraws on the next update */ } });
+        };
+        const setPipelinePopout = (open) => {
+            if (!pipelinePanel || !popoutBtn) return;
+            const isOpen = pipelinePanel.classList.contains('is-popout');
+            if (open === isOpen) return;
+            if (open) {
+                const host = pipelinePanel.parentElement;
+                popoutPlaceholder = host ? host.style.minHeight : '';
+                if (host) host.style.minHeight = `${pipelinePanel.offsetHeight}px`;
+                popoutBackdrop = document.createElement('div');
+                popoutBackdrop.className = 'pipeline-popout-backdrop';
+                popoutBackdrop.addEventListener('click', () => setPipelinePopout(false));
+                document.body.append(popoutBackdrop);
+                pipelinePanel.classList.add('is-popout');
+            } else {
+                pipelinePanel.classList.remove('is-popout');
+                popoutBackdrop?.remove();
+                popoutBackdrop = null;
+                const host = pipelinePanel.parentElement;
+                if (host) host.style.minHeight = popoutPlaceholder || '';
+            }
+            popoutBtn.setAttribute('aria-pressed', String(open));
+            relayoutPipeline();
+        };
+        popoutBtn?.addEventListener('click', () => setPipelinePopout(!pipelinePanel.classList.contains('is-popout')));
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && pipelinePanel?.classList.contains('is-popout') && !document.querySelector('dialog[open]')) setPipelinePopout(false);
+        });
 
         // The canvas is panned by dragging any empty place of it (not a block, a card, a badge or a control).
         const CANVAS_PAN_BLOCKERS = '.model-block, .pipeline-control-card, .round-badge, input, select, textarea, button, label, a, [contenteditable="true"]';

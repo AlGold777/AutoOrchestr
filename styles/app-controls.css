@@ -198,7 +198,8 @@
 }
 
 /* Смещения измерены в Chrome: центр иконки Pipeline совпадает с центром иконок моделей, полоска Telemetry — с подписями моделей. */
-.right-sidebar-toggle-btn {
+.right-sidebar-toggle-btn,
+.pipeline-popout-btn {
     margin-bottom: 0;
     color: rgb(133 137 142);
     position: relative;
