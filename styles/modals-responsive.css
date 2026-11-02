@@ -1529,11 +1529,6 @@ body.pro-features-hidden .comparison-section {
 .pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-header {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
-.pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center {
-    grid-column: 2;
-    justify-self: center;
-    justify-content: center;
-}
 
 .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center .mod-select {
     min-width: 0;
