@@ -6729,7 +6729,10 @@ document.addEventListener('click', (event) => {
                 Object.values(cards).forEach((step) => Object.values(step || {}).forEach(own));
                 return { cards, rounds: {}, defaults: dropEmpty(own(copy(config?.customDefaults))), runExplicit: {}, schema: null, error: '', controls: [] };
             }
-            const errors = window.BasicSchema.validate(config.schema);
+            // A saved draft with no runnable step yet (all models switched off, no owner step) is readable; it only cannot start.
+            const all = window.BasicSchema.validate(config.schema);
+            const notRunnable = (error) => error.path === 'steps' && /нет исполнимого шага/.test(error.message);
+            const errors = all.every(notRunnable) ? [] : all;
             if (errors.length) return { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, schema: null, error: describeSchemaErrors(errors), errorList: errors, controls: [] };
             const settings = window.BasicSchema.toSettings(config.schema);
             // The fields of rounds and owner steps are one store by ref (see stepFieldsOf).

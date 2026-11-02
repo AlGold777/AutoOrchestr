@@ -3066,6 +3066,19 @@ describe('Pipeline debate favorites view', () => {
       } finally { h.cleanup(); }
     }, 30000);
 
+    test('a saved draft with no runnable step is read on open, without the unreadable-schema notification', () => {
+      const h = setupCustomInheritance('Draft schema');
+      try {
+        const record = JSON.parse(JSON.stringify(h.debug.capturePipelineConfig()));
+        record.schema = { schemaVersion: 1, origin: 'user', steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT', enabled: false }] }] };
+        h.debug.clearCustomSessionForTest();
+        h.debug.setPipelineStoreForTest({ active: 'Draft schema', order: ['Draft schema'], pipelines: { 'Draft schema': record } });
+        document.getElementById('notification-message').textContent = '';
+        h.debug.applyPipelineConfig(record);
+        expect(document.getElementById('notification-message').textContent).not.toContain('Схема pipeline не прочитана');
+      } finally { h.cleanup(); }
+    }, 30000);
+
     test('step errors: a failing step shows a badge that opens the full error list; an install with 7 errors lists all 7', async () => {
       require('../results/choice-dialog');
       const h = setupCustomInheritance('Step errors');
