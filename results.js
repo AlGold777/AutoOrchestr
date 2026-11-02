@@ -5809,7 +5809,8 @@ document.addEventListener('click', (event) => {
 
         const syncPipelineRoundModelsFromSelectedLLMs = ({ force = false } = {}) => {
             // Basic's participant IDs, including switched-off duplicates, are restored from its schema.
-            if (isCustomEnginePipeline()) return false;
+            // The built-in Default has no participants of its own: its rounds follow the models selected on top.
+            if (isCustomEnginePipeline() && !isDefaultPipelineName(pipelineStore.active || 'Default')) return false;
             if (!force && pipelineR1ManualDirty && !isR1DefaultSelection()) return false;
             const selectedIndices = getSelectedLLMIndicesForPipeline();
             let changed = false;

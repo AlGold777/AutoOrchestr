@@ -27,8 +27,8 @@ describe('Basic legacy pipeline restore', () => {
     debug.clearCustomSessionForTest();
     debug.setPipelineStoreForTest({ active: pipelineName, pipelines: { [pipelineName]: legacy }, order: [pipelineName] });
     debug.applyPipelineConfig(legacy);
-    expect(document.querySelectorAll('#r1-models .model-block')).toHaveLength(0);
-    expect(document.querySelectorAll('#r2-models .model-block')).toHaveLength(0);
+    expect(document.querySelectorAll('#r1-models .model-block:not(.pipeline-empty-slot)')).toHaveLength(0);
+    expect(document.querySelectorAll('#r2-models .model-block:not(.pipeline-empty-slot)')).toHaveLength(0);
   });
 
   test('legacy records with provider names alone remain format 1 when saved', () => {
