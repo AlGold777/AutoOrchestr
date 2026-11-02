@@ -1602,7 +1602,7 @@ body.is-resizing {
 .pipeline-stage-dialog .owner-ask-hint { margin: 0; padding: 12px 20px 0; color: #8a96a2; }
 .pipeline-stage-dialog .owner-ask-actions { padding: 0 20px 18px; }
 /* Блок User на холсте: две строки — «● User» и «✅ роль». Значок шага — как значок раунда. */
-.pipeline-control-card { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.pipeline-control-card { display: flex; flex-direction: column; justify-content: center; gap: 1px; height: var(--pipeline-block-height); overflow: hidden; }
 .control-card-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 20px; }
 .control-card-line > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .control-card-mark { flex: none; font-size: 11px; }

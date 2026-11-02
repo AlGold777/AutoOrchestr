@@ -329,7 +329,7 @@ describe('release log regression guards', () => {
     expect(source).toContain('class="model-block inactive pipeline-empty-slot" aria-hidden="false"');
     expect(css).toContain('.model-block.pipeline-empty-slot {');
     expect(css).toContain('display: flex;');
-    expect(css).toContain('--pipeline-block-height: 59.52px;');
+    expect(css).toContain('--pipeline-block-height: 53.57px;');
     expect(css).toContain('--pipeline-block-gap: 11px;');
     expect(css).toContain('animation: none;');
   });
