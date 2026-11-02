@@ -1679,3 +1679,9 @@ body.is-resizing {
 
 /* Прокрутка страницы с разгоном схемы идёт без привязки к якорю (иначе браузер сдвигает прокрутку вслед за схемой). */
 html:has(body.pipeline-page) { overflow-anchor: none; }
+
+/* Шапка списка Pipelines — той же высоты, что шапка схемы (значение выставляет results.js). */
+.pipeline-panel .pipeline-list-header {
+    box-sizing: border-box;
+    height: var(--panel-header-height, auto);
+}

@@ -10002,6 +10002,14 @@ document.addEventListener('click', (event) => {
         if (stickyTopBar && typeof ResizeObserver === 'function') new ResizeObserver(syncTopBarBottom).observe(stickyTopBar);
         window.addEventListener('resize', syncTopBarBottom);
 
+        // The «Pipelines» header is as high as the header of the scheme.
+        const schemeHeader = pipelinePanel?.querySelector('.panel-header');
+        const syncListHeaderHeight = () => {
+            if (schemeHeader?.offsetHeight) pipelinePanel.style.setProperty('--panel-header-height', `${schemeHeader.offsetHeight}px`);
+        };
+        syncListHeaderHeight();
+        if (schemeHeader && typeof ResizeObserver === 'function') new ResizeObserver(syncListHeaderHeight).observe(schemeHeader);
+
         // Before it sticks, the scheme speeds up: over the last STICK_LEAD_PX of the scroll it moves faster than the page
         // and reaches the bar early (progress p(u) = a*u + (1-a)*u^2 gives the acceleration), then stays.
         const STICK_LEAD_PX = 160;

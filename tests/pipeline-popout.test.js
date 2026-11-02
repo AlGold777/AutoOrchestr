@@ -84,3 +84,10 @@ describe('scheme speeds up before it sticks', () => {
     expect(top(80) - top(60)).toBeGreaterThan(top(150) - top(130));
   });
 });
+
+describe('the Pipelines header is as high as the scheme header', () => {
+  test('height comes from a variable set from the scheme header', () => {
+    expect(read('styles/pipeline.css')).toMatch(/\.pipeline-panel \.pipeline-list-header\s*\{[^}]*height:\s*var\(--panel-header-height, auto\)/s);
+    expect(read('results.js')).toContain("setProperty('--panel-header-height'");
+  });
+});
