@@ -33,8 +33,8 @@ const requestDoc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'Scheme cr
 const requestText = requestDoc.match(/^````\n([\s\S]*?)\n````$/m)[1];
 
 describe('A2, A3: the model request agrees with the validator and the engine', () => {
-  test('the repeat rule has its exception for the input that revisionOf names', () => {
-    expect(requestText).toContain('кроме входа, на который ссылается `revisionOf`');
+  test('the one-transfer rule keeps the input that revisionOf names', () => {
+    expect(requestText).toContain('обязательная для текущего движка ссылка сохранена во входе автора');
   });
 
   test('auto asks the owner about an incomplete round; manual (also without run) pauses after every step', () => {
