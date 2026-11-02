@@ -1687,3 +1687,16 @@ html:has(body.pipeline-page) { overflow-anchor: none; }
     box-sizing: border-box;
     height: var(--panel-header-height, auto);
 }
+
+/* Режим «Схема во весь экран»: Run/Pause посередине шапки, название, раунды и длина — слева, окна карточек выше схемы. */
+.pipeline-popout-run-btn { display: none; }
+.pipeline-panel.is-popout .panel-header { grid-template-columns: auto auto minmax(0, 1fr); column-gap: 24px; }
+.pipeline-panel.is-popout .pipeline-popout-run-btn { display: inline-flex; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); align-items: center; justify-content: center; }
+.pipeline-panel.is-popout .panel-header-actions { justify-self: start; }
+body.pipeline-popout-open .modal { z-index: 5100; }
+.pipeline-panel.is-popout .pipeline-popout-run-btn {
+    width: 36px; height: 36px; padding: 0; border: none; border-radius: 50%;
+    background: #111827; color: #fff; font-size: 17px; cursor: pointer;
+}
+.pipeline-panel.is-popout .pipeline-popout-run-btn:hover:not(:disabled) { background: #1f2937; }
+.pipeline-panel.is-popout .pipeline-popout-run-btn:disabled { opacity: .45; cursor: default; }

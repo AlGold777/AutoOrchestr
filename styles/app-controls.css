@@ -376,7 +376,7 @@ body.left-sidebar-open .mode-pill .pill-dot {
     opacity: 0;
     transform: translateY(4px);
     transition: opacity 0.12s ease, transform 0.12s ease;
-    z-index: 2000;
+    z-index: 6000;
 }
 
 .floating-tooltip.is-visible {

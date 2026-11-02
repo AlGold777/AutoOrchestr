@@ -98,3 +98,25 @@ describe('the page ends where the scheme stops under the bar', () => {
     expect(read('results.js')).toContain("setProperty('--pipeline-tail-trim'");
   });
 });
+
+describe('the window works as a console of the pipeline', () => {
+  test('Run / Pause sits in the header, is shown only in the window and mirrors the main Run button', () => {
+    const html = read('pipeline_panel.html');
+    const header = html.slice(html.indexOf('class="panel-header"'), html.indexOf('class="pipeline-canvas"'));
+    expect(header).toContain('id="pipeline-popout-run-btn"');
+    expect(header.indexOf('panel-header-actions')).toBeLessThan(header.indexOf('pipeline-popout-run-btn'));
+    expect(header.indexOf('pipeline-popout-run-btn')).toBeLessThan(header.indexOf('pipeline-list-header-actions'));
+    const css = read('styles/pipeline.css');
+    expect(css).toContain('.pipeline-popout-run-btn { display: none; }');
+    expect(css).toMatch(/\.pipeline-panel\.is-popout \.pipeline-popout-run-btn \{[^}]*left: 50%/);
+    const js = read('results.js');
+    expect(js).toContain("runButton: document.getElementById('pipeline-popout-run-btn')");
+    expect(js).toContain("document.getElementById('pipeline-popout-run-btn')?.addEventListener('click'");
+  });
+
+  test('card windows and tooltips stay above the window', () => {
+    expect(read('styles/pipeline.css')).toContain('body.pipeline-popout-open .modal { z-index: 5100; }');
+    expect(read('styles/app-controls.css')).toMatch(/z-index: 6000;\s*\}\s*\.floating-tooltip\.is-visible/);
+    expect(read('results.js')).toContain("document.body.classList.add('pipeline-popout-open')");
+  });
+});

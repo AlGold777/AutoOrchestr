@@ -5721,6 +5721,7 @@ document.addEventListener('click', (event) => {
         const updateDebateButtonsUi = () => {
             const controls = getDebateRunControls();
             window.DebateRenderer?.renderRunControls?.({ runButton: debateRunToggleBtn, stepButton: null, view: controls });
+            window.DebateRenderer?.renderRunControls?.({ runButton: document.getElementById('pipeline-popout-run-btn'), stepButton: null, view: controls });
             if (debateMaxTurnsInput) {
                 debateMaxTurnsInput.value = String(getDebateMaxTurns());
             }
@@ -10080,8 +10081,10 @@ document.addEventListener('click', (event) => {
                 popoutBackdrop.addEventListener('click', () => setPipelinePopout(false));
                 document.body.append(popoutBackdrop);
                 pipelinePanel.classList.add('is-popout');
+                document.body.classList.add('pipeline-popout-open');
             } else {
                 pipelinePanel.classList.remove('is-popout');
+                document.body.classList.remove('pipeline-popout-open');
                 popoutBackdrop?.remove();
                 popoutBackdrop = null;
                 const host = pipelinePanel.parentElement;
@@ -10092,6 +10095,10 @@ document.addEventListener('click', (event) => {
             relayoutPipeline();
         };
         popoutBtn?.addEventListener('click', () => setPipelinePopout(!pipelinePanel.classList.contains('is-popout')));
+        // In the window the Run / Pause button of the header does what the main Run button does.
+        document.getElementById('pipeline-popout-run-btn')?.addEventListener('click', () => {
+            if (debateRunToggleBtn && !debateRunToggleBtn.disabled) debateRunToggleBtn.click();
+        });
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && pipelinePanel?.classList.contains('is-popout') && !document.querySelector('dialog[open]')) setPipelinePopout(false);
         });
