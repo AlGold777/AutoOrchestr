@@ -198,18 +198,12 @@
 }
 
 /* Смещения измерены в Chrome: центр иконки Pipeline совпадает с центром иконок моделей, полоска Telemetry — с подписями моделей. */
-.right-sidebar-toggle-btn,
-.pipeline-popout-btn {
+.right-sidebar-toggle-btn {
     margin-bottom: 0;
     color: rgb(133 137 142);
     position: relative;
     top: -9.5px;
 }
-
-/* Кнопка «Схема во весь экран»: тот же размер и вес, что у иконки Pipeline. */
-.pipeline-popout-btn { width: 28px; color: rgb(100 116 139); }
-.pipeline-popout-btn .sidebar-toggle-icon { display: block; width: 24px; height: 24px; stroke-width: 2.2; }
-.pipeline-popout-btn:hover, .pipeline-popout-btn[aria-pressed="true"] { color: #111827; }
 
 .telemetry-toggle-btn {
     position: absolute;

@@ -4,13 +4,14 @@ const path = require('path');
 const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
 
 describe('scheme in its own window', () => {
-  test('the button stands right after the Pipeline icon block', () => {
+  test('the button stands in the panel header, right after «Вставить схему»', () => {
     const html = read('pipeline_panel.html');
-    const pipeline = html.indexOf('id="right-sidebar-toggle"');
+    const profile = html.indexOf('id="pipeline-profile-btn"');
     const popout = html.indexOf('id="pipeline-popout-btn"');
-    expect(pipeline).toBeGreaterThan(-1);
-    expect(popout).toBeGreaterThan(pipeline);
-    expect(html.slice(pipeline, popout)).not.toMatch(/<button[^>]*id="(?!telemetry-toggle-btn)/);
+    expect(profile).toBeGreaterThan(-1);
+    expect(popout).toBeGreaterThan(profile);
+    expect(html.slice(profile, popout).match(/<button/g).length).toBe(1);
+    expect(html.indexOf('</div>', profile)).toBeGreaterThan(popout);
     expect(html).toMatch(/<button[^>]*id="pipeline-popout-btn"[^>]*aria-label="Схема во весь экран"/);
   });
 
@@ -21,10 +22,9 @@ describe('scheme in its own window', () => {
     expect(css).toMatch(/\.pipeline-canvas \.stage-header-row[^{]*\{[^}]*position:\s*sticky/s);
   });
 
-  test('the round row follows the page scroll through a shift variable, and the button is an inline icon', () => {
+  test('the round row follows the page scroll through a shift variable, ', () => {
     expect(read('styles', 'pipeline.css')).toContain('translateY(var(--round-row-pin, 0))');
     expect(read('results.js')).toContain("setProperty('--round-row-pin'");
-    expect(read('pipeline_panel.html')).toMatch(/id="pipeline-popout-btn"[^>]*><svg/);
   });
 
   test('the page code toggles the window by the button, the backdrop and Escape', () => {
