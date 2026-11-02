@@ -486,7 +486,7 @@ body.is-resizing {
     height: 28px;
     padding: 2px 5px;
     border-radius: 4px;
-    font-size: 9px;
+    font-size: 11px;
 }
 
 .entry-wrapper {
@@ -611,7 +611,7 @@ body.is-resizing {
     white-space: nowrap;
     font-size: 12px;
     line-height: 20px;
-    color: #64748b;
+    color: #64748bd6;
     cursor: inherit;
 }
 .model-role-label.is-empty { color: #b8c0cc; }
@@ -653,8 +653,8 @@ body.is-resizing {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 13px;
-    font-weight: 700;
-    color: #0f172ad1;
+    font-weight: 600;
+    color: #77869d;
 }
 
 .model-participant-label-wrap {
@@ -1457,7 +1457,7 @@ body.is-resizing {
     display: block;
     width: var(--pipeline-block-width);
     box-sizing: border-box;
-    padding: 8px 10px;
+    padding: 3px 0px 3px 7px;
     border: 1px dashed currentColor;
     border-radius: 8px;
     background: transparent;
@@ -1470,9 +1470,9 @@ body.is-resizing {
 
 /* The owner card: a green frame (higher specificity than the dashed rule above). */
 .pipeline-control-step[data-control-kind="owner"] .pipeline-control-card {
-    border: 3px solid #16a34a;
+    border: 1px solid #16a34a;
     background: #f0fdf4;
-    color: #14532d;
+    color: #54687e;
 }
 
 /* Document frames on the canvas (Basic, stage 2): one per round with a document for reading. */
