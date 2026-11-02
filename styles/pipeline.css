@@ -1601,15 +1601,18 @@ body.is-resizing {
 .pipeline-stage-dialog .owner-ask-actions [data-owner-ask="answer"]:hover { background: #55728b; }
 .pipeline-stage-dialog .owner-ask-hint { margin: 0; padding: 12px 20px 0; color: #8a96a2; }
 .pipeline-stage-dialog .owner-ask-actions { padding: 0 20px 18px; }
-/* Блок User на холсте: роль и задание внутри прежней рамки, без прокрутки. */
+/* Блок User на холсте: две строки — «● User» и «✅ роль». Значок шага — как значок раунда. */
 .pipeline-control-card { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
-.control-card-role { font-size: 12px; line-height: 20px; color: #64748b; }
+.control-card-line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; line-height: 20px; }
+.control-card-line > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.control-card-mark { flex: none; font-size: 11px; }
+.control-card-name { font-size: 13px; font-weight: 700; color: #0f172ad1; }
+.control-card-role { color: #64748b; }
 .control-card-role.is-empty { color: #b8c0cc; }
-.control-card-task {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
-    overflow: hidden;
-    font-size: 12px;
-    color: #54687e;
+.pipeline-control-title {
+    display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+    width: 66px; height: 28px; padding: 2px 5px; border-radius: 4px;
+    background: var(--pipeline-blue-soft); color: var(--pipeline-blue); font-size: 11px; text-transform: none;
 }
+.stage-header-row .pipeline-control-delete-btn { position: absolute; right: 0; opacity: 0; pointer-events: none; }
+.pipeline-control-step.is-control-editing .pipeline-control-delete-btn:not(:disabled) { opacity: 1; pointer-events: auto; }

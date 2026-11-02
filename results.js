@@ -4868,7 +4868,7 @@ document.addEventListener('click', (event) => {
             label.className = 'stage-label';
             const title = document.createElement('span');
             title.className = 'pipeline-control-title';
-            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind}:`;
+            title.textContent = CONTROL_TITLE[step.kind] || step.kind;
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'pipeline-control-delete-btn';
@@ -4887,13 +4887,18 @@ document.addEventListener('click', (event) => {
             card.className = 'pipeline-control-card';
             card.dataset.controlCard = step.ref;
             const summary = window.StageCard?.controlSummary?.(step) || '';
-            const role = document.createElement('span');
-            role.className = `control-card-role${step.title ? '' : ' is-empty'}`;
-            role.textContent = step.title || '- -';
-            const task = document.createElement('span');
-            task.className = 'control-card-task';
-            task.textContent = summary || 'настройте в окне';
-            card.append(role, task);
+            const line = (mark, text, className) => {
+                const row = document.createElement('span');
+                row.className = `control-card-line ${className}`;
+                const icon = document.createElement('span');
+                icon.className = 'control-card-mark';
+                icon.textContent = mark;
+                const label = document.createElement('span');
+                label.textContent = text;
+                row.append(icon, label);
+                return row;
+            };
+            card.append(line('●', CONTROL_TITLE[step.kind] || step.kind, 'control-card-name'), line('✅', step.title || '- -', `control-card-role${step.title ? '' : ' is-empty'}`));
             stack.append(card);
             column.append(header, stack);
             return column;
@@ -9993,7 +9998,7 @@ document.addEventListener('click', (event) => {
             participantPress = null;
         };
         const hideParticipantActions = () => {
-            pipelinePanel.querySelectorAll('.is-participant-editing').forEach((block) => block.classList.remove('is-participant-editing'));
+            pipelinePanel.querySelectorAll('.is-participant-editing, .is-control-editing').forEach((node) => node.classList.remove('is-participant-editing', 'is-control-editing'));
         };
         pipelinePanel.addEventListener('pointerdown', (event) => {
             cancelParticipantPress();
@@ -10008,6 +10013,18 @@ document.addEventListener('click', (event) => {
             }, 550);
             participantPress = press;
         });
+        pipelinePanel.addEventListener('pointerdown', (event) => {
+            const column = event.target?.closest?.('.pipeline-control-step');
+            if (!column || pipelineRunActive || event.button !== 0 || event.target.closest('.pipeline-control-delete-btn')) return;
+            cancelParticipantPress();
+            const press = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, timer: null };
+            press.timer = setTimeout(() => {
+                if (!column.isConnected || pipelineRunActive) return;
+                hideParticipantActions();
+                column.classList.add('is-control-editing');
+            }, 550);
+            participantPress = press;
+        });
         document.addEventListener('pointermove', (event) => {
             if (participantPress && (event.pointerId !== participantPress.pointerId
                 || Math.hypot(event.clientX - participantPress.x, event.clientY - participantPress.y) > 8)) cancelParticipantPress();
@@ -10016,13 +10033,13 @@ document.addEventListener('click', (event) => {
         document.addEventListener('pointercancel', cancelParticipantPress);
         window.addEventListener('blur', () => { cancelParticipantPress(); hideParticipantActions(); });
         document.addEventListener('pointerdown', (event) => {
-            if (!event.target?.closest?.('.model-block.is-participant-editing')) hideParticipantActions();
+            if (!event.target?.closest?.('.model-block.is-participant-editing, .pipeline-control-step.is-control-editing')) hideParticipantActions();
         }, true);
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') { cancelParticipantPress(); hideParticipantActions(); }
         });
         pipelinePanel.addEventListener('contextmenu', (event) => {
-            if (event.target?.closest?.('.model-block.is-participant-editing')) event.preventDefault();
+            if (event.target?.closest?.('.model-block.is-participant-editing, .pipeline-control-step.is-control-editing')) event.preventDefault();
         });
         pipelinePanel.addEventListener('dblclick', (event) => {
             const target = event.target;
