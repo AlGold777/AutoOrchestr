@@ -1566,22 +1566,42 @@ body.is-resizing {
     .custom-card-controls .custom-card-length, .custom-card-controls .basic-input-files-slot { justify-self: start; }
 }
 
-/* Карточки раундов и User — тот же вид, что у блоков моделей. */
-.stage-column[data-round] .round-badge,
-.pipeline-control-title {
-    width: var(--pipeline-block-width);
-    height: 28px;
-    box-sizing: border-box;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
-    color: #0f172ad1;
-    font-size: 13px;
-    font-weight: 700;
-    box-shadow: 3px 4px 8px rgba(15, 23, 42, 0.16);
-    text-transform: none;
+/* Карточки раундов и User (окна по двойному клику) — в стиле dialog-modal.html, как карточка модели. */
+.pipeline-stage-dialog {
+    padding: 0; border: 1px solid #e0e5eb; border-radius: 15px; background: #fff; color: #273341;
+    box-shadow: 0 18px 60px #26374b16;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
 }
-.pipeline-control-title { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; }
+.pipeline-stage-dialog::backdrop { background: rgba(38, 55, 75, 0.22); }
+.pipeline-stage-dialog-header { align-items: center; padding: 16px 20px 14px; border-bottom: 1px solid #eef0f3; }
+.pipeline-stage-dialog h2 { font-size: 19px; font-weight: 650; color: #273341; }
+.pipeline-stage-dialog-header [data-stage-close] { width: 28px; height: 28px; border-radius: 7px; color: #8a96a2; font-size: 20px; }
+.pipeline-stage-dialog-header [data-stage-close]:hover { background: #edf3f9; color: #345f83; }
+.pipeline-stage-dialog .pipeline-stage-card { margin: 0; padding: 16px 20px 20px; font-size: 13px; color: #556372; }
+.pipeline-stage-dialog .stage-card-subtitle, .pipeline-stage-dialog .stage-card-muted { color: #8a96a2; font-size: 12px; }
+.pipeline-stage-dialog .stage-card-badge { padding: 2px 9px; border-radius: 6px; background: #edf3f9; color: #345f83; font-weight: 650; }
+.pipeline-stage-dialog .stage-card-setting { color: #273341; font-weight: 650; }
+.pipeline-stage-dialog .stage-card-section h3, .pipeline-stage-dialog .stage-card-output h3 { margin: 16px 0 6px; font-size: 14px; font-weight: 650; color: #273341; }
+.pipeline-stage-dialog select, .pipeline-stage-dialog input[type="text"], .pipeline-stage-dialog textarea {
+    padding: 6px 9px; border: 1px solid #e2e7ec; border-radius: 8px; background: #fafbfc; color: #273341; font: inherit; font-size: 13px;
+    transition: background 0.15s, border-color 0.15s;
+}
+.pipeline-stage-dialog textarea { padding: 8px 11px; line-height: 1.5; }
+.pipeline-stage-dialog select:focus-visible, .pipeline-stage-dialog input:focus-visible, .pipeline-stage-dialog textarea:focus-visible {
+    outline: none; box-shadow: none; background: #edf3f9; border-color: #92aec8;
+}
+.pipeline-stage-dialog .stage-card-instruction { background: #fafbfc; border: 1px solid #eef0f3; color: #556372; }
+.pipeline-stage-dialog .stage-card-output-field { display: block; margin-top: 8px; color: #556372; }
+.pipeline-stage-dialog .stage-card-output-field input[type="text"], .pipeline-stage-dialog .stage-card-output-field textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; }
+.pipeline-stage-dialog .stage-card-copy, .pipeline-stage-dialog .owner-ask-actions button {
+    padding: 6px 14px; border: 1px solid #dfe5eb; border-radius: 8px; background: #fff; color: #4d5c69; font-size: 13px; cursor: pointer;
+}
+.pipeline-stage-dialog .stage-card-copy:hover, .pipeline-stage-dialog .owner-ask-actions button:hover { background: #fafbfc; }
+.pipeline-stage-dialog .owner-ask-actions [data-owner-ask="answer"] { background: #617f99; border-color: #617f99; color: #fff; }
+.pipeline-stage-dialog .owner-ask-actions [data-owner-ask="answer"]:hover { background: #55728b; }
+.pipeline-stage-dialog .owner-ask-hint { margin: 0; padding: 12px 20px 0; color: #8a96a2; }
+.pipeline-stage-dialog .owner-ask-actions { padding: 0 20px 18px; }
+/* Блок User на холсте: имя, роль, задание. */
 .pipeline-control-card {
     display: flex;
     flex-direction: column;
