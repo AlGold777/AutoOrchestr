@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate the four JS files that import a schema into pipeline_panel, name it, select it and set the task.
-usage: python3 docs/Run/tools/make-import-scripts.py <schema.json> <task.txt> "<pipeline name>" <out_dir>
+usage: python3 "docs/Run Automation/tools/make-import-scripts.py" <schema.json> <task.txt> "<pipeline name>" <out_dir>
 Then run them in this order with js.sh: paste.js, name.js (clicks the name OK), select.js, task.js; then click the info window OK
 (click-ok-modal.js) and press run (run-click.js). All JS strings are JSON-encoded, so any text is safe."""
 import json,sys,os

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run a JS file in a Chrome tab (macOS, Chrome > View > Developer > Allow JavaScript from Apple Events).
-# usage: bash docs/Run/tools/js.sh <file.js> [url-fragment]   (default fragment: pipeline_panel.html; the LAST matching tab is used)
+# usage: bash "docs/Run Automation/tools/js.sh" <file.js> [url-fragment]   (default fragment: pipeline_panel.html; the LAST matching tab is used)
 PAT="${2:-pipeline_panel.html}"
 osascript <<OSA
 set js to (do shell script "cat " & quoted form of "$1")

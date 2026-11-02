@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pre-flight checks before a Basic run (macOS). usage: bash docs/Run/tools/preflight.sh <path to main checkout>
+# Pre-flight checks before a Basic run (macOS). usage: bash "docs/Run Automation/tools/preflight.sh" <path to main checkout>
 M="${1:-/Users/restart/Documents/GitHub/AutoOrchestr}"; T="$(cd "$(dirname "$0")" && pwd)"
 echo "1. screen locked?   $(ioreg -n Root -d1 | grep -E 'IOConsoleLocked' | head -1 | tr -d ' ')   (must be = No)"
 echo "2. display awake guard: $(pmset -g assertions | grep PreventUserIdleDisplaySleep | head -1 | tr -s ' ')   (must be 1; start: caffeinate -dimsu -t 7200 &)"

@@ -20,8 +20,8 @@
 - Корень: `structured-content-container.model-response-text`; служебные узлы: `copy-button`, `message-actions`, `regenerate-button`, `thumb-*-button`, `mat-icon`, `gem-*`, `thinking-overlay`, `h*.sc…` (матрица, строка 23). Код и таблицы у Gemini не сняты; код — эвристика `<code-block>` / `pre`.
 - Текст иконки кнопки копирования попадает в плоский текст (реестр L-25, P2, после живых данных).
 - Служебный заголовок `h6.screen-reader-model-response-label` удаляется при очистке (`content-gemini.js:53`); метка узла ищется там же (`:117`).
-- Переводы строк: в экспорте 2.81.948 попытка 1 на 41020 симв. имеет 0 переводов строки (`Basic 20261030_16-13.json`, Gemini a1 PARTIAL `partial_unproven`, 196 с). Заметка прогона: «0 строк на 40 тыс. символов» (`docs/Run/Test_run/Mosquito_Trap_Function_Card_2026-10-30/notes/run-report.md`, замечание 4).
-- Отдельная попытка с `prompt_echo`: 26241 симв., 39 переводов строки (тот же экспорт, Gemini a1, 1059 с). Эхо запроса принято за ответ; проверка эха на уровне приёмки (`docs/Run/Test_run/.../run-report.md`).
+- Переводы строк: в экспорте 2.81.948 попытка 1 на 41020 симв. имеет 0 переводов строки (`Basic 20261030_16-13.json`, Gemini a1 PARTIAL `partial_unproven`, 196 с). Заметка прогона: «0 строк на 40 тыс. символов» (`docs/Run Automation/Test_run/Mosquito_Trap_Function_Card_2026-10-30/notes/run-report.md`, замечание 4).
+- Отдельная попытка с `prompt_echo`: 26241 симв., 39 переводов строки (тот же экспорт, Gemini a1, 1059 с). Эхо запроса принято за ответ; проверка эха на уровне приёмки (`docs/Run Automation/Test_run/.../run-report.md`).
 
 ## 4. Лимиты и сообщения сайта
 

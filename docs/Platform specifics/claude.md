@@ -6,7 +6,7 @@
 
 - Поле ввода: `textarea[data-testid="chat-input"]` в резервных селекторах (`selectors/claude.config.js`, `emergencyFallbacks.composer`). Текст вставляется вставкой или по частям, код проверяет, что промпт принят (`content-claude.js:1990–2016`).
 - Кнопка отправки: `button[data-testid="chat-input-send"]` (`content-claude.js:1206`). Выключенность проверяет `isClaudeSendEnabled` (`content-claude.js:1216`).
-- Очень длинный запрос не принимается. Факт: в прогоне 2.81.948 в поле лежало 16776 симв. (весь запрос с меткой), кнопка `chat-input-send` имела `disabled: true`, движок ждал ответ (`docs/Run/Test_run/Remote_Viewfinder_v2_2026-10-30_13-48/notes/run-report.md`, замечание 1). Порог длины в документах не записан; известно: 16 тыс. символов не принимаются.
+- Очень длинный запрос не принимается. Факт: в прогоне 2.81.948 в поле лежало 16776 симв. (весь запрос с меткой), кнопка `chat-input-send` имела `disabled: true`, движок ждал ответ (`docs/Run Automation/Test_run/Remote_Viewfinder_v2_2026-10-30_13-48/notes/run-report.md`, замечание 1). Порог длины в документах не записан; известно: 16 тыс. символов не принимаются.
 - Защита: если кнопка не включилась, попытка завершается `send_not_taken` (`content-claude.js:2054–2058`, `2204–2211`); общий гейт `ContentUtils.ensureSendReady` (`docs/Transport/message-delivery.md`). Подтверждено кодом; живьём — реестр L-8 «подтвердить».
 - Ctrl+Enter: `tryEnterSend({ ctrlKey: true })` (`content-claude.js:2164`); до него Enter (2117–2118).
 - Подтверждение отправки только собственной репликой: метка `[[AO-…]]` в последнем ходе пользователя или очистка поля с появлением нового хода (`docs/Transport/message-delivery.md`, `claudeOwnReplyProof`). Спиннер и Stop от прошлого хода подтверждением не считаются (`content-claude.js`, реестр L-6).
@@ -14,7 +14,7 @@
 ## 2. Начало и конец генерации
 
 - Ответ завершён, когда нет кнопки Stop (RU «Остановить», EN «Stop») и есть Retry, стоящая после хода пользователя с меткой этого запроса (`content-claude.js:1830–1833`, `CLAUDE_RETRY_SELECTOR`; `docs/Transport/message-delivery.md`).
-- Retry от прошлого ответа продолженного чата завершением не считается (там же). Вопрос «есть ли Retry в предыдущем ходе» задан GPT-расширению и не проверен (`docs/Run/Test_run/Remote_Viewfinder_2026-10-30/notes/review.md`, задания).
+- Retry от прошлого ответа продолженного чата завершением не считается (там же). Вопрос «есть ли Retry в предыдущем ходе» задан GPT-расширению и не проверен (`docs/Run Automation/Test_run/Remote_Viewfinder_2026-10-30/notes/review.md`, задания).
 - Маркер `[data-testid="chat-loader"]` (загрузка истории) убран из `endGenerationMarkers`: `selectors/claude.config.js` теперь имеет `endGenerationMarkers: []` (реестр L-16, G6).
 - Пустой текст при завершении — ошибка `extract_failed` (журнал `empty_answer`, статус FAILED), а не успех (`docs/Transport/message-delivery.md`).
 - Видимый Stop без роста текста дольше 120 с — `STOP_STALLED`, статус UNCERTAIN (`docs/Transport/message-delivery.md`, раздел «Stop без роста текста»).
@@ -23,7 +23,7 @@
 ## 3. Структура ответа
 
 - Корень ответа: `.font-claude-response`; служебные узлы: `.sr-only` (метка «Claude said»), `[role=status]` (матрица, строка 24).
-- Таблицы сохраняются markdown-таблицами (`shared/answer-markdown-providers.js`, `tableToMarkdown`; CHANGELOG 2.81.946). В прогонах: r4 14801 симв., 202 перевода строки, 207 символов `|` (заметка `docs/Run/Test_run/Remote_Viewfinder_v2_2026-10-30_13-48/notes/run-report.md`).
+- Таблицы сохраняются markdown-таблицами (`shared/answer-markdown-providers.js`, `tableToMarkdown`; CHANGELOG 2.81.946). В прогонах: r4 14801 симв., 202 перевода строки, 207 символов `|` (заметка `docs/Run Automation/Test_run/Remote_Viewfinder_v2_2026-10-30_13-48/notes/run-report.md`).
 - Код: эвристика `pre > code.language-*`, подпись языка — отдельный узел. Лишняя строка «bash» перед блоком (реестр L-24, P2, после живых данных).
 - Артефакты (панели): обрабатываются вне элемента сообщения (`content-scripts/unified-answer-pipeline.js:61–95`, `answer-copy-context.js:204–205`). Заменяются заглушкой `[НЕ СКОПИРОВАНО: тип=artifact, причина=…]` (`unified-answer-pipeline.js:88`). Сценарий «ответ уходит в артефакт по кнопке „Создать документ“» в коде и документах не найден; не подтверждено.
 - Плоский текст через «Answer updated after ping»: финал при ручном обновлении отдаёт текст без переводов строк. Пример: `Basic 20261030_13-41.json` (2.81.947), Claude a1 SUCCESS, 17535 симв., 0 переводов строки (реестр L-4). Копия читается по запросу (`results.js`, `replyCopyFor`, до 4 с; ЗАКРЫТО-Н, коммит b499b89c). Путь: `content-claude.js:2605–2656`.
@@ -31,7 +31,7 @@
 ## 4. Лимиты и сообщения сайта
 
 - Сообщение: «Достигнут лимит использования. Сброс в 16:30.» (или «Сброс в HH:MM»). Кнопка «Повторить» (`shared/usage-limit-detector.js:2–9`, `37–45`). Причина в результате: `usage_limit` или `usage_limit:HH:MM` (CHANGELOG 2.81.949).
-- Факт 1: прогон «Ловушка для комаров», раунд 1, лимит «до 17:10». Текст запроса остался в поле, кнопка отправки disabled, движок ждал более 35 мин, окно «Пропустить участника» не появилось (`docs/Run/Test_run/Mosquito_Trap_Function_Card_2026-10-30/notes/run1-claude-limit.md`).
+- Факт 1: прогон «Ловушка для комаров», раунд 1, лимит «до 17:10». Текст запроса остался в поле, кнопка отправки disabled, движок ждал более 35 мин, окно «Пропустить участника» не появилось (`docs/Run Automation/Test_run/Mosquito_Trap_Function_Card_2026-10-30/notes/run1-claude-limit.md`).
 - Факт 2: раунд 5 прогона `Remote_Viewfinder_v2_2026-10-30_13-10`: «Сброс в 16:30», движок 9 минут опрашивал «Answer unchanged after ping» (`notes/run-report.md`).
 - С 2.81.949 лимит распознаётся как `usage_limit`, запрос не ждётся (CHANGELOG 2.81.949; M-9 ЗАКРЫТО-Н, «не подтверждено»). Подключение другого аккаунта — на стороне владельца.
 - HTTP 429: перехватчик в `content-claude.js:393–399` (`rate_limit`).

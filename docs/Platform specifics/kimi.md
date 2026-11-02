@@ -1,6 +1,6 @@
 # Kimi (провайдер Kimi)
 
-Код: `content-scripts/content-kimi.js`, селекторы `selectors/kimi.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 27, скелета нет). Заготовка от 2026-10-30. Попыток Kimi в выгрузках `docs/Run/Test_run/*/exports/` нет: все факты ниже из кода и реестра, живым прогоном не проверены.
+Код: `content-scripts/content-kimi.js`, селекторы `selectors/kimi.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 27, скелета нет). Заготовка от 2026-10-30. Попыток Kimi в выгрузках `docs/Run Automation/Test_run/*/exports/` нет: все факты ниже из кода и реестра, живым прогоном не проверены.
 
 ## 1. Отправка
 
@@ -33,7 +33,7 @@
 
 ## 6. Не проверено
 
-- Состояние `disabled` кнопки через 0, 250 и 1000 мс после ввода — задание GPT-расширению (`docs/Run/Test_run/Remote_Viewfinder_2026-10-30/notes/review.md`, задания, пункт 4). Не подтверждено.
+- Состояние `disabled` кнопки через 0, 250 и 1000 мс после ввода — задание GPT-расширению (`docs/Run Automation/Test_run/Remote_Viewfinder_2026-10-30/notes/review.md`, задания, пункт 4). Не подтверждено.
 - Ответ и его разметка (матрица: скелета нет).
 - Конец генерации по `[aria-busy="true"]` и `[data-streaming="true"]` — по селекторам, в DOM не проверено.
 - Mermaid и код (L-5).

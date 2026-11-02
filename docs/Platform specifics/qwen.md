@@ -1,6 +1,6 @@
 # Qwen (провайдер Qwen)
 
-Код: `content-scripts/content-qwen.js`, селекторы `selectors/qwen.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 22). Заготовка от 2026-10-30. Экспорты: одна попытка Qwen в `docs/Run/Test_run/Mosquito_Trap_Function_Card_2026-10-30/exports/Basic 20261030_16-13.json` (2.81.948).
+Код: `content-scripts/content-qwen.js`, селекторы `selectors/qwen.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 22). Заготовка от 2026-10-30. Экспорты: одна попытка Qwen в `docs/Run Automation/Test_run/Mosquito_Trap_Function_Card_2026-10-30/exports/Basic 20261030_16-13.json` (2.81.948).
 
 ## 1. Отправка
 
@@ -46,4 +46,4 @@
 |---|---|---|---|---|---|---|
 | 2026-10-30 | 2.81.950 (ветка) | `content-qwen.js:1747–1762`; `docs/Transport/message-delivery.md`; реестр L-7 | Неактивная кнопка Qwen: ждём 1,5 с и нажимаем; Ctrl+Enter только без кнопки | Повтор клика, `sendDeadline` 8 с обрезал повтор | Дубль или пропуск отправки | ЗАКРЫТО-Н (c2171d5a, тесты); живьём — подтвердить |
 | 2026-10-30 | 2.81.948 | `Basic 20261030_16-13.json`; `selectors/qwen.config.js:49` | Ответ Qwen 10206 симв. не подтверждён концом; на попытке 2 переводов строки нет | `partial_unproven`, `nl=135` и `nl=0` | Повтор запроса | Наблюдение |
-| 2026-10-31 | 2.81.952 | экспорт `docs/Run/Test_run/Research_Instruction_2026-10-30_22-00/exports/Basic-run3-v2.81.952.json`; реестр M-20 | Готовый ответ Qwen (с меткой в конце) не принят: терминал `empty_answer` до первого текста, карточка чередует `matched`/`wrong_card`, слоёв селекторов в telemetry нет; в карточке строка размышления; на r3 тот же Qwen принят со 2-й попытки | 4× FAILED `empty`, «Повторить» — 9 мин 25 с без текста | необязательный участник держит раунд до 21 мин | реестр M-20 |
+| 2026-10-31 | 2.81.952 | экспорт `docs/Run Automation/Test_run/Research_Instruction_2026-10-30_22-00/exports/Basic-run3-v2.81.952.json`; реестр M-20 | Готовый ответ Qwen (с меткой в конце) не принят: терминал `empty_answer` до первого текста, карточка чередует `matched`/`wrong_card`, слоёв селекторов в telemetry нет; в карточке строка размышления; на r3 тот же Qwen принят со 2-й попытки | 4× FAILED `empty`, «Повторить» — 9 мин 25 с без текста | необязательный участник держит раунд до 21 мин | реестр M-20 |
