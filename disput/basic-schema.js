@@ -668,7 +668,7 @@
   // participants of one model are two blocks, told apart by id); a round of one model with a role (a synthesis) is an
   // ordinary round. The rounds limit counts rounds only; an owner step may stand anywhere; a switched-off model is on the
   // canvas only with onCanvas.
-  function toCanvas(schema, { models = [], isRole = () => true, runWords = null } = {}) {
+  function toCanvas(schema, { models = [], isRole = () => true, runWords = null, allowDraft = false } = {}) {
     const errors = [];
     const fail = (path, message) => errors.push({ path, message });
     const steps = schema.steps || [];
@@ -687,7 +687,8 @@
       if (step.ref !== `r${rounds.length}`) fail(`${path}.ref`, `ref раунда должен быть «r${rounds.length}»`);
     });
     if (Array.isArray(runWords) && schema.run && 'maxWords' in schema.run && !runWords.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${runWords.join(', ')}`);
-    executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
+    // A saved draft that cannot start yet (allowDraft) is still shown.
+    if (!allowDraft) executabilityErrors(steps).forEach((error) => fail(error.path, error.message));
     if (rounds.length > 50) fail('steps', 'раундов не больше 50');
     if (errors.length) return { errors };
     // Each round's stack holds only the participants of that round: enabled ones, then its switched-off ones with onCanvas.

@@ -3076,6 +3076,7 @@ describe('Pipeline debate favorites view', () => {
         document.getElementById('notification-message').textContent = '';
         h.debug.applyPipelineConfig(record);
         expect(document.getElementById('notification-message').textContent).not.toContain('Схема pipeline не прочитана');
+        expect(document.getElementById('notification-message').textContent).not.toContain('не отображена на холсте');
       } finally { h.cleanup(); }
     }, 30000);
 

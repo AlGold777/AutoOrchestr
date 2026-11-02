@@ -8168,7 +8168,8 @@ document.addEventListener('click', (event) => {
                 ? window.BasicSchema.toCanvas(incomingSchema, {
                     models: getAllPipelineModelNames(),
                     isRole: (value) => Boolean(resolveJudgePromptId(value)),
-                    runWords: Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => Number(option.value)).filter(Number.isSafeInteger)
+                    runWords: Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => Number(option.value)).filter(Number.isSafeInteger),
+                    allowDraft: true
                 })
                 : null;
             // A schema that is not read has its own notice (unreadableSchemaMessage); the canvas notice would replace it.
