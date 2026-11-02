@@ -108,6 +108,7 @@ describe('the window works as a console of the pipeline', () => {
     expect(header.indexOf('pipeline-popout-run-btn')).toBeLessThan(header.indexOf('pipeline-list-header-actions'));
     const css = read('styles/pipeline.css');
     expect(css).toContain('.pipeline-popout-run-btn { display: none; }');
+    expect(css).toContain('.pipeline-panel:not(.is-popout) .pipeline-popout-run-btn { display: none !important; }');
     expect(css).toMatch(/\.pipeline-panel\.is-popout \.pipeline-popout-run-btn \{[^}]*left: 50%/);
     const js = read('results.js');
     expect(js).toContain("runButton: document.getElementById('pipeline-popout-run-btn')");
