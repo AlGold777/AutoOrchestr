@@ -15,9 +15,9 @@ describe('scheme in its own window', () => {
     expect(html).toMatch(/<button[^>]*id="pipeline-popout-btn"[^>]*aria-label="Схема во весь экран"/);
   });
 
-  test('the window is at most 80% of the screen wide and high; the canvas keeps its header on top', () => {
+  test('the window is at most 96% of the screen wide and 92% high; the canvas keeps its header on top', () => {
     const css = read('styles', 'pipeline.css');
-    expect(css).toMatch(/\.pipeline-panel\.is-popout\s*\{[^}]*max-width:\s*80vw[^}]*max-height:\s*80vh/s);
+    expect(css).toMatch(/\.pipeline-panel\.is-popout\s*\{[^}]*max-width:\s*96vw[^}]*max-height:\s*92vh/s);
     expect(css).toMatch(/\.pipeline-panel\.is-popout \.pipeline-list\s*\{\s*display:\s*none/);
     expect(css).toMatch(/\.pipeline-canvas \.stage-header-row[^{]*\{[^}]*position:\s*sticky/s);
   });

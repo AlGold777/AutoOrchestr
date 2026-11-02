@@ -1636,10 +1636,10 @@ body.is-resizing {
     z-index: 5001;
     width: max-content;
     min-width: 320px;
-    max-width: 80vw;
+    max-width: 96vw;
     min-height: 0;
     height: auto;
-    max-height: 80vh;
+    max-height: 92vh;
     border: 1px solid #e0e5eb;
     border-radius: 15px;
     background: #fff;
@@ -1696,8 +1696,8 @@ html:has(body.pipeline-page) { overflow-anchor: none; }
 .pipeline-panel.is-popout .panel-header-actions { justify-self: start; }
 body.pipeline-popout-open .modal { z-index: 5100; }
 .pipeline-panel.is-popout .pipeline-popout-run-btn {
-    width: 36px; height: 36px; padding: 0; border: none; border-radius: 50%;
-    background: #111827; color: #fff; font-size: 17px; cursor: pointer;
+    width: 32.4px; height: 32.4px; padding: 0; border: none; border-radius: 50%;
+    background: #111827; color: #fff; font-size: 15.3px; cursor: pointer;
 }
 .pipeline-panel.is-popout .pipeline-popout-run-btn:hover:not(:disabled) { background: #1f2937; }
 .pipeline-panel.is-popout .pipeline-popout-run-btn:disabled { opacity: .45; cursor: default; }
