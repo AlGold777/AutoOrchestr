@@ -4868,7 +4868,9 @@ document.addEventListener('click', (event) => {
             label.className = 'stage-label';
             const title = document.createElement('span');
             title.className = 'pipeline-control-title';
-            title.textContent = CONTROL_TITLE[step.kind] || step.kind;
+            let order = -1;
+            try { order = (basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []).findIndex((item) => item.ref === step.ref); } catch (_) { order = -1; }
+            title.textContent = order >= 0 ? `R${order + 1}` : (CONTROL_TITLE[step.kind] || step.kind);
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'pipeline-control-delete-btn';
