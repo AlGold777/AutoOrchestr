@@ -4868,7 +4868,7 @@ document.addEventListener('click', (event) => {
             label.className = 'stage-label';
             const title = document.createElement('span');
             title.className = 'pipeline-control-title';
-            title.textContent = step.ref;
+            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind}:`;
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'pipeline-control-delete-btn';
@@ -4887,16 +4887,13 @@ document.addEventListener('click', (event) => {
             card.className = 'pipeline-control-card';
             card.dataset.controlCard = step.ref;
             const summary = window.StageCard?.controlSummary?.(step) || '';
-            const name = document.createElement('span');
-            name.className = 'control-card-name';
-            name.textContent = CONTROL_TITLE[step.kind] || step.kind;
             const role = document.createElement('span');
             role.className = `control-card-role${step.title ? '' : ' is-empty'}`;
             role.textContent = step.title || '- -';
             const task = document.createElement('span');
             task.className = 'control-card-task';
             task.textContent = summary || 'настройте в окне';
-            card.append(name, role, task);
+            card.append(role, task);
             stack.append(card);
             column.append(header, stack);
             return column;

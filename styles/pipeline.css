@@ -1601,20 +1601,8 @@ body.is-resizing {
 .pipeline-stage-dialog .owner-ask-actions [data-owner-ask="answer"]:hover { background: #55728b; }
 .pipeline-stage-dialog .owner-ask-hint { margin: 0; padding: 12px 20px 0; color: #8a96a2; }
 .pipeline-stage-dialog .owner-ask-actions { padding: 0 20px 18px; }
-/* Блок User на холсте: имя, роль, задание. */
-.pipeline-control-card {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 8px 10px 8px 17px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
-    box-shadow: 3px 4px 8px rgba(15, 23, 42, 0.16);
-    overflow: hidden;
-}
-.pipeline-control-step[data-control-kind="owner"] .pipeline-control-card { border: 1px solid #cbd5e1; background: #fff; color: #54687e; }
-.control-card-name { font-size: 13px; font-weight: 700; color: #0f172ad1; }
+/* Блок User на холсте: роль и задание внутри прежней рамки, без прокрутки. */
+.pipeline-control-card { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
 .control-card-role { font-size: 12px; line-height: 20px; color: #64748b; }
 .control-card-role.is-empty { color: #b8c0cc; }
 .control-card-task {
