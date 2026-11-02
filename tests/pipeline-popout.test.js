@@ -121,3 +121,10 @@ describe('the window works as a console of the pipeline', () => {
     expect(read('results.js')).toContain("document.body.classList.add('pipeline-popout-open')");
   });
 });
+
+describe('window header keeps its blocks left and the Run button clear', () => {
+  test('the name no longer takes a fixed width and the header widens to clear the centred Run button', () => {
+    expect(read('styles/pipeline.css')).toMatch(/\.pipeline-panel\.is-popout \.pipeline-name \{[^}]*width: auto/);
+    expect(read('results.js')).toContain('const syncPopoutHeaderWidth = () => {');
+  });
+});

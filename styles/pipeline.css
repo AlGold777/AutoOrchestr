@@ -1701,3 +1701,6 @@ body.pipeline-popout-open .modal { z-index: 5100; }
 }
 .pipeline-panel.is-popout .pipeline-popout-run-btn:hover:not(:disabled) { background: #1f2937; }
 .pipeline-panel.is-popout .pipeline-popout-run-btn:disabled { opacity: .45; cursor: default; }
+/* В режиме окна название не занимает фиксированные 18ch: раунды и длина ответа встают ближе к левому краю. */
+.pipeline-panel.is-popout .panel-header { padding-left: 16px; column-gap: 14px; }
+.pipeline-panel.is-popout .pipeline-name { width: auto; min-width: 0; max-width: 16ch; }

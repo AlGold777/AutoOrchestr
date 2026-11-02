@@ -10064,6 +10064,21 @@ document.addEventListener('click', (event) => {
         const popoutBtn = document.getElementById('pipeline-popout-btn');
         let popoutBackdrop = null;
         let popoutPlaceholder = null;
+        // The Run button is centred in the header: the header is wide enough for both sides to clear it.
+        const syncPopoutHeaderWidth = () => {
+            const header = pipelinePanel?.querySelector('.panel-header');
+            if (!header) return;
+            if (!pipelinePanel.classList.contains('is-popout')) { header.style.minWidth = ''; return; }
+            const run = document.getElementById('pipeline-popout-run-btn');
+            const left = header.querySelector('.panel-header-actions');
+            const right = header.querySelector('.pipeline-list-header-actions');
+            if (!run || !left || !right) return;
+            const styles = getComputedStyle(header);
+            const leftEnd = left.getBoundingClientRect().right - header.getBoundingClientRect().left;
+            const rightWidth = right.offsetWidth + (parseFloat(styles.paddingRight) || 0);
+            const clearance = run.offsetWidth / 2 + 14;
+            header.style.minWidth = `${Math.ceil(2 * (Math.max(leftEnd, rightWidth) + clearance))}px`;
+        };
         const relayoutPipeline = () => {
             window.dispatchEvent(new Event('resize'));
             requestAnimationFrame(() => { try { updatePipelineAll(); } catch (_) { /* the canvas redraws on the next update */ } });
@@ -10091,6 +10106,7 @@ document.addEventListener('click', (event) => {
                 if (host) host.style.minHeight = popoutPlaceholder || '';
             }
             popoutBtn.setAttribute('aria-pressed', String(open));
+            syncPopoutHeaderWidth();
             pinRoundRow();
             relayoutPipeline();
         };
