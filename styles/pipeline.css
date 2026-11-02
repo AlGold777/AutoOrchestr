@@ -1672,7 +1672,8 @@ body.is-resizing {
 }
 .pipeline-page .pipeline-panel.pipeline-panel-inline:not(.is-popout) {
     position: sticky;
-    top: calc(var(--pipeline-top-bar-bottom, 89px) + 4px);
+    /* Верх схемы на 8 px заходит под верхнюю панель: эти 8 px закрывает отступ шапки, просвета нет. */
+    top: calc(var(--pipeline-top-bar-bottom, 89px) - 8px);
     z-index: 5;
     background: #F3F4F6;
     transform: translateY(var(--stick-lead, 0px));
