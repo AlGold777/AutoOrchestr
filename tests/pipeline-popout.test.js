@@ -54,3 +54,12 @@ describe('built-in Default follows the models selected on top', () => {
     expect(read('results.js')).toContain("if (isCustomEnginePipeline() && !isDefaultPipelineName(pipelineStore.active || 'Default')) return false;");
   });
 });
+
+describe('scheme sticks under the top bar', () => {
+  test('the panel is sticky below the top bar and its container has room to travel', () => {
+    const css = read('styles/pipeline.css');
+    expect(css).toMatch(/\.pipeline-page \.pipeline-panel\.pipeline-panel-inline:not\(\.is-popout\)\s*\{[^}]*position:\s*sticky[^}]*var\(--pipeline-top-bar-bottom/s);
+    expect(css).toMatch(/\.pipeline-page \.control-buttons\s*\{[^}]*min-height:\s*calc\(100dvh/s);
+    expect(read('results.js')).toContain("setProperty('--pipeline-top-bar-bottom'");
+  });
+});

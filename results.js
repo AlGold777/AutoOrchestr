@@ -9991,6 +9991,17 @@ document.addEventListener('click', (event) => {
             document.body.classList.add('modal-open');
         };
 
+        // The scheme (header, canvas and the list of pipelines) sticks under the top bar while the page scrolls.
+        const stickyTopBar = document.querySelector('.top-control-bar');
+        const syncTopBarBottom = () => {
+            if (!stickyTopBar) return;
+            const top = parseFloat(getComputedStyle(stickyTopBar).top) || 0;
+            document.documentElement.style.setProperty('--pipeline-top-bar-bottom', `${Math.round(top + stickyTopBar.offsetHeight)}px`);
+        };
+        syncTopBarBottom();
+        if (stickyTopBar && typeof ResizeObserver === 'function') new ResizeObserver(syncTopBarBottom).observe(stickyTopBar);
+        window.addEventListener('resize', syncTopBarBottom);
+
         // The scheme in its own window: the panel (header + canvas) lifts over the page, 80% of the screen at most.
         const popoutBtn = document.getElementById('pipeline-popout-btn');
         let popoutBackdrop = null;

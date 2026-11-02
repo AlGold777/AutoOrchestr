@@ -26,7 +26,7 @@ body.is-resizing {
     justify-content: flex-start;
     align-items: center;
     gap: 12px;
-    background: #e1e7efcc;
+    background: #a8caf740;
     position: sticky;
     top: 0;
     z-index: 2;
@@ -552,7 +552,7 @@ body.is-resizing {
 }
 
 .model-block.inactive {
-    border-color: #cbd5e1;
+    border-color: #7e8fa4;
     background: #ffffff;
     opacity: 1;
 }
@@ -866,7 +866,7 @@ body.is-resizing {
     gap: 8px;
     cursor: pointer;
     user-select: none;
-    background: #e5eaf1;
+    background: #a8caf740;
 }
 
 .pipeline-list-header h3 {
@@ -1661,4 +1661,17 @@ body.is-resizing {
 .pipeline-stage-dialog .stage-card-instruction::-webkit-scrollbar,
 .pipeline-stage-dialog textarea::-webkit-scrollbar {
     display: none;
+}
+
+/* Схема целиком (шапка, холст, список Pipelines) прилипает под верхней панелью при прокрутке страницы.
+   Контейнер растянут до высоты экрана, чтобы у прилипшей схемы был запас хода. */
+.pipeline-page .control-buttons {
+    justify-content: flex-start;
+    min-height: calc(100dvh - var(--pipeline-top-bar-bottom, 89px) - 8px);
+}
+.pipeline-page .pipeline-panel.pipeline-panel-inline:not(.is-popout) {
+    position: sticky;
+    top: calc(var(--pipeline-top-bar-bottom, 89px) + 4px);
+    z-index: 5;
+    background: #F3F4F6;
 }
