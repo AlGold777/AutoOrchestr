@@ -10002,6 +10002,36 @@ document.addEventListener('click', (event) => {
         if (stickyTopBar && typeof ResizeObserver === 'function') new ResizeObserver(syncTopBarBottom).observe(stickyTopBar);
         window.addEventListener('resize', syncTopBarBottom);
 
+        // Before it sticks, the scheme speeds up: over the last STICK_LEAD_PX of the scroll it moves faster than the page
+        // and reaches the bar early (progress p(u) = a*u + (1-a)*u^2 gives the acceleration), then stays.
+        const STICK_LEAD_PX = 160;
+        const STICK_EARLY_SHARE = 0.3;
+        let stickLeadFrame = 0;
+        const syncStickLead = () => {
+            stickLeadFrame = 0;
+            const panel = pipelinePanel;
+            const host = panel?.parentElement;
+            if (!panel || !host) return;
+            let shift = 0;
+            if (!panel.classList.contains('is-popout') && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+                const line = parseFloat(getComputedStyle(panel).top) || 0;
+                const distance = host.getBoundingClientRect().top - line;
+                // The lead never starts above the page top: at rest the scheme stays where the layout puts it.
+                const lead = Math.min(STICK_LEAD_PX, distance + window.scrollY - 8);
+                if (lead > 24 && distance > 0 && distance < lead) {
+                    const span = lead * (1 - STICK_EARLY_SHARE);
+                    const a = span / lead;
+                    const u = Math.min(1, (lead - distance) / span);
+                    const progress = a * u + (1 - a) * u * u;
+                    shift = lead * (1 - progress) - distance;
+                }
+            }
+            panel.style.setProperty('--stick-lead', `${Math.round(shift * 10) / 10}px`);
+        };
+        const scheduleStickLead = () => { if (!stickLeadFrame) stickLeadFrame = requestAnimationFrame(syncStickLead); };
+        window.addEventListener('scroll', scheduleStickLead, { passive: true });
+        window.addEventListener('resize', scheduleStickLead);
+
         // The scheme in its own window: the panel (header + canvas) lifts over the page, 80% of the screen at most.
         const popoutBtn = document.getElementById('pipeline-popout-btn');
         let popoutBackdrop = null;

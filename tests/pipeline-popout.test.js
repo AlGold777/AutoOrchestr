@@ -63,3 +63,24 @@ describe('scheme sticks under the top bar', () => {
     expect(read('results.js')).toContain("setProperty('--pipeline-top-bar-bottom'");
   });
 });
+
+describe('scheme speeds up before it sticks', () => {
+  test('the lead is a CSS variable on the panel set from the scroll; the page does not anchor its scroll', () => {
+    expect(read('styles/pipeline.css')).toContain('transform: translateY(var(--stick-lead, 0px));');
+    expect(read('styles/pipeline.css')).toContain('html:has(body.pipeline-page) { overflow-anchor: none; }');
+    expect(read('results.js')).toContain("setProperty('--stick-lead'");
+  });
+
+  test('progress curve: starts at the page speed, ends faster, reaches the line early', () => {
+    const lead = 160; const share = 0.3; const span = lead * (1 - share); const a = span / lead;
+    const shiftAt = (distance) => {
+      const u = Math.min(1, (lead - distance) / span);
+      return lead * (1 - (a * u + (1 - a) * u * u)) - distance;
+    };
+    expect(shiftAt(lead)).toBeCloseTo(0, 5);
+    expect(shiftAt(lead * share)).toBeCloseTo(-lead * share, 5);
+    const top = (distance) => distance + shiftAt(distance);
+    expect(top(lead * share)).toBeCloseTo(0, 5);
+    expect(top(80) - top(60)).toBeGreaterThan(top(150) - top(130));
+  });
+});

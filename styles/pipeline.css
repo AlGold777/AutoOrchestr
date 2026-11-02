@@ -1674,4 +1674,8 @@ body.is-resizing {
     top: calc(var(--pipeline-top-bar-bottom, 89px) + 4px);
     z-index: 5;
     background: #F3F4F6;
+    transform: translateY(var(--stick-lead, 0px));
 }
+
+/* Прокрутка страницы с разгоном схемы идёт без привязки к якорю (иначе браузер сдвигает прокрутку вслед за схемой). */
+html:has(body.pipeline-page) { overflow-anchor: none; }
