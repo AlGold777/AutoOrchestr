@@ -2481,7 +2481,7 @@ describe('Pipeline debate favorites view', () => {
     } finally { h.cleanup(); }
   }, 30000);
 
-  test('a task, a length instruction or content requirements the owner emptied stay empty (not inherited); ↶ gives the inherited value back; delivery and correction are never empty', async () => {
+  test('a task, a length instruction or content requirements the owner emptied stay empty (not inherited); ⏎ gives the inherited value back; delivery and correction are never empty', async () => {
     const h = setupCustomInheritance('Explicit empty');
     try {
       const planOf = () => window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan());
@@ -2501,7 +2501,7 @@ describe('Pipeline debate favorites view', () => {
       // The card keeps the field empty when it is opened again.
       const reopened = h.openGeneral();
       expect(reopened.querySelector('#custom-discipline-roundTask').value).toBe('');
-      // ↶ on the field gives the inherited value back: the key is not written any more.
+      // ⏎ on the field gives the inherited value back: the key is not written any more.
       reopened.querySelector('[data-discipline="roundTask"] [data-action="inherit"]').click();
       await settleCustomCard();
       expect((saved().defaults || {}).roundTask).toBeUndefined();
@@ -2964,7 +2964,7 @@ describe('Pipeline debate favorites view', () => {
       expect(h.starts[1].promptsByModel.GPT).toContain('COMMON_C');
       expect(h.starts[1].promptsByModel.GPT).toContain('CONTENT_B');
       expect(h.starts[1].promptsByModel.GPT).not.toContain('CONTENT_C');
-      // ↶ gives it back: it follows ▶ again.
+      // ⏎ gives it back: it follows ▶ again.
       h.openModel().querySelector('[data-discipline="content"] [data-action="inherit"]').click();
       await settleCustomCard();
       expect(settingsOf(h.debug.capturePipelineConfig()).customModelSettings.r2?.GPT?.discipline).toBeUndefined();

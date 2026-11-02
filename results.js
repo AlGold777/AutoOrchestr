@@ -9609,7 +9609,7 @@ document.addEventListener('click', (event) => {
                             <div class="custom-card-discipline-head"><label for="custom-discipline-${key}">${label}</label>
                                 <div class="custom-card-actions">
                                     ${copyButton(`custom-discipline-${key}`, label)}
-                                    <button type="button" data-action="inherit" title="${pipelineDefaults ? 'Вернуть к коду' : 'Вернуть к общему'}" aria-label="Вернуть к общему: ${label}" hidden>↶</button>
+                                    <button type="button" data-action="inherit" title="${pipelineDefaults ? 'Вернуть к коду' : 'Вернуть к общему'}" aria-label="Вернуть к общему: ${label}" hidden>⏎</button>
                                     <button type="button" data-action="clear" title="${EMPTYABLE_KEYS.has(key) ? 'Оставить пустым (не наследовать)' : 'Очистить — наследовать'}" aria-label="Очистить: ${label}" class="custom-card-clear">×</button>
                                     <button type="button" data-action="save" title="Сохранить" aria-label="Сохранить: ${label}" class="custom-card-commit">✓</button>
                                 </div>
@@ -9686,11 +9686,11 @@ document.addEventListener('click', (event) => {
             // Own instruction lines (the card's «+»), in the order they were added; ▶ keeps its shared lines the same way.
             const lineValues = [...(saved.discipline?.lines || [])];
             const display = (key, value) => key === 'limit' ? customLengthInstruction(value, Number(length?.value || general)) : value;
-            // A text the owner typed is theirs even when it equals the inherited one; ↶ and × give it back.
+            // A text the owner typed is theirs even when it equals the inherited one; ⏎ and × give it back.
             const typed = (value) => typeof value === 'string' && Boolean(value.trim());
             // A field that may be left empty on purpose (EMPTYABLE_KEYS): an empty text the owner left is a value too.
             const isSet = (key, value) => typed(value) || (EMPTYABLE_KEYS.has(key) && value === '');
-            // Fields the owner sent back to the inherited value with ↶ (they are not written, whatever the field shows).
+            // Fields the owner sent back to the inherited value with ⏎ (they are not written, whatever the field shows).
             const inheritNow = new Set();
             let lengthDirty = false;
             const refresh = () => {
@@ -9761,7 +9761,7 @@ document.addEventListener('click', (event) => {
                     let value = dirtyFields.has(key) ? fields[key].value : rawValue(key);
                     // The shown length instruction has the numbers filled in; typed unchanged it stands for its template.
                     if (dirtyFields.has(key) && key === 'limit' && value === display(key, inheritedValue(key))) value = inheritedValue(key);
-                    // A text the owner emptied on purpose stays empty (the field is written as ''); ↶ gives the inherited value back.
+                    // A text the owner emptied on purpose stays empty (the field is written as ''); ⏎ gives the inherited value back.
                     if (inheritNow.has(key)) value = undefined;
                     else if (dirtyFields.has(key) && EMPTYABLE_KEYS.has(key) && !typed(value)) value = '';
                     if (isSet(key, value)) { if (isTask(key)) next[key] = value; else discipline[key] = value; }
