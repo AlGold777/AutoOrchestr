@@ -10002,12 +10002,28 @@ document.addEventListener('click', (event) => {
                 if (host) host.style.minHeight = popoutPlaceholder || '';
             }
             popoutBtn.setAttribute('aria-pressed', String(open));
+            pinRoundRow();
             relayoutPipeline();
         };
         popoutBtn?.addEventListener('click', () => setPipelinePopout(!pipelinePanel.classList.contains('is-popout')));
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && pipelinePanel?.classList.contains('is-popout') && !document.querySelector('dialog[open]')) setPipelinePopout(false);
         });
+
+        // The row of round badges stays under the top edge of the page while the page scrolls past the canvas
+        // (inside the window the canvas scrolls itself and the row sticks by CSS).
+        const pinRoundRow = () => {
+            if (!pipelineCanvas) return;
+            let scroller = pipelineCanvas.parentElement;
+            while (scroller && scroller !== document.body && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) scroller = scroller.parentElement;
+            const top = scroller && scroller !== document.body ? scroller.getBoundingClientRect().top : 0;
+            const canvasTop = pipelineCanvas.getBoundingClientRect().top;
+            const room = pipelineCanvas.scrollHeight - 48;
+            const shift = pipelinePanel?.classList.contains('is-popout') ? 0 : Math.max(0, Math.min(top - canvasTop, room));
+            pipelineCanvas.style.setProperty('--round-row-pin', `${Math.round(shift)}px`);
+        };
+        document.addEventListener('scroll', pinRoundRow, { passive: true, capture: true });
+        window.addEventListener('resize', pinRoundRow);
 
         // The canvas is panned by dragging any empty place of it (not a block, a card, a badge or a control).
         const CANVAS_PAN_BLOCKERS = '.model-block, .pipeline-control-card, .round-badge, input, select, textarea, button, label, a, [contenteditable="true"]';

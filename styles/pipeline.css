@@ -1623,17 +1623,18 @@ body.is-resizing {
     position: sticky;
     top: -10px;
     z-index: 3;
+    transform: translateY(var(--round-row-pin, 0));
 }
 .control-card-mark .status-indicator { display: block; }
 
 /* Схема в отдельном окне: до 80% ширины и высоты экрана, высота по блокам всех моделей. */
-.pipeline-popout-backdrop { position: fixed; inset: 0; z-index: 1190; background: rgba(38, 55, 75, 0.22); }
+.pipeline-popout-backdrop { position: fixed; inset: 0; z-index: 5000; background: rgba(38, 55, 75, 0.22); }
 .pipeline-panel.is-popout {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 1191;
+    z-index: 5001;
     width: max-content;
     min-width: 320px;
     max-width: 80vw;

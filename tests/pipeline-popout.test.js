@@ -21,6 +21,12 @@ describe('scheme in its own window', () => {
     expect(css).toMatch(/\.pipeline-canvas \.stage-header-row[^{]*\{[^}]*position:\s*sticky/s);
   });
 
+  test('the round row follows the page scroll through a shift variable, and the button is an inline icon', () => {
+    expect(read('styles', 'pipeline.css')).toContain('translateY(var(--round-row-pin, 0))');
+    expect(read('results.js')).toContain("setProperty('--round-row-pin'");
+    expect(read('pipeline_panel.html')).toMatch(/id="pipeline-popout-btn"[^>]*><svg/);
+  });
+
   test('the page code toggles the window by the button, the backdrop and Escape', () => {
     const js = read('results.js');
     expect(js).toContain("document.getElementById('pipeline-popout-btn')");
