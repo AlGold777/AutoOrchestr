@@ -225,14 +225,14 @@ describe('results: Copy / TXT / marker', () => {
     };
     mk('## md body');
     mk('');
-    const txt = Exporter.buildFeedText(feed, '1');
+    const txt = Exporter.buildFeedMarkdown(feed, '1');
     expect(txt).toContain('## md body');
     expect(txt).toContain('plain text');
     const html = Exporter.collectFeedHtml ? Exporter.collectFeedHtml(feed, '1') : '';
     expect(html).not.toContain('## md body');
   });
 
-  test('results.js wires Copy, approval, feed text and message handlers', () => {
+  test('results.js wires Copy, approval, feed Markdown and message handlers', () => {
     const src = read('results.js');
     expect(src).toContain('cardAnswerCopyText(card)');
     expect(src).toMatch(/stashAnswerCopy\(message\.llmName, message/);

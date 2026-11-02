@@ -58,16 +58,40 @@ test('saved HTML switches independently between a model across rounds and all mo
   saved.window.close();
 });
 
-test('TXT preserves feed order, hidden cards, moderator content and exact separators', () => {
-  const text = Exporter.buildFeedText(multiRoundFeed(), '1');
-  const separator = Array(3).fill('='.repeat(57)).join('\n');
-  expect(text.split(`\n\n${separator}\n\n`)).toEqual([
-    'Claude R2\nSecond round Claude', 'GPT R1\nFirst round GPT',
-    'Claude R1\nFirst round Claude', 'Moderator\nUser prompt'
+test('Markdown keeps feed order, hidden cards and moderator content, one section per answer with a rule between', () => {
+  const text = Exporter.buildFeedMarkdown(multiRoundFeed(), '1', 'My feed');
+  expect(text.startsWith('# My feed\n\n')).toBe(true);
+  expect(text.endsWith('\n')).toBe(true);
+  const sections = text.slice('# My feed\n\n'.length).trimEnd().split('\n\n---\n\n');
+  expect(sections).toEqual([
+    '## Claude · R2\n\nSecond round Claude', '## GPT · R1\n\nFirst round GPT',
+    '## Claude · R1\n\nFirst round Claude', '## Moderator\n\nUser prompt'
   ]);
   expect(text).not.toContain('Other session');
-  expect(Exporter.buildFeedText(null)).toBe('');
+  expect(Exporter.buildFeedMarkdown(null)).toBe('');
   expect(Exporter.buildFeedDocument(null)).toBe('');
+});
+
+test('Markdown without a title has no top heading', () => {
+  expect(Exporter.buildFeedMarkdown(multiRoundFeed(), '1').startsWith('## Claude · R2')).toBe(true);
+});
+
+test('Markdown download uses the markdown MIME type and a .md name', () => {
+  const createUrl = URL.createObjectURL;
+  const revokeUrl = URL.revokeObjectURL;
+  URL.createObjectURL = jest.fn(() => 'blob:feed');
+  URL.revokeObjectURL = jest.fn();
+  const click = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+    expect(this.download).toBe('Feed.md');
+  });
+  try {
+    expect(Exporter.downloadMarkdown('Feed.md', '# A\n')).toBe(true);
+    expect(URL.createObjectURL.mock.calls[0][0].type).toBe('text/markdown;charset=utf-8');
+  } finally {
+    click.mockRestore();
+    URL.createObjectURL = createUrl;
+    URL.revokeObjectURL = revokeUrl;
+  }
 });
 
 test('TXT download uses UTF-8 text and preserves the supplied contents', async () => {

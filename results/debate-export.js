@@ -57,7 +57,7 @@
     }
     const rawHtml = exportEl ? sanitizeFragment(String(exportEl.innerHTML || '').trim()) : '';
     const domPlain = outputEl ? String(outputEl.innerText || outputEl.textContent || '').trim() : '';
-    // TXT takes the DOM->Markdown copy when the card has a usable one (results.js sets card._answerCopy).
+    // The Markdown export takes the DOM->Markdown copy when the card has a usable one (results.js sets card._answerCopy).
     const copy = card?._answerCopy;
     const markdown = copy && copy.markdown && !(copy.report?.placeholders || []).some((item) => item.type === 'answer')
       ? copy.markdown : '';
@@ -534,13 +534,16 @@ img{max-width:100%;height:auto;display:block;border-radius:10px}
       `<section>${heading(parts)}<div class="response-body">${parts.body}</div></section>`).join('\n');
   }
 
-  const responseSeparator = Array(3).fill('=========================================================').join('\n');
-
-  function buildFeedText(feed, activeSessionId = '1') {
-    return feedParts(feed, activeSessionId).map((parts) => [
-      `${parts.model}${parts.round ? ` ${parts.round.toUpperCase()}` : ''}${parts.time ? ` ${parts.time}` : ''}`,
-      parts.plain
-    ].join('\n')).join(`\n\n${responseSeparator}\n\n`);
+  // The feed as Markdown (GFM): a title, then one section per answer in feed order, separated by a rule.
+  // The answer text is the DOM->Markdown copy of the card when it has a usable one, else the plain text.
+  function buildFeedMarkdown(feed, activeSessionId = '1', title = '') {
+    const sections = feedParts(feed, activeSessionId).map((parts) => {
+      const head = `## ${[parts.model, parts.round ? parts.round.toUpperCase() : '', parts.time].filter(Boolean).join(' · ')}`;
+      return [head, parts.metadata ? `*${parts.metadata}*` : '', parts.plain].filter(Boolean).join('\n\n');
+    });
+    if (!sections.length) return '';
+    const heading = String(title || '').trim();
+    return `${heading ? `# ${heading}\n\n` : ''}${sections.join('\n\n---\n\n')}\n`;
   }
 
   function buildFeedDocument(feed, activeSessionId = '1', title = 'Debate Feed', modelIcons = {}, promptText = '') {
@@ -639,9 +642,10 @@ img{max-width:100%;height:auto;display:block;border-radius:10px}
   }
 
   const downloadHtml = (filename, content, documentRef = root.document) => downloadFile(filename, content, 'text/html;charset=utf-8', documentRef);
+  const downloadMarkdown = (filename, content, documentRef = root.document) => downloadFile(filename, content, 'text/markdown;charset=utf-8', documentRef);
   const downloadText = (filename, content, documentRef = root.document) => downloadFile(filename, content, 'text/plain;charset=utf-8', documentRef);
 
-  const api = Object.freeze({ escape, sanitizeFragment, stamp, fileStamp, cardFileStamp, savedStamp, cardParts, heading, section, annotationScript, documentHtml, collectFeedHtml, buildFeedDocument, buildFeedText, downloadHtml, downloadText });
+  const api = Object.freeze({ escape, sanitizeFragment, stamp, fileStamp, cardFileStamp, savedStamp, cardParts, heading, section, annotationScript, documentHtml, collectFeedHtml, buildFeedDocument, buildFeedMarkdown, downloadHtml, downloadMarkdown, downloadText });
   root.DebateExport = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

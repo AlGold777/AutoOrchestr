@@ -26914,18 +26914,19 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('click', (event) => {
-    const btn = event.target.closest('#debate-session-export-txt-btn');
+    const btn = event.target.closest('#debate-session-export-md-btn');
     if (!btn) return;
     try {
         const feed = document.getElementById('debate-model-cards');
         const sessionId = document.querySelector('.debate-session-tab.active')?.dataset?.sessionId || '1';
-        const text = window.DebateExport.buildFeedText(feed, sessionId);
-        const ok = window.DebateExport.downloadText(
-            `${pipelineExportSafeName(pipelineExportActiveDebateName())} ${pipelineExportFileStamp()}.txt`, text
+        const name = pipelineExportActiveDebateName();
+        const markdown = window.DebateExport.buildFeedMarkdown(feed, sessionId, name);
+        const ok = window.DebateExport.downloadMarkdown(
+            `${pipelineExportSafeName(name)} ${pipelineExportFileStamp()}.md`, markdown
         );
         pipelineExportFlash(btn, ok ? 'success' : 'warn');
     } catch (err) {
-        console.warn('[RESULTS] debate feed TXT export failed', err);
+        console.warn('[RESULTS] debate feed Markdown export failed', err);
         pipelineExportFlash(btn, 'error');
     }
 });
