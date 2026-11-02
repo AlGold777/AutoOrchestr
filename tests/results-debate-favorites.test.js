@@ -4249,7 +4249,7 @@ describe('Pipeline debate favorites view', () => {
 
           const userCard = document.querySelector('.pipeline-control-card');
           expect(userCard.dataset.tooltip).toBe('User · owner:u · Проверка');
-          expect(userCard.dataset.tooltipDesc).toBe('Правки User');
+          expect(userCard.dataset.tooltipDesc).toBe('Проверьте ТЗ');
 
           const frame = document.querySelector('.pipeline-doc-frame');
           expect(frame.dataset.tooltip).toBe('ТЗ');

@@ -4868,7 +4868,7 @@ document.addEventListener('click', (event) => {
             label.className = 'stage-label';
             const title = document.createElement('span');
             title.className = 'pipeline-control-title';
-            title.textContent = `${CONTROL_TITLE[step.kind] || step.kind}:`;
+            title.textContent = step.ref;
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'pipeline-control-delete-btn';
@@ -4887,7 +4887,16 @@ document.addEventListener('click', (event) => {
             card.className = 'pipeline-control-card';
             card.dataset.controlCard = step.ref;
             const summary = window.StageCard?.controlSummary?.(step) || '';
-            card.textContent = summary || 'настройте в окне';
+            const name = document.createElement('span');
+            name.className = 'control-card-name';
+            name.textContent = CONTROL_TITLE[step.kind] || step.kind;
+            const role = document.createElement('span');
+            role.className = `control-card-role${step.title ? '' : ' is-empty'}`;
+            role.textContent = step.title || '- -';
+            const task = document.createElement('span');
+            task.className = 'control-card-task';
+            task.textContent = summary || 'настройте в окне';
+            card.append(name, role, task);
             stack.append(card);
             column.append(header, stack);
             return column;
@@ -4903,7 +4912,7 @@ document.addEventListener('click', (event) => {
                 const total = blocks.reduce((sum, block) => sum + block.offsetHeight, 0);
                 if (!total) return;
                 card.style.maxHeight = `${total}px`;
-                card.style.overflowY = 'auto';
+                card.style.overflowY = 'hidden';
             });
         };
         const syncControlColumns = () => {
@@ -5058,7 +5067,7 @@ document.addEventListener('click', (event) => {
             pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
                 const step = safeRead(() => getCustomControls().map((item) => item.step).find((item) => item?.ref === card.dataset.controlCard), null) || {};
                 const name = `User · ${card.dataset.controlCard}${step.title ? ` · ${step.title}` : ''}`;
-                const note = step.goal || step.task;
+                const note = step.task || step.goal;
                 setCanvasTooltip(card, name, note);
                 setCanvasTooltip(card.closest('.stage-column')?.querySelector('.pipeline-control-title'), name, note);
             });
