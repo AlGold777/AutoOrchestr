@@ -40,3 +40,11 @@ describe('scheme in its own window', () => {
     expect(js).not.toContain("line('●'");
   });
 });
+
+describe('no scrollbars on the canvas and in the round cards', () => {
+  test('both are hidden by CSS', () => {
+    const css = read('styles', 'pipeline.css');
+    expect(css).toMatch(/\.pipeline-canvas,[^{]*\.pipeline-stage-dialog[^{]*\{\s*scrollbar-width:\s*none/s);
+    expect(css).toMatch(/\.pipeline-canvas::-webkit-scrollbar[^{]*\{\s*display:\s*none/s);
+  });
+});

@@ -1649,3 +1649,17 @@ body.is-resizing {
 .pipeline-panel.is-popout .panel-header { margin-top: 0; flex: 0 0 auto; }
 .pipeline-panel.is-popout .pipeline-canvas { flex: 1 1 auto; min-height: 0; }
 .pipeline-panel.is-popout .pipeline-list { display: none; }
+
+/* Без полос прокрутки на холсте и в окнах раундов и User; прокрутка колесом, жестом и перетаскиванием работает. */
+.pipeline-canvas,
+.pipeline-stage-dialog,
+.pipeline-stage-dialog .stage-card-instruction,
+.pipeline-stage-dialog textarea {
+    scrollbar-width: none;
+}
+.pipeline-canvas::-webkit-scrollbar,
+.pipeline-stage-dialog::-webkit-scrollbar,
+.pipeline-stage-dialog .stage-card-instruction::-webkit-scrollbar,
+.pipeline-stage-dialog textarea::-webkit-scrollbar {
+    display: none;
+}
