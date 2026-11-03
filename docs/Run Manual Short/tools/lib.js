@@ -2,7 +2,7 @@
 var H=location.hostname;
 var SITE={
  'claude.ai':{send:'button[data-testid="chat-input-send"],button[aria-label*="Send" i],button[aria-label*="Отправ" i]',stop:'button[aria-label*="Stop" i],button[aria-label*="Останов" i]',ans:'div.standard-markdown'},
- 'chatgpt.com':{send:'button[type="submit"],button[data-testid="send-button"]',stop:'button[data-testid="stop-button"]',ans:'[data-message-author-role="assistant"]'},
+ 'chatgpt.com':{send:'button[type="submit"],button[data-testid="send-button"]',stop:'button[data-testid="stop-button"]',ans:'[data-markdown-text-style="assistant-message"]'},
  'chat.deepseek.com':{send:'div.ds-button--primary.ds-button--filled',stop:'div[role="button"] svg rect',ans:'div.ds-message div.ds-markdown'},
  'chat.qwen.ai':{send:'button.send-button,button[type="submit"]',stop:'button[aria-label*="Stop" i]',ans:'div.qwen-chat-message-assistant div.response-message-content'},
  'www.perplexity.ai':{send:'button[aria-label*="Submit" i],button[aria-label*="Отправ" i],button[data-testid="submit-button"]',stop:'button[aria-label*="Stop" i]',ans:'div[id^="markdown-content"],.prose'},
@@ -19,7 +19,10 @@ function answers(){var l=Array.from(document.querySelectorAll(S.ans)).filter(fun
  Array.from(m.querySelectorAll('*')).forEach(function(e){if(c&&(e===c||c.contains(e)))return;var t=(e.innerText||'').trim();if(t.endsWith(M)&&e.children.length<40)r.push(e)});
  if(!r.length)return [];var e=r[r.length-1];
  while(e.parentElement&&e.parentElement!==m&&(e.parentElement.innerText||'').trim().endsWith(M)&&e.parentElement.innerText.length<=e.innerText.length*1.2+50)e=e.parentElement;return [e]}
-function lastAnswer(){var a=answers();return a.length?a[a.length-1]:null}
+function lastAnswer(){var a=answers();if(!a.length)return null;
+ for(var i=a.length-1;i>=0;i--){if(/КОНЕЦ-ОТВЕТА\s*$/.test(a[i].innerText))return a[i]}
+ for(var j=a.length-1;j>=0;j--){if(a[j].innerText.trim().length)return a[j]}
+ return a[a.length-1]}
 function composerText(){var c=composer();return c?(c.value!==undefined&&c.tagName=='TEXTAREA'?c.value:c.innerText):''}
 window.__M={
  state:function(){var c=composer(),b=sendBtn(),a=lastAnswer(),st=document.querySelector(S.stop);
@@ -42,5 +45,6 @@ window.__M={
   var c=composer();if(!c)return 'NO COMPOSER';c.focus();var ev=new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true});c.dispatchEvent(ev);return 'attached via paste '+name+' '+text.length},
  attached:function(n){return document.body.innerText.indexOf(n)>=0?'yes':'no'},
  text:function(){return (document.body.innerText||'').replace(/\n{3,}/g,'\n\n').slice(0,6000)},
+ size:function(){var a=lastAnswer();return a?String(Array.from(a.innerText.replace(/\s/g,'')).length):'0'},
  top:function(){var a=lastAnswer();if(a)a.scrollIntoView({block:'start'});return a?'scrolled':'NO ANSWER'}
 };})();
