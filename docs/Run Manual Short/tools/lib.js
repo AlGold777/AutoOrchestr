@@ -41,5 +41,6 @@ window.__M={
   if(inp){inp.files=dt.files;inp.dispatchEvent(new Event('change',{bubbles:true}));return 'attached via input '+name+' '+text.length}
   var c=composer();if(!c)return 'NO COMPOSER';c.focus();var ev=new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true});c.dispatchEvent(ev);return 'attached via paste '+name+' '+text.length},
  attached:function(n){return document.body.innerText.indexOf(n)>=0?'yes':'no'},
+ text:function(){return (document.body.innerText||'').replace(/\n{3,}/g,'\n\n').slice(0,6000)},
  top:function(){var a=lastAnswer();if(a)a.scrollIntoView({block:'start'});return a?'scrolled':'NO ANSWER'}
 };})();
