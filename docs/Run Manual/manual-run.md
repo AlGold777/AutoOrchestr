@@ -196,7 +196,7 @@ Chromium агрессивно троттлит фоновые вкладки: з
 
 Все материалы прогона сохраняются в отдельной папке:
 ```text
-docs/Run Automation/Test_run/<Task_Name>_<YYYY-MM-DD>/
+docs/Run Manual/Test_run/<Task_Name>_<YYYY-MM-DD>/
 ├── schema/
 │   ├── schema.json                    # Исходная схема прогона
 │   └── task.txt                       # Исходное задание

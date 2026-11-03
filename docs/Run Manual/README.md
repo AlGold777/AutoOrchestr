@@ -9,4 +9,4 @@
 | [universal-five-step-scheme.md](universal-five-step-scheme.md) | универсальная схема из пяти шагов с готовыми запросами |
 | [model-modes.md](model-modes.md) | состав моделей и режимы, которые выставляют на сайтах |
 
-Наблюдения о поведении сайтов — в [Platform specifics](<../Platform specifics/README.md>), общий каталог. Материалы каждого прогона — в `docs/Run Automation/Test_run/<Task_Name>_<YYYY-MM-DD>/`.
+Наблюдения о поведении сайтов — в [Platform specifics](<../Platform specifics/README.md>), общий каталог. Материалы каждого прогона — в `docs/Run Manual/Test_run/<Task_Name>_<YYYY-MM-DD>/`.
