@@ -46,5 +46,9 @@ window.__M={
  attached:function(n){return document.body.innerText.indexOf(n)>=0?'yes':'no'},
  text:function(){return (document.body.innerText||'').replace(/\n{3,}/g,'\n\n').slice(0,6000)},
  size:function(){var a=lastAnswer();return a?String(Array.from(a.innerText.replace(/\s/g,'')).length):'0'},
+ copy:function(){var M=/КОНЕЦ-ОТВЕТА\s*$/;var a=answers().filter(function(e){return M.test(e.innerText)});a=a[a.length-1];if(!a)return 'NO ANSWER';
+  var all=Array.from(document.querySelectorAll('button,[role="button"]')).filter(function(b){return (a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING)&&!a.contains(b)&&vis(b)});
+  var named=all.filter(function(b){return /^(копировать|copy)$/i.test((b.getAttribute('aria-label')||'').trim())||/copy-turn-action|copy-button/i.test(b.getAttribute('data-testid')||'')});
+  var b=named[0]||(H==='chat.deepseek.com'?all[0]:null);if(!b)return 'NO COPY BUTTON';if(!document.hasFocus())return 'NO FOCUS';b.click();return 'clicked copy'},
  top:function(){var a=lastAnswer();if(a)a.scrollIntoView({block:'start'});return a?'scrolled':'NO ANSWER'}
 };})();
