@@ -5,6 +5,8 @@ D="$(cd "$(dirname "$0")" && pwd)"; ADDR="$1"; CMD="$2"; FILE="$3"
 case "$CMD" in
  paste) CALL="window.__M.paste(decodeURIComponent(escape(atob('$(base64 < "$FILE" | tr -d '\n')'))))";;
  click) CALL="window.__M.click(decodeURIComponent(escape(atob('$(printf '%s' "$FILE" | base64 | tr -d '\n')'))))";;
+ attach) NAME="$(basename "$FILE")"; CALL="window.__M.attach(decodeURIComponent(escape(atob('$(printf '%s' "$NAME" | base64 | tr -d '\n')'))),decodeURIComponent(escape(atob('$(base64 < "$FILE" | tr -d '\n')'))))";;
+ attached) CALL="window.__M.attached(decodeURIComponent(escape(atob('$(printf '%s' "$FILE" | base64 | tr -d '\n')'))))";;
  *) CALL="window.__M.$CMD()";;
 esac
 JS="$(cat "$D/lib.js"); $CALL"
