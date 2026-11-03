@@ -43,12 +43,15 @@ window.__M={
   var inp=Array.from(document.querySelectorAll('input[type="file"]'))[0];
   if(inp){inp.files=dt.files;inp.dispatchEvent(new Event('change',{bubbles:true}));return 'attached via input '+name+' '+text.length}
   var c=composer();if(!c)return 'NO COMPOSER';c.focus();var ev=new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true});c.dispatchEvent(ev);return 'attached via paste '+name+' '+text.length},
- attached:function(n){return document.body.innerText.indexOf(n)>=0?'yes':'no'},
+ attached:function(n){var t=document.body.innerText.replace(/\s+/g,''),s=String(n).replace(/\s+/g,'').replace(/\.[A-Za-z0-9]+$/,'').slice(0,20);return t.indexOf(s)>=0?'yes':'no'},
  text:function(){return (document.body.innerText||'').replace(/\n{3,}/g,'\n\n').slice(0,6000)},
  size:function(){var a=lastAnswer();return a?String(Array.from(a.innerText.replace(/\s/g,'')).length):'0'},
  copy:function(){var M=/КОНЕЦ-ОТВЕТА\s*$/;var a=answers().filter(function(e){return M.test(e.innerText)});a=a[a.length-1];if(!a)return 'NO ANSWER';
   var all=Array.from(document.querySelectorAll('button,[role="button"]')).filter(function(b){return (a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING)&&!a.contains(b)&&vis(b)});
   var named=all.filter(function(b){return /^(копировать|copy)$/i.test((b.getAttribute('aria-label')||'').trim())||/copy-turn-action|copy-button/i.test(b.getAttribute('data-testid')||'')});
   var b=named[0]||(H==='chat.deepseek.com'?all[0]:null);if(!b)return 'NO COPY BUTTON';if(!document.hasFocus())return 'NO FOCUS';b.click();return 'clicked copy'},
+ rect:function(t){var q=String(t).trim().toLowerCase();var c=Array.from(document.querySelectorAll('button,[role="button"],[role="menuitem"],[role="option"],li,div,span')).filter(vis).filter(function(e){var x=((e.innerText||'')+' '+(e.getAttribute('aria-label')||'')).trim().replace(/\s+/g,' ').toLowerCase();return x===q||x.indexOf(q)===0});
+  if(!c.length)return 'NO MATCH';c.sort(function(a,b){return (a.innerText||'').length-(b.innerText||'').length});var r=c[0].getBoundingClientRect();
+  return Math.round(window.screenX+r.left+r.width/2)+' '+Math.round(window.screenY+(window.outerHeight-window.innerHeight)+r.top+r.height/2)},
  top:function(){var a=lastAnswer();if(a)a.scrollIntoView({block:'start'});return a?'scrolled':'NO ANSWER'}
 };})();

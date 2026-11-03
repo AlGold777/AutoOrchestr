@@ -7,7 +7,12 @@ N="$(python3 -c "import sys;print(len(open(sys.argv[1],encoding='utf-8').read())
 bash "$D/visit.sh" "$A" 1
 TRIES=6
 if [ -n "$3" ]; then
- echo "$(t attach "$3")"; TRIES=80
+ TRIES=80
+ AP="$(python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$3")"
+ case "$(t state)" in
+  *chat.qwen.ai*) echo "$(bash "$D/attach-qwen.sh" "$A" "$AP")";;
+  *) echo "$(t attach "$AP")";;
+ esac
  for i in $(seq 1 30); do [ "$(t attached "$(basename "$3")")" = yes ] && break; sleep 1; done
  [ "$(t attached "$(basename "$3")")" = yes ] || { echo "NOT_SENT вложение не прикрепилось"; exit 1; }
 fi
