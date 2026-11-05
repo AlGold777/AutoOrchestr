@@ -284,12 +284,56 @@ test('favorite card has the plain heading and a glyph link with a title and no c
   const { window: w } = dom, d = w.document;
   selectWhole(w, 'p'); clickToolbar(w, 'В избранное');
   expect(d.querySelector('#hl-favs h3').textContent).toBe('Избранное');
-  expect(d.querySelector('#hl-favs').firstElementChild.tagName).toBe('H3');
+  expect(d.querySelector('#hl-favs').firstElementChild.classList.contains('hl-fav-heading')).toBe(true);
   const link = d.querySelector('#hl-favs .hl-fav-m a');
   expect(link.textContent).toBe('▽');
   expect(link.title).toBe('К месту в тексте');
   expect(link.getAttribute('href')).toBe('#' + d.querySelector('mark.hl[data-fav]').id);
   dom.window.close();
+});
+
+test('favorite download saves a styled standalone HTML block without answers or controls', async () => {
+  const dom = openReport('<p>Keep this favorite</p><p>Do not export this answer.</p>');
+  const { window: w } = dom, d = w.document;
+  selectWhole(w, 'p');
+  clickToolbar(w, 'В избранное');
+
+  let downloadedName = '';
+  const click = jest.spyOn(w.HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+    downloadedName = this.download;
+  });
+  const priorSetImmediate = global.setImmediate;
+  const priorClearImmediate = global.clearImmediate;
+  global.setImmediate = timers.setImmediate;
+  global.clearImmediate = timers.clearImmediate;
+  try {
+    d.querySelector('#hl-favs .hl-fav-download').click();
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(downloadedName).toBe('Избранное.html');
+
+    const blob = w.URL.createObjectURL.mock.calls.at(-1)[0];
+    expect(blob.type).toBe('text/html;charset=utf-8');
+    const html = await new Promise((resolve) => {
+      const reader = new w.FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsText(blob);
+    });
+    const saved = new w.DOMParser().parseFromString(html, 'text/html');
+    expect(saved.title).toBe('Избранное');
+    expect(saved.querySelector('#report').children).toHaveLength(1);
+    expect(saved.querySelector('#report > #hl-favs .hl-fav-t').textContent).toBe('Keep this favorite');
+    expect(saved.querySelector('#report .hl-fav')).not.toBeNull();
+    expect(saved.querySelector('#report').textContent).not.toContain('Do not export this answer.');
+    expect(saved.querySelector('#hl-favs .hl-fav-m, #hl-favs .hl-fav-download')).toBeNull();
+    expect(saved.querySelectorAll('script, [data-hl-ui]')).toHaveLength(0);
+    expect(saved.querySelector('#hl-style').textContent).toContain('#hl-favs .hl-fav {');
+    expect(saved.querySelector('#hl-style').textContent).toContain('#hl-favs .hl-fav-t { white-space: pre-wrap;');
+  } finally {
+    click.mockRestore();
+    global.setImmediate = priorSetImmediate;
+    global.clearImmediate = priorClearImmediate;
+    dom.window.close();
+  }
 });
 
 test('favorites card sits above the first model answer, below the navigation, and navigation still filters', () => {
@@ -361,9 +405,9 @@ test('inside a frame Ctrl+S opens the copy window with the full HTML and never w
   dom.window.close();
 });
 
-test('embedded annotation initializer stays near 20 KiB (22 KiB under the jest transform)', () => {
+test('embedded annotation initializer stays within 24 KiB', () => {
   const html = Exporter.documentHtml('size', '<p>x</p>');
   const source = html.match(/<script>\((function initReportAnnotations\(\) \{[\s\S]*?\})\)\(\);<\/script>/);
   expect(source).not.toBeNull();
-  expect(Buffer.byteLength(source[1], 'utf8')).toBeLessThanOrEqual(22 * 1024);
+  expect(Buffer.byteLength(source[1], 'utf8')).toBeLessThanOrEqual(24 * 1024);
 });

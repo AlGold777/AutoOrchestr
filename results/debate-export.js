@@ -115,7 +115,11 @@ mark.hl.hl-flash { outline: 2px solid #3b6fd8; outline-offset: 1px; }
 .hl-btn.hl-clear { font: 600 12px/1 system-ui, sans-serif; }
 .hl-sep { width: 1px; height: 18px; margin: 0 2px; background: #e2e8f0; }
 #hl-favs { margin: 0 0 24px; padding: 14px 16px; border: 1px solid #dbe3ee; border-radius: 14px; background: #f6f8fc; box-shadow: 0 1px 2px rgba(30,41,59,.05); font: 14px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; color: #334155; }
-#hl-favs h3 { margin: 0 0 10px; font-size: 19px; font-weight: 600; color: #475569; }
+#hl-favs .hl-fav-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+#hl-favs h3 { margin: 0; font-size: 19px; font-weight: 600; color: #475569; }
+#hl-favs .hl-fav-download { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid #dbe3ee; border-radius: 9px; background: #fff; color: #5277a8; cursor: pointer; }
+#hl-favs .hl-fav-download:hover { background: #edf5ff; color: #245fae; }
+#hl-favs .hl-fav-download:focus-visible { outline: 3px solid #9bc4f5; outline-offset: 2px; }
 #hl-favs .hl-fav { margin: 8px 0 0; padding: 10px 12px 8px; background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid rgb(118 198 255); border-radius: 10px; }
 #hl-favs .hl-fav-t { white-space: pre-wrap; user-select: text; color: #1e293b; }
 #hl-favs .hl-fav-m { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; }
@@ -367,7 +371,15 @@ mark.hl.hl-flash { outline: 2px solid #3b6fd8; outline-offset: 1px; }
       favs.replaceChildren();
       favs.style.display = groups.size ? '' : 'none';
       if (!groups.size) return;
-      favs.append(el('h3', '', 'Избранное'));
+      const heading = el('div', 'hl-fav-heading');
+      const download = el('button', 'hl-fav-download');
+      download.type = 'button';
+      download.title = 'Скачать избранное как HTML';
+      download.setAttribute('aria-label', download.title);
+      download.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 17v3h14v-3"/></svg>';
+      download.addEventListener('click', saveFavorites);
+      heading.append(el('h3', '', 'Избранное'), download);
+      favs.append(heading);
       groups.forEach((items, id) => {
         const saved = items.find((mark) => mark.dataset.favText);
         const text = saved ? saved.dataset.favText : normalize(items.map((mark) => mark.textContent).join(' '));
@@ -402,6 +414,30 @@ mark.hl.hl-flash { outline: 2px solid #3b6fd8; outline-offset: 1px; }
         row.append(body, meta);
         favs.append(row);
       });
+    }
+
+    // Самостоятельная копия карточки сохраняет стили исходного HTML.
+    function saveFavorites() {
+      const clone = document.documentElement.cloneNode(true);
+      const card = clone.querySelector('#hl-favs');
+      card.querySelectorAll('.hl-fav-download, .hl-fav-m').forEach((node) => node.remove());
+      clone.querySelectorAll('script, [data-hl-ui]').forEach((node) => node.remove());
+      const container = clone.querySelector('#report');
+      container.replaceChildren(card);
+      clone.querySelector('title').textContent = 'Избранное';
+      const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+      let boxed = false;
+      try { boxed = window !== window.top; } catch (_) { boxed = true; }
+      if (boxed) return showCopy(html);
+      try {
+        const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+        const link = el('a');
+        link.href = url;
+        link.download = 'Избранное.html';
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast('Избранное скачано');
+      } catch (_) { showCopy(html); }
     }
 
     // ---------- Сохранение ----------
