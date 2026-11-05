@@ -67,10 +67,10 @@ describe('Basic input files UI', () => {
         expect(mount.element.querySelector('.basic-input-files-status').textContent).toBe('File limit exceeded');
     });
 
-    test('validates the combined 25 MiB batch before storing any newly picked file', async () => {
+    test('validates the combined 30 MiB batch before storing any newly picked file', async () => {
         const mount = InputFilesUI.mount({
             header, after: title, container: header,
-            files: Array.from({ length: 5 }, (_, index) => ({ id: `large${index}`, name: `large${index}.bin`, size: 5 * 1024 * 1024 })),
+            files: Array.from({ length: 6 }, (_, index) => ({ id: `large${index}`, name: `large${index}.bin`, size: 5 * 1024 * 1024 })),
             store, validateBatch: BasicInputFiles.validateBatch,
             onChange: async (files) => changes.push(files)
         });
@@ -78,7 +78,7 @@ describe('Basic input files UI', () => {
         await choose(mount, [new File([new Uint8Array(2 * 1024 * 1024)], 'extra.bin')]);
         expect(store.put).not.toHaveBeenCalled();
         expect(changes).toHaveLength(0);
-        expect(mount.element.querySelector('.basic-input-files-status').textContent).toContain('25 МиБ');
+        expect(mount.element.querySelector('.basic-input-files-status').textContent).toContain('30 МиБ');
     });
 
     test('inline content is available even when the store has no byte record', async () => {

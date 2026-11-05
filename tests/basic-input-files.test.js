@@ -112,8 +112,9 @@ function indexedDBMock() {
   });
 
   test('enforces per-file and batch byte limits', () => {
-    expect(() => Files.validateBatch([{ name: 'large', size: Files.MAX_FILE_BYTES + 1 }])).toThrow(/5 МиБ/);
-    expect(() => Files.validateBatch(Array.from({ length: 6 }, (_, i) => ({ name: String(i), size: Files.MAX_FILE_BYTES })))).toThrow(/25 МиБ/);
+    expect(() => Files.validateBatch([{ name: 'large', size: Files.MAX_FILE_BYTES + 1 }])).toThrow(/30 МиБ/);
+    expect(() => Files.validateBatch(Array.from({ length: 6 }, (_, i) => ({ name: String(i), size: Files.MAX_FILE_BYTES })))).toThrow(/30 МиБ/);
+    expect(Files.validateBatch([{ name: 'a', size: 30 * 1024 * 1024 }])).toBe(30 * 1024 * 1024);
     expect(Files.validateBatch([{ name: 'a', size: 0 }])).toBe(0);
   });
 

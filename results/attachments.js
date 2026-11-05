@@ -45,8 +45,8 @@
         const persistDraft = () => saveDraft().catch((err) => {
             console.warn('[results] failed to save attachment draft', err);
         });
-        const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-        const MAX_TOTAL_BYTES = 25 * 1024 * 1024;
+        const MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024;
+        const MAX_TOTAL_BYTES = 30 * 1024 * 1024;
 
         const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
             const reader = new FileReader();

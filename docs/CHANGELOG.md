@@ -1,5 +1,9 @@
 # CHANGELOG — Project
 
+### 2026-11-05 — Лимит вложений 30 МиБ, версия 2.81.1005
+
+- Лимит обычных вложений и входных файлов Basic увеличен до 30 МиБ на файл и на весь набор.
+
 ### 2026-11-02 — Удалено правило центрирования `.msg-head-center` в Pipeline, версия 2.81.1002
 
 - Удалено правило `.pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center` (`grid-column: 2`, `justify-self: center`, `justify-content: center`). Блок и без него встаёт во вторую колонку той же сетки `1fr auto 1fr`: на странице схемы его положение не изменилось (317 px от левого края).

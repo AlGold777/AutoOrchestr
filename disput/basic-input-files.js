@@ -5,8 +5,8 @@
   const DB_NAME = 'aoBasicInputFiles';
   const STORE_NAME = 'files';
   const DB_VERSION = 2;
-  const MAX_FILE_BYTES = 5 * 1024 * 1024;
-  const MAX_BATCH_BYTES = 25 * 1024 * 1024;
+  const MAX_FILE_BYTES = 30 * 1024 * 1024;
+  const MAX_BATCH_BYTES = 30 * 1024 * 1024;
 
   const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   const idOf = (participant) => participant?.id ?? participant?.name;
@@ -14,7 +14,7 @@
 
   function checkSize(size, label = 'Файл') {
     if (!Number.isSafeInteger(size) || size < 0) throw new Error(`${label}: размер должен быть неотрицательным целым числом`);
-    if (size > MAX_FILE_BYTES) throw new Error(`${label}: размер больше лимита 5 МиБ`);
+    if (size > MAX_FILE_BYTES) throw new Error(`${label}: размер больше лимита 30 МиБ`);
   }
 
   function validateBatch(files) {
@@ -25,7 +25,7 @@
       checkSize(file.size, file.name || 'Файл');
       total += file.size;
     });
-    if (total > MAX_BATCH_BYTES) throw new Error('Общий размер файлов больше лимита 25 МиБ');
+    if (total > MAX_BATCH_BYTES) throw new Error('Общий размер файлов больше лимита 30 МиБ');
     return total;
   }
 

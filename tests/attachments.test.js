@@ -82,7 +82,7 @@ describe('ResultsAttachments.buildAttachmentPayload', () => {
 
   test('skips oversized files and notifies', async () => {
     const { api, notifications } = makeAttach();
-    const big = new File([new Uint8Array(6 * 1024 * 1024)], 'big.bin', { type: 'application/octet-stream' });
+    const big = new File([new Uint8Array(31 * 1024 * 1024)], 'big.bin', { type: 'application/octet-stream' });
     api.addPromptAttachments([big]);
     const payload = await api.buildAttachmentPayload();
     expect(payload).toHaveLength(0);
