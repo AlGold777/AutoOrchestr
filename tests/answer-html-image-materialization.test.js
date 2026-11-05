@@ -76,6 +76,21 @@ describe('AnswerHtmlBuilder.materializeImages', () => {
     expect(unsafe.html).toContain('[Изображение не скопировано: небезопасный или нераспознанный тип]');
   });
 
+  test('keeps both answer images even when encoded bytes contain an icon marker', async () => {
+    const src1 = 'data:image/png;base64,iVBORw0KGgoA';
+    const src2 = 'data:image/png;base64,iVBORw0KGgoAicon';
+    const root = document.createElement('div');
+    root.innerHTML = `<p>Ответ</p><img src="${src1}" alt="Главная страница" width="393" height="852"><img src="${src2}" alt="Карточка Toyota RAV4" width="393" height="852">`;
+    document.body.appendChild(root);
+    const captured = window.AnswerHtmlBuilder.build(root, { includeRoot: false });
+    const result = await window.AnswerHtmlBuilder.materializeImages(captured, document);
+    const host = document.createElement('div');
+    host.innerHTML = result.html;
+    expect([...host.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([src1, src2]);
+    expect(result.notes).toEqual([]);
+    root.remove();
+  });
+
   test('does not treat small UI images as answer content', async () => {
     window.fetch = jest.fn();
     const result = await window.AnswerHtmlBuilder.materializeImages(

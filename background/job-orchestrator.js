@@ -1106,7 +1106,7 @@ async function ensureAnswerMarkdownModulesInTab(tabId) {
     const probe = await chrome.scripting.executeScript({
       target: { tabId },
       func: (list) => list.map((name) => name === 'AnswerHtmlBuilder'
-        ? Number(globalThis[name]?.version || 0) >= 4
+        ? Number(globalThis[name]?.version || 0) >= 5
         : !!globalThis[name]),
       args: [names]
     });

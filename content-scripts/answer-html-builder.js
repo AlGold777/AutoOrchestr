@@ -6,7 +6,7 @@
 // pulled html is built by the same code as the live one. Bump BUILDER_VERSION with every change of behaviour.
 (function initAnswerHtmlBuilder(root) {
   'use strict';
-  const BUILDER_VERSION = 4;
+  const BUILDER_VERSION = 5;
   if (root.AnswerHtmlBuilder && Number(root.AnswerHtmlBuilder.version) >= BUILDER_VERSION) return;
   const window = root;
 
@@ -214,7 +214,7 @@
   const isLikelyContentImage = (img, rect = null) => {
     if (!img || img.matches?.('[data-ao-discard-image="1"]')
       || img.closest?.('button,[role="button"],nav,header,footer,aside,form,[aria-hidden="true"]')) return false;
-    const marker = `${img.getAttribute('class') || ''} ${img.getAttribute('id') || ''} ${img.getAttribute('alt') || ''} ${img.getAttribute('aria-label') || ''} ${img.getAttribute('src') || ''}`;
+    const marker = `${img.getAttribute('class') || ''} ${img.getAttribute('id') || ''} ${img.getAttribute('alt') || ''} ${img.getAttribute('aria-label') || ''}`;
     if (UI_IMAGE_MARKER_RE.test(marker)) return false;
     const width = Math.max(Number(img.naturalWidth || 0), imageDimension(img, 'width'), Number(rect?.width || 0));
     const height = Math.max(Number(img.naturalHeight || 0), imageDimension(img, 'height'), Number(rect?.height || 0));
