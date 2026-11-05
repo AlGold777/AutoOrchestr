@@ -6,7 +6,7 @@
 // pulled html is built by the same code as the live one. Bump BUILDER_VERSION with every change of behaviour.
 (function initAnswerHtmlBuilder(root) {
   'use strict';
-  const BUILDER_VERSION = 3;
+  const BUILDER_VERSION = 4;
   if (root.AnswerHtmlBuilder && Number(root.AnswerHtmlBuilder.version) >= BUILDER_VERSION) return;
   const window = root;
 
@@ -705,6 +705,29 @@
     img.replaceWith(note);
     notes.push({ type: 'image', reason, position });
   };
+  const isOpenAiStaticImageUrl = (url) => url instanceof URL
+    && url.protocol === 'https:'
+    && url.hostname === 'images.openai.com'
+    && !url.username && !url.password && !url.port
+    && url.pathname.startsWith('/static-rsc-4/');
+  const materializeOpenAiImageThroughWorker = async (url, timeoutMs) => {
+    if (!isOpenAiStaticImageUrl(url) || !root.chrome?.runtime?.sendMessage || timeoutMs <= 0) return null;
+    let timer;
+    try {
+      const response = await Promise.race([
+        root.chrome.runtime.sendMessage({ type: 'MATERIALIZE_OPENAI_STATIC_IMAGE', url: url.href }),
+        new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); })
+      ]);
+      if (!response?.ok || typeof response.data !== 'string') return null;
+      const decoded = dataImageBytes(`data:${response.mime};base64,${response.data}`);
+      if (!decoded?.mime || decoded.mime !== response.mime) return null;
+      return { ok: true, src: `data:${decoded.mime};base64,${bytesToBase64(decoded.bytes)}`, bytes: decoded.bytes.length };
+    } catch (_) {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const cacheMaterializedImage = (key, result) => {
     const bytes = Number(result?.bytes || 0);
     if (!key || !result?.ok || !bytes || bytes > MATERIALIZED_IMAGE_CACHE_MAX_BYTES) return;
@@ -746,6 +769,14 @@
     }
     const remainingMs = Math.max(0, Number(deadline || 0) - Date.now());
     if (!remainingMs) return { ok: false, reason: 'общий таймаут превышен' };
+    const tryOpenAiWorkerFallback = async () => {
+      if (!isOpenAiStaticImageUrl(url)) return null;
+      const fallbackBudget = Math.max(0, Math.min(CONTENT_IMAGE_FETCH_TIMEOUT_MS, Number(deadline || 0) - Date.now()));
+      if (!fallbackBudget) return null;
+      const fallback = await materializeOpenAiImageThroughWorker(url, fallbackBudget);
+      if (fallback) cacheMaterializedImage(url.href, fallback);
+      return fallback;
+    };
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timeout = setTimeout(() => controller?.abort(), Math.min(CONTENT_IMAGE_FETCH_TIMEOUT_MS, remainingMs));
     try {
@@ -754,7 +785,10 @@
         mode: 'cors',
         signal: controller?.signal
       });
-      if (!response.ok) return { ok: false, reason: `источник недоступен (${response.status})` };
+      if (!response.ok) {
+        const fallback = await tryOpenAiWorkerFallback();
+        return fallback || { ok: false, reason: `источник недоступен (${response.status})` };
+      }
       const declaredSize = Number(response.headers.get('content-length') || 0);
       if (declaredSize > CONTENT_IMAGE_MAX_BYTES) return { ok: false, reason: 'размер превышен' };
       let bytes;
@@ -786,6 +820,8 @@
       cacheMaterializedImage(url.href, result);
       return result;
     } catch (_) {
+      const fallback = await tryOpenAiWorkerFallback();
+      if (fallback) return fallback;
       return { ok: false, reason: 'источник недоступен (CORS, авторизация или таймаут)' };
     } finally {
       clearTimeout(timeout);

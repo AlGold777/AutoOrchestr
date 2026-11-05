@@ -31,8 +31,21 @@ describe('manual latest-answer recovery from status indicator', () => {
     expect(orchestrator).toContain('minChars: manualLatestRecovery ? (self.AnswerLengthPolicy?.DEFAULTS?.manualLatestMinChars || 20) : DOM_SNAPSHOT_RECOVERY_MIN_CHARS');
     expect(orchestrator).toContain('if (!manualLatestRecovery) {');
     expect(orchestrator).toContain('Skipping content-script getResponses to avoid replaying a stale cached answer');
-    expect(orchestrator).toContain("if (state.state === 'ALIVE' && !manualLatestRecovery)");
-    expect(orchestrator).toContain('if (liveEntry?.answer && String(liveEntry.answer).trim().length >= minChars)');
+    expect(orchestrator).toContain("if (state.state === 'ALIVE' && !manualLatestRecovery && !preferEnrichedGptHtml)");
+    expect(orchestrator).toContain('if (!preferEnrichedGptHtml && liveEntry?.answer && String(liveEntry.answer).trim().length >= minChars)');
+  });
+
+  test('GPT late collect bypasses the short live-entry result for enriched HTML except passive frames', () => {
+    const orchestrator = read('background', 'job-orchestrator.js');
+    const lateCollect = orchestrator.slice(
+      orchestrator.indexOf('async function lateCollectAnswer('),
+      orchestrator.indexOf('\nfunction ', orchestrator.indexOf('async function lateCollectAnswer(') + 1)
+    );
+
+    expect(lateCollect).toContain("const preferEnrichedGptHtml = llmName === 'GPT' && !passiveFrame;");
+    expect(lateCollect).toContain("if (state.state === 'ALIVE' && !manualLatestRecovery && !preferEnrichedGptHtml)");
+    expect(lateCollect).toContain('if (!preferEnrichedGptHtml && liveEntry?.answer && String(liveEntry.answer).trim().length >= minChars)');
+    expect(lateCollect).toContain('enrich: !passiveFrame');
   });
 
   test('repeated latest-recovery double-clicks rotate strategies instead of re-running bottom_most (run 1782944449199)', () => {

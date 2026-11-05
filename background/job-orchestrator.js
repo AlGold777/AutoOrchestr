@@ -1106,7 +1106,7 @@ async function ensureAnswerMarkdownModulesInTab(tabId) {
     const probe = await chrome.scripting.executeScript({
       target: { tabId },
       func: (list) => list.map((name) => name === 'AnswerHtmlBuilder'
-        ? Number(globalThis[name]?.version || 0) >= 3
+        ? Number(globalThis[name]?.version || 0) >= 4
         : !!globalThis[name]),
       args: [names]
     });
@@ -1337,7 +1337,13 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
         });
     }
 
-    if (state.state === 'ALIVE' && !manualLatestRecovery) {
+    // GPT late collects use enriched inline extraction directly so the HTML is
+    // self-contained before it leaves the page. Passive frames are observation-
+    // only and retain their existing fast live-entry behavior.
+    const passiveFrame = /^(?:passive_ping_error:|observation_unavailable_retry|adaptive)/.test(String(reason)) && !manualLatestRecovery && !manualRecovery && !meta?.manualRecovery;
+    const preferEnrichedGptHtml = llmName === 'GPT' && !passiveFrame;
+
+    if (state.state === 'ALIVE' && !manualLatestRecovery && !preferEnrichedGptHtml) {
       await sendTabMessageForLateCollect(tabId, {
         action: 'getResponses',
         meta: {
@@ -1357,7 +1363,7 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
         }, LATE_COLLECT_POST_LIVE_WAIT_MS));
       }), LATE_COLLECT_POST_LIVE_WAIT_MS + 100, true);
       const liveEntry = jobState?.llms?.[llmName] || entry;
-      if (liveEntry?.answer && String(liveEntry.answer).trim().length >= minChars) {
+      if (!preferEnrichedGptHtml && liveEntry?.answer && String(liveEntry.answer).trim().length >= minChars) {
         const liveMeta = liveEntry.responseMeta && typeof liveEntry.responseMeta === 'object' ? liveEntry.responseMeta : {};
         return emitDecisionTrace({
           ok: true,
@@ -1409,7 +1415,6 @@ async function lateCollectAnswer({ llmName, tabId, reason = 'late_collect', meta
     })();
     // An observation frame (the passive ping failed / an adaptive or round collect) gets the text only; enrichment (Markdown, layout html,
     // module injection) is for the manual, materialize and audit collects.
-    const passiveFrame = /^(?:passive_ping_error:|observation_unavailable_retry|adaptive)/.test(String(reason)) && !manualLatestRecovery && !manualRecovery && !meta?.manualRecovery;
     const inline = await runInlineLateExtract({ tabId, llmName, minChars, manualRecovery: inlineScanOptions, enrich: !passiveFrame });
     if (inline?.ok && inline.text) {
       await saveAnswerSnapshotFromContent({

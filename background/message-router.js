@@ -2034,7 +2034,103 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     }
 });
 
+const OPENAI_STATIC_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const OPENAI_STATIC_IMAGE_TIMEOUT_MS = 7000;
+const parseOpenAiStaticImageUrl = (value) => {
+    if (typeof value !== 'string' || value.length > 16384) return null;
+    try {
+        const url = new URL(value);
+        if (url.protocol !== 'https:' || url.hostname !== 'images.openai.com' || url.port
+            || url.username || url.password || !url.pathname.startsWith('/static-rsc-4/')) return null;
+        return url;
+    } catch (_) {
+        return null;
+    }
+};
+const sniffOpenAiRasterMime = (bytes) => {
+    if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+        && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return 'image/png';
+    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+    if (bytes.length >= 6 && String.fromCharCode(...bytes.subarray(0, 3)) === 'GIF') return 'image/gif';
+    if (bytes.length >= 12 && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF'
+        && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP') return 'image/webp';
+    return '';
+};
+const openAiBytesToBase64 = (bytes) => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+};
+const handleOpenAiStaticImageRequest = async (message, sender) => {
+    if (sender?.id !== chrome.runtime.id || !Number.isInteger(sender?.tab?.id)) return { ok: false, error: 'untrusted_sender' };
+    let tabUrl;
+    let frameUrl;
+    try {
+        tabUrl = new URL(String(sender.tab.url || ''));
+        frameUrl = new URL(String(sender.url || ''));
+    } catch (_) { return { ok: false, error: 'untrusted_sender' }; }
+    const isChatGptPage = (url) => url.protocol === 'https:' && ['chatgpt.com', 'chat.openai.com'].includes(url.hostname);
+    if (!isChatGptPage(tabUrl) || !isChatGptPage(frameUrl)) {
+        return { ok: false, error: 'untrusted_sender' };
+    }
+    const url = parseOpenAiStaticImageUrl(message?.url);
+    if (!url) return { ok: false, error: 'invalid_image_url' };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), OPENAI_STATIC_IMAGE_TIMEOUT_MS);
+    try {
+        const response = await fetch(url.href, {
+            method: 'GET',
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
+            redirect: 'error',
+            signal: controller.signal
+        });
+        if (!response.ok || response.redirected || parseOpenAiStaticImageUrl(response.url) == null) {
+            return { ok: false, error: 'image_unavailable' };
+        }
+        const declaredSize = Number(response.headers.get('content-length') || 0);
+        if (declaredSize > OPENAI_STATIC_IMAGE_MAX_BYTES) return { ok: false, error: 'image_too_large' };
+        let bytes;
+        if (response.body?.getReader) {
+            const reader = response.body.getReader();
+            const chunks = [];
+            let size = 0;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                size += value.byteLength;
+                if (size > OPENAI_STATIC_IMAGE_MAX_BYTES) {
+                    await reader.cancel();
+                    return { ok: false, error: 'image_too_large' };
+                }
+                chunks.push(value);
+            }
+            bytes = new Uint8Array(size);
+            let offset = 0;
+            chunks.forEach((chunk) => { bytes.set(chunk, offset); offset += chunk.byteLength; });
+        } else {
+            const blob = await response.blob();
+            if (blob.size > OPENAI_STATIC_IMAGE_MAX_BYTES) return { ok: false, error: 'image_too_large' };
+            bytes = new Uint8Array(await blob.arrayBuffer());
+        }
+        const mime = sniffOpenAiRasterMime(bytes);
+        if (!mime) return { ok: false, error: 'invalid_image_type' };
+        return { ok: true, mime, data: openAiBytesToBase64(bytes) };
+    } catch (_) {
+        return { ok: false, error: 'image_unavailable' };
+    } finally {
+        clearTimeout(timeout);
+    }
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'MATERIALIZE_OPENAI_STATIC_IMAGE') {
+        // This read is isolated from the main router's readiness queue; it must not delay response handling.
+        handleOpenAiStaticImageRequest(message, sender).then(sendResponse, () => sendResponse({ ok: false, error: 'image_unavailable' }));
+        return true;
+    }
     globalThis.LLMLog?.debug?.("[BACKGROUND] Received message:", message);
     if (message?.type === 'NOTES_CMD' || message?.type === 'NOTES_EVENT') {
         return false;

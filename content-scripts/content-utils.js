@@ -1525,6 +1525,16 @@
       } catch (_) {}
     };
     visitRoot(document);
+    if (llmName === 'GPT') {
+      const newMarkup = window.AnswerPipelineSelectors?.PLATFORM_SELECTORS?.chatgpt?.newMarkup;
+      const resolver = window.TurnResolver;
+      if (newMarkup && resolver?.pickChatGptTurn && resolver.createDeepQuery) {
+        try {
+          const turn = resolver.pickChatGptTurn(resolver.createDeepQuery(document), newMarkup, nodes);
+          if (turn) nodes.splice(0, nodes.length, ...nodes.filter((node) => turn.turn.contains(node)));
+        } catch (_) {}
+      }
+    }
     if (llmName === 'Gemini') {
       const turns = document.querySelectorAll('model-response');
       if (turns.length) nodes.splice(0, nodes.length, turns[turns.length - 1]);

@@ -85,6 +85,30 @@ const baseAdapter = window.BaseLLMAdapter ? new window.BaseLLMAdapter({
     };
   };
 
+  const materializeGptAnswerHtml = async (html) => {
+    const source = String(html || '').trim();
+    if (!source) return '';
+    const materializer = window.AnswerHtmlBuilder?.materializeImages;
+    if (typeof materializer === 'function') {
+      try {
+        const result = await materializer(source, document);
+        if (result && typeof result.html === 'string') return result.html;
+      } catch (err) {
+        console.warn('[CONTENT-GPT] Image materialization failed', err);
+      }
+    }
+
+    // The builder is loaded before this adapter in the manifest. Keep an explicit
+    // visible fallback if it is unavailable or fails, since the card sanitizer
+    // removes remote <img> elements.
+    const template = document.createElement('template');
+    template.innerHTML = source;
+    template.content.querySelectorAll('img').forEach((img) => {
+      img.replaceWith(document.createTextNode('[Изображение не скопировано: обработчик недоступен]'));
+    });
+    return template.innerHTML;
+  };
+
   function grabLatestAssistantMarkup() {
     try {
       const selectorsFromBundle = (window.AnswerPipelineSelectors?.PLATFORM_SELECTORS?.chatgpt?.lastMessage
@@ -1328,6 +1352,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
         // Fallback: grab latest DOM answer if pipeline missed it
         try {
           const latestMarkup = grabLatestAssistantMarkup();
+          const answerHtml = await materializeGptAnswerHtml(latestMarkup.html);
           const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
           if (window.ContentUtils?.isBaselineEquivalent?.(cleanedFallback, preDispatchBaseline)) {
             console.warn('[CONTENT-GPT] DOM fallback matched pre-dispatch baseline, ignoring stale answer');
@@ -1335,12 +1360,12 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           }
           if (cleanedFallback) {
             console.warn('[CONTENT-GPT] Pipeline empty, using DOM fallback');
-            if (latestMarkup.html) lastResponseHtml = latestMarkup.html;
+            if (answerHtml) lastResponseHtml = answerHtml;
             lastResponseSnapshot = cleanedFallback;
             activity.stop({ status: 'success', answerLength: cleanedFallback.length, source: 'dom-fallback' });
             return {
               text: cleanedFallback,
-              html: latestMarkup.html || '',
+              html: answerHtml,
               meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback', ...(window.ContentUtils?.buildFallbackAnswerCopy?.(latestMarkup.node) || {}) }) || null
             };
           }
@@ -1410,15 +1435,16 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
         (async () => {
             try {
                 const latestMarkup = grabLatestAssistantMarkup();
+                const answerHtml = await materializeGptAnswerHtml(latestMarkup.html);
                 const cleaned = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
                 if (cleaned && cleaned !== lastResponseSnapshot) {
                     lastResponseSnapshot = cleaned;
-                    if (latestMarkup.html) lastResponseHtml = latestMarkup.html;
+                    if (answerHtml) lastResponseHtml = answerHtml;
                     chrome.runtime.sendMessage({
                         type: 'LLM_RESPONSE',
                         llmName: MODEL,
                         answer: cleaned,
-                        answerHtml: latestMarkup.html || '',
+                        answerHtml,
                         ...(window.ContentUtils?.buildLatestAnswerCopy?.(undefined, latestMarkup.node) || {}),
                         meta: window.ContentUtils?.ensureDispatchMeta?.(message?.meta || {}, MODEL) || message?.meta || null
                     });

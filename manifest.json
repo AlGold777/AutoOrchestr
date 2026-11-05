@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "_Opus",
-  "version": "2.81.1006",
+  "version": "2.81.1007",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
     "storage",
@@ -32,6 +32,7 @@
     "*://chat.z.ai/*",
     "*://kimi.ai/*",
     "*://www.kimi.ai/*",
+    "https://images.openai.com/*",
     "https://api.openai.com/*",
     "https://api.anthropic.com/*",
     "https://generativelanguage.googleapis.com/*",
