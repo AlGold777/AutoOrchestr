@@ -14,18 +14,17 @@
   ];
   const ALLOWED_ATTR = ['href', 'class', 'style', 'colspan', 'rowspan', 'scope', 'src', 'alt', 'width', 'height', 'start', 'data-code-lang'];
   const ALLOWED_URI_REGEXP = /^(https?:|mailto:|tel:|#)/i;
-  // The only image form allowed: a diagram saved as an inline SVG data URL (it runs no
-  // script as an <img>). Remote or any other image sources are dropped below.
-  const SVG_DATA_IMG_RE = /^data:image\/svg\+xml;base64,[A-Za-z0-9+/]+={0,2}$/;
+  // Inline image data keeps exported answers self-contained; external and active sources are rejected.
+  const DATA_IMG_RE = /^data:image\/(?:svg\+xml|png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i;
   // Plain numbers are allowed too (start, width, height, colspan, rowspan): DOMPurify checks every
   // attribute value that is not on its own safe list against this expression. A bare number can
-  // not be a link target worth keeping: anchors are re-checked below, images by SVG_DATA_IMG_RE.
-  const PURIFY_URI_REGEXP = /^(?:(?:https?|mailto|tel):|#|data:image\/svg\+xml;base64,|\d+$)/i;
+  // not be a link target worth keeping: anchors are re-checked below, images by DATA_IMG_RE.
+  const PURIFY_URI_REGEXP = /^(?:(?:https?|mailto|tel):|#|data:image\/(?:svg\+xml|png|jpeg|gif|webp);base64,|\d+$)/i;
 
-  const keepOnlySvgDataImages = (container) => {
+  const keepOnlyDataImages = (container) => {
     if (!container || typeof container.querySelectorAll !== 'function') return;
     container.querySelectorAll('img').forEach((img) => {
-      if (!SVG_DATA_IMG_RE.test(img.getAttribute('src') || '')) img.remove();
+      if (!DATA_IMG_RE.test(img.getAttribute('src') || '')) img.remove();
     });
   };
 
@@ -74,7 +73,7 @@
       const parsed = parseHtml(sanitized);
       if (!parsed) return sanitized;
       ensureAnchorAttributes(parsed);
-      keepOnlySvgDataImages(parsed);
+      keepOnlyDataImages(parsed);
       return parsed.body ? parsed.body.innerHTML : sanitized;
     }
 

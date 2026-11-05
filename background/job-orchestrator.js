@@ -177,12 +177,12 @@ function isStaleBaselineCandidate(entry, text, dispatchId = null) {
 }
 const LATE_COLLECT_CACHE_KEY_PREFIX = 'late_answer_snapshot_v1';
 const LATE_COLLECT_CACHE_MAX_CHARS = 200000;
-// A cut inside a data: image would leave broken markup: over the cap, diagram images
-// are replaced by the visible note first, then the usual cut applies.
+// A cut inside a data: image would leave broken markup: over the cap, embedded
+// pictures are replaced by a visible note first, then the usual cut applies.
 function capSnapshotHtml(html) {
   let value = String(html || '');
   if (value.length > LATE_COLLECT_CACHE_MAX_CHARS) {
-    value = value.replace(/<img\b[^>]*src="data:image\/svg\+xml;base64,[^"]*"[^>]*>/g, '<p>[диаграмма не сохранена: размер]</p>');
+    value = value.replace(/<img\b(?=[^>]*\bsrc\s*=\s*["']data:image\/[^"']+["'])[^>]*>/gi, '<p>[Изображение не сохранено: превышен лимит HTML]</p>');
   }
   return value.slice(0, LATE_COLLECT_CACHE_MAX_CHARS);
 }
@@ -1105,7 +1105,9 @@ async function ensureAnswerMarkdownModulesInTab(tabId) {
     const names = ANSWER_MARKDOWN_MODULES.map(([name]) => name);
     const probe = await chrome.scripting.executeScript({
       target: { tabId },
-      func: (list) => list.map((name) => !!globalThis[name]),
+      func: (list) => list.map((name) => name === 'AnswerHtmlBuilder'
+        ? Number(globalThis[name]?.version || 0) >= 3
+        : !!globalThis[name]),
       args: [names]
     });
     const present = Array.isArray(probe?.[0]?.result) ? probe[0].result : [];
@@ -1190,7 +1192,47 @@ async function runInlineLateExtract({ tabId, llmName, minChars = DOM_SNAPSHOT_RE
     func: extractLatestAssistantSnapshotInPage,
     args: [llmName, minChars, { ...(manualRecovery || {}), markdownInjectError, enrich, gptNewMarkup: self.SelectorConfigRegistry?.GPT?.newMarkup || null }]
   }), LATE_COLLECT_EXECUTE_TIMEOUT_MS, (err) => ({ ok: false, error: err?.message || 'execute_timeout' })));
-  const snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result : null;
+  let snapshot = Array.isArray(result) ? result.find((item) => item?.result)?.result : null;
+  if (snapshot?.ok && snapshot.text && enrich && String(snapshot.html || '').trim()) {
+    const materialized = await withLateCollectExecutionLock(() => withLateCollectTimeout(chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (html) => {
+        const builder = globalThis.AnswerHtmlBuilder;
+        if (typeof builder?.materializeImages !== 'function') return { html, notes: [] };
+        return await builder.materializeImages(html, document);
+      },
+      args: [snapshot.html]
+    }), LATE_COLLECT_TOTAL_BUDGET_MS, (err) => ({ ok: false, error: err?.message || 'image_materialization_timeout' })));
+    const resultData = Array.isArray(materialized) ? materialized.find((item) => item?.result)?.result : null;
+    if (resultData && typeof resultData.html === 'string') {
+      const imageNotes = Array.isArray(resultData.notes) ? resultData.notes : [];
+      snapshot = {
+        ...snapshot,
+        html: resultData.html,
+        ...(imageNotes.length && snapshot.copyReport ? {
+          copyReport: {
+            ...snapshot.copyReport,
+            placeholders: [...(snapshot.copyReport.placeholders || []), ...imageNotes],
+            complete: false
+          }
+        } : {})
+      };
+    } else {
+      // Keep the text answer usable, but do not silently pass through remote image URLs.
+      snapshot = {
+        ...snapshot,
+        html: String(snapshot.html || '').replace(/<img\b(?=[^>]*\bdata-ao-content-image=["']1["'])[^>]*>/gi,
+          '<span class="ao-image-copy-placeholder">[Изображение не скопировано: обработка недоступна]</span>'),
+        ...(snapshot.copyReport ? {
+          copyReport: {
+            ...snapshot.copyReport,
+            placeholders: [...(snapshot.copyReport.placeholders || []), { type: 'image', reason: 'обработка недоступна', position: 0 }],
+            complete: false
+          }
+        } : {})
+      };
+    }
+  }
   if (snapshot?.ok && snapshot.text) {
     return snapshot;
   }

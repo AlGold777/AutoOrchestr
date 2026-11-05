@@ -6,7 +6,7 @@
 // pulled html is built by the same code as the live one. Bump BUILDER_VERSION with every change of behaviour.
 (function initAnswerHtmlBuilder(root) {
   'use strict';
-  const BUILDER_VERSION = 2;
+  const BUILDER_VERSION = 3;
   if (root.AnswerHtmlBuilder && Number(root.AnswerHtmlBuilder.version) >= BUILDER_VERSION) return;
   const window = root;
 
@@ -194,6 +194,35 @@
   };
   const SVG_IMG_MAX_BASE64 = 400000;
   const SVG_IMG_TOTAL_MAX_BASE64 = 1500000;
+  const CONTENT_IMAGE_MIN_SIDE = 48;
+  const CONTENT_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+  const CONTENT_IMAGE_TOTAL_MAX_BYTES = 30 * 1024 * 1024;
+  const CONTENT_IMAGE_MAX_COUNT = 12;
+  const CONTENT_IMAGE_FETCH_TIMEOUT_MS = 7000;
+  const CONTENT_IMAGE_TOTAL_TIMEOUT_MS = 9000;
+  const SAFE_RASTER_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+  const materializedImageCache = new Map();
+  let materializedImageCacheBytes = 0;
+  const MATERIALIZED_IMAGE_CACHE_MAX_BYTES = 30 * 1024 * 1024;
+  const UI_IMAGE_MARKER_RE = /avatar|favicon|logo|icon|badge|profile|toolbar/i;
+  const imageDimension = (img, name) => {
+    const declared = Number.parseFloat(img.getAttribute(name) || '');
+    if (Number.isFinite(declared) && declared > 0) return declared;
+    const styled = Number.parseFloat(img.style?.[name] || '');
+    return Number.isFinite(styled) && styled > 0 ? styled : 0;
+  };
+  const isLikelyContentImage = (img, rect = null) => {
+    if (!img || img.matches?.('[data-ao-discard-image="1"]')
+      || img.closest?.('button,[role="button"],nav,header,footer,aside,form,[aria-hidden="true"]')) return false;
+    const marker = `${img.getAttribute('class') || ''} ${img.getAttribute('id') || ''} ${img.getAttribute('alt') || ''} ${img.getAttribute('aria-label') || ''} ${img.getAttribute('src') || ''}`;
+    if (UI_IMAGE_MARKER_RE.test(marker)) return false;
+    const width = Math.max(Number(img.naturalWidth || 0), imageDimension(img, 'width'), Number(rect?.width || 0));
+    const height = Math.max(Number(img.naturalHeight || 0), imageDimension(img, 'height'), Number(rect?.height || 0));
+    const alt = String(img.getAttribute('alt') || img.getAttribute('aria-label') || '').trim();
+    return (width >= CONTENT_IMAGE_MIN_SIDE && height >= CONTENT_IMAGE_MIN_SIDE)
+      || (Boolean(alt) && width >= 32 && height >= 32)
+      || (Boolean(alt) && !width && !height && Boolean(img.getAttribute('src')));
+  };
   // Never content: page chrome and reasoning. A picture inside a button / aria-hidden wrapper is
   // content only when it is not an icon: it looks like a diagram (see looksLikeDiagram).
   const SVG_HARD_SKIP_ANCESTORS = '[inert], header, footer, nav, aside, form, [data-message-part-type="reasoning"]';
@@ -521,6 +550,36 @@
     if (!element || element.nodeType !== 1) return '';
     const includeRoot = options.includeRoot !== false;
     const clone = cloneElementWithInlineStyles(element) || element.cloneNode(true);
+    // Preserve the browser-selected responsive/lazy image URL in the snapshot. The
+    // asynchronous materializer below turns content pictures into bounded data URLs.
+    try {
+      const sourceImages = Array.from(element.querySelectorAll('img'));
+      const cloneImages = Array.from(clone.querySelectorAll('img'));
+      sourceImages.forEach((source, index) => {
+        const target = cloneImages[index];
+        if (!target) return;
+        const rect = source.getBoundingClientRect();
+        const width = Math.max(Number(source.naturalWidth || 0), Number(rect.width || 0), Number(source.width || 0));
+        const height = Math.max(Number(source.naturalHeight || 0), Number(rect.height || 0), Number(source.height || 0));
+        if (isLikelyContentImage(source, rect)) {
+          const candidates = [
+            source.currentSrc,
+            source.getAttribute('data-src'),
+            source.getAttribute('data-original'),
+            source.getAttribute('data-lazy-src'),
+            source.getAttribute('data-actualsrc'),
+            source.getAttribute('src')
+          ].map((value) => String(value || '').trim()).filter(Boolean);
+          const selected = candidates.find((value) => !/^data:image\/(?:gif|png);base64,[a-z0-9+/=]{0,256}$/i.test(value)) || candidates[0] || '';
+          if (selected) target.setAttribute('src', selected);
+          target.setAttribute('data-ao-content-image', '1');
+          if (width > 0) target.setAttribute('width', String(Math.round(width)));
+          if (height > 0) target.setAttribute('height', String(Math.round(height)));
+        } else target.setAttribute('data-ao-discard-image', '1');
+        target?.removeAttribute('srcset');
+        target?.removeAttribute('sizes');
+      });
+    } catch (_) {}
     const svgState = { total: 0, position: 0, notes: [], iconCount: 0, iconBytes: 0 };
     let plan = { hidden: new Set(), mermaid: [], loading: [] };
     try { plan = planHiddenAndMermaid(element, clone); } catch (_) {}
@@ -550,6 +609,9 @@
       } catch (_) {}
     });
     try { replaceContentSvgs(element, clone, svgState); } catch (_) {}
+    // Do not change source/clone child indexes before the SVG and shadow-root
+    // pairing pass above; it relies on structurally matching trees.
+    try { clone.querySelectorAll('img[data-ao-discard-image="1"]').forEach((img) => img.remove()); } catch (_) {}
     lastInlineHtmlNotes = svgState.notes;
     // Hidden content leaves the copy (the kept nodes above are moved out of hidden panels first).
     try {
@@ -606,6 +668,184 @@
       clone.querySelectorAll(RESPONSE_CLEANUP_SELECTORS).forEach((node) => node.remove());
     } catch (_) {}
     return includeRoot ? (clone.outerHTML || '') : (clone.innerHTML || '');
+  };
+
+  const bytesToBase64 = (bytes) => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+  };
+  const sniffRasterMime = (bytes) => {
+    if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+      && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return 'image/png';
+    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+    if (bytes.length >= 6 && String.fromCharCode(...bytes.subarray(0, 3)) === 'GIF') return 'image/gif';
+    if (bytes.length >= 12 && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF'
+      && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP') return 'image/webp';
+    return '';
+  };
+  const dataImageBytes = (src) => {
+    const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([a-z0-9+/]+={0,2})$/i.exec(String(src || ''));
+    if (!match || !SAFE_RASTER_MIMES.has(match[1].toLowerCase())) return null;
+    if (match[2].length > Math.ceil(CONTENT_IMAGE_MAX_BYTES * 4 / 3) + 4) return null;
+    try {
+      const binary = atob(match[2]);
+      if (binary.length > CONTENT_IMAGE_MAX_BYTES) return null;
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      return { bytes, mime: sniffRasterMime(bytes) };
+    } catch (_) { return null; }
+  };
+  const imageFailure = (img, reason, position, notes) => {
+    const note = img.ownerDocument.createElement('span');
+    note.className = 'ao-image-copy-placeholder';
+    note.textContent = `[Изображение не скопировано: ${reason}]`;
+    img.replaceWith(note);
+    notes.push({ type: 'image', reason, position });
+  };
+  const cacheMaterializedImage = (key, result) => {
+    const bytes = Number(result?.bytes || 0);
+    if (!key || !result?.ok || !bytes || bytes > MATERIALIZED_IMAGE_CACHE_MAX_BYTES) return;
+    if (materializedImageCache.has(key)) {
+      materializedImageCacheBytes -= Number(materializedImageCache.get(key)?.bytes || 0);
+      materializedImageCache.delete(key);
+    }
+    while (materializedImageCache.size && materializedImageCacheBytes + bytes > MATERIALIZED_IMAGE_CACHE_MAX_BYTES) {
+      const oldestKey = materializedImageCache.keys().next().value;
+      materializedImageCacheBytes -= Number(materializedImageCache.get(oldestKey)?.bytes || 0);
+      materializedImageCache.delete(oldestKey);
+    }
+    materializedImageCache.set(key, result);
+    materializedImageCacheBytes += bytes;
+  };
+  const materializeImage = async (img, position, deadline) => {
+    const src = String(img.getAttribute('src') || '').trim();
+    if (!src) return { ok: false, reason: 'нет адреса' };
+    if (/^data:image\/svg\+xml;base64,[a-z0-9+/]+={0,2}$/i.test(src)) {
+      if (src.length > SVG_IMG_MAX_BASE64) return { ok: false, reason: 'размер превышен' };
+      return { ok: true, src };
+    }
+    if (/^data:/i.test(src)) {
+      const decoded = dataImageBytes(src);
+      if (!decoded) return { ok: false, reason: 'небезопасный или нераспознанный тип' };
+      if (!decoded.mime) return { ok: false, reason: 'данные изображения повреждены' };
+      return { ok: true, src: `data:${decoded.mime};base64,${bytesToBase64(decoded.bytes)}`, bytes: decoded.bytes.length };
+    }
+    let url;
+    try { url = new URL(src, img.ownerDocument.baseURI); } catch (_) { return { ok: false, reason: 'неверный адрес' }; }
+    if (url.username || url.password || !['http:', 'https:', 'blob:'].includes(url.protocol)) {
+      return { ok: false, reason: 'небезопасный адрес' };
+    }
+    const cached = materializedImageCache.get(url.href);
+    if (cached) {
+      materializedImageCache.delete(url.href);
+      materializedImageCache.set(url.href, cached);
+      return cached;
+    }
+    const remainingMs = Math.max(0, Number(deadline || 0) - Date.now());
+    if (!remainingMs) return { ok: false, reason: 'общий таймаут превышен' };
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeout = setTimeout(() => controller?.abort(), Math.min(CONTENT_IMAGE_FETCH_TIMEOUT_MS, remainingMs));
+    try {
+      const response = await fetch(url.href, {
+        credentials: url.origin === location.origin ? 'include' : 'omit',
+        mode: 'cors',
+        signal: controller?.signal
+      });
+      if (!response.ok) return { ok: false, reason: `источник недоступен (${response.status})` };
+      const declaredSize = Number(response.headers.get('content-length') || 0);
+      if (declaredSize > CONTENT_IMAGE_MAX_BYTES) return { ok: false, reason: 'размер превышен' };
+      let bytes;
+      if (response.body?.getReader) {
+        const reader = response.body.getReader();
+        const chunks = [];
+        let size = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > CONTENT_IMAGE_MAX_BYTES) {
+            await reader.cancel();
+            return { ok: false, reason: 'размер превышен' };
+          }
+          chunks.push(value);
+        }
+        bytes = new Uint8Array(size);
+        let offset = 0;
+        chunks.forEach((chunk) => { bytes.set(chunk, offset); offset += chunk.byteLength; });
+      } else {
+        const blob = await response.blob();
+        if (blob.size > CONTENT_IMAGE_MAX_BYTES) return { ok: false, reason: 'размер превышен' };
+        bytes = new Uint8Array(await blob.arrayBuffer());
+      }
+      const mime = sniffRasterMime(bytes);
+      if (!mime || !SAFE_RASTER_MIMES.has(mime)) return { ok: false, reason: 'небезопасный или нераспознанный тип' };
+      const result = { ok: true, src: `data:${mime};base64,${bytesToBase64(bytes)}`, bytes: bytes.length };
+      cacheMaterializedImage(url.href, result);
+      return result;
+    } catch (_) {
+      return { ok: false, reason: 'источник недоступен (CORS, авторизация или таймаут)' };
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  const materializeImages = async (html, documentRef = root.document) => {
+    const template = documentRef?.createElement?.('template');
+    if (!template) return { html: String(html || ''), notes: [] };
+    template.innerHTML = String(html || '');
+    const images = Array.from(template.content.querySelectorAll('img')).filter((img) => {
+      if (img.matches('[data-ao-content-image="1"]')) return true;
+      if (!isLikelyContentImage(img)) return false;
+      img.setAttribute('data-ao-content-image', '1');
+      return true;
+    });
+    const notes = [];
+    let totalBytes = 0;
+    const selectedImages = images.slice(0, CONTENT_IMAGE_MAX_COUNT);
+    images.slice(CONTENT_IMAGE_MAX_COUNT).forEach((img, index) => {
+      imageFailure(img, 'лимит количества превышен', CONTENT_IMAGE_MAX_COUNT + index + 1, notes);
+    });
+    const results = new Array(selectedImages.length);
+    let nextIndex = 0;
+    let reservedBytes = 0;
+    const deadline = Date.now() + CONTENT_IMAGE_TOTAL_TIMEOUT_MS;
+    const worker = async () => {
+      while (nextIndex < selectedImages.length) {
+        const index = nextIndex++;
+        const remainingBytes = CONTENT_IMAGE_TOTAL_MAX_BYTES - totalBytes - reservedBytes;
+        if (remainingBytes <= 0) {
+          results[index] = { ok: false, reason: 'общий размер превышен' };
+          continue;
+        }
+        const reservation = Math.min(CONTENT_IMAGE_MAX_BYTES, remainingBytes);
+        reservedBytes += reservation;
+        const result = await materializeImage(selectedImages[index], index + 1, deadline);
+        reservedBytes -= reservation;
+        const size = Number(result.bytes || 0);
+        if (result.ok && size && totalBytes + size > CONTENT_IMAGE_TOTAL_MAX_BYTES) {
+          results[index] = { ok: false, reason: 'общий размер превышен' };
+        } else {
+          results[index] = result;
+          if (result.ok) totalBytes += size;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, selectedImages.length) }, worker));
+    selectedImages.forEach((img, index) => {
+      const position = index + 1;
+      const result = results[index];
+      if (!result.ok) {
+        imageFailure(img, result.reason, position, notes);
+        return;
+      }
+      img.setAttribute('src', result.src);
+      img.removeAttribute('srcset');
+      img.removeAttribute('sizes');
+      img.removeAttribute('data-ao-content-image');
+    });
+    return { html: template.innerHTML, notes };
   };
 
   // ---------------------------------------------------------------------------- the answer of one turn
@@ -787,6 +1027,7 @@
     version: BUILDER_VERSION,
     // options: { includeRoot (default true), provider (name for the code-block rules) }
     build: (element, options = {}) => buildInlineHtml(element, options),
+    materializeImages,
     // A deep copy of an element with the computed styles written inline (ContentUtils.cloneElementWithInlineStyles).
     cloneWithStyles: (element) => cloneElementWithInlineStyles(element),
     // Diagrams / embeds the html could not keep (size, not copied): [{ type, reason, position }]

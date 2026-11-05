@@ -1064,6 +1064,57 @@ this.humanSession.on?.('session-stop', () => clearInterval(textStabilityMonitor)
         // Frozen authority snapshot carries text/html only: convert from the live element.
         markdownFields = this.extractAnswerMarkdown(this.getAnswerElement({ reportHealth: false }));
       }
+      // Materialize content images before the result leaves the provider tab. This
+      // keeps the live answer and the frozen authority snapshot self-contained.
+      try {
+        const materializer = window.AnswerHtmlBuilder?.materializeImages;
+        if (typeof materializer === 'function' && String(answerHtml || '').trim()) {
+          const materialized = await materializer(String(answerHtml), document);
+          answerHtml = String(materialized?.html || answerHtml);
+          const imageNotes = Array.isArray(materialized?.notes) ? materialized.notes : [];
+          if (imageNotes.length && markdownFields?.copyReport) {
+            markdownFields = {
+              ...markdownFields,
+              copyReport: {
+                ...markdownFields.copyReport,
+                placeholders: [...(markdownFields.copyReport.placeholders || []), ...imageNotes],
+                complete: false
+              }
+            };
+          }
+        }
+      } catch (error) {
+        // Image capture must not invalidate an otherwise complete text answer, but
+        // an image that could not be processed must not disappear silently.
+        try {
+          const template = document.createElement('template');
+          template.innerHTML = String(answerHtml || '');
+          const pendingImages = Array.from(template.content.querySelectorAll('img[data-ao-content-image="1"]'));
+          pendingImages.forEach((img) => {
+            const note = document.createElement('span');
+            note.className = 'ao-image-copy-placeholder';
+            note.textContent = '[Изображение не скопировано: обработка недоступна]';
+            img.replaceWith(note);
+          });
+          answerHtml = template.innerHTML;
+          if (pendingImages.length && markdownFields?.copyReport) {
+            markdownFields = {
+              ...markdownFields,
+              copyReport: {
+                ...markdownFields.copyReport,
+                placeholders: [...(markdownFields.copyReport.placeholders || []), {
+                  type: 'image', reason: 'обработка недоступна', position: 0
+                }],
+                complete: false
+              }
+            };
+          }
+        } catch (_) {}
+        this.telemetry.logPhase('finalization_image_materialization_failed', {
+          platform: this.platform,
+          message: String(error?.message || error).slice(0, 160)
+        });
+      }
       if (!String(answer || '').trim()) {
         this.telemetry.logPhase('finalization_empty_answer', { platform: this.platform });
         return { success: false, error: 'empty_answer' };

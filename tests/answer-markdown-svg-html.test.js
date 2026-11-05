@@ -94,14 +94,15 @@ describe('sanitizeHTML (DOMPurify) with diagram images', () => {
   });
   const svgSrc = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64')}`;
 
-  test('keeps a base64 svg data image, drops every other image source and handlers', () => {
+  test('keeps inline raster and svg images, drops external or unsafe sources and handlers', () => {
     const clean = window.sanitizeHTML(`<p>a</p><img src="${svgSrc}" alt="Диаграмма" width="10" height="10" onerror="x()">
-      <img src="https://tracker.example/p.png"><img src="data:text/html;base64,AAAA"><img src="data:image/svg+xml;utf8,<svg onload=1>">
+      <img src="data:image/png;base64,aGVsbG8="><img src="https://tracker.example/p.png"><img src="data:text/html;base64,AAAA"><img src="data:image/svg+xml;utf8,<svg onload=1>">
       <a href="${svgSrc}">l</a>`);
     const host = document.createElement('div');
     host.innerHTML = clean;
     const imgs = Array.from(host.querySelectorAll('img'));
-    expect(imgs).toHaveLength(1);
+    expect(imgs).toHaveLength(2);
+    expect(imgs[1].getAttribute('src')).toBe('data:image/png;base64,aGVsbG8=');
     expect(imgs[0].getAttribute('src')).toBe(svgSrc);
     expect(imgs[0].getAttribute('alt')).toBe('Диаграмма');
     expect(imgs[0].getAttribute('width')).toBe('10');
@@ -160,7 +161,7 @@ describe('in-page extractor agrees with ContentUtils', () => {
     const cap = capSnapshotHtml(1000);
     const html = `<p>x</p><img src="data:image/svg+xml;base64,${'A'.repeat(3000)}" alt="Диаграмма">`;
     const out = cap(html);
-    expect(out).toContain('[диаграмма не сохранена: размер]');
+    expect(out).toContain('[Изображение не сохранено: превышен лимит HTML]');
     expect(out).not.toContain('base64');
     expect(cap('<p>short</p>')).toBe('<p>short</p>');
   });

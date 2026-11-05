@@ -20301,7 +20301,7 @@ function collectLLMResponses() {
         const text = htmlContent
             ? plainTextFromHtml(htmlContent)
             : (outputEl ? (outputEl.innerText || outputEl.textContent || '').trim() : '');
-        const isErrorResponse = isErrorOutput(text);
+        const isErrorResponse = text ? isErrorOutput(text) : !/<img\b/i.test(htmlContent);
         if (isErrorResponse) {
             return;
         }
@@ -26449,7 +26449,7 @@ function exportSingleTemplate(templateName, sourceData = null) {
         if (event.target.closest('.debate-card-copy')) {
             if (!text && !html) return;
             const markdown = cardAnswerCopyText(card);
-            try { await writeRichContentToClipboard(markdown ? { text: markdown, html: '' } : { text, html }); } catch (err) { console.warn(err); }
+            try { await writeRichContentToClipboard({ text: markdown || text, html }); } catch (err) { console.warn(err); }
             return;
         }
         if (event.target.closest('.debate-card-export')) {
