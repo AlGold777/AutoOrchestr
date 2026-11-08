@@ -202,6 +202,38 @@
   // select-and-replace (the same operation a real keystroke performs) and
   // reliably clears whatever is there first, so it also cleans up any
   // duplication pasteTextFirst's own attempts may have left behind.
+  // The browser debugger is permanently disabled (background/message-router.js), so the trusted path above never
+  // works. Verified live on kimi.ai: execCommand('insertText') and Input.insertText glue the lines together (no "\n"),
+  // while a paste event keeps every line break. Lexical replaces the selection on paste only after it has seen the
+  // selectionchange for it, so select all, fire selectionchange, wait, then paste.
+  const normalizeForCompare = (value) => String(value || '').normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const pastePromptIntoLexical = async (composer, prompt) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const live = findFirst(COMPOSER_SELECTORS) || composer;
+      if (!live?.isConnected) return { ok: false, reason: 'composer_detached', value: '' };
+      try { live.focus({ preventScroll: true }); } catch (_) { live.focus?.(); }
+      const doc = live.ownerDocument || document;
+      const selection = doc.getSelection();
+      const range = doc.createRange();
+      range.selectNodeContents(live);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      doc.dispatchEvent(new Event('selectionchange'));
+      await sleep(150);
+      const data = new DataTransfer();
+      data.setData('text/plain', prompt);
+      live.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+      await sleep(350);
+      const value = readComposerText(live);
+      if (normalizeForCompare(value) === normalizeForCompare(prompt)) {
+        return { ok: true, method: 'paste_event', value, attempt, composer: live };
+      }
+    }
+    const live = findFirst(COMPOSER_SELECTORS) || composer;
+    return { ok: false, reason: 'prompt_not_present', value: readComposerText(live) };
+  };
+
   const insertPrompt = async (composer, prompt) => {
     composer.focus?.();
     // ensurePromptPrepared already ran the paste transaction for this attempt.
@@ -339,14 +371,13 @@
       }
       composer = await waitForFirst(COMPOSER_SELECTORS);
     }
-    const prepared = window.ContentUtils?.ensurePromptPrepared
-      ? await window.ContentUtils.ensurePromptPrepared(composer, prompt, {
+    let prepared = await pastePromptIntoLexical(composer, prompt);
+    if (!prepared.ok && window.ContentUtils?.ensurePromptPrepared) prepared = await window.ContentUtils.ensurePromptPrepared(composer, prompt, {
           fallback: (input, text) => insertPrompt(input, text),
           resolveComposer: () => findFirst(COMPOSER_SELECTORS),
           attempts: 2,
           settleMs: 150
-        })
-      : { ok: false, reason: 'composer_transaction_unavailable' };
+        });
     window.ContentUtils?.reportPromptInsertion?.(MODEL, meta, {
       state: prepared.ok ? 'inserted' : 'failed',
       method: prepared.method || null,
