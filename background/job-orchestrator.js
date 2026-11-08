@@ -11134,9 +11134,29 @@ async function handleManualResponsePing(llmName, options = {}) {
   // M-19: only the tab this participant's request was sent to. No "most recent tab
   // of the domain" search: it picked old topics' tabs and rebound them.
   const liveEntry0 = jobState?.llms?.[llmName] || null;
-  const tabId = typeof getBoundTabId === 'function'
+  let tabId = typeof getBoundTabId === 'function'
     ? getBoundTabId(llmName, liveEntry0)
     : (liveEntry0?.tabId || null);
+  // No request of this run went to this model at all (e.g. the extension was reloaded and models were just
+  // selected): nothing is bound, so take the most recently used open chat tab of the model. A participant that
+  // HAS an entry keeps the strict rule above (its own tab only, else tab_missing).
+  if (!tabId && !liveEntry0) {
+    const patterns = typeof getQueryPatternsForLLM === 'function' ? getQueryPatternsForLLM(llmName) : null;
+    if (Array.isArray(patterns) && patterns.length) {
+      const found = await new Promise((resolve) => {
+        chrome.tabs.query({ url: patterns }, (tabs) => resolve(chrome.runtime.lastError || !Array.isArray(tabs) ? [] : tabs));
+      });
+      const latest = found
+        .filter((tab) => isEligibleTabForLlm(llmName, tab))
+        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+      if (latest) {
+        tabId = latest.id;
+        broadcastDiagnostic(llmName, {
+          type: 'PING', label: 'Manual ping: latest tab selected', details: `No run entry; using the most recent tab ${tabId}`, level: 'info'
+        });
+      }
+    }
+  }
   const tabMissing = (details) => {
     broadcastDiagnostic(llmName, { type: 'PING', label: 'Manual ping: tab_missing', details, level: 'error' });
     return {

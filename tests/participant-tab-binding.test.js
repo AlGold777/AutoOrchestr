@@ -49,6 +49,7 @@ const buildContext = ({ mapped = {}, entries = {}, openTabs = [], closed = new S
     getTabSafe: (tabId) => Promise.resolve(closed.has(tabId) ? null : (openTabs.find((t) => t.id === tabId) || null)),
     isEligibleTabForLlm: (llm, tab) => Boolean(tab && /chat\.example/.test(tab.url)),
     setTabBinding: (llm, tabId) => { bindings.push([llm, tabId]); return Promise.resolve(); },
+    getQueryPatternsForLLM: () => ['https://chat.example/*'],
     chrome: {
       runtime: { lastError: null },
       tabs: { query: (info, cb) => { queries.push(info); cb(openTabs); } }
@@ -96,6 +97,12 @@ describe('Get it never takes an old tab of the same domain', () => {
     expect(queries).toEqual([]);
     expect(bindings).toEqual([]);
     expect(ensured).toEqual([]);
+  });
+
+  test('no entry for the model at all (after Reload): takes the most recently used open tab', async () => {
+    const { context, ensured } = buildContext({ entries: {}, openTabs: [NEW, OLD] });
+    await expect(context.handleManualResponsePing('Claude', {})).rejects.toThrow('reached_recovery');
+    expect(ensured).toEqual([1]); // OLD has the larger lastAccessed
   });
 
   test('closed bound tab: ends with tab_missing and does not switch to another tab', async () => {
