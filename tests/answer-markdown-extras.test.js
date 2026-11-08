@@ -90,7 +90,7 @@ test('список источников и карточка поиска: заг
   expect(e.run(el('<ol data-source-list><li><a href="https://a.com">A</a></li></ol>'))).toContain('1. [A](https://a.com)');
   expect(e.copied.source).toBe(1);
   expect(e.run(el('<div data-search-result><a href="https://c.com"><strong>Карточка</strong></a></div>'))).toBe('1. [Карточка](https://c.com)');
-  expect(Extras.handlers.filter((h) => h.name !== 'extras-wrapped-svg').every((h) => typeof h.censusSelector === 'string' && h.censusSelector)).toBe(true);
+  expect(Extras.handlers.filter((h) => h.name !== 'extras-wrapped-svg' && h.name !== 'extras-perplexity-file').every((h) => typeof h.censusSelector === 'string' && h.censusSelector)).toBe(true);
 });
 
 test('файл: имя, тип, URL; без URL — заглушка', () => {

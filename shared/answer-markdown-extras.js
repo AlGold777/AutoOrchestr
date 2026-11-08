@@ -157,6 +157,30 @@
     })
   };
 
+  // ---------- Perplexity: карточка файла-артефакта ----------
+  // Подтверждено живой страницей 2026-11-08: у карточки нет href (кнопка aria-label + иконка #pplx-icon-file-type-*),
+  // файл открывается панелью просмотра по адресу сессии ?preview=1. Без этого обработчика остаётся голый текст.
+  function pplxFileIcon(el) {
+    for (const u of Array.from(el.querySelectorAll('use'))) {
+      const h = u.getAttribute('xlink:href') || u.getAttribute('href') || '';
+      if (h.startsWith('#pplx-icon-file-type-')) return h;
+    }
+    return '';
+  }
+  const pplxFileHandler = {
+    name: 'extras-perplexity-file', type: 'file', priority: 200,
+    censusMatch: (el) => pplxFileHandler.match(el),
+    match: (el) => el.tagName === 'DIV' && Boolean(pplxFileIcon(el)) && Array.from(el.children).some((c) => c.tagName === 'BUTTON' && c.getAttribute('aria-label')),
+    render: guard('file', (el) => {
+      const btn = Array.from(el.children).find((c) => c.tagName === 'BUTTON' && c.getAttribute('aria-label'));
+      const base = (btn.getAttribute('aria-label') || '').trim();
+      const ext = (pplxFileIcon(el).split('file-type-')[1] || '').toLowerCase();
+      const name = base && ext && !new RegExp(`\\.${ext}$`, 'i').test(base) ? `${base}.${ext}` : (base || 'файл');
+      const loc = el.ownerDocument.location;
+      return { markdown: `[${mdText(name)}](${loc.origin}${loc.pathname}?preview=1)`, copied: 1 };
+    })
+  };
+
   // ---------- code interpreter ----------
   const outputHandler = {
     name: 'extras-output', type: 'output', priority: 200, censusSelector: SELECTORS.output,
@@ -242,7 +266,7 @@
     })
   };
 
-  const handlers = [artifactHandler, embedHandler, wrappedSvgHandler, citationHandler, sourceListHandler, fileHandler, outputHandler];
+  const handlers = [artifactHandler, embedHandler, wrappedSvgHandler, citationHandler, sourceListHandler, fileHandler, pplxFileHandler, outputHandler];
 
   function register(engine) {
     handlers.forEach((h) => engine.registerBlock(h));
