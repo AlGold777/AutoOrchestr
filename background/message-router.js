@@ -956,22 +956,29 @@ async function dispatchProviderTrustedInput(tabId, model, text, isMac = false) {
             nativeVirtualKeyCode: 65, modifiers
         });
         if (model === 'Kimi' && String(text).includes('\n')) {
-            // Kimi's Lexical editor drops "\n" inside Input.insertText, gluing lines together ("...самостоятелен.Ограничения"),
-            // so the prompt never matched. Insert line by line with a real Shift+Enter between lines.
-            const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
-            for (let i = 0; i < lines.length; i += 1) {
-                if (i > 0) {
-                    await callChromeDebugger('sendCommand', target, 'Input.dispatchKeyEvent', {
-                        type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
-                        nativeVirtualKeyCode: 13, modifiers: 8, commands: ['InsertLineBreak']
-                    });
-                    await callChromeDebugger('sendCommand', target, 'Input.dispatchKeyEvent', {
-                        type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
-                        nativeVirtualKeyCode: 13, modifiers: 8
-                    });
-                }
-                if (lines[i]) await callChromeDebugger('sendCommand', target, 'Input.insertText', { text: lines[i] });
-            }
+            // Kimi's Lexical editor drops "\n" in Input.insertText and execCommand('insertText') (lines glue together,
+            // the prompt never matched). Checked live: a paste event with text/plain keeps every line break. Clear
+            // with a trusted Backspace over the selection, then paste.
+            await callChromeDebugger('sendCommand', target, 'Input.dispatchKeyEvent', {
+                type: 'rawKeyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8,
+                nativeVirtualKeyCode: 8, modifiers: 0, commands: ['DeleteBackward']
+            });
+            await callChromeDebugger('sendCommand', target, 'Input.dispatchKeyEvent', {
+                type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8,
+                nativeVirtualKeyCode: 8, modifiers: 0
+            });
+            await callChromeDebugger('sendCommand', target, 'Runtime.evaluate', {
+                expression: `(() => {
+                  const el = document.activeElement;
+                  if (!el) return false;
+                  const dt = new DataTransfer();
+                  dt.setData('text/plain', ${JSON.stringify(String(text))});
+                  el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+                  return true;
+                })()`,
+                returnByValue: true,
+                awaitPromise: false
+            });
         } else {
             await callChromeDebugger('sendCommand', target, 'Input.insertText', { text: String(text) });
         }
