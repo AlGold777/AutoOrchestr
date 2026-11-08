@@ -955,7 +955,26 @@ async function dispatchProviderTrustedInput(tabId, model, text, isMac = false) {
             type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65,
             nativeVirtualKeyCode: 65, modifiers
         });
-        await callChromeDebugger('sendCommand', target, 'Input.insertText', { text: String(text) });
+        if (model === 'Kimi' && String(text).includes('\n')) {
+            // Kimi's Lexical editor drops "\n" inside Input.insertText, gluing lines together ("...самостоятелен.Ограничения"),
+            // so the prompt never matched. Insert line by line with a real Shift+Enter between lines.
+            const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+            for (let i = 0; i < lines.length; i += 1) {
+                if (i > 0) {
+                    await callChromeDebugger('sendCommand', target, 'Input.dispatchKeyEvent', {
+                        type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+                        nativeVirtualKeyCode: 13, modifiers: 8, commands: ['InsertLineBreak']
+                    });
+                    await callChromeDebugger('sendCommand', target, 'Input.dispatchKeyEvent', {
+                        type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13,
+                        nativeVirtualKeyCode: 13, modifiers: 8
+                    });
+                }
+                if (lines[i]) await callChromeDebugger('sendCommand', target, 'Input.insertText', { text: lines[i] });
+            }
+        } else {
+            await callChromeDebugger('sendCommand', target, 'Input.insertText', { text: String(text) });
+        }
         emitTelemetry(model, 'PROVIDER_TRUSTED_INPUT_DISPATCHED', {
             details: 'focused composer + native text', force: true, meta: { tabId, textLength: String(text).length }
         });
