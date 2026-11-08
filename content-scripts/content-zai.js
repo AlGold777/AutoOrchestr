@@ -234,6 +234,10 @@
 
   const injectAndGetResponse = async (prompt, options = {}) => {
     if (!prompt?.trim()) throw new Error('Prompt is empty');
+    // A stop/cleanup from an earlier run leaves `stopped` set in a reused tab; the new command is a fresh run.
+    // Without this reset waitForFirst() throws "element not found" at once (old chat fails, new tab works).
+    stopped = false;
+    window.zaiContentScriptLoaded = true;
     const meta = window.ContentUtils?.ensureDispatchMeta
       ? window.ContentUtils.ensureDispatchMeta(options.meta || null, MODEL)
       : (options.meta || null);
