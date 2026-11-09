@@ -709,6 +709,18 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
     .map((candidate) => ({ ...candidate, strategyScore: scoreByStrategy(candidate) }))
     .sort((a, b) => b.strategyScore - a.strategyScore);
   let best = candidates[0] || null;
+  // Manual "latest answer": the delivery token ([[AO-xxxxxx]]) marks the answer to this extension's request. When the
+  // last block has none (a later short reply, e.g. "this request is identical to the previous one") but an earlier one
+  // does, the tokened block is the answer. Not while the page is still generating.
+  if (manualOptions.manualLatestRecovery === true && best && !/\[\[AO-[a-z0-9]{6}\]\]/i.test(best.text)) {
+    let generatingNow = false;
+    try { generatingNow = Boolean(document.querySelector('button[aria-label*="Stop" i],[data-testid="stop-button"],[data-generating="true"]')); } catch (_) {}
+    if (!generatingNow) {
+      const tokened = baseCandidates.filter((candidate) => /\[\[AO-[a-z0-9]{6}\]\]/i.test(candidate.text));
+      const lastTokened = tokened.sort((a, b) => b.rectBottom - a.rectBottom)[0] || null;
+      if (lastTokened && lastTokened.node !== best.node && !lastTokened.node.contains(best.node) && !best.node.contains(lastTokened.node)) best = lastTokened;
+    }
+  }
   // M-16: a turn that is still being written has no answer yet, even when a reasoning line or a draft is already on the page.
   // The delivery token at the end of the block is the exception: the final block is there.
   if (best && gptTurnState !== null && gptTurnState !== (gptNewMarkup?.completeState || 'complete')
