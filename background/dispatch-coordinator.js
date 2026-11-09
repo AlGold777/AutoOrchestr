@@ -30,6 +30,7 @@ const ATTACHMENT_PROGRESS_STAGE = 'attachment_upload_started';
 const ATTACHMENT_FOCUS_EXTENSION_CEILING_MS = TimingConfig.getTiming('attachmentFocusExtensionCeilingMs', 90000);
 // Safety net only. The normal submit timer starts on the provider's
 // send_action_requested evidence, not while it is still uploading a file.
+const PLATFORM_MODE_TIMEOUT_MS = 25000;
 const PROVIDER_SEND_ACTION_FALLBACK_MS = TimingConfig.getTiming(
   'providerSendActionFallbackMs',
   ATTACHMENT_FOCUS_EXTENSION_CEILING_MS + 10000
@@ -1311,6 +1312,50 @@ async function ensureAttachmentHandlerForDispatch(tabId, attachments = []) {
   }
 }
 
+// Basic: the site must be in the mode from docs/Run Automation/model-modes.md before the prompt goes out.
+// A mode that cannot be set ends this participant's request; the prompt is not sent on the wrong model.
+async function ensurePlatformModeForDispatch(llmName, tabId, entry) {
+  if (!self.isActiveBasicParticipant?.(llmName)) {
+    return { ok: true, skipped: true };
+  }
+  let result;
+  let timer = null;
+  try {
+    const target = { tabId };
+    const injected = (async () => {
+      await chrome.scripting.executeScript({ target, files: ['content-scripts/platform-mode-setter.js'] });
+      const [frame] = await chrome.scripting.executeScript({ target, func: () => globalThis.PlatformModeSetter.ensure() });
+      return frame?.result || { ok: false, steps: [], reason: 'no_result' };
+    })();
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, steps: [], reason: 'timeout' }), PLATFORM_MODE_TIMEOUT_MS);
+    });
+    result = await Promise.race([injected, timeout]);
+  } catch (error) {
+    result = { ok: false, steps: [], reason: String(error?.message || error) };
+  } finally {
+    clearTimeout(timer);
+  }
+  const failed = (result.steps || []).filter((step) => !step.ok);
+  const reason = failed.map((step) => `${step.label}: ${step.reason}`).join('; ') || result.reason || '';
+  entry.platformMode = result;
+  emitTelemetry(llmName, 'PLATFORM_MODE', {
+    level: result.ok ? 'info' : 'error',
+    details: result.ok ? (result.steps || []).map((step) => `${step.label}: ${step.after}`).join('; ') : reason,
+    meta: { ...entry.lastDispatchMeta, tabId, platformMode: result },
+    force: true
+  });
+  if (!result.ok && typeof handleLLMResponse === 'function') {
+    const dispatchId = entry.lastDispatchMeta?.dispatchId || null;
+    const sessionId = entry.lastDispatchMeta?.sessionId || null;
+    handleLLMResponse(llmName, '', { type: 'platform_mode_not_set', message: `Режим не выставлен: ${reason}` }, {
+      dispatchId, sessionId, runSessionId: sessionId,
+      responseMeta: { failureClass: 'platform_mode', source: 'platform_mode', platformMode: result }
+    }, '');
+  }
+  return result;
+}
+
 async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entry, options, machine) {
   const meta = { ...entry.lastDispatchMeta, simpleFirstPass: true, attachmentCount: attachments?.length || 0 };
   const current = () => jobState?.session?.startTime === meta.runSessionId
@@ -1353,6 +1398,12 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     if (!preparation.ok) return defer(preparation.reason || 'receiver_unavailable');
     await ensureAttachmentHandlerForDispatch(tabId, attachments);
     if (!current()) return {ok: false, reason: 'session_changed'};
+    const platformMode = await ensurePlatformModeForDispatch(llmName, tabId, entry);
+    if (!current()) return {ok: false, reason: 'session_changed'};
+    if (!platformMode.ok) {
+      machine?.error?.({code: 'PLATFORM_MODE_NOT_SET', error: 'platform_mode_not_set'});
+      return {ok: false, reason: 'platform_mode_not_set'};
+    }
     // Focus and editor settling overlap the write; ordinary storage latency
     // adds no extra pause. Still require ownership to be durable before Send.
     if (!await durable || !current()) return defer('checkpoint_not_ready');
@@ -2131,6 +2182,13 @@ async function dispatchPromptToTab(llmName, tabId, prompt, attachments = [], rea
           retryable: pageReadyState.blockerPolicy?.retryable !== false,
           dispatchId, tabId, dispatchReason: reason
         });
+        return;
+      }
+
+      const platformMode = await ensurePlatformModeForDispatch(llmName, tabId, entry);
+      if (!isCurrentDispatchContext()) return;
+      if (!platformMode.ok) {
+        if (machine) machine.error({ error: 'platform_mode_not_set', code: 'PLATFORM_MODE_NOT_SET' });
         return;
       }
 
