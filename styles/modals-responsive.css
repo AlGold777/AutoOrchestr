@@ -1518,21 +1518,9 @@ body.pro-features-hidden .comparison-section {
     order: 2;
 }
 
-.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center {
-    min-width: 0;
-    max-width: 100%;
-    transform: none;
-    overflow: hidden;
-}
-
 /* Pipeline: the model selects sit in the middle of the composer, whatever the side blocks' widths. */
 .pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-header {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-}
-
-.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center .mod-select {
-    min-width: 0;
-    max-width: 100%;
 }
 
 .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right {

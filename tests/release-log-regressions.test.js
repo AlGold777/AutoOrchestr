@@ -409,7 +409,6 @@ describe('release log regression guards', () => {
     expect(html.indexOf('id="pipeline-panel-toggle-title"')).toBeLessThan(html.indexOf('id="debate-length-select"'));
     expect(html.indexOf('id="debate-round-limit-select"')).toBeLessThan(html.indexOf('id="debate-length-select"'));
     expect(html.indexOf('id="debate-round-limit-select"')).toBeGreaterThan(-1);
-    expect(html.indexOf('<div class="msg-head-center">')).toBeLessThan(html.indexOf('id="mod-sender-select"'));
     expect(html).not.toContain('id="mod-role-select"');
     expect(html).not.toContain('id="mod-send-btn"');
     expect(html).not.toContain('id="pipeline-run-btn"');
@@ -617,7 +616,6 @@ describe('release log regression guards', () => {
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-header {\n    flex: 0 0 auto;\n    align-items: center;\n    grid-template-columns: auto minmax(0, 1fr) auto;');
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    overflow: visible;');
     expect(css).toContain('.pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right-top {\n    gap: 0;\n    justify-content: flex-end;');
-    expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-center {\n    min-width: 0;\n    max-width: 100%;\n    transform: none;');
     expect(css).toContain('.prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .msg-head-right {\n    width: auto;\n    min-width: 0;\n    max-width: 100%;');
   });
 
