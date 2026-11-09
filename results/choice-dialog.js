@@ -4,6 +4,7 @@
 // document { kind: 'read' } shows a text to read with an optional comment; document { kind: 'form' } shows a questionnaire
 // (window.OwnerAsk) and gives its answer in answerFormat ('text' or 'json').
 // folder { name, onPick } shows the row «Папка документов» with the name of the folder; onPick() gives the new name or null.
+// hint: a promise of text lines, shown above the buttons when ready; it does not change the answer.
 // Texts are written with textContent only.
 (function initChoiceDialog(root) {
   'use strict';
@@ -25,7 +26,7 @@
     return bytes;
   };
 
-  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, allowChoicesWithReadOnlyDocument = false, inputFiles = [], documentRef = root.document } = {}) {
+  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, allowChoicesWithReadOnlyDocument = false, inputFiles = [], hint = null, documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
       const objectUrls = [];
@@ -158,6 +159,13 @@
         if (signal.aborted) { finish(null); return; }
         abortHandler = () => finish(null);
         signal.addEventListener('abort', abortHandler, { once: true });
+      }
+      // A hint never holds the window: its lines appear when they are ready; no lines, a failure or a closed window show nothing.
+      if (hint) {
+        Promise.resolve(hint).then((lines) => {
+          if (finished || !Array.isArray(lines) || !lines.length) return;
+          dialog.insertBefore(el(doc, 'p', 'choice-dialog-hint', ['Подсказка локальной модели (решаете вы):', ...lines].join('\n')), actions);
+        }).catch(() => {});
       }
       // Escape closes the native dialog: the answer is a cancel.
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });

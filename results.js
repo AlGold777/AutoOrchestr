@@ -7636,7 +7636,9 @@ document.addEventListener('click', (event) => {
                     provideOwnerResult: async (request) => {
                         const { stepRef, task, goal, input, output, document, reason, detail } = request;
                         const folderName = document ? await documentsFolderName() : '';
+                        const hintControl = new AbortController();
                         const answer = await askChoiceDialog({
+                            hint: window.LocalModel?.ownerHint(input, { signal: hintControl.signal }),
                             title: `Ответ User: ${stepTitleOf(stepRef)}`,
                             message: [window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }), waitSinceText()].filter(Boolean).join('\n'),
                             textInput: document ? null : { label: 'Ответ User', required: true },
@@ -7648,6 +7650,7 @@ document.addEventListener('click', (event) => {
                             ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {}),
                             ...(document ? { folder: { name: folderName, onPick: pickDocumentsFolder } } : {})
                         });
+                        hintControl.abort();
                         if (typeof answer === 'string' && document) {
                             void saveDocumentCopy({ stepRef, document, answer, startedAt: runContext.startedAt, pipeline: customPipelineName(), runId: runContext.pipelineRunId }, documentCopyState);
                         }

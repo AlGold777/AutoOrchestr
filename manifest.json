@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "_Opus",
-  "version": "2.81.1014",
+  "version": "2.81.1015",
   "description": "Compares LLMs with stable Debate pipelines, structured state maps, and optional synthesis.",
   "permissions": [
+    "declarativeNetRequestWithHostAccess",
     "storage",
     "tabs",
     "scripting",
@@ -15,6 +16,7 @@
     "downloads.ui"
   ],
   "host_permissions": [
+    "http://127.0.0.1:11434/*",
     "*://chat.openai.com/*",
     "*://chatgpt.com/*",
     "*://gemini.google.com/*",
