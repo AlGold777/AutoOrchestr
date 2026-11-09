@@ -2979,9 +2979,10 @@ document.addEventListener('click', (event) => {
         const pending = answerCopyPending[llmName];
         const matches = pending && !(pending.requestId && requestId && pending.requestId !== String(requestId));
         if (matches) {
-            card._answerCopy = { markdown: pending.markdown, report: pending.report };
+            card._answerCopy = { markdown: pending.markdown, report: pending.report, requestId: pending.requestId };
             delete answerCopyPending[llmName];
-        } else if (!pending) {
+        } else if (!pending && !(requestId && card._answerCopy?.requestId === String(requestId))) {
+            // Another answer took the card. A later write of the same request keeps the copy.
             delete card._answerCopy;
         }
         paintCopyMarker(card);
@@ -3303,6 +3304,7 @@ document.addEventListener('click', (event) => {
                         attribution: 'verified',
                         replacedUnproven: true,
                         text,
+                        answerHtml: String(envelope.answerHtml || envelope.html || ''),
                         answerMarkdown: typeof envelope.answerMarkdown === 'string' ? envelope.answerMarkdown : '',
                         copyReport: envelope.copyReport && typeof envelope.copyReport === 'object' ? envelope.copyReport : null
                     };
@@ -3327,6 +3329,8 @@ document.addEventListener('click', (event) => {
                 reason: envelope.metadata?.reason || envelope.metadata?.completionReason || null,
                 attribution: envelope.metadata?.attributionState === 'unproven' ? 'unproven' : 'verified',
                 text,
+                // The answer as the page formatted it: the card of a Basic reply is rendered from it, like a card of the main page.
+                answerHtml: String(envelope.answerHtml || envelope.html || ''),
                 // DOM->Markdown copy of this answer: a Basic reply takes it when it matches the text (shared/basic-reply-text.js).
                 answerMarkdown: typeof envelope.answerMarkdown === 'string' ? envelope.answerMarkdown : '',
                 copyReport: envelope.copyReport && typeof envelope.copyReport === 'object' ? envelope.copyReport : null
@@ -7292,14 +7296,18 @@ document.addEventListener('click', (event) => {
             };
             // L-20: the card of a participant shows the answer the engine accepted. A rejected answer stays on the card,
             // marked with the reason, and is not shown as accepted. The engine reports every verdict here (onResponse).
+            // The html of each reply by its request: the verdict writes the same answer again and must not flatten it.
+            const replyHtmlByRequest = new Map();
             const showBasicCardVerdict = (entry) => {
                 const card = window.BasicCardVerdict?.find(debateModelCards, entry);
                 if (!card) return;
                 const answer = String(entry.answer || '').trim();
                 const body = card.querySelector('.debate-model-card-output');
-                if (entry.accepted === true && answer && body && body.textContent.trim() !== answer) {
+                const replyHtml = replyHtmlByRequest.get(entry.transportRequestId) || '';
+                if (entry.accepted === true && answer && body && body.textContent.trim() !== answer
+                    && (replyHtml || !window.BasicCardVerdict.keepsStructure(body, answer, looselySameAnswer))) {
                     const roundId = window.BasicCardVerdict.roundIdOf(entry);
-                    updateDebateModelCardOutput(entry.model, answer, '', {
+                    updateDebateModelCardOutput(entry.model, answer, replyHtml, {
                         answerRevision: true,
                         status: 'SUCCESS', source: 'custom',
                         role: window.StageCard?.feed?.role({ label: entry.label, modelName: entry.model, participantId: entry.participant, visit: entry.visit }) || `Basic · ${entry.label}`,
@@ -7531,7 +7539,12 @@ document.addEventListener('click', (event) => {
                             const request = wave.find((item) => item.modelName === model);
                             // A later visit of the step is its own card: the answer of an earlier visit stays in the feed.
                             // A correction of the same visit replaces the card's answer: the feed shows the answer the run goes on with.
-                            updateDebateModelCardOutput(model, text, '', {
+                            const replyHtml = String(modelResult.answerHtml || '');
+                            if (replyHtml && modelResult.transportRequestId) replyHtmlByRequest.set(modelResult.transportRequestId, replyHtml);
+                            // Only the text came back, and the card already shows this answer formatted: the card stays as it is.
+                            const shownBody = window.BasicCardVerdict?.find(debateModelCards, { step, visit: request?.visit, model, participant: request?.participantId })
+                                ?.querySelector('.debate-model-card-output');
+                            if (replyHtml || request?.attempt > 1 || !window.BasicCardVerdict?.keepsStructure(shownBody, text, looselySameAnswer)) updateDebateModelCardOutput(model, text, replyHtml, {
                                 answerRevision: request?.attempt > 1,
                                 status: modelResult.status || 'SUCCESS', source: 'custom',
                                 role: window.StageCard?.feed?.role({ label, modelName: model, participantId: request?.participantId, visit: request?.visit }) || `Basic · ${label}`,
