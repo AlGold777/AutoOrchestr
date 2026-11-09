@@ -45,5 +45,11 @@
         return card;
     }
 
-    root.BasicCardVerdict = Object.freeze({ find, mark, roundIdOf });
+    // A write that has only the text must not replace the formatting the card already shows for this same answer.
+    function keepsStructure(body, answer, sameAnswer) {
+        if (!body?.querySelector('h1,h2,h3,h4,h5,h6,ul,ol,pre,table,blockquote')) return false;
+        return Boolean(sameAnswer(body.textContent, answer));
+    }
+
+    root.BasicCardVerdict = Object.freeze({ find, mark, roundIdOf, keepsStructure });
 })(typeof window !== 'undefined' ? window : globalThis);
