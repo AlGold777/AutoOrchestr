@@ -1029,16 +1029,17 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
     top: 14px;
     right: 14px;
     z-index: 6000;
-    width: 40px;
-    height: 40px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: #2563eb;
-    color: #fff;
-    font-size: 22px;
+    background: transparent;
+    color: #85898e;
+    font-size: 16px;
     text-decoration: none;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    opacity: 0.45;
+    transition: opacity 0.15s, background 0.15s;
 }
-.assistant-bubble:hover { background: #1d4ed8; }
+.assistant-bubble:hover { opacity: 1; background: rgba(0, 0, 0, 0.06); }
