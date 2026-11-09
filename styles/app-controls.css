@@ -1023,3 +1023,5 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
 .dev-tools-status[data-tone="error"] {
     color: #dc2626;
 }
+
+.top-page-link { text-decoration: none; color: inherit; }

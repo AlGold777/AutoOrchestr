@@ -187,6 +187,7 @@
 
   clear.addEventListener('click', () => {
     panels.forEach((panel) => { panel.history.length = 0; panel.log.textContent = ''; panel.status.textContent = 'готова'; });
+    prompt.value = '';
     prompt.focus();
   });
 })();
