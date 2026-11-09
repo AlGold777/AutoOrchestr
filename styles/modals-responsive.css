@@ -1212,6 +1212,7 @@ body.pro-features-hidden .comparison-section {
     flex-direction: column;
     align-items: flex-end;
     justify-self: end;
+    grid-column: 3;
     gap: 4px;
     max-width: 100%;
 }
