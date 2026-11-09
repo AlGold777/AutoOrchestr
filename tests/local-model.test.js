@@ -18,6 +18,10 @@ describe('LocalModel.parseReply', () => {
     const glued = `${'Разбор. '.repeat(50)}Итог проверкиВернуть на доработку, сохранив направление.`;
     expect(LocalModel.parseReply(reply('rework', 'Итог проверки: Вернуть на доработку, сохранив направление.'), glued)?.label).toBe('rework');
   });
+  test('a quote shortened with an ellipsis is kept only if every part is in the text', () => {
+    expect(LocalModel.parseReply(reply('rework', 'Подробный разбор... v1 направить на доработку'), review)?.label).toBe('rework');
+    expect(LocalModel.parseReply(reply('rework', 'Подробный разбор… выдуманное продолжение'), review)).toBeNull();
+  });
   test('an invented quote drops the hint', () => {
     expect(LocalModel.parseReply(reply('pass', 'документ полностью готов к использованию'), review)).toBeNull();
   });

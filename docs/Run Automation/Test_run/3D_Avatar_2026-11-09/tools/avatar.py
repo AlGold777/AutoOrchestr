@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Driver of the 3D avatar runs on the experiment copy of the extension.
-usage: python3 -I avatar.py install | start | watch [seconds] | owner <decision file> | finish | status | synth claude|gpt
+usage: python3 -I avatar.py install | start | watch [seconds] | owner <decision file> | cycle [seconds] | finish | status | synth claude|gpt
 All state is in notes/state.json of the run folder."""
 import glob, json, os, re, subprocess, sys, time
 
@@ -22,6 +22,23 @@ os.makedirs(TMP, exist_ok=True)
 def variant():
     gpt = load().get('synth') == 'gpt'
     return ('Avatar3D-GPT' if gpt else 'Avatar3D'), os.path.join(RUN, 'schema', 'avatar-question-gpt-synth.schema.json' if gpt else 'avatar-question.schema.json')
+
+
+HOSTS = ('chatgpt.com', 'claude.ai', 'chat.deepseek.com', 'chat.qwen.ai', 'perplexity.ai')
+
+
+def model_tabs():
+    script = 'set out to ""\ntell application "Google Chrome"\n repeat with w in windows\n  repeat with t in tabs of w\n   set out to out & (id of t) & " " & (URL of t) & linefeed\n  end repeat\n end repeat\nend tell\nreturn out'
+    lines = subprocess.run(['osascript', '-e', script], capture_output=True, text=True).stdout.splitlines()
+    return [l.split(' ', 1)[0] for l in lines if ' ' in l and any(h in l.split(' ', 1)[1] for h in HOSTS)]
+
+
+def close_new_tabs(keep):
+    """Close only the model tabs the finished run opened: tabs that existed before it stay."""
+    extra = [i for i in model_tabs() if i not in keep]
+    for tab in extra:
+        subprocess.run(['osascript', '-e', f'tell application "Google Chrome" to repeat with w in windows\nclose (tabs of w whose id is {tab})\nend repeat'], capture_output=True)
+    return len(extra)
 
 
 def load():
@@ -102,13 +119,25 @@ def start():
     if modal != '[]':
         print('MODAL_BEFORE_RUN', modal)
         return
+    before = model_tabs()
     print('run', js_file(os.path.join(TMP, 'run-click.js')))
-    state['current'] = {'id': item['id'], 'startedAt': int(time.time())}
+    state['current'] = {'id': item['id'], 'startedAt': int(time.time()), 'tabsBefore': before}
     save(state)
     beat()
 
 
 DIALOG = """(function(){var d=document.querySelector('.choice-dialog');if(!d)return 'null';var m=d.querySelector('.choice-dialog-message');var h=d.querySelector('.choice-dialog-hint');return JSON.stringify({title:(d.querySelector('.choice-dialog-title')||{}).innerText||'',message:m?m.innerText:'',hint:h?h.innerText:null,buttons:[...d.querySelectorAll('button')].map(function(b){return b.textContent.trim()})})})()"""
+
+
+def qwen_pick():
+    """Qwen sometimes shows two answers and waits for a choice: the first answer is chosen (owner's rule)."""
+    script = 'set js to (do shell script "cat " & quoted form of "%s")\nset out to ""\ntell application "Google Chrome"\n repeat with w in windows\n  repeat with t in tabs of w\n   if URL of t contains "chat.qwen.ai" then set out to out & (execute t javascript js) & ","\n  end repeat\n end repeat\nend tell\nreturn out' % os.path.join(HERE, 'qwen-pick-first.js')
+    out = subprocess.run(['osascript', '-e', script], capture_output=True, text=True).stdout
+    if 'picked' in out:
+        print('qwen: выбран ответ 1', flush=True)
+        state = load()
+        state.setdefault('qwenPicks', []).append((state.get('current') or {}).get('id'))
+        save(state)
 
 
 def click(label):
@@ -120,6 +149,7 @@ def watch(limit):
     idle = 0
     while time.time() < end:
         beat()
+        qwen_pick()
         raw = js(DIALOG)
         dialog = json.loads(raw) if raw.startswith('{') else None
         if dialog and dialog['title'].startswith('Ответ User'):
@@ -134,14 +164,14 @@ def watch(limit):
             dialog['hintWaitSec'] = round(time.time() - waited)
             path = os.path.join(TMP, 'owner.json')
             json.dump(dialog, open(path, 'w', encoding='utf8'), ensure_ascii=False, indent=1)
-            print(json.dumps({'event': 'owner', 'file': path, 'hint': dialog['hint'], 'hintWaitSec': dialog['hintWaitSec'], 'chars': len(dialog['message'])}, ensure_ascii=False))
-            return
+            print(json.dumps({'event': 'owner', 'file': path, 'hint': dialog['hint'], 'hintWaitSec': dialog['hintWaitSec'], 'chars': len(dialog['message'])}, ensure_ascii=False), flush=True)
+            return 'owner'
         modal = tool('any-modal.js')
         if modal not in ('[]', ''):
             if 'все шаги пройдены' in modal:
                 print('ok', click('OK'))
-                print(json.dumps({'event': 'ended', 'reason': 'steps_done'}, ensure_ascii=False))
-                return
+                print(json.dumps({'event': 'ended', 'reason': 'steps_done'}, ensure_ascii=False), flush=True)
+                return 'ended'
             match = re.search(r'без ответа: ([^.?]*)', modal)
             if 'Пропустить участника' in modal and match and not re.search(r'gpt|claude', match[1], re.I):
                 print('auto skip:', match[1], click('Пропустить участника'), flush=True)
@@ -150,15 +180,25 @@ def watch(limit):
                 save(state)
                 time.sleep(5)
                 continue
-            print(json.dumps({'event': 'modal', 'modal': modal, 'dialog': dialog}, ensure_ascii=False)[:2500])
-            return
+            if 'нет принятых ответов' in modal and 'Повторить' in modal:
+                state = load()
+                cur = state.get('current') or {}
+                if cur and cur.get('retries', 0) < 2:
+                    cur['retries'] = cur.get('retries', 0) + 1
+                    save(state)
+                    print('auto retry', cur['retries'], click('Повторить'), flush=True)
+                    time.sleep(5)
+                    continue
+            print(json.dumps({'event': 'modal', 'modal': modal, 'dialog': dialog}, ensure_ascii=False)[:2500], flush=True)
+            return 'modal'
         run = json.loads(tool('run-state.js') or '{}')
         idle = 0 if 'Остановить' in str(run.get('runBtn')) else idle + 1
         if idle >= 3:
-            print(json.dumps({'event': 'ended', 'run': run}, ensure_ascii=False))
-            return
+            print(json.dumps({'event': 'ended', 'run': run}, ensure_ascii=False), flush=True)
+            return 'ended'
         time.sleep(20)
-    print(json.dumps({'event': 'timeout', 'cards': tool('model-cards.js')[:1800]}, ensure_ascii=False))
+    print(json.dumps({'event': 'timeout', 'cards': tool('model-cards.js')[:1800]}, ensure_ascii=False), flush=True)
+    return 'timeout'
 
 
 def owner(path):
@@ -212,9 +252,44 @@ def finish():
         state['done'].append(cur['id'])
     else:
         state['blocked'][cur['id']] = str(stop)
+    print('closed tabs', close_new_tabs(cur.get('tabsBefore', model_tabs())))
     state['current'] = None
     save(state)
     beat()
+
+
+def reload_if_asked():
+    """A new version of the copy is loaded only between questions."""
+    flag = os.path.join(TMP, 'reload-next')
+    if not os.path.exists(flag):
+        return
+    os.remove(flag)
+    print('reload', subprocess.run(['bash', os.path.join(TOOLS, 'js.sh'), os.path.join(HERE, 'reload-copy.js'), 'chrome://extensions'], capture_output=True, text=True).stdout.strip(), flush=True)
+    time.sleep(6)
+    ensure_panel()
+    print(subprocess.run(['osascript', os.path.join(TOOLS, 'refresh-model-tabs.applescript')], capture_output=True, text=True).stdout.strip(), flush=True)
+    time.sleep(8)
+
+
+def cycle(limit):
+    """Runs question after question; comes back only for what needs the lead: a decision, a window, a long silence, the end."""
+    while True:
+        event = watch(limit)
+        if event != 'ended':
+            return
+        finish()
+        state = load()
+        if state.get('current'):
+            print('FINISH_FAILED', flush=True)
+            return
+        reload_if_asked()
+        time.sleep(8)
+        start()
+        state = load()
+        if not state.get('current'):
+            print('NO_NEXT_RUN', flush=True)
+            return
+        time.sleep(10)
 
 
 cmd = sys.argv[1]
@@ -224,6 +299,8 @@ elif cmd == 'start':
     start()
 elif cmd == 'watch':
     watch(int(sys.argv[2]) if len(sys.argv) > 2 else 1500)
+elif cmd == 'cycle':
+    cycle(int(sys.argv[2]) if len(sys.argv) > 2 else 1500)
 elif cmd == 'owner':
     owner(sys.argv[2])
 elif cmd == 'finish':

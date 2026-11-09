@@ -505,8 +505,12 @@
                         <button class="devtools-tab" id="api-tab" role="tab" aria-selected="false" aria-controls="api-tabpanel" data-tab-target="api-tabpanel">
                             API
                         </button>
+                        <button class="devtools-tab" id="local-llm-tab" role="tab" aria-selected="false" aria-controls="local-llm-tabpanel" data-tab-target="local-llm-tabpanel">
+                            Local LLM
+                        </button>
                     </div>
                     <div class="devtools-tabpanels">
+                        <section class="devtools-tabpanel" id="local-llm-tabpanel" role="tabpanel" aria-labelledby="local-llm-tab" tabindex="0" hidden=""></section>
 
                         <section class="devtools-tabpanel" id="telemetry-tabpanel" role="tabpanel" aria-labelledby="telemetry-tab" tabindex="0" hidden="">
                             <div class="devtools-toolbar">
@@ -889,6 +893,7 @@
     <script src="results/choice-dialog.js"></script>
     <script src="results/documents-folder.js"></script>
     <script src="results/owner-ask.js"></script>
+    <script src="results/local-llm-tab.js"></script>
     <script src="results/debate-renderer.js"></script>
     <script src="results/debate-sessions-store.js"></script>
     <script src="results/debate-export.js"></script>
