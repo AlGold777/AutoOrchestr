@@ -140,6 +140,11 @@ def qwen_pick():
         save(state)
 
 
+def reachable():
+    out = tool('extension-version.js')
+    return bool(out) and 'NO TAB' not in out and 'execution error' not in out
+
+
 def click(label):
     return js("""(function(){var b=[...document.querySelectorAll('button')].filter(function(x){return x.offsetParent&&x.textContent.trim()===%s})[0];if(!b)return 'no button';b.click();return 'clicked'})()""" % json.dumps(label, ensure_ascii=False))
 
@@ -149,6 +154,10 @@ def watch(limit):
     idle = 0
     while time.time() < end:
         beat()
+        # Chrome answers scripts for the profile in front: with an incognito window in front the panel cannot be seen for a while.
+        if not reachable():
+            time.sleep(20)
+            continue
         qwen_pick()
         raw = js(DIALOG)
         dialog = json.loads(raw) if raw.startswith('{') else None
@@ -186,12 +195,17 @@ def watch(limit):
                 save(state)
                 time.sleep(5)
                 continue
-            if 'нет принятых ответов' in modal and 'Повторить' in modal:
+            needs_retry = 'нет принятых ответов' in modal or (match and re.search(r'gpt|claude', match[1], re.I))
+            if needs_retry and 'Повторить' in modal and 'лимит' not in modal:
                 state = load()
                 cur = state.get('current') or {}
                 if cur and cur.get('retries', 0) < 2:
                     cur['retries'] = cur.get('retries', 0) + 1
                     save(state)
+                    # The page may still be writing the answer: give it time before a new request goes to the same chat.
+                    for _ in range(9):
+                        time.sleep(10)
+                        beat()
                     print('auto retry', cur['retries'], click('Повторить'), flush=True)
                     time.sleep(5)
                     continue
