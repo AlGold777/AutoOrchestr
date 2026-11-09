@@ -14,6 +14,10 @@ describe('LocalModel.parseReply', () => {
   test('quote marks, case and line breaks of the quote do not matter', () => {
     expect(LocalModel.parseReply(reply('rework', '«V1 НАПРАВИТЬ\nна доработку»'), review)?.label).toBe('rework');
   });
+  test('a text that lost the space between lines still matches the quote', () => {
+    const glued = `${'Разбор. '.repeat(50)}Итог проверкиВернуть на доработку, сохранив направление.`;
+    expect(LocalModel.parseReply(reply('rework', 'Итог проверки: Вернуть на доработку, сохранив направление.'), glued)?.label).toBe('rework');
+  });
   test('an invented quote drops the hint', () => {
     expect(LocalModel.parseReply(reply('pass', 'документ полностью готов к использованию'), review)).toBeNull();
   });

@@ -46,7 +46,8 @@ ${excerpt(text)}
     options: { temperature: 0, num_ctx: 16384, num_predict: 160 }
   });
 
-  const squeeze = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim().toLowerCase();
+  // Text collected from a site can lose spaces and line breaks between lines: the quote is compared by letters and digits only.
+  const squeeze = (value) => String(value == null ? '' : value).replace(/[\s\p{P}]+/gu, '').toLowerCase();
 
   // The checked reply of the model, or null when it gives nothing the owner can rely on.
   const parseReply = (raw, text) => {
