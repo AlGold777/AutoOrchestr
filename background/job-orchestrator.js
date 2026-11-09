@@ -11559,6 +11559,7 @@ function sendCleanupCommand(llmName) {
   self.collectGetItBatch = collectGetItBatch;
   self.collectResponsesStaged = collectResponsesStaged;
   self.handleLLMResponse = handleLLMResponse;
+  self.isActiveBasicParticipant = (llmName) => Boolean(activeParticipantRequests[llmName]);
   self.startBudgetPhase = startBudgetPhase;
   self.endBudgetPhase = endBudgetPhase;
   self.clearBudgetPhases = clearBudgetPhases;

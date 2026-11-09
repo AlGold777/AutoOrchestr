@@ -1,5 +1,5 @@
 #!/bin/bash
-# bash tab.sh <окно/вкладка, например 1/19, или фрагмент адреса> <state|paste|send|read|top> [файл для paste]
+# bash tab.sh <окно/вкладка, например 1/19, или фрагмент адреса> <state|paste|send|read|top|ensure|ensured> [файл для paste]
 # Нужно: Chrome → Вид → Для разработчиков → «Разрешить JavaScript из событий Apple».
 D="$(cd "$(dirname "$0")" && pwd)"; ADDR="$1"; CMD="$2"; FILE="$3"
 case "$CMD" in
@@ -8,6 +8,8 @@ case "$CMD" in
  click) CALL="window.__M.click(decodeURIComponent(escape(atob('$(printf '%s' "$FILE" | base64 | tr -d '\n')'))))";;
  attach) NAME="$(basename "$FILE")"; CALL="window.__M.attach(decodeURIComponent(escape(atob('$(printf '%s' "$NAME" | base64 | tr -d '\n')'))),decodeURIComponent(escape(atob('$(base64 < "$FILE" | tr -d '\n')'))))";;
  attached) CALL="window.__M.attached(decodeURIComponent(escape(atob('$(printf '%s' "$FILE" | base64 | tr -d '\n')'))))";;
+ ensure) CALL="$(cat "$D/../../../content-scripts/platform-mode-setter.js"); window.__pmr='pending'; PlatformModeSetter.ensure().then(function(r){window.__pmr=JSON.stringify(r)},function(e){window.__pmr='ERROR '+e.message}); 'started'";;
+ ensured) CALL="window.__pmr";;
  *) CALL="window.__M.$CMD()";;
 esac
 JS="$(cat "$D/lib.js"); $CALL"
