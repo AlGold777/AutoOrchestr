@@ -34,6 +34,8 @@
     observe_failed: 'Вкладка не прочитана'
   });
   const OBSERVATION_LIMIT = 40;
+  const STALL_MS = 4 * 60 * 1000;
+  const STALL_TICK_MS = 60 * 1000;
   const SITUATIONS = Object.freeze({
     choose_answer: 'страница просит выбрать ответ',
     still_generating: 'модель ещё пишет ответ',
@@ -295,6 +297,54 @@ ${page.text || ''}
     return result;
   };
 
+  const readTab = async (tabId, scripting = root.chrome?.scripting) => {
+    const [frame] = await scripting.executeScript({ target: { tabId }, func: readPage });
+    return frame?.result || null;
+  };
+
+  // Watches the tabs of the participants that have not answered yet. If a page does not change for stallMs, the model looks at it once.
+  // It only reads the pages and only writes to the log: acceptance of answers and the course of the run do not depend on it.
+  const createStallWatch = ({ tabOf, read = readTab, observe = observeTab, now = Date.now, stallMs = STALL_MS, intervalMs = STALL_TICK_MS } = {}) => {
+    const waiting = new Map();
+    let timer = null;
+    let busy = false;
+    const tick = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        for (const [participant, item] of [...waiting]) {
+          const tabId = tabOf(participant);
+          if (!tabId) continue;
+          let page;
+          try { page = await read(tabId); } catch (_) { continue; }
+          if (!page || !waiting.has(participant)) continue;
+          const mark = `${squeeze(page.text)}|${(page.buttons || []).join('|')}|${(page.dialogs || []).join('|')}`;
+          if (mark !== item.mark) {
+            item.mark = mark;
+            item.since = now();
+            item.observed = false;
+          } else if (!item.observed && now() - item.since >= stallMs) {
+            item.observed = true;
+            await observe({ tabId, participant, reason: 'no_progress' });
+          }
+        }
+      } finally {
+        busy = false;
+      }
+    };
+    return {
+      note(entry) {
+        if (!entry?.participant || (entry.phase && entry.phase !== 'answer')) return;
+        if (entry.state === 'done' || entry.finishedAt) waiting.delete(entry.participant);
+        else if (!waiting.has(entry.participant)) waiting.set(entry.participant, { mark: null, since: now(), observed: false });
+      },
+      tick,
+      start() { if (!timer) timer = setInterval(tick, intervalMs); },
+      stop() { if (timer) clearInterval(timer); timer = null; waiting.clear(); },
+      waitingCount: () => waiting.size
+    };
+  };
+
   const hintLine = (source, suggestion) => `${source ? `${source}: ` : ''}${ADVICE[suggestion.label]}. Основание: «${suggestion.quote}»`;
 
   // The lines of the hint for the input items of an owner step, one model request at a time.
@@ -315,7 +365,7 @@ ${page.text || ''}
     return lines;
   };
 
-  const api = Object.freeze({ MODEL, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, buildChatRequest, parseReply, reviewReply, suggest, chat, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, loadState, updateState, addLog, contextOf });
+  const api = Object.freeze({ MODEL, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, buildChatRequest, parseReply, reviewReply, suggest, chat, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

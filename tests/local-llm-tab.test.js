@@ -132,6 +132,61 @@ describe('LocalModel observation', () => {
   });
 });
 
+describe('LocalModel stall watch', () => {
+  const setup = () => {
+    let time = 0;
+    const pages = { value: { text: 'a', buttons: [], dialogs: [] } };
+    const observe = jest.fn(async () => {});
+    const watch = LocalModel.createStallWatch({ tabOf: () => 5, read: async () => pages.value, observe, now: () => time, stallMs: 100 });
+    return { watch, pages, observe, advance: (ms) => { time += ms; } };
+  };
+  test('an unchanged page is observed once after the stall time', async () => {
+    const { watch, observe, advance } = setup();
+    watch.note({ participant: 'gpt-a', phase: 'answer', state: 'sending' });
+    await watch.tick();
+    advance(50); await watch.tick();
+    expect(observe).not.toHaveBeenCalled();
+    advance(60); await watch.tick();
+    expect(observe).toHaveBeenCalledWith({ tabId: 5, participant: 'gpt-a', reason: 'no_progress' });
+    advance(500); await watch.tick();
+    expect(observe).toHaveBeenCalledTimes(1);
+  });
+  test('a page that keeps changing is not observed', async () => {
+    const { watch, pages, observe, advance } = setup();
+    watch.note({ participant: 'gpt-a', phase: 'answer' });
+    for (let i = 0; i < 5; i += 1) {
+      pages.value = { text: `текст ${i}`, buttons: [], dialogs: [] };
+      advance(90);
+      await watch.tick();
+    }
+    expect(observe).not.toHaveBeenCalled();
+  });
+  test('a change after a stall allows a new observation', async () => {
+    const { watch, pages, observe, advance } = setup();
+    watch.note({ participant: 'gpt-a', phase: 'answer' });
+    await watch.tick(); advance(110); await watch.tick();
+    pages.value = { text: 'новый', buttons: [], dialogs: [] };
+    await watch.tick(); advance(110); await watch.tick();
+    expect(observe).toHaveBeenCalledTimes(2);
+  });
+  test('a finished participant is forgotten', async () => {
+    const { watch, observe, advance } = setup();
+    watch.note({ participant: 'gpt-a', phase: 'answer' });
+    await watch.tick();
+    watch.note({ participant: 'gpt-a', phase: 'answer', state: 'done', finishedAt: 1 });
+    advance(200); await watch.tick();
+    expect(observe).not.toHaveBeenCalled();
+    expect(watch.waitingCount()).toBe(0);
+  });
+  test('a closed tab does not break the watch', async () => {
+    const observe = jest.fn();
+    const watch = LocalModel.createStallWatch({ tabOf: () => 5, read: async () => { throw new Error('gone'); }, observe });
+    watch.note({ participant: 'x', phase: 'answer' });
+    await expect(watch.tick()).resolves.toBeUndefined();
+    expect(observe).not.toHaveBeenCalled();
+  });
+});
+
 describe('Local LLM tab', () => {
   let store;
   let panel;

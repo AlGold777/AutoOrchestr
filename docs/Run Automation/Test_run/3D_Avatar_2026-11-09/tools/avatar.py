@@ -277,6 +277,26 @@ def reload_if_asked():
     time.sleep(8)
 
 
+def restore_synth():
+    """After the usage limit of Claude has passed, Claude writes the synthesis again."""
+    state = load()
+    if state.get('synth') == 'gpt' and state.get('synthUntil') and time.time() > state['synthUntil']:
+        state['synth'] = 'claude'
+        state.pop('synthUntil', None)
+        save(state)
+        print('synth: снова Claude', flush=True)
+
+
+def abort():
+    """Stops the run on its decision window; the question stays in the queue and runs again."""
+    print(click('Остановить прогон'), flush=True)
+    time.sleep(4)
+    print(tool('click-ok-modal.js'), flush=True)
+    state = load()
+    state['current'] = None
+    save(state)
+
+
 def cycle(limit):
     """Runs question after question; comes back only for what needs the lead: a decision, a window, a long silence, the end."""
     while True:
@@ -289,6 +309,7 @@ def cycle(limit):
             print('FINISH_FAILED', flush=True)
             return
         reload_if_asked()
+        restore_synth()
         time.sleep(8)
         start()
         state = load()
@@ -311,9 +332,15 @@ elif cmd == 'owner':
     owner(sys.argv[2])
 elif cmd == 'finish':
     finish()
+elif cmd == 'abort':
+    abort()
+elif cmd == 'reload':
+    reload_if_asked()
 elif cmd == 'synth':
     state = load()
     state['synth'] = sys.argv[2]
+    if len(sys.argv) > 3:
+        state['synthUntil'] = int(sys.argv[3])
     save(state)
     install()
 elif cmd == 'status':

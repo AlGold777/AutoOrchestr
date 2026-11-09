@@ -7314,7 +7314,11 @@ document.addEventListener('click', (event) => {
                 const reasonText = window.CustomEngine?.REASON_TEXT?.[entry.reason] || entry.reason || '';
                 window.BasicCardVerdict.mark(debateModelCards, entry, reasonText);
             };
+            // A tab that shows no change for several minutes is looked at by the local model. Observation only.
+            const stallWatch = window.LocalModel?.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId });
+            stallWatch?.start();
             const recordAttempt = (entry) => {
+                stallWatch?.note(entry);
                 showBasicCardVerdict(entry);
                 if (!record) return;
                 window.CustomRunRecord.recordAttempt(record, entry);
@@ -7783,6 +7787,7 @@ document.addEventListener('click', (event) => {
                 offerResumeLine(record);
                 return false;
             } finally {
+                stallWatch?.stop();
                 // Stop while a pause dialog was open: close it, the run is over.
                 if (customDecisionOpen) { customDecisionOpen = false; cancelConfirmBtn?.click?.(); }
                 if (pendingOwnerAsks?.resolve) { const pending = pendingOwnerAsks; pendingOwnerAsks = null; ownerAskDialog?.close?.(); pending.resolve([]); }
