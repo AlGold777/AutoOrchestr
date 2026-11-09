@@ -169,6 +169,34 @@ describe('LocalModel stall watch', () => {
     await watch.tick(); advance(110); await watch.tick();
     expect(observe).toHaveBeenCalledTimes(2);
   });
+  test('a new window on the page is observed at once', async () => {
+    const { watch, pages, observe } = setup();
+    watch.note({ participant: 'claude-a', phase: 'answer' });
+    await watch.tick();
+    pages.value = { text: 'a', buttons: [], dialogs: ['You have hit your limit'] };
+    await watch.tick();
+    expect(observe).toHaveBeenCalledWith({ tabId: 5, participant: 'claude-a', reason: 'new_dialog' });
+    await watch.tick();
+    expect(observe).toHaveBeenCalledTimes(1);
+  });
+  test('a generation that stops with no end mark is observed at once', async () => {
+    const { watch, pages, observe } = setup();
+    watch.note({ participant: 'gpt-a', phase: 'answer' });
+    pages.value = { text: 'пишет', buttons: ['Стоп'], dialogs: [] };
+    await watch.tick();
+    pages.value = { text: 'пишет и оборвался', buttons: ['Отправить'], dialogs: [] };
+    await watch.tick();
+    expect(observe).toHaveBeenCalledWith({ tabId: 5, participant: 'gpt-a', reason: 'stopped_without_end' });
+  });
+  test('a generation that ends with the end mark is not a problem', async () => {
+    const { watch, pages, observe } = setup();
+    watch.note({ participant: 'gpt-a', phase: 'answer' });
+    pages.value = { text: 'пишет', buttons: ['Стоп'], dialogs: [] };
+    await watch.tick();
+    pages.value = { text: 'готово [[AO-abc123]]', buttons: ['Отправить'], dialogs: [] };
+    await watch.tick();
+    expect(observe).not.toHaveBeenCalled();
+  });
   test('a finished participant is forgotten', async () => {
     const { watch, observe, advance } = setup();
     watch.note({ participant: 'gpt-a', phase: 'answer' });

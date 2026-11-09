@@ -36,6 +36,8 @@
   const OBSERVATION_LIMIT = 40;
   const STALL_MS = 4 * 60 * 1000;
   const STALL_TICK_MS = 60 * 1000;
+  const STOP_BUTTON = /^(стоп|stop|остановить)/i;
+  const END_MARK = /\[\[AO-[^\]]*\]\]|КОНЕЦ-ОТВЕТА/;
   const SITUATIONS = Object.freeze({
     choose_answer: 'страница просит выбрать ответ',
     still_generating: 'модель ещё пишет ответ',
@@ -226,7 +228,7 @@ ${excerpt(text)}
     const seen = (node) => node.offsetParent !== null;
     const nameOf = (node) => String(node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const buttons = [...new Set([...document.querySelectorAll('button,[role="button"]')].filter(seen).map(nameOf).filter(Boolean))].slice(-60);
-    const dialogs = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],dialog[open]')].filter(seen).map((node) => String(node.innerText || '').slice(0, 800)).slice(0, 3);
+    const dialogs = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[role="alert"],dialog[open]')].filter(seen).map((node) => String(node.innerText || '').slice(0, 800)).slice(0, 3);
     return { url: location.href, title: document.title, hidden: document.hidden, text: String(document.body?.innerText || '').slice(-6000), dialogs, buttons };
   }
 
@@ -318,8 +320,20 @@ ${page.text || ''}
           let page;
           try { page = await read(tabId); } catch (_) { continue; }
           if (!page || !waiting.has(participant)) continue;
-          const mark = `${squeeze(page.text)}|${(page.buttons || []).join('|')}|${(page.dialogs || []).join('|')}`;
-          if (mark !== item.mark) {
+          // Two things cannot wait for the stall time: a new window or warning, and a generation that stopped with no end of the answer.
+          const dialogs = (page.dialogs || []).join('|');
+          const generating = (page.buttons || []).some((name) => STOP_BUTTON.test(name));
+          const urgent = dialogs && dialogs !== item.dialogs ? 'new_dialog'
+            : item.generating && !generating && !END_MARK.test(String(page.text || '').slice(-300)) ? 'stopped_without_end' : '';
+          item.dialogs = dialogs;
+          item.generating = generating;
+          const mark = `${squeeze(page.text)}|${(page.buttons || []).join('|')}|${dialogs}`;
+          if (urgent) {
+            item.mark = mark;
+            item.since = now();
+            item.observed = true;
+            await observe({ tabId, participant, reason: urgent });
+          } else if (mark !== item.mark) {
             item.mark = mark;
             item.since = now();
             item.observed = false;
