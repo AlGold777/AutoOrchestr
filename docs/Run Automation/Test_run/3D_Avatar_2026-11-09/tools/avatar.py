@@ -87,6 +87,9 @@ def install():
     for step in ('paste.js', 'name.js'):
         print(step, js_file(os.path.join(TMP, step)))
         time.sleep(2)
+    if 'уже есть' in tool('any-modal.js'):
+        print('replace', click('Заменить'))
+        time.sleep(2)
     print('ok', tool('click-ok-modal.js'))
     time.sleep(1)
     print('close', tool('close-choice-dialog.js'))
@@ -119,6 +122,12 @@ def start():
     if modal != '[]':
         print('MODAL_BEFORE_RUN', modal)
         return
+    # Every question goes to new chats: the checkbox turns itself off after a run, and without it the models continue old chats.
+    fresh = js("""(function(){var c=document.getElementById('new-pages-checkbox');if(!c)return 'no checkbox';if(!c.checked)c.click();return c.checked?'on':'off'})()""")
+    print('new chats', fresh)
+    if fresh != 'on':
+        print('NEW_CHATS_NOT_ON', flush=True)
+        return
     before = model_tabs()
     print('run', js_file(os.path.join(TMP, 'run-click.js')))
     state['current'] = {'id': item['id'], 'startedAt': int(time.time()), 'tabsBefore': before}
@@ -138,6 +147,24 @@ def qwen_pick():
         state = load()
         state.setdefault('qwenPicks', []).append((state.get('current') or {}).get('id'))
         save(state)
+
+
+def qwen_wait(modal, match):
+    """One run only (state qwenWait): Qwen gets 15 minutes from the start of the run before it is skipped, then one retry, which rereads its page first."""
+    state = load()
+    cur = state.get('current') or {}
+    if state.get('qwenWait') != cur.get('id') or not match or 'qwen' not in match[1] or re.search(r'gpt|claude|deepseek|perplexity', match[1], re.I):
+        return False
+    if time.time() - cur.get('startedAt', 0) < 15 * 60:
+        time.sleep(20)
+        return True
+    if not cur.get('qwenRetried'):
+        cur['qwenRetried'] = True
+        save(state)
+        print('qwen: 15 минут прошло, повтор', click('Повторить'), flush=True)
+        time.sleep(5)
+        return True
+    return False
 
 
 def reachable():
@@ -176,6 +203,9 @@ def watch(limit):
             print(json.dumps({'event': 'owner', 'file': path, 'hint': dialog['hint'], 'hintWaitSec': dialog['hintWaitSec'], 'chars': len(dialog['message'])}, ensure_ascii=False), flush=True)
             return 'owner'
         modal = tool('any-modal.js')
+        if 'execution error' in modal or 'NO TAB' in modal:
+            time.sleep(10)
+            continue
         # The telemetry window is the owner's own: an open one does not stop the series.
         try:
             items = [m for m in json.loads(modal or '[]') if 'Telemetry' not in ' '.join(m.get('btns', []))]
@@ -188,6 +218,8 @@ def watch(limit):
                 print(json.dumps({'event': 'ended', 'reason': 'steps_done'}, ensure_ascii=False), flush=True)
                 return 'ended'
             match = re.search(r'без ответа: ([^.?]*)', modal)
+            if qwen_wait(modal, match):
+                continue
             if 'Пропустить участника' in modal and match and not re.search(r'gpt|claude', match[1], re.I):
                 print('auto skip:', match[1], click('Пропустить участника'), flush=True)
                 state = load()
@@ -266,6 +298,13 @@ def finish():
             open(os.path.join(RUN, 'artefacts', name), 'w', encoding='utf8').write(text)
             saved.append(f"{a['ref']}/{a['participant']}:{len(text)}")
     final = [s for s in saved if s.startswith('r4/')]
+    first = {}
+    for a in run.get('attempts', []):
+        if a.get('phase') == 'answer':
+            first.setdefault((a['ref'], a['participant']), (a.get('chatRoute') or {}).get('action'))
+    old = sorted(f'{r}/{p}' for (r, p), action in first.items() if r == 'r1' and action != 'created')
+    print('old chats in r1:', old, flush=True)
+    state.setdefault('chatCheck', {})[cur['id']] = old
     stop = run.get('stopReason')
     print(json.dumps({'id': cur['id'], 'stop': stop, 'answers': saved}, ensure_ascii=False))
     if final:

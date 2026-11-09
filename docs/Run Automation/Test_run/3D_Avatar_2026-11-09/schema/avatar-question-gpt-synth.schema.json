@@ -17,22 +17,26 @@
         {
           "name": "GPT",
           "id": "gpt-a",
-          "label": "GPT · Вариант"
+          "label": "GPT · Вариант",
+          "maxWords": 500
         },
         {
           "name": "DeepSeek",
           "id": "deepseek-a",
-          "label": "DeepSeek · Вариант"
+          "label": "DeepSeek · Вариант",
+          "maxWords": 500
         },
         {
           "name": "Qwen",
           "id": "qwen-a",
-          "label": "Qwen · Вариант"
+          "label": "Qwen · Вариант",
+          "maxWords": 500
         },
         {
           "name": "Perplexity",
           "id": "perplexity-a",
-          "label": "Perplexity · Источники"
+          "label": "Perplexity · Источники",
+          "maxWords": 500
         }
       ]
     },
