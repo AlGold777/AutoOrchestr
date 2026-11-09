@@ -15,7 +15,7 @@ STATE = os.path.join(RUN, 'notes', 'state.json')
 HEART = os.path.join(RUN, 'notes', 'heartbeat')
 INTRO = ('Продукт: мобильное приложение для iOS и Android, которое по съёмке телефоном создаёт реалистичный 3D-аватар '
          'пользователя: похож на человека, анимируется и показывается в реальном времени. Нужен практичный ответ для команды, '
-         'которая будет это строить.\n\nВопрос: ')
+         'которая будет это строить. Разбирай только техническую сторону: вопросы права, лицензий, приватности и бизнеса сейчас не рассматривай.\n\nВопрос: ')
 os.makedirs(TMP, exist_ok=True)
 
 
@@ -167,6 +167,12 @@ def watch(limit):
             print(json.dumps({'event': 'owner', 'file': path, 'hint': dialog['hint'], 'hintWaitSec': dialog['hintWaitSec'], 'chars': len(dialog['message'])}, ensure_ascii=False), flush=True)
             return 'owner'
         modal = tool('any-modal.js')
+        # The telemetry window is the owner's own: an open one does not stop the series.
+        try:
+            items = [m for m in json.loads(modal or '[]') if 'Telemetry' not in ' '.join(m.get('btns', []))]
+            modal = json.dumps(items, ensure_ascii=False) if items else '[]'
+        except ValueError:
+            pass
         if modal not in ('[]', ''):
             if 'все шаги пройдены' in modal:
                 print('ok', click('OK'))

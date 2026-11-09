@@ -2,6 +2,8 @@
 
 Папка серии: `/Users/restart/Documents/GitHub/AutoOrchestr Qwen Local/docs/Run Automation/Test_run/3D_Avatar_2026-11-09`.
 
+По указанию владельца в серии только техническая сторона. Вопросы права, лицензий, приватности, UX и бизнеса отложены (`deferred` в `state.json`).
+
 ## Запреты
 
 - Ничего не менять в `/Users/restart/Documents/GitHub/AutoOrchestr`. Вся работа только в `/Users/restart/Documents/GitHub/AutoOrchestr Qwen Local`.

@@ -93,7 +93,19 @@
     const clearLog = el(doc, 'button', 'devtools-pill-btn local-llm-clear', 'Очистить');
     clearLog.type = 'button';
     clearLog.addEventListener('click', () => api.updateState(() => ({ log: [] })));
-    log.header.append(clearLog);
+    const saveShots = el(doc, 'button', 'devtools-pill-btn local-llm-shots', 'Снимки');
+    saveShots.type = 'button';
+    saveShots.title = 'Скачать снимки вкладок, на которых застрял прогон';
+    saveShots.addEventListener('click', async () => {
+      const state = await api.loadState();
+      const url = root.URL.createObjectURL(new Blob([JSON.stringify(state.observations || [], null, 1)], { type: 'application/json' }));
+      const link = el(doc, 'a');
+      link.href = url;
+      link.download = 'local-llm-observations.json';
+      link.click();
+      root.URL.revokeObjectURL(url);
+    });
+    log.header.append(saveShots, clearLog);
     const logList = el(doc, 'ul', 'local-llm-log');
     log.body.append(logList);
     const renderLog = (items) => {

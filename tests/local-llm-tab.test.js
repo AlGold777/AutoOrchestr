@@ -83,6 +83,55 @@ describe('LocalModel context and log', () => {
   });
 });
 
+describe('LocalModel observation', () => {
+  const page = { url: 'u', title: 't', text: 'Какой ответ вы предпочитаете? Выберите один, чтобы продолжить.', dialogs: [], buttons: ['Предпочитаю этот ответ', 'Войти', 'Стоп'] };
+  const reply = (situation, button, note = '') => JSON.stringify({ situation, button, note });
+  const scripting = { executeScript: async () => [{ result: page }] };
+  beforeEach(() => { window.chrome = { storage: { local: fakeStore().area } }; });
+  afterEach(() => { delete window.chrome; });
+
+  test('a button that is on the page and allowed is kept', () => {
+    expect(LocalModel.checkObservation(reply('choose_answer', 'предпочитаю ЭТОТ ответ', 'Какой ответ вы предпочитаете?'), page))
+      .toEqual({ situation: 'choose_answer', button: 'Предпочитаю этот ответ', note: 'Какой ответ вы предпочитаете?' });
+  });
+  test('an invented button or a quote not on the page is dropped', () => {
+    const result = LocalModel.checkObservation(reply('choose_answer', 'Нажми меня', 'выдуманная фраза'), page);
+    expect(result.button).toBe('');
+    expect(result.note).toBe('');
+  });
+  test('login, payment and similar buttons are never named', () => {
+    expect(LocalModel.checkObservation(reply('choose_answer', 'Войти'), page).button).toBe('');
+    expect(LocalModel.checkObservation(reply('login_required', 'Предпочитаю этот ответ'), page).button).toBe('');
+    expect(LocalModel.checkObservation(reply('limit_reached', 'Предпочитаю этот ответ'), page).button).toBe('');
+  });
+  test('an unknown situation and broken JSON give nothing', () => {
+    expect(LocalModel.checkObservation(reply('other', ''), page)).toBeNull();
+    expect(LocalModel.checkObservation('oops', page)).toBeNull();
+  });
+  test('the observation is logged and saved, and it only reads the tab', async () => {
+    const log = jest.fn();
+    const executeScript = jest.fn(scripting.executeScript);
+    const result = await LocalModel.observeTab({ tabId: 7, participant: 'qwen-a', reason: 'empty' }, {
+      scripting: { executeScript }, prepare: async () => {}, log, fetchImpl: okChat(reply('choose_answer', 'Предпочитаю этот ответ'))
+    });
+    expect(result.button).toBe('Предпочитаю этот ответ');
+    expect(executeScript).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toBe('observed');
+    expect(log.mock.calls[0][1]).toContain('нажала бы');
+    const saved = (await LocalModel.loadState()).observations;
+    expect(saved[0]).toMatchObject({ participant: 'qwen-a', reason: 'empty', situation: 'choose_answer' });
+  });
+  test('without a tab nothing happens, a closed tab goes to the log', async () => {
+    await expect(LocalModel.observeTab({ participant: 'x' }, { scripting })).resolves.toBeNull();
+    const log = jest.fn();
+    await LocalModel.observeTab({ tabId: 1, participant: 'x' }, { scripting: { executeScript: async () => { throw new Error('No tab'); } }, log, prepare: async () => {} });
+    expect(log.mock.calls[0][0]).toBe('observe_failed');
+  });
+  test('the model is asked only for known situations', () => {
+    expect(LocalModel.buildObservationRequest(page, 'empty').format.properties.situation.enum).toEqual(Object.keys(LocalModel.SITUATIONS));
+  });
+});
+
 describe('Local LLM tab', () => {
   let store;
   let panel;

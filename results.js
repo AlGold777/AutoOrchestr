@@ -7630,7 +7630,11 @@ document.addEventListener('click', (event) => {
                     accept: ({ text, completion, status, prompt, reason }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt, reason } }),
                     parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,
-                    decide: askCustomDecision,
+                    decide: (request) => {
+                        // Observation only: the local model looks at each tab that gave no answer; the window does not wait for it.
+                        (request.failed || []).forEach((id) => void window.LocalModel?.observeTab({ tabId: chatBindings[id]?.tabId, participant: id, reason: request.reasons?.[id] || '' }));
+                        return askCustomDecision(request);
+                    },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
                     provideOwnerResult: async (request) => {

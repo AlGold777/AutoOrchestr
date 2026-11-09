@@ -29,8 +29,26 @@
     bad_reply: 'Ответ не в нужном формате',
     quote_rejected: 'Цитаты нет в тексте',
     rule_failed: 'Не удалось открыть доступ к сервису',
-    file_rejected: 'Файл не принят'
+    file_rejected: 'Файл не принят',
+    observed: 'Застревание',
+    observe_failed: 'Вкладка не прочитана'
   });
+  const OBSERVATION_LIMIT = 40;
+  const SITUATIONS = Object.freeze({
+    choose_answer: 'страница просит выбрать ответ',
+    still_generating: 'модель ещё пишет ответ',
+    answer_ready: 'ответ уже готов на странице',
+    limit_reached: 'лимит использования',
+    login_required: 'нужен вход',
+    account_action: 'требуется действие с аккаунтом, оплатой или условиями',
+    captcha: 'проверка на робота',
+    error_message: 'страница показывает ошибку',
+    empty_page: 'страница пуста или не загружена',
+    unknown: 'ситуация неясна'
+  });
+  // These are the owner's to deal with: a button is never named for them, whatever the model answers.
+  const NO_BUTTON = new Set(['limit_reached', 'login_required', 'account_action', 'captcha', 'still_generating', 'answer_ready', 'empty_page', 'unknown']);
+  const FORBIDDEN_BUTTON = /(войти|вход|зарегистр|log ?in|sign ?(in|up)|оплат|купить|подпис|upgrade|subscribe|payment|обновить (план|аккаунт)|услови|соглас|принять|accept|agree|terms|удалить|delete|отправить|send)/i;
 
   // Reviewers state the conclusion at the start or at the end: the middle of a very long text is what is left out.
   const excerpt = (value) => {
@@ -48,7 +66,7 @@ ${excerpt(text)}
 Ответь JSON.`;
 
   const storage = () => root.chrome?.storage?.local || null;
-  const emptyState = () => ({ system: '', files: [], chat: [], log: [] });
+  const emptyState = () => ({ system: '', files: [], chat: [], log: [], observations: [] });
 
   const loadState = async () => {
     const area = storage();
@@ -200,6 +218,83 @@ ${excerpt(text)}
     return { ok: true, text: String(answer.content) };
   };
 
+  // Runs inside the tab of a model: only reads the page.
+  /* istanbul ignore next */
+  function readPage() {
+    const seen = (node) => node.offsetParent !== null;
+    const nameOf = (node) => String(node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const buttons = [...new Set([...document.querySelectorAll('button,[role="button"]')].filter(seen).map(nameOf).filter(Boolean))].slice(-60);
+    const dialogs = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],dialog[open]')].filter(seen).map((node) => String(node.innerText || '').slice(0, 800)).slice(0, 3);
+    return { url: location.href, title: document.title, hidden: document.hidden, text: String(document.body?.innerText || '').slice(-6000), dialogs, buttons };
+  }
+
+  const buildObservationPrompt = (page, reason) => `Ты смотришь на вкладку сайта чат-модели. Автоматизация застряла на этой вкладке, причина со стороны приложения: ${reason || 'не указана'}.
+Определи, что видно на странице. Выбери ровно одно значение situation:
+${Object.entries(SITUATIONS).map(([key, text]) => `${key} — ${text};`).join('\n')}
+button — точный текст кнопки из списка, если страница ждёт нажатия, чтобы продолжить. Если нажимать нечего, пустая строка.
+note — короткая дословная фраза со страницы, на которой основан вывод.
+Окна на странице: ${page.dialogs?.length ? page.dialogs.join(' | ') : 'нет'}
+Кнопки: ${(page.buttons || []).join(' | ')}
+Конец текста страницы:
+${page.text || ''}
+Ответь JSON.`;
+
+  const buildObservationRequest = (page, reason, context = '') => ({
+    model: MODEL,
+    stream: false,
+    think: false,
+    keep_alive: '10m',
+    messages: [...(context ? [{ role: 'system', content: context }] : []), { role: 'user', content: buildObservationPrompt(page, reason) }],
+    format: {
+      type: 'object',
+      properties: { situation: { type: 'string', enum: Object.keys(SITUATIONS) }, button: { type: 'string' }, note: { type: 'string' } },
+      required: ['situation', 'button', 'note']
+    },
+    options: { temperature: 0, num_ctx: 8192, num_predict: 160 }
+  });
+
+  // The checked reply: a button is kept only if it is really on the page and pressing it is allowed. Nothing is pressed yet.
+  const checkObservation = (raw, page) => {
+    let reply;
+    try { reply = JSON.parse(raw); } catch (_) { return null; }
+    if (!reply || !SITUATIONS[reply.situation]) return null;
+    const asked = String(reply.button || '').trim();
+    const onPage = (page.buttons || []).find((name) => name.toLowerCase() === asked.toLowerCase()) || '';
+    const button = asked && onPage && !NO_BUTTON.has(reply.situation) && !FORBIDDEN_BUTTON.test(onPage) ? onPage : '';
+    const note = String(reply.note || '').trim();
+    const pageText = squeeze([page.text, ...(page.dialogs || [])].join(' '));
+    return { situation: reply.situation, button, note: note && pageText.includes(squeeze(note)) ? note.slice(0, 200) : '' };
+  };
+
+  const observationLine = (participant, result) => `${participant}: ${SITUATIONS[result.situation]}${result.button ? `; нажала бы «${result.button}»` : ''}${result.note ? `. «${result.note}»` : ''}`;
+
+  // Observation only: reads the stuck tab, asks the model what it sees, keeps the picture and the verdict. Presses nothing, never throws.
+  const observeTab = async ({ tabId, participant = '', reason = '' }, { scripting = root.chrome?.scripting, fetchImpl, prepare = allowOwnOrigin, log = addLog, signal = null } = {}) => {
+    if (!tabId || !scripting) return null;
+    let page;
+    try {
+      const [frame] = await scripting.executeScript({ target: { tabId }, func: readPage });
+      page = frame?.result;
+    } catch (error) {
+      log('observe_failed', `${participant}: ${error?.message || ''}`);
+      return null;
+    }
+    if (!page) { log('observe_failed', participant); return null; }
+    try { await prepare(); } catch (error) { log('rule_failed', error?.message || ''); return null; }
+    let context = '';
+    try { context = String((await loadState()).system || '').trim(); } catch (_) { /* the observation goes without the instruction */ }
+    const answer = await post(buildObservationRequest(page, reason, context), { signal, fetchImpl });
+    if (answer.problem) { log(answer.problem.kind, answer.problem.detail); return null; }
+    if (answer.content === undefined) return null;
+    const result = checkObservation(answer.content, page);
+    if (!result) { log('bad_reply', String(answer.content).slice(0, 200)); return null; }
+    log('observed', observationLine(participant, result));
+    await updateState((state) => ({
+      observations: [{ at: Date.now(), participant, reason, ...result, page: { ...page, text: String(page.text).slice(-2500) } }, ...(state.observations || [])].slice(0, OBSERVATION_LIMIT)
+    })).catch(() => {});
+    return result;
+  };
+
   const hintLine = (source, suggestion) => `${source ? `${source}: ` : ''}${ADVICE[suggestion.label]}. Основание: «${suggestion.quote}»`;
 
   // The lines of the hint for the input items of an owner step, one model request at a time.
@@ -220,7 +315,7 @@ ${excerpt(text)}
     return lines;
   };
 
-  const api = Object.freeze({ MODEL, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, buildChatRequest, parseReply, reviewReply, suggest, chat, ownerHint, hintLine, allowOwnOrigin, loadState, updateState, addLog, contextOf });
+  const api = Object.freeze({ MODEL, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, buildChatRequest, parseReply, reviewReply, suggest, chat, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, loadState, updateState, addLog, contextOf });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
