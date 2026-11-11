@@ -11450,7 +11450,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.955';
+            const APP_VERSION = '2.81.1019';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
@@ -21624,8 +21624,8 @@ function formatExportPromptName(promptText = getExportPromptSource()) {
         .trim();
     if (!normalized) return 'Prompt';
     const chars = Array.from(normalized);
-    const prefix = chars.slice(0, 30).join('').trim();
-    return `${prefix}${chars.length > 30 ? '…' : ''}` || 'Prompt';
+    const prefix = chars.slice(0, 100).join('').trim();
+    return `${prefix}${chars.length > 100 ? '…' : ''}` || 'Prompt';
 }
 
 function buildResponseExportFilename(modelName, extension, date = new Date()) {
@@ -21639,7 +21639,7 @@ function formatExportPromptExcerpt(promptText = getExportPromptSource()) {
         .replace(/\s+/g, ' ')
         .replace(/[\\/:?<>|*"']/g, '')
         .trim();
-    return Array.from(normalized).slice(0, 50).join('').trim() || 'Prompt';
+    return Array.from(normalized).slice(0, 100).join('').trim() || 'Prompt';
 }
 
 function buildSingleCardExportFilename(subject, extension, date = new Date()) {
@@ -22211,6 +22211,7 @@ if (
         buildSessionResponsesText,
         formatExportPromptName,
         buildResponseExportFilename,
+        buildSingleCardExportFilename,
         favoriteState
     };
 }

@@ -986,11 +986,21 @@ describe('Pipeline debate favorites view', () => {
     expect(text).toContain('Base model response.');
     expect(window.__resultsExportDebug.formatNamedExportStamp(new Date(2026, 6, 17, 18, 30))).toBe('jul26 18-30');
     document.getElementById('modTa').value = 'Разработка адаптера для новой версии провайдера';
-    expect(window.__resultsExportDebug.formatExportPromptName()).toBe('Разработка адаптера для новой…');
+    expect(window.__resultsExportDebug.formatExportPromptName()).toBe('Разработка адаптера для новой версии провайдера');
     expect(window.__resultsExportDebug.buildResponseExportFilename(null, 'txt', new Date(2026, 7, 26, 10, 45)))
-      .toBe('Разработка адаптера для новой… - LLMs aug26 10-45.txt');
+      .toBe('Разработка адаптера для новой версии провайдера - LLMs aug26 10-45.txt');
     expect(window.__resultsExportDebug.buildResponseExportFilename('GPT', 'html', new Date(2026, 7, 26, 10, 45)))
-      .toBe('Разработка адаптера для новой… - GPT aug26 10-45.html');
+      .toBe('Разработка адаптера для новой версии провайдера - GPT aug26 10-45.html');
+    document.getElementById('modTa').value = 'а'.repeat(101);
+    const prefix = 'а'.repeat(100);
+    expect(window.__resultsExportDebug.buildResponseExportFilename(null, 'md', new Date(2026, 7, 26, 10, 45)))
+      .toBe(`${prefix}… - LLMs aug26 10-45.md`);
+    for (const subject of ['GPT', 'Favourite']) {
+      for (const extension of ['html', 'md']) {
+        expect(window.__resultsExportDebug.buildSingleCardExportFilename(subject, extension, new Date(2026, 7, 26, 10, 45)))
+          .toBe(`${subject} - ${prefix} - aug26 10-45.${extension}`);
+      }
+    }
     expect(favoriteText).toBe('--- GPT ---\n[12:00]\nBase model response.');
     window.__resultsExportDebug.favoriteState.entries = originalFavoriteEntries;
     window.__resultsExportDebug.favoriteState.cardKeyToId = originalFavoriteCardMap;
