@@ -103,7 +103,7 @@ The buttons at the bottom of the left sidebar work against one dedicated folder,
 
 - the download icon exports notes and saved Sessions straight into that folder — no Save As dialog, the app only asks for the file name, and a name clash gets a numeric suffix instead of overwriting;
 - `↓` imports a backup **replacing** the current notes and Session set;
-- `+` imports saved Sessions **without replacing** anything — they are appended to the current set, and colliding ids are reassigned;
+- `+` imports saved Sessions from one or several selected JSON files **without replacing** anything — they are appended to the current set, and colliding ids are reassigned;
 - `txt` exports the answers of every saved Session into one text file, `Saved sessions <stamp>.txt`.
 
 The TXT file groups answers by Session: a line with the Session name, then that Session's prompt, Favourite and model answers indented under it. `Current session` is not included — use the `txt` button on the main page for the work currently open. Saved answers carry no time/URL metadata line, because that metadata describes a live run and is not part of a stored Session.

@@ -784,8 +784,11 @@ describe('release log regression guards', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
 
-    // Replace-import and add-import share one reader, and it returns text.
-    expect(source.match(/const backupText = await readSavedSessionsBackupText\(\);/g)).toHaveLength(2);
+    // Replace-import reads one file; add-import can select several.
+    expect(source.match(/const backupText = await readSavedSessionsBackupText\(\);/g)).toHaveLength(1);
+    expect(source).toContain("const files = await pickSavedSessionsFile(true);");
+    expect(source).toContain("input.multiple = multiple;");
+    expect(source).toContain("incomingSessions.push(...fileSessions);");
     expect(source).toContain('const readSavedSessionsBackupText = async () => {');
 
     // showOpenFilePicker is available on a chrome-extension:// page (checked in a
@@ -796,12 +799,12 @@ describe('release log regression guards', () => {
     expect(source).toContain("startIn: 'downloads'");
     expect(source).toContain('id: SAVED_SESSIONS_PICKER_ID,');
     expect(source).toContain('types: SAVED_SESSIONS_FILE_TYPES');
-    expect(source).toContain('multiple: false,');
+    expect(source).toContain('multiple,');
 
     // A dismissed dialog is not an error, and no other failure may leave the
     // press without a way to choose a file.
     expect(source).toContain("if (error?.name === 'AbortError') return null;");
-    expect(source).toContain('if (!supportsFilePicker()) return pickBackupFile();');
+    expect(source).toContain('if (!supportsFilePicker()) return pickBackupFile(multiple);');
 
     // Nothing in this path may show an in-app file list, read file:// URLs or
     // ask for a folder again: the user asked for the plain system window.
