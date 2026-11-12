@@ -11450,7 +11450,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.1019';
+            const APP_VERSION = '2.81.1020';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
@@ -11542,10 +11542,11 @@ document.addEventListener('click', (event) => {
                 reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
                 reader.readAsText(file);
             });
-            const pickBackupFile = () => new Promise((resolve) => {
+            const pickBackupFile = (multiple = false) => new Promise((resolve) => {
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.accept = 'application/json';
+                input.multiple = multiple;
                 input.style.position = 'fixed';
                 input.style.opacity = '0';
                 input.style.pointerEvents = 'none';
@@ -11571,7 +11572,7 @@ document.addEventListener('click', (event) => {
                         }, 500);
                     }
                 };
-                input.addEventListener('change', () => finalize(input.files?.[0] || null));
+                input.addEventListener('change', () => finalize(multiple ? Array.from(input.files || []) : (input.files?.[0] || null)));
                 window.addEventListener('focus', handleWindowFocus);
                 document.body.appendChild(input);
                 input.click();
@@ -11599,19 +11600,20 @@ document.addEventListener('click', (event) => {
 
             const supportsFilePicker = () => typeof window.showOpenFilePicker === 'function';
 
-            // Returns the picked File, or null when the dialog was dismissed.
+            // Returns a File or an array of Files, or null when the dialog was dismissed.
             // Must be reached before any await in the press: the picker needs the
             // click's transient activation, and awaiting first spends it.
-            const pickSavedSessionsFile = async () => {
-                if (!supportsFilePicker()) return pickBackupFile();
+            const pickSavedSessionsFile = async (multiple = false) => {
+                if (!supportsFilePicker()) return pickBackupFile(multiple);
                 try {
-                    const [fileHandle] = await window.showOpenFilePicker({
+                    const fileHandles = await window.showOpenFilePicker({
                         id: SAVED_SESSIONS_PICKER_ID,
                         startIn: 'downloads',
-                        multiple: false,
+                        multiple,
                         types: SAVED_SESSIONS_FILE_TYPES
                     });
-                    return fileHandle ? await fileHandle.getFile() : null;
+                    const files = await Promise.all(fileHandles.map((handle) => handle.getFile()));
+                    return multiple ? files : (files[0] || null);
                 } catch (error) {
                     if (error?.name === 'AbortError') return null;
                     // Never fail silently here: a press that opens nothing and
@@ -11620,7 +11622,7 @@ document.addEventListener('click', (event) => {
                     console.warn('[results] saved sessions file picker failed', error?.name, error?.message);
                     setStatus(formatStatusError('File window did not open', error), 6000);
                     // A dismissal is a decision; anything else still leaves a path.
-                    return pickBackupFile();
+                    return pickBackupFile(multiple);
                 }
             };
 
@@ -11892,26 +11894,30 @@ document.addEventListener('click', (event) => {
             };
 
             const addSavedSessions = async () => {
-                const backupText = await readSavedSessionsBackupText();
-                if (!backupText) {
+                const files = await pickSavedSessionsFile(true);
+                if (!files?.length) {
                     setStatus('Add sessions cancelled');
                     return;
                 }
                 setStatus('Adding saved sessions...');
                 try {
-                    const parsed = JSON.parse(backupText);
-                    if (!parsed || typeof parsed !== 'object') {
-                        throw new Error('Invalid sessions file');
-                    }
-                    const incomingSessions = Array.isArray(parsed.sessions)
-                        ? parsed.sessions
-                        : Array.isArray(parsed)
-                            ? parsed
-                            : Array.isArray(parsed.savedSessions)
-                                ? parsed.savedSessions
-                                : [];
-                    if (!incomingSessions.length) {
-                        throw new Error('No saved sessions found');
+                    const incomingSessions = [];
+                    for (const file of files) {
+                        const parsed = JSON.parse(await readFileAsText(file));
+                        if (!parsed || typeof parsed !== 'object') {
+                            throw new Error(`Invalid sessions file: ${file.name}`);
+                        }
+                        const fileSessions = Array.isArray(parsed.sessions)
+                            ? parsed.sessions
+                            : Array.isArray(parsed)
+                                ? parsed
+                                : Array.isArray(parsed.savedSessions)
+                                    ? parsed.savedSessions
+                                    : [];
+                        if (!fileSessions.length) {
+                            throw new Error(`No saved sessions found: ${file.name}`);
+                        }
+                        incomingSessions.push(...fileSessions);
                     }
 
                     const usedIds = new Set(sessionsState.sessions.map((session) => session.id));
