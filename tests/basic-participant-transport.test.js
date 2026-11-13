@@ -19,7 +19,7 @@ describe('Basic page sends participants (ТЗ 7, T07)', () => {
   test('a wave holds one request per model: the k-th request of a model goes to wave k, waves go one after another', () => {
     expect(results).toContain('const k = countByModel[request.modelName] || 0;');
     expect(results).toContain('(waves[k] ||= []).push(request);');
-    expect(results).toContain('const reply = await sendWave(group, meta, key);');
+    expect(results).toContain('const reply = await sendGroup(group, meta, key);');
   });
 
   test('the replies go back by participant id, and the transport gets the participant of each model', () => {

@@ -1592,6 +1592,7 @@ document.addEventListener('click', (event) => {
         'grok': 'Grok',
         'lechat': 'Le Chat',
         'qwen': 'Qwen',
+        'qwenlocal': 'Qwen Local',
         'deepseek': 'DeepSeek',
         'perplexity': 'Perplexity',
         'zai': 'Z.ai',
@@ -7171,6 +7172,20 @@ document.addEventListener('click', (event) => {
                 showNotification('Basic: не загружены модули приёма ответов (DebateResponseAcceptance, DebateStageMarkers). Перезагрузите страницу.', 'error');
                 return false;
             }
+            // «Qwen Local» runs on this computer: Ollama must answer before the run starts (the same call warms the model up),
+            // and it takes no files: nothing is sent to a participant that cannot get them.
+            const isLocalName = (name) => Boolean(window.LocalModel?.isLocal(name));
+            if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name)))) {
+                if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name) && model.files?.length))) {
+                    showNotification('Basic: у участника «Qwen Local» не бывает входных файлов. Прогон не начат.', 'warn');
+                    return false;
+                }
+                const ready = await window.LocalModel.ping();
+                if (!ready.ok) {
+                    showNotification(`Basic: локальная модель недоступна (${window.LocalModel.unavailableText(ready.problem)}). Запустите Ollama и повторите; прогон не начат.`, 'warn');
+                    return false;
+                }
+            }
             // Resolve every declared input before starting: no participant is sent without its files.
             const hasScopedFiles = steps.some((step) => step.files?.length || (step.models || []).some((model) => model.files?.length));
             let inputFileStore = null;
@@ -7593,6 +7608,101 @@ document.addEventListener('click', (event) => {
                     });
                     return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
                 };
+                // «Qwen Local» participants go to Ollama by HTTP; the rest of the group goes to the tabs as before. The messages of a
+                // local participant are kept in the page for this run only: after a reload a continue cannot be restored (below).
+                const localTransport = window.LocalModel?.createTransport({
+                    delivery: window.MessageDelivery,
+                    makeRequestId: () => window.TransportContract.makeTransportRequestId()
+                });
+                const planLocalWave = (wave, meta) => {
+                    const stepModels = steps[meta.step]?.models || [];
+                    const models = wave.map((request) => request.modelName);
+                    const maxWords = Object.fromEntries(wave.map((request) => [request.modelName, meta.maxWordsByParticipant?.[request.participantId] || null]));
+                    const composed = composeCustomPrompts(models,
+                        Object.fromEntries(wave.map((request) => [request.modelName, request.prompt])), maxWords,
+                        Object.fromEntries(wave.map((request) => [request.modelName, stepModels.find((model) => model.id === request.participantId)?.discipline || {}])),
+                        built.schema.defaults?.modelNotes || {},
+                        Object.fromEntries(wave.map((request) => [request.modelName, Boolean(meta.correctionByParticipant?.[request.participantId])])),
+                        built.run.maxWords);
+                    const lost = {};
+                    const requests = [];
+                    wave.forEach((request) => {
+                        const newChat = Boolean(isNewChat(request));
+                        // After a reload the messages of the chat are gone: a continue of a participant that already answered is refused, not
+                        // sent to a chat without its past.
+                        if (resumeRecord && !newChat && !localTransport.hasHistory(request.participantId)
+                            && (record?.attempts || []).some((item) => item.participant === request.participantId && item.state === 'done')) {
+                            lost[request.participantId] = request;
+                            return;
+                        }
+                        requests.push({ participantId: request.participantId, modelName: request.modelName, prompt: composed[request.modelName], newChat,
+                            words: maxWords[request.modelName] || built.run.maxWords || getDebateMaxWords() });
+                    });
+                    const refused = localTransport.check(requests);
+                    if (refused) {
+                        showNotification(`${meta.label}: запрос к «Qwen Local» не помещается в контекст (≈${refused.tokens} + ${refused.numPredict} из ${refused.limit} токенов). Запрос не отправлен.`, 'warn');
+                        const error = new Error('Qwen Local: полный запрос не помещается в контекст.');
+                        error.code = 'context_full';
+                        throw error;
+                    }
+                    return { wave, requests, lost };
+                };
+                const runLocalWave = async ({ wave, requests, lost }, meta, waveKey) => {
+                    const attemptKeyOf = (request) => window.CustomRunRecord?.attemptKey ? window.CustomRunRecord.attemptKey({
+                        ref: request.stepRef, participant: request.participantId, visit: request.visit, attempt: meta.attempt, phase: request.phase || 'answer'
+                    }) : JSON.stringify([request.stepRef ?? `#${meta.step}`, request.participantId ?? request.modelName, request.visit ?? 1, meta.attempt, request.phase ?? 'answer']);
+                    wave.forEach((request) => recordAttempt({
+                        step: meta.step, ref: request.stepRef, participant: request.participantId, model: request.modelName, visit: request.visit,
+                        attempt: meta.attempt, phase: request.phase || 'answer', attemptKey: attemptKeyOf(request),
+                        chatIntent: { newChat: Boolean(isNewChat(request)), reason: isNewChat(request) ? 'step_new' : 'continue', bindingTabId: null, attachmentNames: [] }
+                    }));
+                    const replies = await localTransport.runWave(requests, { signal, batchId: `custom:${runContext.pipelineRunId}:s${meta.step + 1}:a${meta.attempt}:w${waveKey}` });
+                    runContext.settledBatches = Number(runContext.settledBatches || 0) + 1;
+                    const byParticipant = {};
+                    wave.forEach((request) => {
+                        const lostChat = Boolean(lost[request.participantId]);
+                        const reply = lostChat
+                            ? { text: '', status: 'USER_ACTION_REQUIRED', completion: 'failed', reason: window.RunError?.CODES?.PARTICIPANT_CHAT_LOST || 'participant_chat_lost', sentPrompt: null, attribution: '', answered: false, transportRequestId: '' }
+                            : replies[request.participantId];
+                        if (!reply) return; // Stop came before this request
+                        byParticipant[request.participantId] = reply;
+                        if (reply.text.trim()) {
+                            updateDebateModelCardOutput(request.modelName, reply.text, '', {
+                                answerRevision: meta.attempt > 1,
+                                status: reply.status, source: 'custom',
+                                role: window.StageCard?.feed?.role({ label: meta.label, modelName: request.modelName, participantId: request.participantId, visit: request.visit }) || `Basic · ${meta.label}`,
+                                pipelineRunId: runContext.pipelineRunId,
+                                pipelineRoundId: `s${meta.step + 1}${request.visit > 1 ? `v${request.visit}` : ''}`,
+                                participantId: request.participantId, participantLabel: request.participantLabel || request.label || null,
+                                stepRef: request.stepRef, visit: request.visit,
+                                transportRequestId: reply.transportRequestId || '', requestId: reply.transportRequestId || ''
+                            });
+                        } else if (lostChat) {
+                            showNotification(`${meta.label}: ${PARTICIPANT_REFUSAL_TEXT.participant_chat_lost}`, 'warn');
+                        } else if (reply.reason === 'local_unavailable') {
+                            showNotification(`${meta.label}: локальная модель недоступна (${reply.detail || 'Ollama не отвечает'}). Запрос не отправлен.`, 'warn');
+                        }
+                        const saved = chatBindings[request.participantId];
+                        chatBindings[request.participantId] = {
+                            ...saved, modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
+                            transportRequestId: reply.transportRequestId,
+                            chatVisit: isNewChat(request) ? request.visit : (saved?.chatVisit ?? request.visit)
+                        };
+                    });
+                    return { byParticipant, closedByOwner: false };
+                };
+                const sendGroup = async (group, meta, key) => {
+                    const local = group.filter((request) => isLocalName(request.modelName));
+                    if (!local.length) return sendWave(group, meta, key);
+                    // The limit is checked before anything of the group goes out.
+                    const plan = planLocalWave(local, meta);
+                    const cloud = group.filter((request) => !isLocalName(request.modelName));
+                    const [localReply, cloudReply] = await Promise.all([
+                        runLocalWave(plan, meta, key),
+                        cloud.length ? sendWave(cloud, meta, key) : { byParticipant: {}, closedByOwner: false }
+                    ]);
+                    return { byParticipant: { ...cloudReply.byParticipant, ...localReply.byParticipant }, closedByOwner: Boolean(cloudReply.closedByOwner) };
+                };
                 // The chats of the wave as the background bound them (R01). A failed read keeps the chats the page has.
                 const refreshParticipantChats = async (pipelineRunId, wave) => {
                     const response = await sendToBackground({ type: 'PARTICIPANT_CHAT_BINDINGS', pipelineRunId }).catch(() => null);
@@ -7732,7 +7842,7 @@ document.addEventListener('click', (event) => {
                                     meta.onWaveStart(group.map((r) => r.participantId));
                                 }
                                 // eslint-disable-next-line no-await-in-loop
-                                const reply = await sendWave(group, meta, key);
+                                const reply = await sendGroup(group, meta, key);
                                 Object.assign(byParticipant, reply.byParticipant);
                                 closedByOwner = closedByOwner || reply.closedByOwner;
                                 if (typeof meta?.onWaveResult === 'function') {
@@ -11456,7 +11566,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.1035';
+            const APP_VERSION = '2.81.1036';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');

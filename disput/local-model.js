@@ -182,10 +182,10 @@ ${file.text}`));
     });
   };
 
-  const withTimeout = (signal) => {
+  const withTimeout = (signal, timeoutMs = TIMEOUT_MS) => {
     const controller = new AbortController();
     const state = { signal: controller.signal, timedOut: false };
-    const timer = setTimeout(() => { state.timedOut = true; controller.abort(); }, TIMEOUT_MS);
+    const timer = setTimeout(() => { state.timedOut = true; controller.abort(); }, timeoutMs);
     const abort = () => controller.abort();
     if (signal) {
       if (signal.aborted) controller.abort();
@@ -195,9 +195,17 @@ ${file.text}`));
     return state;
   };
 
+  // The model may leave its reasoning in the text even with think:false: the block is cut out, here and from the history.
+  const stripThinking = (value) => String(value == null ? '' : value)
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim();
+  const TIMING_KEYS = Object.freeze(['load_duration', 'prompt_eval_count', 'eval_count', 'total_duration']);
+  const timingsOf = (data) => Object.fromEntries(TIMING_KEYS.filter((key) => Number.isFinite(data?.[key])).map((key) => [key, data[key]]));
+
   // A request to the service. Gives the text of the reply or a problem; a request cancelled by the owner is neither.
-  const post = async (body, { signal, fetchImpl = (...args) => root.fetch(...args) }) => {
-    const limit = withTimeout(signal);
+  const post = async (body, { signal, fetchImpl = (...args) => root.fetch(...args), timeoutMs = TIMEOUT_MS }) => {
+    const limit = withTimeout(signal, timeoutMs);
     try {
       const response = await fetchImpl(`${ENDPOINT}/api/chat`, {
         method: 'POST',
@@ -205,12 +213,13 @@ ${file.text}`));
         body: JSON.stringify(body),
         signal: limit.signal
       });
-      if (response.status === 404) return { problem: { kind: 'model_missing', detail: modelId() } };
+      if (response.status === 404) return { problem: { kind: 'model_missing', detail: body.model || modelId() } };
       if (!response.ok) return { problem: { kind: 'http_error', detail: `HTTP ${response.status}` } };
       const data = await response.json();
-      return { content: data?.message?.content };
+      const content = data?.message?.content;
+      return { content: typeof content === 'string' ? stripThinking(content) : content, doneReason: String(data?.done_reason || ''), timings: timingsOf(data) };
     } catch (error) {
-      if (limit.timedOut) return { problem: { kind: 'timeout', detail: `${TIMEOUT_MS / 1000} с` } };
+      if (limit.timedOut) return { problem: { kind: 'timeout', detail: `${Math.round(timeoutMs / 1000)} с` } };
       if (signal?.aborted) return {};
       return { problem: { kind: 'service_off', detail: ENDPOINT } };
     } finally {
@@ -390,7 +399,138 @@ ${page.text || ''}
     return lines;
   };
 
-  const api = Object.freeze({ MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf });
+  // «Qwen Local» as a participant of a Basic round (the transport). The page sends such a participant here by HTTP instead of a model
+  // tab. The model is always MODEL: the choice of the selector above is for hints and watching only.
+  const NAME = 'Qwen Local';
+  const KEEP_ALIVE = '15m';
+  const TEMPERATURE = 0.2;
+  // The context of a call is fixed here, not set per stage. The limit is conservative: tokens are estimated from letters at two
+  // letters a token (Cyrillic is the dense case); the room for the answer is kept apart.
+  const NUM_CTX = 16384;
+  const CHARS_PER_TOKEN = 2;
+  const TOKENS_PER_WORD = 4;
+  const PREDICT_RESERVE = 256;
+  const PARTICIPANT_TIMEOUT_MS = 10 * 60 * 1000;
+  const PING_TIMEOUT_MS = 3 * 60 * 1000;
+  const isLocal = (name) => String(name || '').trim() === NAME;
+
+  const UNAVAILABLE_TEXT = Object.freeze({
+    service_off: 'Ollama не отвечает на 127.0.0.1:11434',
+    model_missing: `в Ollama нет модели ${MODEL}`,
+    http_error: 'Ollama вернула ошибку',
+    rule_failed: 'не удалось открыть доступ к Ollama',
+    timeout: 'модель не успела ответить'
+  });
+  const unavailableText = (problem) => `${UNAVAILABLE_TEXT[problem?.kind] || 'причина неизвестна'}${problem?.detail && problem.kind !== 'service_off' ? ` (${problem.detail})` : ''}`;
+
+  // The check at the start of a run, and the warm-up: an empty chat call loads the model and keeps it for KEEP_ALIVE.
+  const ping = async ({ signal = null, fetchImpl, prepare = allowOwnOrigin } = {}) => {
+    try { await prepare(); } catch (error) { return { ok: false, problem: { kind: 'rule_failed', detail: error?.message || '' } }; }
+    const answer = await post({ model: MODEL, stream: false, think: false, keep_alive: KEEP_ALIVE, messages: [] }, { signal, fetchImpl, timeoutMs: PING_TIMEOUT_MS });
+    if (answer.problem) return { ok: false, problem: answer.problem };
+    return { ok: true };
+  };
+
+  const numPredictOf = (words) => {
+    const count = Number.isSafeInteger(words) && words > 0 ? words : 0;
+    return count * TOKENS_PER_WORD + PREDICT_RESERVE;
+  };
+  // The full request: the history, the new message and the room for the answer must fit the context.
+  const fits = (messages, numPredict) => {
+    const chars = messages.reduce((sum, message) => sum + String(message.content || '').length, 0);
+    const tokens = Math.ceil(chars / CHARS_PER_TOKEN);
+    return { ok: tokens + numPredict <= NUM_CTX, tokens, numPredict, limit: NUM_CTX };
+  };
+
+  const COMPLETION = Object.freeze({ SUCCESS: 'complete', PARTIAL: 'partial', FAILED: 'failed', CANCELLED: 'cancelled', NO_SEND: 'failed', TIMEOUT: 'partial' });
+  const TOKEN_RE = /\[\[(AO-[a-z0-9]{6})\]\]/i;
+
+  // delivery: the delivery layer of the page (MessageDelivery); makeRequestId: the transport request id of the page.
+  const createTransport = ({ fetchImpl, prepare = allowOwnOrigin, delivery = null, makeRequestId = () => `local_${Date.now()}_${Math.random().toString(36).slice(2, 9)}` } = {}) => {
+    const histories = new Map(); // participantId → [{ role, content }] of this run, without reasoning
+    const historyOf = (request) => (request.newChat ? [] : (histories.get(request.participantId) || []));
+    const bodyOf = (request) => {
+      const numPredict = numPredictOf(request.words);
+      return {
+        numPredict,
+        body: {
+          model: MODEL, stream: false, think: false, keep_alive: KEEP_ALIVE,
+          messages: [...historyOf(request), { role: 'user', content: String(request.prompt || '') }],
+          ...(request.format ? { format: request.format } : {}),
+          options: { temperature: TEMPERATURE, num_ctx: NUM_CTX, num_predict: numPredict }
+        }
+      };
+    };
+    // The first request that does not fit, before anything is sent; null when all fit.
+    const check = (requests) => {
+      for (const request of requests) {
+        const { body, numPredict } = bodyOf(request);
+        const verdict = fits(body.messages, numPredict);
+        if (!verdict.ok) return { participantId: request.participantId, ...verdict };
+      }
+      return null;
+    };
+
+    const run = async (request, { signal = null, batchId = '' } = {}) => {
+      if (request.newChat) histories.delete(request.participantId);
+      const model = request.modelName || NAME;
+      const requestId = request.transportRequestId || makeRequestId();
+      const prompt = String(request.prompt || '');
+      // The delivery layer wraps the prompt with its tag for the journal; the model gets the prompt as it is, the tag is
+      // written after a complete answer only.
+      const wrapped = delivery?.prepare?.({ prompt, promptsByModel: { [model]: prompt }, models: [model], batchId, requestIds: { [model]: requestId }, instructionsByModel: { [model]: '' } });
+      const token = String(wrapped?.[model] || '').match(TOKEN_RE)?.[1] || '';
+      const { body } = bodyOf(request);
+      const answer = await post(body, { signal, fetchImpl, timeoutMs: PARTICIPANT_TIMEOUT_MS });
+      const base = { sentPrompt: prompt, transportRequestId: requestId, attribution: '', answered: false };
+      const finish = (status, reason, extra = {}) => ({ ...base, text: '', status, completion: COMPLETION[status] || '', reason, ...extra });
+      if (answer.problem) {
+        const timedOut = answer.problem.kind === 'timeout';
+        delivery?.closeBatch?.({ models: [model], requestIds: { [model]: requestId }, timedOut, failed: { [model]: timedOut ? 'TIMEOUT' : 'NO_SEND' }, reason: answer.problem.kind });
+        return finish(timedOut ? 'TIMEOUT' : 'NO_SEND', timedOut ? 'timeout' : 'local_unavailable', { detail: unavailableText(answer.problem) });
+      }
+      if (answer.content === undefined) {
+        delivery?.closeBatch?.({ models: [model], requestIds: { [model]: requestId }, cancelled: true, reason: 'stopped' });
+        return finish('CANCELLED', 'cancelled');
+      }
+      const text = answer.content;
+      const done = answer.doneReason;
+      // done_reason of Ollama is first: only «stop» is a finished answer; «length» is an answer cut by num_predict.
+      const status = !text ? 'FAILED' : done === 'stop' ? 'SUCCESS' : 'PARTIAL';
+      const reason = !text ? 'empty_answer' : done === 'stop' ? '' : (done === 'length' ? 'length' : `done_reason_${done || 'missing'}`);
+      if (text) histories.set(request.participantId, [...historyOf(request), { role: 'user', content: prompt }, { role: 'assistant', content: text }]);
+      let shown = text;
+      if (delivery?.receive) {
+        const message = delivery.receive({ llmName: model, transportRequestId: requestId, answer: status === 'SUCCESS' && token ? `${text}\n\n[[${token}]]` : text, status,
+          metadata: { source: 'local', reason } }, { final: true });
+        shown = message ? String(message.answer || '') : text;
+      }
+      delivery?.batchEvent?.('local_model_call', { model, requestId, doneReason: done || null, status, ...answer.timings });
+      return { ...base, text: shown, status, completion: COMPLETION[status], reason, attribution: status === 'SUCCESS' ? 'verified' : '', answered: status === 'SUCCESS',
+        doneReason: done, timings: answer.timings };
+    };
+
+    // The requests go one after another: one model is resident, its calls queue anyway.
+    const runWave = async (requests, options = {}) => {
+      const refused = check(requests);
+      if (refused) {
+        const error = new Error(`Qwen Local: полный запрос не помещается в контекст (≈${refused.tokens} + ${refused.numPredict} из ${refused.limit} токенов).`);
+        error.code = 'context_full';
+        throw error;
+      }
+      const byParticipant = {};
+      for (const request of requests) {
+        if (options.signal?.aborted) break;
+        // eslint-disable-next-line no-await-in-loop
+        byParticipant[request.participantId] = await run(request, options);
+      }
+      return byParticipant;
+    };
+
+    return { check, run, runWave, hasHistory: (participantId) => (histories.get(participantId) || []).length > 0, history: (participantId) => (histories.get(participantId) || []).slice(), reset: () => histories.clear() };
+  };
+
+  const api = Object.freeze({ MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf, NAME, NUM_CTX, isLocal, ping, unavailableText, numPredictOf, fits, stripThinking, createTransport });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
