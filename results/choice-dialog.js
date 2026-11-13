@@ -26,6 +26,16 @@
     return bytes;
   };
 
+  // A hint never holds a window: its lines are added when they are ready. No lines, a failure or a closed window (isOpen() false) add nothing.
+  // The lines are text (textContent); the title is the first line of the paragraph.
+  function appendHint(container, hint, { title = 'Подсказка локальной модели (решаете вы):', before = null, doc = root.document, isOpen = () => true, className = 'choice-dialog-hint' } = {}) {
+    if (!hint) return;
+    Promise.resolve(hint).then((lines) => {
+      if (!isOpen() || !Array.isArray(lines) || !lines.length) return;
+      container.insertBefore(el(doc, 'p', className, [title, ...lines].join('\n')), before);
+    }).catch(() => {});
+  }
+
   function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, allowChoicesWithReadOnlyDocument = false, inputFiles = [], hint = null, documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
@@ -160,13 +170,7 @@
         abortHandler = () => finish(null);
         signal.addEventListener('abort', abortHandler, { once: true });
       }
-      // A hint never holds the window: its lines appear when they are ready; no lines, a failure or a closed window show nothing.
-      if (hint) {
-        Promise.resolve(hint).then((lines) => {
-          if (finished || !Array.isArray(lines) || !lines.length) return;
-          dialog.insertBefore(el(doc, 'p', 'choice-dialog-hint', ['Подсказка локальной модели (решаете вы):', ...lines].join('\n')), actions);
-        }).catch(() => {});
-      }
+      appendHint(dialog, hint, { before: actions, doc, isOpen: () => !finished });
       // Escape closes the native dialog: the answer is a cancel.
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });
       doc.body.append(dialog);
@@ -176,7 +180,7 @@
     });
   }
 
-  const api = Object.freeze({ ask });
+  const api = Object.freeze({ ask, appendHint });
   root.ChoiceDialog = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

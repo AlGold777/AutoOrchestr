@@ -6907,7 +6907,7 @@ document.addEventListener('click', (event) => {
         const waitSinceText = () => (customWaitSince ? `Ожидает с ${new Date(customWaitSince).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : '');
         // The buttons are the choices the engine allows: «Продолжить» only at the threshold (the engine refuses it below),
         // below it «Пропустить шаг» and «Повторить».
-        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, details = {}, required = 0 }) => {
+        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, details = {}, required = 0 }, hint = null) => {
             // The reason with its detail: a usage limit names the reset time («лимит использования модели, сброс в 16:30»).
             const reasonWithDetail = (name) => {
                 const code = reasons[name];
@@ -6922,6 +6922,7 @@ document.addEventListener('click', (event) => {
             customDecisionOpen = true;
             // Without every answer the main button skips the participants without an answer: the accepted answers stay.
             const answer = await showConfirm(message, {
+                hint,
                 confirmText: canContinue ? 'Продолжить' : 'Пропустить участника',
                 cancelText: 'Остановить прогон',
                 retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : '',
@@ -7648,9 +7649,14 @@ document.addEventListener('click', (event) => {
                     parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,
                     decide: (request) => {
-                        // Observation only: the local model looks at each tab that gave no answer; the window does not wait for it.
-                        (request.failed || []).forEach((id) => void (window.LocalModel?.enabled() && window.LocalModel.observeTab({ tabId: chatBindings[id]?.tabId, participant: id, reason: request.reasons?.[id] || '' })));
-                        return askCustomDecision(request);
+                        // Observation only: the local model looks at each tab that gave no answer and its lines are a hint in the window; the window does not wait for them.
+                        const hint = window.LocalModel?.enabled()
+                            ? Promise.all((request.failed || []).map((id) => window.LocalModel.observeTab({ tabId: chatBindings[id]?.tabId, participant: id, reason: request.reasons?.[id] || '' })
+                                .then((result) => (result ? window.LocalModel.observationLine(id, result) : null))
+                                .catch(() => null)))
+                                .then((lines) => lines.filter(Boolean))
+                            : null;
+                        return askCustomDecision(request, hint);
                     },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
@@ -11450,7 +11456,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.1034';
+            const APP_VERSION = '2.81.1035';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
@@ -25595,6 +25601,9 @@ if (smartCompareButton) {
     function showConfirm(message, options = {}) {
         return new Promise((resolve) => {
             if (confirmModal && confirmMessage) {
+                // A hint of the previous window is not left in the reused modal.
+                confirmModal.querySelectorAll('.choice-dialog-hint').forEach((node) => node.remove());
+                let confirmOpen = true;
                 const confirmText = String(options?.confirmText || 'Сохранить');
                 const cancelText = String(options?.cancelText || 'Отмена');
                 const retryText = String(options?.retryText || '').trim();
@@ -25619,6 +25628,12 @@ if (smartCompareButton) {
                     skipStepConfirmBtn.classList.toggle('hidden', !skipStepText);
                 }
                 modalManager.show(confirmModal);
+                // The hint (a promise of lines) comes after the window opens: it does not hold the answer.
+                if (options?.hint) {
+                    window.ChoiceDialog?.appendHint(confirmModal.querySelector('.modal-content'), options.hint, {
+                        title: 'Наблюдение локальной модели (решаете вы):', before: confirmModal.querySelector('.modal-buttons'), isOpen: () => confirmOpen
+                    });
+                }
 
                 const onConfirm = () => {
                     modalManager.hide(confirmModal);
@@ -25645,6 +25660,7 @@ if (smartCompareButton) {
                 };
 
                 const cleanupListeners = () => {
+                    confirmOpen = false;
                     deleteConfirmBtn.removeEventListener('click', onConfirm);
                     cancelConfirmBtn.removeEventListener('click', onCancel);
                     retryConfirmBtn?.removeEventListener('click', onRetry);
