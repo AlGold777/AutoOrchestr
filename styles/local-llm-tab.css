@@ -20,3 +20,8 @@
 .local-llm-chat-error { margin: 0 0 8px; font-size: 13px; color: #cf222e; }
 .local-llm-chat-form { display: flex; gap: 8px; align-items: flex-end; }
 .local-llm-send { flex: 0 0 auto; white-space: nowrap; }
+
+.local-model-select {
+  margin-right: 8px;
+  max-width: 130px;
+}

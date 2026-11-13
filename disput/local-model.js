@@ -7,6 +7,35 @@
 
   const MODEL = 'qwen3.5:4b-mlx';
   const ENDPOINT = 'http://127.0.0.1:11434';
+  // The model the owner connected in the list on the pipeline panel. '' = without LLM: no hints and no watching of tabs.
+  const MODELS = Object.freeze([
+    { id: '', label: 'without LLM' },
+    { id: 'qwen3.5:4b-mlx', label: 'Qwen 3.5 4B' },
+    { id: 'qwen3.5:9b-mlx', label: 'Qwen 3.5 9B' }
+  ]);
+  const CHOICE_KEY = 'localModelChoice';
+  let selected = '';
+  const modelId = () => selected || MODEL;
+  const enabled = () => Boolean(selected);
+  const modelChoice = () => selected;
+  const setModel = (id) => {
+    selected = MODELS.some((item) => item.id === id) ? id : '';
+    try { root.chrome?.storage?.local?.set({ [CHOICE_KEY]: selected }); } catch (_) { /* the choice lives until the page closes */ }
+    return selected;
+  };
+  const loadChoice = async () => {
+    try {
+      const data = await root.chrome?.storage?.local?.get(CHOICE_KEY);
+      const id = data?.[CHOICE_KEY];
+      selected = MODELS.some((item) => item.id === id) ? id : '';
+    } catch (_) { selected = ''; }
+    return selected;
+  };
+  try {
+    root.chrome?.storage?.onChanged?.addListener((changes, area) => {
+      if (area === 'local' && changes[CHOICE_KEY]) selected = MODELS.some((item) => item.id === changes[CHOICE_KEY].newValue) ? changes[CHOICE_KEY].newValue : '';
+    });
+  } catch (_) { /* no storage events here */ }
   const TIMEOUT_MS = 120000;
   const HEAD_CHARS = 8000;
   const TAIL_CHARS = 24000;
@@ -110,7 +139,7 @@ ${excerpt(text)}
   };
 
   const buildRequest = (text, context = '') => ({
-    model: MODEL,
+    model: modelId(),
     stream: false,
     think: false,
     keep_alive: '10m',
@@ -124,7 +153,7 @@ ${excerpt(text)}
   });
 
   const buildChatRequest = (history, context = '') => ({
-    model: MODEL,
+    model: modelId(),
     stream: false,
     think: false,
     keep_alive: '10m',
@@ -190,7 +219,7 @@ ${excerpt(text)}
         body: JSON.stringify(body),
         signal: limit.signal
       });
-      if (response.status === 404) return { problem: { kind: 'model_missing', detail: MODEL } };
+      if (response.status === 404) return { problem: { kind: 'model_missing', detail: modelId() } };
       if (!response.ok) return { problem: { kind: 'http_error', detail: `HTTP ${response.status}` } };
       const data = await response.json();
       return { content: data?.message?.content };
@@ -244,7 +273,7 @@ ${page.text || ''}
 Ответь JSON.`;
 
   const buildObservationRequest = (page, reason, context = '') => ({
-    model: MODEL,
+    model: modelId(),
     stream: false,
     think: false,
     keep_alive: '10m',
@@ -379,7 +408,7 @@ ${page.text || ''}
     return lines;
   };
 
-  const api = Object.freeze({ MODEL, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, buildChatRequest, parseReply, reviewReply, suggest, chat, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf });
+  const api = Object.freeze({ MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, buildChatRequest, parseReply, reviewReply, suggest, chat, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

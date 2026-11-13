@@ -7323,7 +7323,7 @@ document.addEventListener('click', (event) => {
                 window.BasicCardVerdict.mark(debateModelCards, entry, reasonText);
             };
             // A tab that shows no change for several minutes is looked at by the local model. Observation only.
-            const stallWatch = window.LocalModel?.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId });
+            const stallWatch = window.LocalModel?.enabled() ? window.LocalModel.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId }) : null;
             stallWatch?.start();
             const recordAttempt = (entry) => {
                 stallWatch?.note(entry);
@@ -7649,7 +7649,7 @@ document.addEventListener('click', (event) => {
                     askOwner: askCustomOwner,
                     decide: (request) => {
                         // Observation only: the local model looks at each tab that gave no answer; the window does not wait for it.
-                        (request.failed || []).forEach((id) => void window.LocalModel?.observeTab({ tabId: chatBindings[id]?.tabId, participant: id, reason: request.reasons?.[id] || '' }));
+                        (request.failed || []).forEach((id) => void (window.LocalModel?.enabled() && window.LocalModel.observeTab({ tabId: chatBindings[id]?.tabId, participant: id, reason: request.reasons?.[id] || '' })));
                         return askCustomDecision(request);
                     },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
@@ -7659,7 +7659,7 @@ document.addEventListener('click', (event) => {
                         const folderName = document ? await documentsFolderName() : '';
                         const hintControl = new AbortController();
                         const answer = await askChoiceDialog({
-                            hint: window.LocalModel?.ownerHint(input, { signal: hintControl.signal }),
+                            hint: window.LocalModel?.enabled() ? window.LocalModel.ownerHint(input, { signal: hintControl.signal }) : null,
                             title: `Ответ User: ${stepTitleOf(stepRef)}`,
                             message: [window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }), waitSinceText()].filter(Boolean).join('\n'),
                             textInput: document ? null : { label: 'Ответ User', required: true },
@@ -11450,7 +11450,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.1029';
+            const APP_VERSION = '2.81.1030';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
