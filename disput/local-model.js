@@ -312,12 +312,17 @@ ${page.text || ''}
 
   // Watches the tabs of the participants that have not answered yet. If a page does not change for stallMs, the model looks at it once.
   // It only reads the pages and only writes to the log: acceptance of answers and the course of the run do not depend on it.
-  const createStallWatch = ({ tabOf, read = readTab, observe = observeTab, now = Date.now, stallMs = STALL_MS, intervalMs = STALL_TICK_MS } = {}) => {
+  const createStallWatch = ({ tabOf, read = readTab, observe = observeTab, now = Date.now, stallMs = STALL_MS, intervalMs = STALL_TICK_MS, enabled = () => true } = {}) => {
     const waiting = new Map();
     let timer = null;
     let busy = false;
     const tick = async () => {
       if (busy) return;
+      // Disabled: no pages are read, the count of the unchanged time starts again when it is enabled.
+      if (!enabled()) {
+        for (const item of waiting.values()) { item.mark = null; item.since = now(); item.observed = false; item.dialogs = undefined; item.generating = false; }
+        return;
+      }
       busy = true;
       try {
         for (const [participant, item] of [...waiting]) {

@@ -192,6 +192,25 @@ describe('LocalModel stall watch', () => {
     expect(observe).not.toHaveBeenCalled();
     expect(watch.waitingCount()).toBe(0);
   });
+  test('while disabled no page is read, and the count starts again when it is enabled', async () => {
+    let time = 0;
+    let on = false;
+    const read = jest.fn(async () => ({ text: 'a', buttons: [], dialogs: [] }));
+    const observe = jest.fn(async () => {});
+    const watch = LocalModel.createStallWatch({ tabOf: () => 5, read, observe, now: () => time, stallMs: 100, enabled: () => on });
+    watch.note({ participant: 'gpt-a', phase: 'answer' });
+    await watch.tick(); time += 500; await watch.tick();
+    expect(read).not.toHaveBeenCalled();
+    expect(observe).not.toHaveBeenCalled();
+    on = true; time += 50;
+    await watch.tick();
+    expect(observe).not.toHaveBeenCalled();
+    time += 60; await watch.tick();
+    expect(observe).not.toHaveBeenCalled();
+    time += 50; await watch.tick();
+    expect(observe).toHaveBeenCalledWith({ tabId: 5, participant: 'gpt-a', reason: 'no_progress' });
+    expect(observe).toHaveBeenCalledTimes(1);
+  });
   test('a closed tab does not break the watch', async () => {
     const observe = jest.fn();
     const watch = LocalModel.createStallWatch({ tabOf: () => 5, read: async () => { throw new Error('gone'); }, observe });

@@ -7323,7 +7323,7 @@ document.addEventListener('click', (event) => {
                 window.BasicCardVerdict.mark(debateModelCards, entry, reasonText);
             };
             // A tab that shows no change for several minutes is looked at by the local model. Observation only.
-            const stallWatch = window.LocalModel?.enabled() ? window.LocalModel.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId }) : null;
+            const stallWatch = window.LocalModel ? window.LocalModel.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId, enabled: () => window.LocalModel.enabled() }) : null;
             stallWatch?.start();
             const recordAttempt = (entry) => {
                 stallWatch?.note(entry);
@@ -11450,7 +11450,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.1033';
+            const APP_VERSION = '2.81.1034';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
