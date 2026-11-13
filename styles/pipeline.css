@@ -476,17 +476,17 @@ body.is-resizing {
 
 .round-badge,
 .entry-badge {
-    background: var(--pipeline-blue-soft);
-    color: var(--pipeline-blue);
+    /*background: var(--pipeline-blue-soft);*/
+    color: #2563ebc7;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    width: 66px;
-    height: 28px;
+    width: 55px;
+    height: 24px;
     padding: 2px 5px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .entry-wrapper {
@@ -1610,8 +1610,8 @@ body.is-resizing {
 .control-card-role.is-empty { color: #b8c0cc; }
 .pipeline-control-title {
     display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
-    width: 66px; height: 28px; padding: 2px 5px; border-radius: 4px;
-    background: var(--pipeline-blue-soft); color: var(--pipeline-blue); font-size: 11px; text-transform: none;
+    width: 55px; height: 24px; padding: 2px 5px; border-radius: 4px;
+    /*background: var(--pipeline-blue-soft)*/; color: #2563ebc7; font-size: 12px; text-transform: none;
 }
 .stage-header-row .pipeline-control-delete-btn { position: absolute; right: 0; opacity: 0; pointer-events: none; }
 .pipeline-control-step.is-control-editing .pipeline-control-delete-btn:not(:disabled) { opacity: 1; pointer-events: auto; }
