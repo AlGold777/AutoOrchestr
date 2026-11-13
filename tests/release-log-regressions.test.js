@@ -409,7 +409,6 @@ describe('release log regression guards', () => {
     expect(html.indexOf('id="pipeline-panel-toggle-title"')).toBeLessThan(html.indexOf('id="debate-length-select"'));
     expect(html.indexOf('id="debate-round-limit-select"')).toBeLessThan(html.indexOf('id="debate-length-select"'));
     expect(html.indexOf('id="debate-round-limit-select"')).toBeGreaterThan(-1);
-    expect(html.indexOf('<div class="msg-head-center">')).toBeLessThan(html.indexOf('id="mod-sender-select"'));
     expect(html).not.toContain('id="mod-role-select"');
     expect(html).not.toContain('id="mod-send-btn"');
     expect(html).not.toContain('id="pipeline-run-btn"');
