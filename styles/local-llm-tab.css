@@ -4,8 +4,7 @@
 .local-llm-card { min-width: 0; }
 .local-llm-card .devtools-card-header { display: flex; align-items: center; gap: 8px; }
 .local-llm-card .devtools-card-header h2 { margin-right: auto; }
-.local-llm-system, .local-llm-chat-input { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; font-size: 13px; padding: 8px; border: 1px solid var(--border-color, #d0d7de); border-radius: 6px; background: var(--surface-color, #fff); color: var(--text-color, #1f2328); }
-.local-llm-drop { padding: 24px 12px; text-align: center; font-size: 13px; border: 1px dashed var(--border-color, #d0d7de); border-radius: 6px; }
+.local-llm-system, .local-llm-drop { padding: 24px 12px; text-align: center; font-size: 13px; border: 1px dashed var(--border-color, #d0d7de); border-radius: 6px; }
 .local-llm-drop.is-over { background: rgba(9, 105, 218, 0.08); border-color: #0969da; }
 .local-llm-files, .local-llm-log { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
 .local-llm-file { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }
@@ -14,12 +13,6 @@
 .local-llm-log-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border-color, #d0d7de); }
 .local-llm-log-time { color: #656d76; font-variant-numeric: tabular-nums; }
 .local-llm-log-detail { flex-basis: 100%; overflow-wrap: anywhere; color: #656d76; }
-.local-llm-chat { display: flex; flex-direction: column; gap: 6px; min-height: 120px; max-height: 300px; overflow: auto; margin-bottom: 8px; }
-.local-llm-turn { max-width: 90%; padding: 6px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f8fa; align-self: flex-start; }
-.local-llm-turn.is-user { align-self: flex-end; background: #ddf4ff; }
-.local-llm-chat-error { margin: 0 0 8px; font-size: 13px; color: #cf222e; }
-.local-llm-chat-form { display: flex; gap: 8px; align-items: flex-end; }
-.local-llm-send { flex: 0 0 auto; white-space: nowrap; }
 
 .local-model-select {
   margin-right: 8px;

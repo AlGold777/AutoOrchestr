@@ -1,4 +1,4 @@
-// The Local LLM tab of the telemetry window: the system instruction, the attached files, the log of what went wrong, and a chat.
+// The Local LLM tab of the telemetry window: the system instruction, the attached files, and the log of what went wrong.
 // All of it is kept by LocalModel (chrome.storage.local) and also reaches the hints of the owner window. Texts are written with textContent only.
 (function initLocalLlmTab(root) {
   'use strict';
@@ -118,61 +118,18 @@
       }));
     };
 
-    // 4. Chat.
-    const talk = card(doc, 'Чат с моделью');
-    const clearChat = el(doc, 'button', 'devtools-pill-btn local-llm-clear', 'Очистить');
-    clearChat.type = 'button';
-    clearChat.addEventListener('click', () => api.updateState(() => ({ chat: [] })));
-    talk.header.append(el(doc, 'span', 'devtools-meta', api.MODEL), clearChat);
-    const turns = el(doc, 'div', 'local-llm-chat');
-    const chatError = el(doc, 'p', 'local-llm-chat-error');
-    chatError.hidden = true;
-    const form = el(doc, 'div', 'local-llm-chat-form');
-    const input = el(doc, 'textarea', 'local-llm-chat-input');
-    input.rows = 2;
-    input.placeholder = 'Сообщение модели. Ваши сообщения учитываются и в подсказках';
-    input.setAttribute('aria-label', 'Сообщение модели');
-    const send = el(doc, 'button', 'devtools-pill-btn local-llm-send', 'Отправить');
-    send.type = 'button';
-    form.append(input, send);
-    talk.body.append(turns, chatError, form);
-    const renderChat = (items) => {
-      turns.replaceChildren(...items.map((turn) => el(doc, 'div', `local-llm-turn is-${turn.role === 'user' ? 'user' : 'model'}`, turn.content)));
-      turns.scrollTop = turns.scrollHeight;
-    };
-    let busy = false;
-    const sendMessage = async () => {
-      const text = input.value.trim();
-      if (!text || busy) return;
-      busy = true;
-      send.disabled = true;
-      chatError.hidden = true;
-      input.value = '';
-      const state = await api.updateState((current) => ({ chat: [...current.chat, { role: 'user', content: text, at: Date.now() }] }));
-      const reply = await api.chat(state.chat, { context: api.contextOf(state) });
-      if (reply.ok) await api.updateState((current) => ({ chat: [...current.chat, { role: 'assistant', content: reply.text, at: Date.now() }] }));
-      else if (reply.error) { chatError.textContent = reply.error; chatError.hidden = false; }
-      busy = false;
-      send.disabled = false;
-    };
-    send.addEventListener('click', sendMessage);
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
-    });
-
-    grid.append(system.box, files.box, log.box, talk.box);
+    grid.append(system.box, files.box, log.box);
 
     const render = (state, { withSystem = false } = {}) => {
       if (withSystem) systemArea.value = state.system || '';
       renderFiles(state.files || []);
       renderLog(state.log || []);
-      renderChat(state.chat || []);
     };
     const ready = api.loadState().then((state) => render(state, { withSystem: true }));
     areaEvents?.addListener?.((changes, area) => {
-      if (area === 'local' && changes[api.STATE_KEY]) render({ files: [], log: [], chat: [], ...changes[api.STATE_KEY].newValue });
+      if (area === 'local' && changes[api.STATE_KEY]) render({ files: [], log: [], ...changes[api.STATE_KEY].newValue });
     });
-    return { ready, addFiles, sendMessage, saveSystem };
+    return { ready, addFiles, saveSystem };
   }
 
   const api = Object.freeze({ mount });

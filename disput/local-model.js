@@ -47,8 +47,6 @@
   const ADVICE = Object.freeze({ pass: 'можно принимать', rework: 'вернуть на доработку' });
   const STATE_KEY = 'localModelState';
   const CONTEXT_CHARS = 12000;
-  const CHAT_TURNS = 20;
-  const HINT_INSTRUCTIONS = 10;
   const LOG_LIMIT = 200;
   const LOG_LABELS = Object.freeze({
     service_off: 'Сервис недоступен',
@@ -99,7 +97,7 @@ ${excerpt(text)}
 Ответь JSON.`;
 
   const storage = () => root.chrome?.storage?.local || null;
-  const emptyState = () => ({ system: '', files: [], chat: [], log: [], observations: [] });
+  const emptyState = () => ({ system: '', files: [], log: [], observations: [] });
 
   const loadState = async () => {
     const area = storage();
@@ -126,15 +124,12 @@ ${excerpt(text)}
     log: [{ at: Date.now(), kind, detail: String(detail).slice(0, 400) }, ...state.log].slice(0, LOG_LIMIT)
   })).catch(() => {});
 
-  // What the owner told the model: the instruction, the files and, for a hint, the owner's chat messages.
-  const contextOf = (state, { withChat = false } = {}) => {
+  // What the owner told the model: the instruction and the files.
+  const contextOf = (state) => {
     const parts = [];
     if (String(state.system || '').trim()) parts.push(String(state.system).trim());
-    (state.files || []).forEach((file) => parts.push(`Файл «${file.name}»:\n${file.text}`));
-    if (withChat) {
-      const said = (state.chat || []).filter((turn) => turn.role === 'user').slice(-HINT_INSTRUCTIONS).map((turn) => `- ${turn.content}`);
-      if (said.length) parts.push(`Дополнительные указания пользователя:\n${said.join('\n')}`);
-    }
+    (state.files || []).forEach((file) => parts.push(`Файл «${file.name}»:
+${file.text}`));
     return parts.join('\n\n').slice(0, CONTEXT_CHARS);
   };
 
@@ -150,15 +145,6 @@ ${excerpt(text)}
       required: ['label', 'quote']
     },
     options: { temperature: 0, num_ctx: 16384, num_predict: 160 }
-  });
-
-  const buildChatRequest = (history, context = '') => ({
-    model: modelId(),
-    stream: false,
-    think: false,
-    keep_alive: '10m',
-    messages: [...(context ? [{ role: 'system', content: context }] : []), ...history.slice(-CHAT_TURNS).map(({ role, content }) => ({ role, content }))],
-    options: { temperature: 0.3, num_ctx: 16384, num_predict: 1200 }
   });
 
   // Text collected from a site can lose spaces and line breaks between lines: the quote is compared by letters and digits only.
@@ -240,15 +226,6 @@ ${excerpt(text)}
     const result = reviewReply(answer.content, text);
     if (result.problem) log(result.problem.kind, result.problem.detail);
     return result.suggestion || null;
-  };
-
-  // One turn of the chat of the Local LLM tab: the history ends with the owner's message.
-  const chat = async (history, { signal = null, fetchImpl, context = '', log = addLog, prepare = allowOwnOrigin } = {}) => {
-    try { await prepare(); } catch (error) { log('rule_failed', error?.message || ''); return { ok: false, error: LOG_LABELS.rule_failed }; }
-    const answer = await post(buildChatRequest(history, context), { signal, fetchImpl });
-    if (answer.problem) { log(answer.problem.kind, answer.problem.detail); return { ok: false, error: LOG_LABELS[answer.problem.kind] }; }
-    if (answer.content === undefined) return { ok: false, error: '' };
-    return { ok: true, text: String(answer.content) };
   };
 
   // Runs inside the tab of a model: only reads the page.
@@ -398,7 +375,7 @@ ${page.text || ''}
     if (!items.length) return [];
     try { await prepare(); } catch (error) { log('rule_failed', error?.message || ''); return []; }
     let context = '';
-    try { context = contextOf(await loadState(), { withChat: true }); } catch (_) { /* the hint goes without the owner's context */ }
+    try { context = contextOf(await loadState()); } catch (_) { /* the hint goes without the owner's context */ }
     const lines = [];
     for (const item of items) {
       if (signal?.aborted) break;
@@ -408,7 +385,7 @@ ${page.text || ''}
     return lines;
   };
 
-  const api = Object.freeze({ MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, buildChatRequest, parseReply, reviewReply, suggest, chat, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf });
+  const api = Object.freeze({ MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

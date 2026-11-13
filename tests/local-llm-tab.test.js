@@ -27,12 +27,9 @@ describe('LocalModel context and log', () => {
   });
   afterEach(() => { delete window.chrome; });
 
-  test('the instruction, the files and, for a hint, the owner messages form the context', () => {
-    const state = { system: 'Будь строгим', files: [{ name: 'a.md', text: 'правила' }], chat: [{ role: 'user', content: 'учитывай цену' }, { role: 'assistant', content: 'хорошо' }] };
+  test('the instruction and the files form the context', () => {
+    const state = { system: 'Будь строгим', files: [{ name: 'a.md', text: 'правила' }] };
     expect(LocalModel.contextOf(state)).toBe('Будь строгим\n\nФайл «a.md»:\nправила');
-    const hint = LocalModel.contextOf(state, { withChat: true });
-    expect(hint).toContain('учитывай цену');
-    expect(hint).not.toContain('хорошо');
   });
   test('an empty context adds no system message, a context adds one', () => {
     expect(LocalModel.buildRequest('т').messages.map((m) => m.role)).toEqual(['user']);
@@ -69,17 +66,6 @@ describe('LocalModel context and log', () => {
     await LocalModel.addLog('service_off', 'a');
     await LocalModel.addLog('timeout', 'b');
     expect((await LocalModel.loadState()).log.map((e) => e.kind)).toEqual(['timeout', 'service_off']);
-  });
-  test('the chat sends the history after the context and reports a failure', async () => {
-    const fetchImpl = jest.fn(okChat('ответ'));
-    const reply = await LocalModel.chat([{ role: 'user', content: 'привет' }], { fetchImpl, context: 'контекст', prepare: async () => {} });
-    expect(reply).toEqual({ ok: true, text: 'ответ' });
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).messages.map((m) => m.role)).toEqual(['system', 'user']);
-    const log = jest.fn();
-    const failed = await LocalModel.chat([{ role: 'user', content: 'x' }], { fetchImpl: async () => { throw new TypeError('x'); }, log, prepare: async () => {} });
-    expect(failed.ok).toBe(false);
-    expect(failed.error).toBe(LocalModel.LOG_LABELS.service_off);
-    expect(log).toHaveBeenCalledWith('service_off', expect.any(String));
   });
 });
 
@@ -231,9 +217,9 @@ describe('Local LLM tab', () => {
   afterEach(() => { delete window.chrome; });
   const titles = () => [...panel.querySelectorAll('h2')].map((h) => h.textContent);
 
-  test('the four blocks are there and the log says there are no failures', async () => {
+  test('the three blocks are there and the log says there are no failures', async () => {
     await setup();
-    expect(titles()).toEqual(['Системная инструкция', 'Файлы', 'Log', 'Чат с моделью']);
+    expect(titles()).toEqual(['Системная инструкция', 'Файлы', 'Log']);
     expect(panel.querySelector('.local-llm-log').textContent).toContain('Сбоев нет');
   });
   test('the instruction is saved', async () => {
@@ -259,23 +245,5 @@ describe('Local LLM tab', () => {
     panel.querySelector('.local-llm-file-remove').click();
     await flush();
     expect(panel.querySelector('.local-llm-file')).toBeNull();
-  });
-  test('a chat message and its answer are shown; Enter sends', async () => {
-    await setup({ chat: async () => ({ ok: true, text: 'Понял' }) });
-    const input = panel.querySelector('.local-llm-chat-input');
-    input.value = 'Учитывай цену';
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    await flush();
-    expect([...panel.querySelectorAll('.local-llm-turn')].map((n) => n.textContent)).toEqual(['Учитывай цену', 'Понял']);
-  });
-  test('a failed chat shows the reason and the field works again', async () => {
-    await setup({ chat: async () => ({ ok: false, error: 'Сервис недоступен' }) });
-    panel.querySelector('.local-llm-chat-input').value = 'x';
-    await tab.sendMessage();
-    await flush();
-    const error = panel.querySelector('.local-llm-chat-error');
-    expect(error.hidden).toBe(false);
-    expect(error.textContent).toBe('Сервис недоступен');
-    expect(panel.querySelector('.local-llm-send').disabled).toBe(false);
   });
 });
