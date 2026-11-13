@@ -1,0 +1,1 @@
+(function(){var p=document.getElementById('local-llm-tabpanel');if(!p)return '[]';return JSON.stringify([...p.querySelectorAll('.local-llm-log-row')].map(function(n){return n.innerText.replace(/\s+/g,' ').slice(0,150)}))})()

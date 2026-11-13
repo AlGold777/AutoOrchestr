@@ -1,0 +1,242 @@
+[
+ {
+  "f": "a01_r1_deepseek-a.md",
+  "chars": 4951,
+  "lab": "pass",
+  "q": "Итог: для мобильного MVP — параметрическая поверхность STAR/SMPL-X + офлайн-анат",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a01_r1_perplexity-a.md",
+  "chars": 5973,
+  "lab": "pass",
+  "q": "Для мобильного продукта оптимален двухслойный подход: SMPL-X-подобный параметрич",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a02_r1_deepseek-a.md",
+  "chars": 5974,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a02_r1_perplexity-a.md",
+  "chars": 9814,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a03_r1_deepseek-a.md",
+  "chars": 6292,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a03_r1_perplexity-a.md",
+  "chars": 4923,
+  "lab": "pass",
+  "q": "Краткий вердикт\nДля мобильного продукта оптимален гибрид: индивидуальный рельеф ",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a04_r1_deepseek-a.md",
+  "chars": 8265,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a04_r1_perplexity-a.md",
+  "chars": 4490,
+  "lab": "pass",
+  "q": "Полная FEM-симуляция: нет, не real-time на мобиле [проверено].",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a05_r1_deepseek-a.md",
+  "chars": 7233,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a05_r1_perplexity-a.md",
+  "chars": 5898,
+  "lab": "pass",
+  "q": "Для мобильного продукта оптимален **гибрид**: скольжение кожи — через Position B",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a06_r1_deepseek-a.md",
+  "chars": 10905,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a06_r1_perplexity-a.md",
+  "chars": 4286,
+  "lab": "pass",
+  "q": "Для мобильного продукта оптимален гибрид: LBS как база (быстро, дёшево), DQS для",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a07_r1_deepseek-a.md",
+  "chars": 6529,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a07_r1_perplexity-a.md",
+  "chars": 4576,
+  "lab": "pass",
+  "q": "Для передачи индивидуальной анатомии оптимален гибрид: SMPL-X-подобный параметри",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a08_r1_deepseek-a.md",
+  "chars": 6573,
+  "lab": "pass",
+  "q": "**Итог:** для мобильного MVP — ограничения суставов + IK контакта стоп + dynamic",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a08_r1_perplexity-a.md",
+  "chars": 6539,
+  "lab": "pass",
+  "q": "Для мобильного продукта оптимален **гибрид**: захват движения — monocular video ",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "a09_r1_deepseek-a.md",
+  "chars": 6435,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "a09_r1_perplexity-a.md",
+  "chars": 5211,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "q01_r1_gpt-a.md",
+  "chars": 7890,
+  "lab": "pass",
+  "q": "Выбирать гибрид: параметрическое тело как постоянный анимационный каркас, персон",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "q01_r4_claude-a.md",
+  "chars": 11179,
+  "lab": "pass",
+  "q": "Полностью отклонённых замечаний нет.",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "q02_r1_gpt-a.md",
+  "chars": 7647,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "q02_r4_claude-a.md",
+  "chars": 12735,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "q03_r1_gpt-a.md",
+  "chars": 7523,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "q03_r4_claude-a.md",
+  "chars": 11662,
+  "lab": "rework",
+  "q": "Архитектура не утверждается, пока не закрыты четыре блокера: Контракт головы с т",
+  "shown": "rework",
+  "problem": null
+ },
+ {
+  "f": "q04_r1_gpt-a.md",
+  "chars": 7646,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "q04_r4_claude-a.md",
+  "chars": 12510,
+  "lab": "rework",
+  "q": "Фотореализм, автоматизация без ручной работы и себестоимость пока не доказаны (у",
+  "shown": "rework",
+  "problem": null
+ },
+ {
+  "f": "q05_r1_gpt-a.md",
+  "chars": 7736,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "q05_r4_claude-a.md",
+  "chars": 12501,
+  "lab": "pass",
+  "q": "Приняты по указанию User целиком: ... 4 (цельная сетка принята для v1).",
+  "shown": "pass",
+  "problem": null
+ },
+ {
+  "f": "q06_r1_gpt-a.md",
+  "chars": 7873,
+  "lab": "none",
+  "q": "",
+  "shown": null,
+  "problem": null
+ },
+ {
+  "f": "q06_r4_claude-a.md",
+  "chars": 12535,
+  "lab": "rework",
+  "q": "Сейчас это обоснованная гипотеза, готовая к проверке прототипом, но не решение д",
+  "shown": "rework",
+  "problem": null
+ }
+]
