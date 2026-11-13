@@ -18,3 +18,5 @@
   margin-right: 8px;
   max-width: 130px;
 }
+.local-model-select.is-off, .local-model-select option[value=""] { color: #9aa0a6; }
+.local-model-select option:not([value=""]) { color: initial; }

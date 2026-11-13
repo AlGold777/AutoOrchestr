@@ -11,8 +11,10 @@
       option.textContent = item.label;
       select.append(option);
     });
-    select.addEventListener('change', () => { select.value = api.setModel(select.value); });
-    const sync = () => { select.value = api.modelChoice(); };
+    const paint = () => select.classList.toggle('is-off', !select.value);
+    select.addEventListener('change', () => { select.value = api.setModel(select.value); paint(); });
+    const sync = () => { select.value = api.modelChoice(); paint(); };
+    paint();
     api.loadChoice().then(sync);
     root.chrome?.storage?.onChanged?.addListener?.((changes, area) => { if (area === 'local' && changes[api.CHOICE_KEY]) sync(); });
   };

@@ -37,9 +37,11 @@ describe('local model list', () => {
     await flush();
     expect([...select.options].map((o) => o.textContent)).toEqual(['without LLM', 'Qwen 3.5 4B', 'Qwen 3.5 9B']);
     expect(select.value).toBe('');
+    expect(select.classList.contains('is-off')).toBe(true);
     select.value = 'qwen3.5:4b-mlx';
     select.dispatchEvent(new Event('change'));
     expect(LocalModel.enabled()).toBe(true);
     expect(LocalModel.modelChoice()).toBe('qwen3.5:4b-mlx');
+    expect(select.classList.contains('is-off')).toBe(false);
   });
 });
