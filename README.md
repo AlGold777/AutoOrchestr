@@ -64,5 +64,4 @@ scroll inside their cards. Collapsed mode shows the compact feed. Reading earlie
 answers is preserved during updates; new content follows automatically at the end.
 Reduced motion uses the regular full feed. Export and fullscreen include all visible answers.
 
-Incomplete main-page answers show a subtle grey `uncompleted` label immediately
-after the API indicator in the card header. The label keeps its completion tooltip.
+Incomplete main-page answers retain the orange line on the left of the card.
