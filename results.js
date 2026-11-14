@@ -25186,23 +25186,23 @@ function checkCompareButtonState() {
             let response = null;
             setMainRunActive(true);
             try {
-                const sendStart = (newTabs) => sendToBackground({
+                const sendStart = (releaseLeftover) => sendToBackground({
                     type: 'START_FULLPAGE_PROCESS',
                     prompt: finalPrompt,
                     promptsByModel,
                     selectedLLMs: selectedLLMs,
-                    forceNewTabs: newTabs,
+                    forceNewTabs,
+                    releaseLeftoverGenerating: releaseLeftover,
                     useApiFallback,
                     sourceView: getCurrentViewKey(),
                     attachments: attachmentsPayload,
                     pipelineContext: promptsByModel ? { transportRequestIds } : null
                 });
-                response = await sendStart(forceNewTabs);
-                // The page already checked that no run is active (ensureNoOtherViewRun) and shows Start, so the refusal
-                // comes from a leftover of an earlier request whose final status was never recorded. Do not leave the
-                // user stuck: send into new tabs, which never share a conversation with that leftover.
-                if (response?.errorCode === 'RUN_ALREADY_ACTIVE' && response.reason === 'model_still_generating' && !forceNewTabs) {
-                    showNotification('Предыдущий запрос не завершился. Отправляю в новых вкладках.', 'warn');
+                response = await sendStart(false);
+                // The page already checked that no run is active (ensureNoOtherViewRun) and shows Start, so this refusal
+                // comes from a leftover of an earlier request whose final status was never recorded. Same tabs as chosen;
+                // only the leftover stops blocking the user's explicit Start.
+                if (response?.errorCode === 'RUN_ALREADY_ACTIVE' && response.reason === 'model_still_generating') {
                     response = await sendStart(true);
                 }
             } catch (err) {

@@ -59,7 +59,7 @@
       };
     }
     // New tabs do not share a conversation with a still-generating tab.
-    const generatingModel = options.forceNewTabs === true || priorSettled ? null : findGeneratingModel(llms);
+    const generatingModel = options.forceNewTabs === true || options.releaseLeftoverGenerating === true || priorSettled ? null : findGeneratingModel(llms);
     if (generatingModel) {
       return {
         ok: false,
