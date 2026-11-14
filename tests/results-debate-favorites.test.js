@@ -655,6 +655,7 @@ describe('Pipeline debate favorites view', () => {
     output.textContent = 'Main page favorite selection.';
     await selectTextInOutput(output, 10, 18);
     const favorite = document.querySelector('#responseSelTb [data-fav]');
+    const originalHtml = output.innerHTML;
 
     favorite.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
     favorite.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -662,6 +663,7 @@ describe('Pipeline debate favorites view', () => {
     expect(favoriteState.entries).toHaveLength(1);
     expect(favoriteState.entries[0].kind).toBe('fragment');
     expect(favoriteState.entries[0].text).toBe('favorite');
+    expect(output.innerHTML).toBe(originalHtml);
     favoriteState.entries = originalEntries;
     output.textContent = '';
   });
