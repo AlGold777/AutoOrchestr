@@ -23987,6 +23987,10 @@ function checkCompareButtonState() {
         const partial = window.TransportContract?.classifyCompletion?.(status, 'x') === 'partial';
         container.dataset.completion = partial ? 'partial' : '';
         let mark = container.querySelector('.answer-partial-mark');
+        if (container.classList.contains('llm-panel')) {
+            mark?.remove();
+            return;
+        }
         if (!partial) {
             mark?.remove();
             return;
