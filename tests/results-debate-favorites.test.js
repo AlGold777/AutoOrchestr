@@ -663,6 +663,7 @@ describe('Pipeline debate favorites view', () => {
     expect(favoriteState.entries).toHaveLength(1);
     expect(favoriteState.entries[0].kind).toBe('fragment');
     expect(favoriteState.entries[0].text).toBe('favorite');
+    expect(document.getElementById('favorites-section').nextElementSibling).toBe(document.querySelector('.llm-results'));
     expect(output.innerHTML).toBe(originalHtml);
     favoriteState.entries = originalEntries;
     output.textContent = '';
