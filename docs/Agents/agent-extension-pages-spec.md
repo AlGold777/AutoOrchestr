@@ -166,7 +166,7 @@
 | `#clear-all-btn` | Очищает ответы во всех модельных карточках, обновляет favorite entries и compare availability. Считать разрушающим действием. |
 | Индивидуальные Copy/HTML/Markdown/Clear | Делегированные обработчики `.copy-btn`, `.panel-export-html-btn`, `.panel-export-md-btn`, `.panel-clear-response-btn`; цель берётся из `data-target`. |
 | `#comparison-section`, `#comparison-output`, `#close-comparison-btn` | Появляются для Comparative Analysis; у результата есть собственные Copy/Export/Clear кнопки. Закрытие скрывает панель, не обязательно удаляет текст. |
-| Динамический Favorite panel | `ensureFavoritePanelUI()` добавляет карточку избранного и динамические `#favorite-export-md-btn`, `.favorite-export-btn`, `.favorite-clear-btn`; текст выделения добавляется через toolbar Favorite. |
+| Динамический Favorite panel | `ensureFavoritePanelUI()` добавляет карточку избранного и динамические `#favorite-export-md-btn`, `.favorite-export-btn`, `.favorite-clear-btn`; панель расположена после карточек ответов, чтобы её появление не сдвигало их; текст выделения добавляется через toolbar Favorite. |
 | Панель выделения ответа | `#responseSelTb` генерируется в `results.js`; `data-cmd`, `data-color`, `data-block`, `data-clear-highlight`, `data-fav`, `data-more` форматируют выделение или сохраняют фрагмент. |
 | Вставить ответ в prompt | В `results.js` остались делегированные обработчики `.panel-use-input-btn` и `#use-as-input-btn`, но кнопок с этими селекторами нет в текущих двух HTML и генераторах DOM, найденных при этой сверке. Считать их legacy hooks, пока фактический DOM не покажет кнопку. |
 

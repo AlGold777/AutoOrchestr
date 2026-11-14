@@ -20431,7 +20431,7 @@ function ensureFavoritePanelUI() {
                 <div class="output favorite-output" id="${favoriteOutputId}" aria-label="Favourite feed"></div>
             </div>
         `;
-        parent.insertBefore(section, llmResultsContainer);
+        llmResultsContainer.after(section);
     }
 
     favoriteSectionEl = section;
