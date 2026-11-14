@@ -153,11 +153,11 @@ function renderDebateDom() {
         <button class="llm-button" id="llm-deepseek">DeepSeek</button>
         <button class="llm-button" id="llm-perplexity">Perplexity</button>
       </div>
-      <div class="llm-panel" id="panel-gemini">
+      <div class="llm-results"><div class="llm-panel" id="panel-gemini">
         <span class="llm-title">Gemini</span>
         <span class="status-indicator" data-llm-name="Gemini"></span>
         <div class="output" id="output-gemini"></div>
-      </div>
+      </div></div>
       <button id="debate-session-add-btn" type="button">+</button>
       <button id="debate-session-delete-btn" type="button">−</button>
       <button id="debate-full-answers-btn" type="button" aria-pressed="true"><i></i></button>
