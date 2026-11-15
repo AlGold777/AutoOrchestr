@@ -43,8 +43,10 @@ describe('release log regression guards', () => {
     expect(mdButtonIndex).toBeGreaterThan(htmlButtonIndex);
     expect(clearButtonIndex).toBeGreaterThan(mdButtonIndex);
     expect(source).toContain("event.target.closest('#favorite-export-md-btn')");
-    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'md', now);");
+    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'md', now, favoriteCardText());");
+    expect(source).toContain("anchor.download = buildSingleCardExportFilename('Favourite', 'html', now, favoriteCardText());");
     expect(source).toContain('const textContent = `# Favourite\\n\\n${favoriteText}\\n`;');
+    expect(source).toContain('function favoriteCardText()');
   });
 
   test('Markdown export sits after the all-responses HTML export and downloads GFM', () => {
@@ -67,7 +69,8 @@ describe('release log regression guards', () => {
     expect(source).toContain('String(outputEl?.__answerMarkdown ||');
     expect(source).toContain("type: 'text/markdown;charset=utf-8'");
     expect(source).toContain("buildResponseExportFilename(null, 'md', now)");
-    expect(source).toContain("buildSingleCardExportFilename(modelName, 'md')");
+    expect(source).toContain("buildSingleCardExportFilename(modelName, 'md', new Date(), outputEl?.innerText || outputEl?.textContent || '')");
+    expect(source).toContain("buildSingleCardExportFilename(modelForFile, 'html', now, text)");
   });
 
   test('response selection toolbar also works inside the Favourite card', () => {

@@ -11438,7 +11438,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.1022';
+            const APP_VERSION = '2.81.1028';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
@@ -21636,11 +21636,11 @@ function formatExportPromptExcerpt(promptText = getExportPromptSource()) {
     return Array.from(normalized).slice(0, 100).join('').trim() || 'Prompt';
 }
 
-function buildSingleCardExportFilename(subject, extension, date = new Date()) {
+function buildSingleCardExportFilename(subject, extension, date = new Date(), cardText = '') {
     const safeSubject = String(subject || 'Model')
         .replace(/[\\/:?<>|*"']/g, '')
         .trim() || 'Model';
-    return `${safeSubject} - ${formatExportPromptExcerpt()} - ${formatNamedExportStamp(date)}.${extension}`;
+    return `${safeSubject} - ${formatExportPromptExcerpt(pastedTextComposer.getText().trim() || cardText)} - ${formatNamedExportStamp(date)}.${extension}`;
 }
 
 function escapeGfmText(value = '') {
@@ -21861,6 +21861,12 @@ function markdownMetadataLine(value = '') {
         if (/^https?:\/\//i.test(part)) return `<${part.replace(/\s/g, '%20').replace(/</g, '%3C').replace(/>/g, '%3E')}>`;
         return escapeGfmText(part);
     }).join('  ');
+}
+
+function favoriteCardText() {
+    return buildFavoriteGroups().flatMap((group) => group.items.map((entry) =>
+        entry.html ? plainTextFromHtml(sanitizeInlineHtml(entry.html)) : String(entry.text || '')
+    )).filter(Boolean).join(' ');
 }
 
 function buildFavoriteExportMarkdown(entries) {
@@ -22276,7 +22282,7 @@ document.addEventListener('click', (event) => {
     const anchor = document.createElement('a');
     const now = new Date();
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename('Favourite', 'md', now);
+    anchor.download = buildSingleCardExportFilename('Favourite', 'md', now, favoriteCardText());
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -22395,7 +22401,7 @@ ${window.DebateExport?.annotationScript?.() || ''}
         anchor.href = url;
 
         const now = new Date();
-        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now);
+        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now, favoriteCardText());
 
         document.body.appendChild(anchor);
         anchor.click();
@@ -22472,7 +22478,7 @@ ${window.DebateExport?.annotationScript?.() || ''}
 
     const modelForFile = String(modelName || 'Model').replace(/[\/\\:?<>|*"']/g, '').trim() || 'Model';
     const now = new Date();
-    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now);
+    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now, text);
 
     document.body.appendChild(anchor);
     anchor.click();
@@ -22499,7 +22505,7 @@ document.addEventListener('click', (event) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename(modelName, 'md');
+    anchor.download = buildSingleCardExportFilename(modelName, 'md', new Date(), outputEl?.innerText || outputEl?.textContent || '');
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
