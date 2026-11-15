@@ -3165,10 +3165,20 @@ function detectActiveGenerationInPage(modelName) {
       return false;
     }
   });
+  // Working signs that are text, not controls (Perplexity: a spinner glyph and the line «Выполняется 11 с»; ChatGPT: «Идёт поиск», «Думаю»).
+  // Only short status lines at the end of the page count, so an answer that merely uses these words is not read as work in progress.
+  let textBusy = false;
+  try {
+    const tailLines = String(document.body?.innerText || '').slice(-700).split('\n').map((line) => line.trim()).filter(Boolean);
+    textBusy = tailLines.some((line) => /[\u2801-\u28ff]/.test(line)
+      || (line.length <= 60 && /^(выполняется|идёт поиск|идет поиск|думаю|thinking|searching|работаю|анализирую|reasoning)/i.test(line)));
+  } catch (_) {
+    textBusy = false;
+  }
   return {
-    active: stopVisible || busyVisible,
+    active: stopVisible || busyVisible || textBusy,
     stopVisible,
-    busyVisible,
+    busyVisible: busyVisible || textBusy,
     modelName: String(modelName || '')
   };
 }

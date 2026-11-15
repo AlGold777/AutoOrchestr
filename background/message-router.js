@@ -2196,6 +2196,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         return true;
     }
+    if (message?.type === 'PROBE_GENERATION') {
+        // The pipeline waiter asks whether a model's page still generates before it closes the stage with a text that has stood still.
+        (async () => {
+            const llmName = String(message.llmName || '');
+            const entry = jobState?.llms?.[llmName];
+            const tabId = typeof self.resolveBoundTabIdForOrchestrator === 'function' ? self.resolveBoundTabIdForOrchestrator(llmName, entry) : null;
+            if (!tabId || typeof self.detectActiveGenerationInPage !== 'function') {
+                sendResponse({ ok: false, error: 'no_tab' });
+                return;
+            }
+            const results = await chrome.scripting.executeScript({ target: { tabId }, func: self.detectActiveGenerationInPage, args: [llmName] });
+            const state = Array.isArray(results) ? results.find((item) => item?.result)?.result : null;
+            sendResponse({ ok: true, active: Boolean(state?.active) });
+        })().catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
+        return true;
+    }
     if (message?.type === 'DELIVERY_JOURNAL_CLEAR') {
         const store = self.MessageDeliveryStore || globalThis.MessageDeliveryStore;
         if (!store?.clear) {
