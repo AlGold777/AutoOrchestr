@@ -23,6 +23,12 @@ describe('simple first pass keeps the visit open while the send is in flight', (
     expect(visit).toMatch(/while \(current\(\) && sendInFlight\(\) && Date\.now\(\) < sendInFlightCapAt\)/);
   });
 
+  test('a long prompt gets a longer slot (1 s per 1000 characters, up to 30 s) that ends as soon as the send is seen, failed or not delivered', () => {
+    expect(visit).toContain('const longPromptExtraMs = options.postSendMs === undefined ? Math.min(30000, Math.floor(String(prompt || \'\').length / 1000) * 1000) : 0;');
+    expect(visit).toContain('const leaveAt = baseLeaveAt + longPromptExtraMs;');
+    expect(visit).toMatch(/while \(current\(\) && Date\.now\(\) < leaveAt && !sendObserved\(\) && !failed\(\) && !deliveryError\)/);
+  });
+
   test('a send reported as failed is not counted as submitted', () => {
     expect(visit).toContain('const attempted = Boolean(sendObserved()) && !failed();');
   });
