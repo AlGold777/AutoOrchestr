@@ -124,7 +124,7 @@ Chromium агрессивно троттлит фоновые вкладки: з
 ### 7.2. Матрица каскадной подмены (Fallback Cascade)
 При недоступности участника (квота, баннер лимита, блокировка ввода, зависание после одной перезагрузки) координатор выполняет замену по приоритету:
 
-1. **Архитектор / Синтезатор:** `Claude Sonnet` ➔ `GPT (High)` ➔ `Qwen 3.8-Max` ➔ `DeepSeek (DeepThink)`.
+1. **Архитектор / Синтезатор:** `Claude Sonnet` ➔ `GPT (High)` ➔ `Qwen 4 Max Preview` ➔ `DeepSeek (DeepThink)`.
 2. **Независимый аудитор:** `Claude (новый чат)` ➔ `DeepSeek (DeepThink)` ➔ `Perplexity (Kimi K3)` ➔ `GPT (High)`.
 3. **Генератор вариантов:** любая свободная модель из [model-modes.md](model-modes.md).
 

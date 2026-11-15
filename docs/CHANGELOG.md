@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-11-15 — Qwen: модель Qwen4-Max-Preview, длинный запрос в поле ввода, версия 2.81.1045
+
+- Платформенный режим Qwen (`content-scripts/platform-mode-setter.js`) ставил `Qwen3.8-Max` и в каждом новом чате возвращал её, поэтому правило владельца «Qwen 4 Max Preview» в документах не действовало в прогоне. Теперь режим ставит `Qwen4-Max-Preview`. Тест `tests/platform-mode-setter.test.js`; документы `docs/Run Manual*/model-modes.md`, `docs/Run Automation/model-modes.md`, `docs/Run Manual/manual-run.md`.
+- Слот ожидания после команды отправки растёт с длиной запроса (1 с на 1000 знаков, до +30 с) и заканчивается раньше, как только отправка замечена: длинный запрос не отменяется «ремонтной» отправкой. `background/dispatch-coordinator.js`; тест `tests/dispatch-send-in-flight.test.js`.
+
 ### 2026-11-15 — Отправка длинного запроса в ChatGPT, перечитывание, терпение статического наблюдателя, запись прогона, версия 2.81.1044
 
 - Кнопка отправки ChatGPT в русском интерфейсе («Отправить», без `data-testid`) не находилась: запрос оставался в поле ввода, приложение объявляло ответ пустым (`submit_unconfirmed`, `prompt_injection_failed`, 6 попыток по 15 с). Теперь кнопка находится по `aria-label`. Подтверждение отправки ждёт дольше для длинного запроса (3,5 с плюс 1 с на 2000 знаков, до +20 с). `content-scripts/content-chatgpt.js`, тест `tests/gpt-send-confirmation.test.js`.

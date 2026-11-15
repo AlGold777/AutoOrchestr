@@ -89,4 +89,10 @@ describe('подключение к отправке', () => {
     expect(fs.readFileSync(path.join(__dirname, '..', 'background', 'job-orchestrator.js'), 'utf8')).toContain('self.isActiveBasicParticipant =');
     expect(dispatch).toContain("type: 'platform_mode_not_set'");
   });
+
+  test('Qwen is set to Qwen4-Max-Preview, not to the older default (owner rule 2026-11-15)', () => {
+    const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'content-scripts', 'platform-mode-setter.js'), 'utf8');
+    expect(source).toContain("pillStep('Qwen4-Max-Preview', () => document.querySelector('.wms-trigger'), /qwen4-max-preview/i, '[role=\"option\"]', /^qwen4-max-preview/i)");
+    expect(source).not.toMatch(/qwen3\\\.8-max/i);
+  });
 });

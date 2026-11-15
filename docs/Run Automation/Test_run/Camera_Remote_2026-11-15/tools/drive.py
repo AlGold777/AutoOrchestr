@@ -324,14 +324,14 @@ def watch(limit):
                 time.sleep(60)
                 beat()
                 continue
-            if 'Пропустить участника' in modal and match and not re.search(r'gpt|claude', match[1], re.I):
+            if 'Пропустить участника' in modal and match and not re.search(r'gpt|claude|qwen-rev', match[1], re.I):
                 print('auto skip:', match[1], click('Пропустить участника'), flush=True)
                 state = load()
                 state.setdefault('skips', []).append({'id': (state.get('current') or {}).get('id'), 'who': match[1]})
                 save(state)
                 time.sleep(5)
                 continue
-            needs_retry = 'нет принятых ответов' in modal or (match and re.search(r'gpt|claude', match[1], re.I))
+            needs_retry = 'нет принятых ответов' in modal or (match and re.search(r'gpt|claude|qwen-rev', match[1], re.I))
             if needs_retry and 'Повторить' in modal and 'лимит' not in modal:
                 state = load()
                 cur = state.get('current') or {}
