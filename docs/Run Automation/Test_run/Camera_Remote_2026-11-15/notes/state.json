@@ -8,7 +8,7 @@
  },
  "current": {
   "id": "c04",
-  "startedAt": 1794759455,
+  "startedAt": 1794760009,
   "tabsBefore": [
    "315251907",
    "315251910",
@@ -56,9 +56,11 @@
   "c02-fail2": [],
   "c02-fail3": [],
   "c02": [],
-  "c03": []
+  "c03": [],
+  "c04-wrongqwen": [],
+  "c04-cut": []
  },
- "schemaHash": "bde8eba24ae7d8ed5551c9226471c02046bbd214",
+ "schemaHash": "0087476ea872eeca191b88451fccd82f8dfcaf4c",
  "restarts": [
   {
    "id": "c02",
@@ -92,6 +94,16 @@
    "id": "c02",
    "attempt": 3,
    "why": "экран Mac заблокирован (CGSSessionScreenIsLocked), вкладки скрыты: запросы DeepSeek и Qwen остались в полях ввода; данные недействительны"
+  },
+  {
+   "id": "c04",
+   "attempt": 1,
+   "why": "Qwen стоял на Qwen3.8-Max вместо Qwen4-Max-Preview (платформенный режим принуждал старую модель); перезапуск после исправления"
+  },
+  {
+   "id": "c04",
+   "attempt": 2,
+   "why": "решение в задаче обрезано на 7500 из 13678 знаков (nextpass); так же были обрезаны c02 и c03"
   }
  ]
 }

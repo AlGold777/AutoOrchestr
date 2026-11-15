@@ -86,26 +86,30 @@ def ensure_panel():
         time.sleep(5)
 
 
+def import_schema(name, schema):
+    task = os.path.join(TMP, 'task.txt')
+    open(task, 'w', encoding='utf8').write('задача')
+    subprocess.run(['python3', '-I', os.path.join(TOOLS, 'make-import-scripts.py'), schema, task, name, TMP], check=True)
+    for step in ('paste.js', 'name.js'):
+        print(name, step, js_file(os.path.join(TMP, step)))
+        time.sleep(2)
+    if 'уже есть' in tool('any-modal.js'):
+        print('replace', click('Заменить'))
+        time.sleep(2)
+    print('ok', tool('click-ok-modal.js'))
+    time.sleep(1)
+    print('close', tool('close-choice-dialog.js'))
+    time.sleep(1)
+    print('select', js_file(os.path.join(TMP, 'select.js')))
+    time.sleep(1)
+    print('modal', tool('any-modal.js'))
+
+
 def install():
     ensure_panel()
     for kind in KINDS:
         name, schema = variant(kind)
-        task = os.path.join(TMP, 'task.txt')
-        open(task, 'w', encoding='utf8').write('задача')
-        subprocess.run(['python3', '-I', os.path.join(TOOLS, 'make-import-scripts.py'), schema, task, name, TMP], check=True)
-        for step in ('paste.js', 'name.js'):
-            print(kind, step, js_file(os.path.join(TMP, step)))
-            time.sleep(2)
-        if 'уже есть' in tool('any-modal.js'):
-            print('replace', click('Заменить'))
-            time.sleep(2)
-        print('ok', tool('click-ok-modal.js'))
-        time.sleep(1)
-        print('close', tool('close-choice-dialog.js'))
-        time.sleep(1)
-        print('select', js_file(os.path.join(TMP, 'select.js')))
-        time.sleep(1)
-        print('modal', tool('any-modal.js'))
+        import_schema(name, schema)
 
 
 def start():
@@ -131,6 +135,16 @@ def start():
         state['schemaHash'] = digest
         save(state)
     name, schema = variant(item.get('kind', 'explore'))
+    if item.get('file'):
+        # The current solution and the lead's notes go as an attached file (step r1 `files`): the request stays short and nothing is cut.
+        doc = json.load(open(schema, encoding='utf8'))
+        body = item['file']['content']
+        for step in doc['steps']:
+            if step['ref'] == 'r1':
+                step['files'] = [{'id': item['file']['id'], 'name': item['file']['name'], 'type': 'text/markdown', 'size': len(body.encode('utf8')), 'content': body}]
+        schema = os.path.join(TMP, 'attached.schema.json')
+        json.dump(doc, open(schema, 'w', encoding='utf8'), ensure_ascii=False)
+        import_schema(name, schema)
     task = os.path.join(TMP, 'task.txt')
     open(task, 'w', encoding='utf8').write(INTRO + item['q'])
     subprocess.run(['python3', '-I', os.path.join(TOOLS, 'make-import-scripts.py'), schema, task, name, TMP], check=True, capture_output=True)
@@ -525,11 +539,13 @@ def nextpass(notes_path=None):
         print('NO_FINAL')
         return
     n = len(qs) + 1
-    text = ('Дай оценку текущего решения ниже. Вопрос исходной задачи: как внешней командой заставить штатное приложение Камера целевого iPhone сделать снимок своим конвейером.\n\nТЕКУЩЕЕ РЕШЕНИЕ (проход %d):\n%s' % (len(qs), final[:7500]))
+    body = 'ТЕКУЩЕЕ РЕШЕНИЕ (проход %d)\n\n%s' % (len(qs), final)
     if notes_path and os.path.exists(notes_path):
-        lead = open(notes_path, encoding='utf8').read().strip()
-        text += '\n\nЗАМЕЧАНИЯ ВЕДУЩЕГО ПО ПРОШЛОМУ ПРОХОДУ (ответь по каждому пункту отдельно: подтверждаешь по документации платформы, опровергаешь или не знаешь):\n' + lead[:3500]
-    qs.append({'id': 'c%02d' % n, 'name': 'Согласование, проход %d' % n, 'kind': 'agree', 'q': text})
+        body += '\n\n=====\nЗАМЕЧАНИЯ ВЕДУЩЕГО ПО ПРОШЛОМУ ПРОХОДУ (ответь по каждому пункту отдельно: подтверждаешь по документации платформы, опровергаешь или не знаешь)\n\n' + open(notes_path, encoding='utf8').read().strip()
+    text = ('Дай оценку текущего решения из приложенного файла (в нём же замечания ведущего: ответь на каждое отдельно). '
+            'Вопрос исходной задачи: как внешней командой заставить штатное приложение Камера целевого iPhone сделать снимок своим конвейером.')
+    qs.append({'id': 'c%02d' % n, 'name': 'Согласование, проход %d' % n, 'kind': 'agree', 'q': text,
+               'file': {'id': 'solution-%d' % n, 'name': 'Решение и замечания ведущего (проход %d).md' % n, 'content': body}})
     json.dump(qs, open(os.path.join(RUN, 'notes', 'questions.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=1)
     print('QUEUED', 'c%02d' % n)
 
