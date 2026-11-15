@@ -10972,11 +10972,44 @@ function runStaticAnswerWatchTick(sessionId) {
       // Claude's raw text can hold page chrome (sidebar, model menu, prompt echo) and no delivery
       // token: an unverified snapshot is not committed, the watch keeps observing.
       if (llmName === 'Claude') return;
-      reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'text_quiet', answerChars: text.length });
-      commitIncompleteAnswer(llmName, entry, {
-        text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
-        source: 'static_answer_snapshot', completionReason: 'static_text_quiet'
-      });
+      const commitQuiet = () => {
+        reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'text_quiet', answerChars: text.length });
+        commitIncompleteAnswer(llmName, entry, {
+          text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
+          source: 'static_answer_snapshot', completionReason: 'static_text_quiet'
+        });
+      };
+      // Patience: a quiet text without the token is not the end while the page still generates (a model that thinks pauses its text
+      // for minutes). The generation is probed first; while it is active the quiet window starts again, until the ceiling.
+      const canProbe = typeof resolveBoundTabIdForOrchestrator === 'function' && typeof isValidTabId === 'function'
+        && typeof detectActiveGenerationInPage === 'function' && typeof GENERATION_WAIT_CEILING_MS === 'number'
+        && typeof chrome !== 'undefined' && typeof chrome?.scripting?.executeScript === 'function';
+      const probeTabId = canProbe ? resolveBoundTabIdForOrchestrator(llmName, entry) : null;
+      if (canProbe && isValidTabId(probeTabId) && now - Number(entry.promptSubmittedAt || now) < GENERATION_WAIT_CEILING_MS) {
+        if (watch.probing) return;
+        watch.probing = true;
+        Promise.resolve()
+          .then(() => chrome.scripting.executeScript({ target: { tabId: probeTabId }, func: detectActiveGenerationInPage, args: [llmName] }))
+          .then((results) => Boolean((Array.isArray(results) ? results.find((item) => item?.result)?.result : null)?.active))
+          .catch(() => false)
+          .then((active) => {
+            watch.probing = false;
+            const live = jobState?.llms?.[llmName];
+            if (!live || isFinalizedEntry(live) || live.staticAnswerWatch !== watch) return;
+            if (active) {
+              watch.since = Date.now();
+              watch.nudged = false;
+              emitTelemetry(llmName, 'STATIC_WATCH_GENERATION_ACTIVE', {
+                level: 'warning', details: `text quiet but the page still generates, answerChars=${text.length}`,
+                meta: { dispatchId: live.lastDispatchMeta?.dispatchId || null, answerChars: text.length }, force: true
+              });
+              return;
+            }
+            commitQuiet();
+          });
+        return;
+      }
+      commitQuiet();
       return;
     }
     if (quietMs >= STATIC_WATCH_NUDGE_AFTER_MS && !watch.nudged) {
