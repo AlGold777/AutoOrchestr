@@ -1,0 +1,1 @@
+(function(){var b=[].slice.call(document.querySelectorAll('button')).filter(function(x){return x.offsetParent&&!x.disabled&&/^(Отправить|Send)/i.test((x.getAttribute('aria-label')||x.textContent||'').trim())})[0];if(!b)return 'no send button';b.click();return 'clicked'})()

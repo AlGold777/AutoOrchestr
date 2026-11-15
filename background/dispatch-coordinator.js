@@ -475,6 +475,32 @@ const OWN_PROMPT_TURN_PROBE = (tag, newMarkup = null) => {
     && (turn.textContent || '').toLowerCase().includes(needle));
 };
 
+// Runs in the provider page: does an answer block end with the tag (the delivery token, the last line the model is asked to write)?
+// A long request is shown folded by ChatGPT («Показать больше»): the user's turn then lacks the end of the request, where the token is,
+// and the page "holds no own turn" although the request was sent and answered (2026-11-15). An answer that ends with the token of THIS
+// request is the proof that does not depend on how the user's turn is drawn. Read-only, self-contained (serialized into the page).
+const ANSWER_ENDING_WITH_TAG_PROBE = (tag, answerSelector) => {
+  const needle = String(tag || '').toLowerCase();
+  if (!needle || !answerSelector) return false;
+  return Array.from(document.querySelectorAll(answerSelector)).some((node) => {
+    const text = String(node.textContent || '').toLowerCase().trimEnd();
+    const at = text.lastIndexOf(needle);
+    return at >= 0 && text.slice(at + needle.length).trim().length <= 80;
+  });
+};
+
+async function pageHoldsAnswerEndingWithTag(tabId, prompt, llmName = '') {
+  const tag = String(String(prompt || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '').toLowerCase();
+  const answerSelector = String(llmName || '').toLowerCase() === 'gpt' ? (self.SelectorConfigRegistry?.GPT?.newMarkup?.answerSelector || '') : '';
+  if (!tag || !answerSelector || !isValidTabId(tabId) || typeof chrome?.scripting?.executeScript !== 'function') return false;
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: ANSWER_ENDING_WITH_TAG_PROBE, args: [tag, answerSelector] });
+    return results?.[0]?.result === true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function pageHoldsOwnPromptTurn(tabId, prompt, llmName = '') {
   const tag = String(String(prompt || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '').toLowerCase();
   if (!tag || !isValidTabId(tabId) || typeof chrome?.scripting?.executeScript !== 'function') return false;

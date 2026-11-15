@@ -226,6 +226,33 @@ def patient(who):
     return True
 
 
+_UNSENT_SINCE = {}
+
+
+def fix_unsent():
+    """ChatGPT: the app pastes a long request but does not press Send (seen 2026-11-15: the request stays in the composer, the chat has no turn).
+    A request that lies unsent in the composer for 45 s with no generation is sent by pressing the same Send button a person would press."""
+    host = HOST_OF['gpt']
+    try:
+        out = subprocess.run(['bash', os.path.join(TOOLS, 'js.sh'), os.path.join(HERE, 'unsent.js'), host], capture_output=True, text=True, timeout=60).stdout.strip()
+        info = json.loads(out)
+    except Exception:
+        return False
+    if not info.get('unsent'):
+        _UNSENT_SINCE.pop(host, None)
+        return False
+    since = _UNSENT_SINCE.setdefault(host, time.time())
+    if time.time() - since < 45:
+        return False
+    sent = subprocess.run(['bash', os.path.join(TOOLS, 'js.sh'), os.path.join(HERE, 'unsent-send.js'), host], capture_output=True, text=True, timeout=60).stdout.strip()
+    print('unsent request in the ChatGPT composer for %d s: send -> %s' % (int(time.time() - since), sent), flush=True)
+    state = load()
+    state.setdefault('manualSends', []).append({'id': (state.get('current') or {}).get('id'), 'at': int(time.time()), 'len': info.get('len')})
+    save(state)
+    _UNSENT_SINCE.pop(host, None)
+    return True
+
+
 def reachable():
     out = tool('extension-version.js')
     return bool(out) and 'NO TAB' not in out and 'execution error' not in out
@@ -240,6 +267,7 @@ def watch(limit):
     idle = 0
     while time.time() < end:
         beat()
+        fix_unsent()
         # Chrome answers scripts for the profile in front: with an incognito window in front the panel cannot be seen for a while.
         if not reachable():
             time.sleep(20)

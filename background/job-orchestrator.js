@@ -3172,6 +3172,8 @@ function detectActiveGenerationInPage(modelName) {
     modelName: String(modelName || '')
   };
 }
+// Reachable from message-router.js (the deferred terminal asks whether the page still generates before it gives up).
+self.detectActiveGenerationInPage = detectActiveGenerationInPage;
 
 // The DOM->Markdown copy held with a pending final text (entry.pendingFinalAnswerCopy), when it belongs to that same text.
 function heldAnswerCopyFor(entry, text) {
@@ -8849,6 +8851,11 @@ const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|capt
 // generating (a progress line like "Проверю…" is the whole visible text while Stop is shown). Such a
 // result stays open until the wait cap from the submit; only then it becomes a terminal failure.
 const GENERATION_WAIT_CAP_MS = 240000;
+// Patience: the cap is not a verdict while the tab still shows generation (Stop, busy indicator). A page that works is waited for,
+// the cap is re-checked every GENERATION_WAIT_EXTEND_MS and only gives up when the generation signal is gone or the ceiling is reached.
+const GENERATION_WAIT_CEILING_MS = 3600000;
+const GENERATION_WAIT_EXTEND_MS = 15000;
+const GENERATION_ACTIVE_RECENT_MS = 40000;
 const GENERATION_WAIT_RECHECK_MS = 5000;
 const GENERATION_WAIT_ERROR_TYPES = new Set(['empty_answer', 'answer_ui_noise']);
 const generationWaitCapTimers = new Map();
@@ -8873,7 +8880,9 @@ function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaOb
   if (dispatchId && liveDispatchId && String(dispatchId) !== String(liveDispatchId)) return false;
   const submittedAt = Number(entry.promptSubmittedAt);
   const waitedMs = Math.max(0, Date.now() - submittedAt);
-  if (waitedMs >= GENERATION_WAIT_CAP_MS) return false;
+  if (waitedMs >= GENERATION_WAIT_CEILING_MS) return false;
+  const activeRecently = Number(entry.generationActiveSeenAt) > 0 && Date.now() - Number(entry.generationActiveSeenAt) < GENERATION_ACTIVE_RECENT_MS;
+  if (waitedMs >= GENERATION_WAIT_CAP_MS && !activeRecently) return false;
   const tabId = resolveBoundTabIdForOrchestrator(llmName, entry);
   entry.generationWaitReason = type;
   entry.generationWaitCount = Number(entry.generationWaitCount || 0) + 1;
@@ -8882,10 +8891,31 @@ function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaOb
   if (entry.generationWaitCapKey !== capKey) {
     clearTimeout(generationWaitCapTimers.get(llmName));
     entry.generationWaitCapKey = capKey;
-    const capTimer = registerSessionTimer(setTimeout(() => {
+    const fireCap = async () => {
       generationWaitCapTimers.delete(llmName);
-      const liveEntry = jobState?.llms?.[llmName];      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
+      const liveEntry = jobState?.llms?.[llmName];
+      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
       if (String(liveEntry.answer || '').trim()) return;
+      if (isValidTabId(tabId) && Date.now() - submittedAt < GENERATION_WAIT_CEILING_MS) {
+        let active = false;
+        try {
+          const probe = await chrome.scripting.executeScript({ target: { tabId }, func: detectActiveGenerationInPage, args: [llmName] });
+          active = Boolean((Array.isArray(probe) ? probe.find((item) => item?.result)?.result : null)?.active);
+        } catch (_) { active = false; }
+        const stillLive = jobState?.llms?.[llmName];
+        if (active && stillLive && !isFinalizedEntry(stillLive) && String(stillLive.generationWaitCapKey || '') === capKey) {
+          stillLive.generationActiveSeenAt = Date.now();
+          emitTelemetry(llmName, 'ANSWER_GENERATION_WAIT_EXTENDED', {
+            level: 'warning',
+            details: `page still generating, waited=${Date.now() - submittedAt}ms`,
+            meta: { reason: type, waitedMs: Date.now() - submittedAt, ceilingMs: GENERATION_WAIT_CEILING_MS },
+            force: true
+          });
+          const again = registerSessionTimer(setTimeout(fireCap, GENERATION_WAIT_EXTEND_MS));
+          generationWaitCapTimers.set(llmName, again);
+          return;
+        }
+      }
       handleLLMResponse(
         llmName,
         '',
@@ -8901,7 +8931,8 @@ function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaOb
         },
         ''
       );
-    }, GENERATION_WAIT_CAP_MS - waitedMs));
+    };
+    const capTimer = registerSessionTimer(setTimeout(fireCap, Math.max(0, GENERATION_WAIT_CAP_MS - waitedMs)));
     generationWaitCapTimers.set(llmName, capTimer);
   }
   // Re-read the answer while the wait lasts; each re-read that is still empty or noise defers again.
@@ -10999,7 +11030,7 @@ async function rereadOwnTurnForBasic(message = {}) {
   if (!isValidTabId(tabId)) return { found: false, reason: 'no_tab' };
   let ownTurn = false;
   for (const prompt of roundPrompts) {
-    if (await pageHoldsOwnPromptTurn(tabId, prompt, llmName)) { ownTurn = true; break; }
+    if (await pageHoldsOwnPromptTurn(tabId, prompt, llmName) || await pageHoldsAnswerEndingWithTag(tabId, prompt, llmName)) { ownTurn = true; break; }
   }
   if (!ownTurn) return { found: false, reason: 'no_own_turn' };
   try {
