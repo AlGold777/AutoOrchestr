@@ -1708,6 +1708,10 @@ describe('an empty or UI-noise answer while the model is still generating', () =
 
     jest.advanceTimersByTime(20000);
     await flush();
+    // At the cap the page is probed first (patience: a page that still generates is waited for); the probe is asynchronous,
+    // so the timers of the terminal path that follows it are advanced once more.
+    jest.advanceTimersByTime(30000);
+    await flush();
     expect(labels().length).toBeGreaterThan(1);
   });
 
