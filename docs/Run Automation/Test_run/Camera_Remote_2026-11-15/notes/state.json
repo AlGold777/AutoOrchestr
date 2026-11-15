@@ -8,7 +8,7 @@
  },
  "current": {
   "id": "c04",
-  "startedAt": 1794760009,
+  "startedAt": 1794760522,
   "tabsBefore": [
    "315251907",
    "315251910",
@@ -58,7 +58,9 @@
   "c02": [],
   "c03": [],
   "c04-wrongqwen": [],
-  "c04-cut": []
+  "c04-cut": [],
+  "c04-limit": [],
+  "c04-restart": []
  },
  "schemaHash": "0087476ea872eeca191b88451fccd82f8dfcaf4c",
  "restarts": [
@@ -104,6 +106,12 @@
    "id": "c04",
    "attempt": 2,
    "why": "решение в задаче обрезано на 7500 из 13678 знаков (nextpass); так же были обрезаны c02 и c03"
+  },
+  {
+   "id": "c04",
+   "attempt": 3,
+   "why": "Qwen4-Max-Preview: дневной лимит; судья r3 на время лимита — DeepSeek"
   }
- ]
+ ],
+ "judge": "deepseek"
 }
