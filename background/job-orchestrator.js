@@ -712,7 +712,9 @@ function extractLatestAssistantSnapshotInPage(modelName, minChars = 80, options 
   // Manual "latest answer": the delivery token ([[AO-xxxxxx]]) marks the answer to this extension's request. When the
   // last block has none (a later short reply, e.g. "this request is identical to the previous one") but an earlier one
   // does, the tokened block is the answer. Not while the page is still generating.
-  if (manualOptions.manualLatestRecovery === true && best && !/\[\[AO-[a-z0-9]{6}\]\]/i.test(best.text)) {
+  // Only for a SHORT last block: a long last block is a real answer of its own (the owner continued the chat by hand),
+  // taking the earlier tokened one would return an answer several rounds old (chat.qwen.ai, 2026-11-15).
+  if (manualOptions.manualLatestRecovery === true && best && best.text.length < 800 && !/\[\[AO-[a-z0-9]{6}\]\]/i.test(best.text)) {
     let generatingNow = false;
     try { generatingNow = Boolean(document.querySelector('button[aria-label*="Stop" i],[data-testid="stop-button"],[data-generating="true"]')); } catch (_) {}
     if (!generatingNow) {

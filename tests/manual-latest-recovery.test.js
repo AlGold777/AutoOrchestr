@@ -80,4 +80,9 @@ describe('manual latest-answer recovery from status indicator', () => {
     expect(claudeMap).toContain('standard-markdown');
     expect(claudeMap).toContain('[data-is-response="true"]');
   });
+
+  test('tokened-block override applies only to a short last block (qwen chat, 2026-11-15)', () => {
+    const orchestrator = read('background', 'job-orchestrator.js');
+    expect(orchestrator).toContain('manualOptions.manualLatestRecovery === true && best && best.text.length < 800');
+  });
 });
