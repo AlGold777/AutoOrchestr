@@ -11,6 +11,7 @@
 | [run-organization.md](run-organization.md) | навигация к единому регламенту и справочникам без дублирования правил |
 | [run-procedure.md](run-procedure.md) | процедура от подготовки до разбора, правила, что делать при окнах и сбоях |
 | [run-report-template.md](run-report-template.md) | шаблон заметки о прогоне (`notes/run-report.md` в папке прогона) |
+| [browser-tabs.md](browser-tabs.md) | работа с вкладками Chrome: JS через osascript, клики, перезагрузка расширения |
 | `tools/` | скрипты (запуск JS во вкладке, проверка перед прогоном, импорт схемы, окна, карточки, версия) |
 
 Связанные документы: [правила тестирования](../Agents/agent-live-test.md), [реестр проблем](../Agents/basic-issues-registry.md), [специфика платформ](<../Platform specifics/README.md>), [пособие по схемам](<../Scheme create/schema-craft-handbook.md>).
