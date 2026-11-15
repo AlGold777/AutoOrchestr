@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'content-scripts', 'content-chatgpt.js'), 'utf8');
 
-function createConfirmation({ onPoll } = {}) {
+function createConfirmation({ onPoll, prompt } = {}) {
   const helperStart = source.indexOf('  const FALLBACK_LAST_MESSAGE_SELECTORS = [');
   const helperEnd = source.indexOf('  const generatePingId', helperStart);
   const gateStart = source.indexOf('        const userTurnSelector =');
@@ -27,7 +27,8 @@ function createConfirmation({ onPoll } = {}) {
       pollCount += 1;
       onPoll?.(pollCount);
     },
-    isElementInteractable: () => true
+    isElementInteractable: () => true,
+    ...(typeof prompt === 'string' ? { prompt } : {})
   });
   vm.runInContext(source.slice(helperStart, helperEnd), context);
   return vm.runInContext(`${source.slice(gateStart, gateEnd)}\nconfirmChatgptSend;`, context);
@@ -84,4 +85,17 @@ test('GPT send is not confirmed while the composer still holds the prompt', asyn
   expect(gateStart).toBeGreaterThan(0);
   const body = source.slice(gateStart, gateEnd);
   expect(body).toMatch(/if \(composerStillHoldsPrompt\(\)\) \{ await sleep\(120\); continue; \}/);
+});
+
+test('a long request gets more time to be taken: a user bubble at 8 s confirms a 21 000 character prompt but not a short one', async () => {
+  const bubbleAfter = (pollCount) => { if (pollCount === 66) document.body.innerHTML = '<div data-user-message-bubble="true">The submitted prompt</div>'; };
+  document.body.replaceChildren();
+  await expect(createConfirmation({ onPoll: bubbleAfter, prompt: 'x'.repeat(21000) })()).resolves.toBe(true);
+  document.body.replaceChildren();
+  await expect(createConfirmation({ onPoll: bubbleAfter, prompt: 'short' })()).resolves.toBe(false);
+});
+
+test('the Send button of the Russian UI («Отправить», no data-testid) is found by the selectors and by the filter', () => {
+  expect(source).toMatch(/'button\[aria-label\*="отправить" i\]'/);
+  expect(source).toMatch(/aria\.includes\('отправ'\)/);
 });

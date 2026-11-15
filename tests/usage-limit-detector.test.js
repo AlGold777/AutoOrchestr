@@ -179,3 +179,28 @@ describe('usage limit: wiring', () => {
     expect(engine).toContain("verdict.reason !== 'usage_limit' && verdict.reason !== 'captcha_required') retry.push(model)");
   });
 });
+
+describe('usage limit: period limits (Qwen, 2026-11-15)', () => {
+  const qwen = 'Вы достигли дневного лимита для Qwen4-Max-Preview. Обновите подписку или выберите другую модель выше, чтобы продолжить.';
+
+  test('the Qwen daily limit message is a usage limit', () => {
+    const result = Detector.evaluate({ surfaces: [{ kind: 'banner', text: qwen }] });
+    expect(result.detected).toBe(true);
+    expect(result.reasonCode).toBe('usage_limit');
+  });
+
+  test('other period wordings are recognised, a discussion of limits is not', () => {
+    for (const text of ['Дневной лимит исчерпан.', 'Достигнут суточный лимит запросов.', 'Your daily limit has been reached.', 'Hourly usage limit exceeded.']) {
+      expect(Detector.evaluate({ surfaces: [{ kind: 'banner', text }] }).detected).toBe(true);
+    }
+    expect(Detector.evaluate({ surfaces: [{ kind: 'banner', text: 'Мы обсуждаем дневной лимит как метрику в разделе о ценообразовании.' }] }).detected).toBe(false);
+  });
+
+  test('the Qwen limit card (section.exceed-limit-error-card) on the page is found as a banner', () => {
+    document.body.innerHTML = `<div class="qwen-chat-message-assistant"><div class="chat-response-message"><section class="exceed-limit-error-card"><p>${qwen}</p><button>Обновить подписку</button></section></div></div>`;
+    showAll();
+    const result = Detector.detect({ root: document, answerEl: null });
+    expect(result.detected).toBe(true);
+    expect(result.reason).toBe('usage_limit');
+  });
+});

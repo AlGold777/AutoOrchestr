@@ -3253,6 +3253,8 @@ document.addEventListener('click', (event) => {
             Array.from(this.batches.values()).filter((batch) => !batch.settled).forEach((batch) => {
                 const stalled = (name) => {
                     const text = String(batch.partialResponses[name] || '').trim();
+                    // Patience: a page that still generates (probed by startStallWatch) is not stalled, however long its text has stood.
+                    if (this.generatingNow?.has(name)) return false;
                     return Boolean(text) && now - Number((batch.partialAt || {})[name] || now) >= stallMs;
                 };
                 const pending = batch.models.filter((name) => !hasOwnKey(batch.responses, name) && !hasOwnKey(batch.failures, name));
@@ -3264,12 +3266,31 @@ document.addEventListener('click', (event) => {
         },
         startStallWatch() {
             if (this.stallTimer || typeof setInterval !== 'function') return;
-            this.stallTimer = setInterval(() => {
+            this.stallTimer = setInterval(async () => {
                 if (!this.batches.size) { clearInterval(this.stallTimer); this.stallTimer = null; return; }
                 if (!this.autoAdopt?.()) return;
+                await this.refreshGenerating();
                 const adopted = this.adoptStalled(Date.now(), this.stallMs || 180000);
                 if (adopted.length) this.onStallAdopted?.({ models: adopted, stallMs: this.stallMs || 180000 });
             }, 15000);
+        },
+        // Which of the models still waited for show generation on their pages (asked from the background; a page that cannot be asked is not held).
+        async refreshGenerating() {
+            const names = new Set();
+            this.batches.forEach((batch) => {
+                if (batch.settled) return;
+                batch.models.forEach((name) => { if (!hasOwnKey(batch.responses, name) && !hasOwnKey(batch.failures, name)) names.add(name); });
+            });
+            const active = new Set();
+            await Promise.all(Array.from(names).map(async (name) => {
+                try {
+                    const reply = await new Promise((resolve) => {
+                        try { chrome.runtime.sendMessage({ type: 'PROBE_GENERATION', llmName: name }, (response) => resolve(chrome.runtime.lastError ? null : response)); } catch (_) { resolve(null); }
+                    });
+                    if (reply?.ok && reply.active) active.add(name);
+                } catch (_) { /* not held */ }
+            }));
+            this.generatingNow = active;
         },
         handleFinal(messageOrName, answer) {
             const envelope = normalizePipelineMessageEnvelope(messageOrName, answer);

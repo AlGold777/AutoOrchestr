@@ -111,7 +111,7 @@
       /sonnet 5\.5/i, () => document.querySelector('[role="menuitemradio"][data-model-id="claude-sonnet-5-5"]'), null, arrowOpen)],
     'chat.deepseek.com': [deepseekToggle('DeepThink', true), deepseekToggle('Search', false)],
     'chat.qwen.ai': [
-      pillStep('Qwen3.8-Max', () => document.querySelector('.wms-trigger'), /qwen3\.8-max/i, '[role="option"]', /^qwen3\.8-max/i),
+      pillStep('Qwen4-Max-Preview', () => document.querySelector('.wms-trigger'), /qwen4-max-preview/i, '[role="option"]', /^qwen4-max-preview/i),
       pillStep('thinking on', qwenThinkingLabel, /мышлен|think/i, '[role="menu"] [role="menuitem"]', /^(мышлени|think)/i)
     ],
     'www.perplexity.ai': perplexity,

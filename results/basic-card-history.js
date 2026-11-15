@@ -3,6 +3,16 @@
     'use strict';
 
     const CARD = '.debate-model-card';
+    // The text of the post-terminal revisions is copied in full at every change of the card. A model that searches for minutes
+    // (GPT: «Идёт поиск…», sources, reasoning) grows it to hundreds of thousands of characters: 23 copies filled the 10 MB storage and
+    // stopped a run (checkpoint_failed, 2026-11-15). A revision is kept as head and tail with the cut length marked.
+    const REVISION_TEXT_LIMIT = 12000;
+    const limitRevision = (value) => {
+        const text = String(value || '');
+        if (text.length <= REVISION_TEXT_LIMIT) return text;
+        const half = REVISION_TEXT_LIMIT / 2;
+        return `${text.slice(0, half)}\n…[усечено ${text.length - REVISION_TEXT_LIMIT} знаков]…\n${text.slice(-half)}`;
+    };
     const sessions = new WeakMap();
     const textOf = (node) => String(node?.innerText ?? node?.textContent ?? '').trim();
     const relevantAttribute = (name) => /^(?:data-|class$|style$|hidden$|title$|aria-)/.test(name || '');
@@ -115,7 +125,7 @@
             const { text, title, role, revisionText, ...fields } = semantic;
             const snapshot = {
                 ...fields, titleRef: record.put(title), roleRef: record.put(role),
-                revisionTextRef: record.put(revisionText), textLength: text.length
+                revisionTextRef: record.put(limitRevision(revisionText)), revisionTextLength: revisionText.length, textLength: text.length
             };
             if (previous && previous.fullText === text) {
                 snapshot.textRef = previous.snapshot.textRef;

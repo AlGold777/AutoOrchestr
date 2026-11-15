@@ -475,6 +475,32 @@ const OWN_PROMPT_TURN_PROBE = (tag, newMarkup = null) => {
     && (turn.textContent || '').toLowerCase().includes(needle));
 };
 
+// Runs in the provider page: does an answer block end with the tag (the delivery token, the last line the model is asked to write)?
+// A long request is shown folded by ChatGPT («Показать больше»): the user's turn then lacks the end of the request, where the token is,
+// and the page "holds no own turn" although the request was sent and answered (2026-11-15). An answer that ends with the token of THIS
+// request is the proof that does not depend on how the user's turn is drawn. Read-only, self-contained (serialized into the page).
+const ANSWER_ENDING_WITH_TAG_PROBE = (tag, answerSelector) => {
+  const needle = String(tag || '').toLowerCase();
+  if (!needle || !answerSelector) return false;
+  return Array.from(document.querySelectorAll(answerSelector)).some((node) => {
+    const text = String(node.textContent || '').toLowerCase().trimEnd();
+    const at = text.lastIndexOf(needle);
+    return at >= 0 && text.slice(at + needle.length).trim().length <= 80;
+  });
+};
+
+async function pageHoldsAnswerEndingWithTag(tabId, prompt, llmName = '') {
+  const tag = String(String(prompt || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '').toLowerCase();
+  const answerSelector = String(llmName || '').toLowerCase() === 'gpt' ? (self.SelectorConfigRegistry?.GPT?.newMarkup?.answerSelector || '') : '';
+  if (!tag || !answerSelector || !isValidTabId(tabId) || typeof chrome?.scripting?.executeScript !== 'function') return false;
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: ANSWER_ENDING_WITH_TAG_PROBE, args: [tag, answerSelector] });
+    return results?.[0]?.result === true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function pageHoldsOwnPromptTurn(tabId, prompt, llmName = '') {
   const tag = String(String(prompt || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '').toLowerCase();
   if (!tag || !isValidTabId(tabId) || typeof chrome?.scripting?.executeScript !== 'function') return false;
@@ -1448,8 +1474,17 @@ async function dispatchSimpleFirstPass(llmName, tabId, prompt, attachments, entr
     }
     // Text-only visits retain their fixed slot. Attachment visits allow five
     // seconds after the upload/send stage, while Round 1 still owns the queue.
-    const leaveAt = (hasAttachments ? Date.now() : commandAt) + Number(options.postSendMs ?? 5000);
-    await pause(Math.max(0, leaveAt - Date.now()));
+    // A long prompt takes the page longer to write into the composer (25 000 characters: more than the fixed 5 s). A visit that leaves
+    // before the page reaches Send is reported as unconfirmed and a repair visit supersedes the command: the prompt stays unsent in
+    // the composer (c02/c03, 2026-11-15). The slot grows by 1 s per 1000 characters (up to 30 s) and ends earlier as soon as the
+    // send is seen, has failed, or the command was not delivered.
+    const longPromptExtraMs = options.postSendMs === undefined ? Math.min(30000, Math.floor(String(prompt || '').length / 1000) * 1000) : 0;
+    const baseLeaveAt = (hasAttachments ? Date.now() : commandAt) + Number(options.postSendMs ?? 5000);
+    const leaveAt = baseLeaveAt + longPromptExtraMs;
+    await pause(Math.max(0, baseLeaveAt - Date.now()));
+    while (current() && Date.now() < leaveAt && !sendObserved() && !failed() && !deliveryError) {
+      await pause(Math.min(200, Math.max(0, leaveAt - Date.now())));
+    }
     // L-6: the page may still be sending (DeepSeek needs up to ~12 s). While it reports
     // send_action_requested without a completion or failure, keep the visit open, up to
     // SEND_IN_FLIGHT_EXTENSION_MS (longest extra wait; it ends at once on completion or failure).

@@ -227,6 +227,45 @@ describe('a stage does not hang on a model whose text has stopped (Auto)', () =>
     waiter.reset();
   });
 
+  test('a model whose page still generates is not adopted, however long its text has stood (patience); it is adopted once the page is quiet', async () => {
+    const waiter = loadPipelineWaiter();
+    const promise = waiter.waitForModels(['A', 'B'], { timeoutMs: 60000000, requestIds: ids(['A', 'B']) });
+    waiter.handleFinal(final('A', 'answer A'));
+    waiter.handlePartial(partial('B', 'draft of B while its page still works'));
+    const t0 = Date.now();
+    waiter.generatingNow = new Set(['B']);
+    expect(waiter.adoptStalled(t0 + STALL * 10, STALL)).toEqual([]);
+    waiter.generatingNow = new Set();
+    expect(waiter.adoptStalled(t0 + STALL * 10, STALL)).toEqual(['B']);
+    await promise;
+    waiter.reset();
+  });
+
+  test('refreshGenerating asks the background for every model still waited for and keeps only the ones that report generation', async () => {
+    const waiter = loadPipelineWaiter();
+    waiter.waitForModels(['A', 'B', 'C'], { timeoutMs: 60000000, requestIds: ids(['A', 'B', 'C']) }).catch(() => {});
+    waiter.handleFinal(final('A', 'answer A'));
+    const asked = [];
+    global.chrome = {
+      runtime: {
+        lastError: null,
+        sendMessage: (message, callback) => {
+          asked.push(message.llmName);
+          callback({ ok: true, active: message.llmName === 'B' });
+        }
+      }
+    };
+    await waiter.refreshGenerating();
+    expect(asked.sort()).toEqual(['B', 'C']);
+    expect(Array.from(waiter.generatingNow)).toEqual(['B']);
+    // A page that cannot be asked is not held.
+    global.chrome.runtime.sendMessage = (message, callback) => callback(undefined);
+    await waiter.refreshGenerating();
+    expect(waiter.generatingNow.size).toBe(0);
+    delete global.chrome;
+    waiter.reset();
+  });
+
   test('a model with no text at all (still thinking) is never cut, even when another is stalled', () => {
     const waiter = loadPipelineWaiter();
     waiter.waitForModels(['A', 'B'], { timeoutMs: 60000000, requestIds: ids(['A', 'B']) }).catch(() => {});

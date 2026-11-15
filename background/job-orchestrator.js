@@ -3165,13 +3165,25 @@ function detectActiveGenerationInPage(modelName) {
       return false;
     }
   });
+  // Working signs that are text, not controls (Perplexity: a spinner glyph and the line «Выполняется 11 с»; ChatGPT: «Идёт поиск», «Думаю»).
+  // Only short status lines at the end of the page count, so an answer that merely uses these words is not read as work in progress.
+  let textBusy = false;
+  try {
+    const tailLines = String(document.body?.innerText || '').slice(-700).split('\n').map((line) => line.trim()).filter(Boolean);
+    textBusy = tailLines.some((line) => /[\u2801-\u28ff]/.test(line)
+      || (line.length <= 60 && /^(выполняется|идёт поиск|идет поиск|думаю|thinking|searching|работаю|анализирую|reasoning)/i.test(line)));
+  } catch (_) {
+    textBusy = false;
+  }
   return {
-    active: stopVisible || busyVisible,
+    active: stopVisible || busyVisible || textBusy,
     stopVisible,
-    busyVisible,
+    busyVisible: busyVisible || textBusy,
     modelName: String(modelName || '')
   };
 }
+// Reachable from message-router.js (the deferred terminal asks whether the page still generates before it gives up).
+self.detectActiveGenerationInPage = detectActiveGenerationInPage;
 
 // The DOM->Markdown copy held with a pending final text (entry.pendingFinalAnswerCopy), when it belongs to that same text.
 function heldAnswerCopyFor(entry, text) {
@@ -8849,6 +8861,11 @@ const USER_ACTION_BLOCKER_PATTERN = /auth_required|required_login|\blogin\b|capt
 // generating (a progress line like "Проверю…" is the whole visible text while Stop is shown). Such a
 // result stays open until the wait cap from the submit; only then it becomes a terminal failure.
 const GENERATION_WAIT_CAP_MS = 240000;
+// Patience: the cap is not a verdict while the tab still shows generation (Stop, busy indicator). A page that works is waited for,
+// the cap is re-checked every GENERATION_WAIT_EXTEND_MS and only gives up when the generation signal is gone or the ceiling is reached.
+const GENERATION_WAIT_CEILING_MS = 3600000;
+const GENERATION_WAIT_EXTEND_MS = 15000;
+const GENERATION_ACTIVE_RECENT_MS = 40000;
 const GENERATION_WAIT_RECHECK_MS = 5000;
 const GENERATION_WAIT_ERROR_TYPES = new Set(['empty_answer', 'answer_ui_noise']);
 const generationWaitCapTimers = new Map();
@@ -8873,7 +8890,9 @@ function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaOb
   if (dispatchId && liveDispatchId && String(dispatchId) !== String(liveDispatchId)) return false;
   const submittedAt = Number(entry.promptSubmittedAt);
   const waitedMs = Math.max(0, Date.now() - submittedAt);
-  if (waitedMs >= GENERATION_WAIT_CAP_MS) return false;
+  if (waitedMs >= GENERATION_WAIT_CEILING_MS) return false;
+  const activeRecently = Number(entry.generationActiveSeenAt) > 0 && Date.now() - Number(entry.generationActiveSeenAt) < GENERATION_ACTIVE_RECENT_MS;
+  if (waitedMs >= GENERATION_WAIT_CAP_MS && !activeRecently) return false;
   const tabId = resolveBoundTabIdForOrchestrator(llmName, entry);
   entry.generationWaitReason = type;
   entry.generationWaitCount = Number(entry.generationWaitCount || 0) + 1;
@@ -8882,10 +8901,31 @@ function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaOb
   if (entry.generationWaitCapKey !== capKey) {
     clearTimeout(generationWaitCapTimers.get(llmName));
     entry.generationWaitCapKey = capKey;
-    const capTimer = registerSessionTimer(setTimeout(() => {
+    const fireCap = async () => {
       generationWaitCapTimers.delete(llmName);
-      const liveEntry = jobState?.llms?.[llmName];      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
+      const liveEntry = jobState?.llms?.[llmName];
+      if (!liveEntry || isFinalizedEntry(liveEntry) || String(liveEntry.generationWaitCapKey || '') !== capKey) return;
       if (String(liveEntry.answer || '').trim()) return;
+      if (isValidTabId(tabId) && Date.now() - submittedAt < GENERATION_WAIT_CEILING_MS) {
+        let active = false;
+        try {
+          const probe = await chrome.scripting.executeScript({ target: { tabId }, func: detectActiveGenerationInPage, args: [llmName] });
+          active = Boolean((Array.isArray(probe) ? probe.find((item) => item?.result)?.result : null)?.active);
+        } catch (_) { active = false; }
+        const stillLive = jobState?.llms?.[llmName];
+        if (active && stillLive && !isFinalizedEntry(stillLive) && String(stillLive.generationWaitCapKey || '') === capKey) {
+          stillLive.generationActiveSeenAt = Date.now();
+          emitTelemetry(llmName, 'ANSWER_GENERATION_WAIT_EXTENDED', {
+            level: 'warning',
+            details: `page still generating, waited=${Date.now() - submittedAt}ms`,
+            meta: { reason: type, waitedMs: Date.now() - submittedAt, ceilingMs: GENERATION_WAIT_CEILING_MS },
+            force: true
+          });
+          const again = registerSessionTimer(setTimeout(fireCap, GENERATION_WAIT_EXTEND_MS));
+          generationWaitCapTimers.set(llmName, again);
+          return;
+        }
+      }
       handleLLMResponse(
         llmName,
         '',
@@ -8901,7 +8941,8 @@ function maybeDeferNonAnswerWhileGenerating(llmName, entry, error = null, metaOb
         },
         ''
       );
-    }, GENERATION_WAIT_CAP_MS - waitedMs));
+    };
+    const capTimer = registerSessionTimer(setTimeout(fireCap, Math.max(0, GENERATION_WAIT_CAP_MS - waitedMs)));
     generationWaitCapTimers.set(llmName, capTimer);
   }
   // Re-read the answer while the wait lasts; each re-read that is still empty or noise defers again.
@@ -10941,11 +10982,44 @@ function runStaticAnswerWatchTick(sessionId) {
       // Claude's raw text can hold page chrome (sidebar, model menu, prompt echo) and no delivery
       // token: an unverified snapshot is not committed, the watch keeps observing.
       if (llmName === 'Claude') return;
-      reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'text_quiet', answerChars: text.length });
-      commitIncompleteAnswer(llmName, entry, {
-        text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
-        source: 'static_answer_snapshot', completionReason: 'static_text_quiet'
-      });
+      const commitQuiet = () => {
+        reportDispatchPhase(llmName, entry, 'static_text_watch', { dispatchId: entry.lastDispatchMeta?.dispatchId || null, reason: 'text_quiet', answerChars: text.length });
+        commitIncompleteAnswer(llmName, entry, {
+          text, html: String(entry.pendingFinalAnswerHtml || entry.answerHtml || ''),
+          source: 'static_answer_snapshot', completionReason: 'static_text_quiet'
+        });
+      };
+      // Patience: a quiet text without the token is not the end while the page still generates (a model that thinks pauses its text
+      // for minutes). The generation is probed first; while it is active the quiet window starts again, until the ceiling.
+      const canProbe = typeof resolveBoundTabIdForOrchestrator === 'function' && typeof isValidTabId === 'function'
+        && typeof detectActiveGenerationInPage === 'function' && typeof GENERATION_WAIT_CEILING_MS === 'number'
+        && typeof chrome !== 'undefined' && typeof chrome?.scripting?.executeScript === 'function';
+      const probeTabId = canProbe ? resolveBoundTabIdForOrchestrator(llmName, entry) : null;
+      if (canProbe && isValidTabId(probeTabId) && now - Number(entry.promptSubmittedAt || now) < GENERATION_WAIT_CEILING_MS) {
+        if (watch.probing) return;
+        watch.probing = true;
+        Promise.resolve()
+          .then(() => chrome.scripting.executeScript({ target: { tabId: probeTabId }, func: detectActiveGenerationInPage, args: [llmName] }))
+          .then((results) => Boolean((Array.isArray(results) ? results.find((item) => item?.result)?.result : null)?.active))
+          .catch(() => false)
+          .then((active) => {
+            watch.probing = false;
+            const live = jobState?.llms?.[llmName];
+            if (!live || isFinalizedEntry(live) || live.staticAnswerWatch !== watch) return;
+            if (active) {
+              watch.since = Date.now();
+              watch.nudged = false;
+              emitTelemetry(llmName, 'STATIC_WATCH_GENERATION_ACTIVE', {
+                level: 'warning', details: `text quiet but the page still generates, answerChars=${text.length}`,
+                meta: { dispatchId: live.lastDispatchMeta?.dispatchId || null, answerChars: text.length }, force: true
+              });
+              return;
+            }
+            commitQuiet();
+          });
+        return;
+      }
+      commitQuiet();
       return;
     }
     if (quietMs >= STATIC_WATCH_NUDGE_AFTER_MS && !watch.nudged) {
@@ -10999,7 +11073,7 @@ async function rereadOwnTurnForBasic(message = {}) {
   if (!isValidTabId(tabId)) return { found: false, reason: 'no_tab' };
   let ownTurn = false;
   for (const prompt of roundPrompts) {
-    if (await pageHoldsOwnPromptTurn(tabId, prompt, llmName)) { ownTurn = true; break; }
+    if (await pageHoldsOwnPromptTurn(tabId, prompt, llmName) || await pageHoldsAnswerEndingWithTag(tabId, prompt, llmName)) { ownTurn = true; break; }
   }
   if (!ownTurn) return { found: false, reason: 'no_own_turn' };
   try {

@@ -1258,6 +1258,9 @@ const recordCompletionAuthorityAttempt = (llmName, meta = {}) => {
 const UNCERTAIN_TERMINAL_QUIET_MS = 30000;
 const UNCERTAIN_TERMINAL_MAX_DEFER_MS = 180000;
 const UNCERTAIN_TERMINAL_POLL_MS = 5000;
+// Patience: at the cap the page is asked whether it still generates (Stop, busy indicator). While it does, the deferral goes on;
+// the cap becomes a verdict only when the signal is gone or this ceiling is reached.
+const UNCERTAIN_TERMINAL_CEILING_MS = 3600000;
 // With the request's own delivery token in the text the model has finished
 // writing: a short quiet window is enough.
 const UNCERTAIN_TERMINAL_TOKEN_QUIET_MS = 5000;
@@ -1294,6 +1297,8 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
     let lastGrowthAt = deferredAt;
     let nudges = 0;
     let nudgeInFlight = false;
+    let probeInFlight = false;
+    let capConfirmed = false;
     const skippedReasons = new Set();
     const bottomNudge = (live, why) => {
         if (nudgeInFlight) return false;
@@ -1369,7 +1374,7 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             lastLength = length;
             lastGrowthAt = now;
         }
-        if (nudgeInFlight) return; // the nudge reschedules the check itself
+        if (nudgeInFlight || probeInFlight) return; // the nudge or the generation probe reschedules the check itself
         const tokenSeen = typeof answerHasDeliveryToken === 'function'
             && answerHasDeliveryToken(llmName, live?.pendingFinalAnswer || live?.answer || '');
         const quiet = now - lastGrowthAt >= (tokenSeen ? UNCERTAIN_TERMINAL_TOKEN_QUIET_MS : UNCERTAIN_TERMINAL_QUIET_MS);
@@ -1378,6 +1383,33 @@ const deferUncertainCompletionTerminal = (llmName, entry, finalize, terminalResu
             nudges = Math.max(nudges, 2);
         }
         const capped = now - deferredAt >= maxDeferMs;
+        if (capped && !tokenSeen && !capConfirmed && now - deferredAt < UNCERTAIN_TERMINAL_CEILING_MS) {
+            const probeTabId = typeof self.resolveBoundTabIdForOrchestrator === 'function'
+                ? self.resolveBoundTabIdForOrchestrator(llmName, live) : null;
+            if (probeTabId && typeof self.detectActiveGenerationInPage === 'function' && typeof chrome !== 'undefined' && chrome?.scripting?.executeScript) {
+                probeInFlight = true;
+                Promise.resolve()
+                    .then(() => chrome.scripting.executeScript({ target: { tabId: probeTabId }, func: self.detectActiveGenerationInPage, args: [llmName] }))
+                    .then((results) => Boolean((Array.isArray(results) ? results.find((item) => item?.result)?.result : null)?.active))
+                    .catch(() => false)
+                    .then((active) => {
+                        probeInFlight = false;
+                        if (active) {
+                            emitTelemetry(llmName, 'COMPLETION_UNCERTAIN_TERMINAL_CAP_EXTENDED', {
+                                level: 'warning',
+                                details: `page still generating, deferred=${Date.now() - deferredAt}ms`,
+                                meta: { dispatchId: entry.deferredUncertainTerminal.dispatchId, deferredMs: Date.now() - deferredAt, ceilingMs: UNCERTAIN_TERMINAL_CEILING_MS },
+                                force: true
+                            });
+                            schedule(UNCERTAIN_TERMINAL_POLL_MS);
+                        } else {
+                            capConfirmed = true;
+                            schedule(0);
+                        }
+                    });
+                return;
+            }
+        }
         if (!capped && recoverOrphanedTab()) return;
         // Silence alone does not end the answer (a model may pause while it writes): the end is the
         // request's delivery token after a short quiet, or the cap.
@@ -2162,6 +2194,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }).catch((err) => {
             sendResponse({ ok: false, error: String(err?.message || err) });
         });
+        return true;
+    }
+    if (message?.type === 'PROBE_GENERATION') {
+        // The pipeline waiter asks whether a model's page still generates before it closes the stage with a text that has stood still.
+        (async () => {
+            const llmName = String(message.llmName || '');
+            const entry = jobState?.llms?.[llmName];
+            const tabId = typeof self.resolveBoundTabIdForOrchestrator === 'function' ? self.resolveBoundTabIdForOrchestrator(llmName, entry) : null;
+            if (!tabId || typeof self.detectActiveGenerationInPage !== 'function') {
+                sendResponse({ ok: false, error: 'no_tab' });
+                return;
+            }
+            const results = await chrome.scripting.executeScript({ target: { tabId }, func: self.detectActiveGenerationInPage, args: [llmName] });
+            const state = Array.isArray(results) ? results.find((item) => item?.result)?.result : null;
+            sendResponse({ ok: true, active: Boolean(state?.active) });
+        })().catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
         return true;
     }
     if (message?.type === 'DELIVERY_JOURNAL_CLEAR') {
