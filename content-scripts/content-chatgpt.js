@@ -1118,6 +1118,8 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           'button[data-testid*="send"]',
           'button[aria-label*="Send" i]',
           'button[aria-label*="send" i]',
+          // Russian UI: the Send button is «Отправить» and has no data-testid (2026-11-15: a long request stayed in the composer).
+          'button[aria-label*="отправить" i]',
           'button[class*="SendButton"]',
           
           // Icon-based
@@ -1163,7 +1165,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
               String(el.textContent || '').toLowerCase()
             ].join(' ');
             const unsafeControl = /(attach|attachment|upload|add file|file picker|paperclip|voice|microphone|\bmic\b|record|stop)/i.test(controlText);
-            if (!unsafeControl && (testid.includes('send') || aria.includes('send') || aria.includes('submit') || el.type === 'submit')) {
+            if (!unsafeControl && (testid.includes('send') || aria.includes('send') || aria.includes('submit') || aria.includes('отправ') || el.type === 'submit')) {
               return el;
             }
           }
@@ -1199,7 +1201,8 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
             const live = resolveLiveComposer();
             return Boolean(live) && normalizeForComparison(readComposerValue(live)) === expectedComposerText;
           };
-          const deadline = Date.now() + 3500;
+          // A long request takes ChatGPT longer to take and clear from the composer: 21 000 characters did not fit the fixed 3.5 s.
+          const deadline = Date.now() + 3500 + Math.min(20000, Math.floor((typeof prompt === 'string' ? prompt.length : 0) / 2));
           while (Date.now() < deadline) {
             if (composerStillHoldsPrompt()) { await sleep(120); continue; }
             const stopBtn = document.querySelector('button[data-testid="stop-button"], button[aria-label*="Stop" i]');
