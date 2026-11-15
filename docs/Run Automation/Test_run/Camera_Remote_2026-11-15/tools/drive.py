@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Driver of the camera-remote consensus runs on the experiment copy of the extension.
-usage: python3 -I drive.py install | start | verdicts <id> | nextpass | watch [seconds] | owner <decision file> | cycle [seconds] | finish | status | synth claude|gpt
+usage: python3 -I drive.py install | start | verdicts <id> | nextpass [<файл замечаний ведущего>] | watch [seconds] | owner <decision file> | cycle [seconds] | finish | status | synth claude|gpt
 All state is in notes/state.json of the run folder."""
 import glob, json, os, re, subprocess, sys, time
 
@@ -119,6 +119,14 @@ def start():
         return
     item = rest[0]
     ensure_panel()
+    import hashlib
+    digest = hashlib.sha1(b''.join(open(variant(k)[1], 'rb').read() for k in KINDS)).hexdigest()
+    if state.get('schemaHash') != digest:
+        print('schemas changed: install', flush=True)
+        install()
+        state = load()
+        state['schemaHash'] = digest
+        save(state)
     name, schema = variant(item.get('kind', 'explore'))
     task = os.path.join(TMP, 'task.txt')
     open(task, 'w', encoding='utf8').write(INTRO + item['q'])
@@ -413,8 +421,8 @@ def verdicts(qid):
     return ok
 
 
-def nextpass():
-    """Appends the next agreement pass: the current solution (final of the last finished pass) goes into the task text."""
+def nextpass(notes_path=None):
+    """Appends the next agreement pass: the current solution (final of the last finished pass) plus the lead's review go into the task text."""
     state = load()
     qs = questions()
     last = state['done'][-1] if state['done'] else None
@@ -430,7 +438,10 @@ def nextpass():
         print('NO_FINAL')
         return
     n = len(qs) + 1
-    text = ('Дай оценку текущего решения ниже. Вопрос исходной задачи: как внешней командой заставить штатное приложение Камера целевого iPhone сделать снимок своим конвейером.\n\nТЕКУЩЕЕ РЕШЕНИЕ (проход %d):\n%s' % (len(qs), final[:9000]))
+    text = ('Дай оценку текущего решения ниже. Вопрос исходной задачи: как внешней командой заставить штатное приложение Камера целевого iPhone сделать снимок своим конвейером.\n\nТЕКУЩЕЕ РЕШЕНИЕ (проход %d):\n%s' % (len(qs), final[:7500]))
+    if notes_path and os.path.exists(notes_path):
+        lead = open(notes_path, encoding='utf8').read().strip()
+        text += '\n\nЗАМЕЧАНИЯ ВЕДУЩЕГО ПО ПРОШЛОМУ ПРОХОДУ (ответь по каждому пункту отдельно: подтверждаешь по документации платформы, опровергаешь или не знаешь):\n' + lead[:3500]
     qs.append({'id': 'c%02d' % n, 'name': 'Согласование, проход %d' % n, 'kind': 'agree', 'q': text})
     json.dump(qs, open(os.path.join(RUN, 'notes', 'questions.json'), 'w', encoding='utf8'), ensure_ascii=False, indent=1)
     print('QUEUED', 'c%02d' % n)
@@ -463,7 +474,7 @@ elif cmd == 'synth':
 elif cmd == 'verdicts':
     verdicts(sys.argv[2])
 elif cmd == 'nextpass':
-    nextpass()
+    nextpass(sys.argv[2] if len(sys.argv) > 2 else None)
 elif cmd == 'status':
     print(json.dumps({k: v for k, v in load().items() if k != 'hints'}, ensure_ascii=False))
     print(tool('run-state.js'))
