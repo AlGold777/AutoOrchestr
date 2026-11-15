@@ -209,11 +209,11 @@ def generating(name):
     return bool(second and (second.get('stop') or second.get('thinking') or second.get('spinner') or second.get('len', 0) > first.get('len', 0) + 20))
 
 
-def patient(match):
+def patient(who):
     """Waits while the participant named in the 'без ответа' window is still generating. Returns True when the caller must keep waiting."""
     state = load()
     cur = state.get('current') or {}
-    who = (match[1] if match else '').strip()
+    who = (who or '').strip()
     if not who or not generating(who):
         return False
     waited = cur.setdefault('patience', {})
@@ -279,7 +279,8 @@ def watch(limit):
             match = re.search(r'без ответа: ([^.?]*)', modal)
             if qwen_wait(modal, match):
                 continue
-            if match and patient(match):
+            pm = re.search(r'без ответа: ([^.?]*)|нет принятых ответов \(([^()]*)', modal)
+            if pm and patient(pm.group(1) or pm.group(2)):
                 time.sleep(60)
                 beat()
                 continue

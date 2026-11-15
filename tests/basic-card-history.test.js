@@ -240,4 +240,34 @@ describe('Basic card history', () => {
         + Record.textOf(record, event.snapshot.textPatch.suffixRef);
     expect(events.map(reconstruct)).toEqual([first, second, second, third]);
   });
+
+  test('a huge post-terminal revision is stored as head and tail, with the cut length marked', () => {
+    const { container, record, collector } = setup();
+    const card = makeCard({ text: 'answer', title: 'GPT', kind: 'answer' });
+    const revision = document.createElement('div');
+    revision.className = 'post-terminal-answer-revision';
+    revision.textContent = `HEAD-${'x'.repeat(250000)}-TAIL`;
+    card.append(revision);
+    container.append(card);
+    collector.flush();
+    const snapshot = record.cardHistory.events[0].snapshot;
+    const stored = Record.textOf(record, snapshot.revisionTextRef);
+    expect(stored.length).toBeLessThan(13000);
+    expect(stored.startsWith('HEAD-')).toBe(true);
+    expect(stored.endsWith('-TAIL')).toBe(true);
+    expect(stored).toContain('усечено');
+    expect(snapshot.revisionTextLength).toBe(250000 + 'HEAD--TAIL'.length);
+  });
+
+  test('a short revision is stored as it is', () => {
+    const { container, record, collector } = setup();
+    const card = makeCard({ text: 'answer', title: 'GPT', kind: 'answer' });
+    const revision = document.createElement('div');
+    revision.className = 'post-terminal-answer-revision';
+    revision.textContent = 'short revision';
+    card.append(revision);
+    container.append(card);
+    collector.flush();
+    expect(Record.textOf(record, record.cardHistory.events[0].snapshot.revisionTextRef)).toBe('short revision');
+  });
 });
