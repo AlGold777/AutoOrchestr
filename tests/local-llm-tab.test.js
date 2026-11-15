@@ -95,17 +95,32 @@ describe('LocalModel observation', () => {
     expect(LocalModel.checkObservation('oops', page)).toBeNull();
   });
   test('the observation is logged and saved, and it only reads the tab', async () => {
+    // A page where the rules are silent, so the model is the one that answers.
+    const quiet = { url: 'u', title: 't', text: 'Выберите модель для продолжения работы', dialogs: [], buttons: ['Продолжить', 'Войти'] };
     const log = jest.fn();
-    const executeScript = jest.fn(scripting.executeScript);
+    const executeScript = jest.fn(async () => [{ result: quiet }]);
     const result = await LocalModel.observeTab({ tabId: 7, participant: 'qwen-a', reason: 'empty' }, {
-      scripting: { executeScript }, prepare: async () => {}, log, fetchImpl: okChat(reply('choose_answer', 'Предпочитаю этот ответ'))
+      scripting: { executeScript }, prepare: async () => {}, log, fetchImpl: okChat(reply('choose_answer', 'Продолжить'))
     });
-    expect(result.button).toBe('Предпочитаю этот ответ');
+    expect(result.button).toBe('Продолжить');
+    expect(result.by).toBe('model');
     expect(executeScript).toHaveBeenCalledTimes(1);
     expect(log.mock.calls[0][0]).toBe('observed');
     expect(log.mock.calls[0][1]).toContain('нажала бы');
     const saved = (await LocalModel.loadState()).observations;
     expect(saved[0]).toMatchObject({ participant: 'qwen-a', reason: 'empty', situation: 'choose_answer' });
+  });
+  test('a rule that fires answers without the model, a silent rule leaves the model to answer', async () => {
+    window.LocalRules = require('../disput/local-rules');
+    const fetchImpl = jest.fn(okChat(reply('choose_answer', 'Предпочитаю этот ответ')));
+    const log = jest.fn();
+    const limited = { url: 'u', title: 't', text: 'Ответ.', dialogs: ['Достигнут лимит сообщений'], buttons: [] };
+    const result = await LocalModel.observeTab({ tabId: 3, participant: 'qwen-a', reason: 'no_progress' }, {
+      scripting: { executeScript: async () => [{ result: limited }] }, prepare: async () => {}, log, fetchImpl
+    });
+    expect(result).toMatchObject({ situation: 'limit_reached', by: 'rule' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(log.mock.calls[0][1]).toContain('правило: ');
   });
   test('without a tab nothing happens, a closed tab goes to the log', async () => {
     await expect(LocalModel.observeTab({ participant: 'x' }, { scripting })).resolves.toBeNull();

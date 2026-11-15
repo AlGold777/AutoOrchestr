@@ -285,7 +285,9 @@ ${page.text || ''}
     return { situation: reply.situation, button, note: note && pageText.includes(squeeze(note)) ? note.slice(0, 200) : '' };
   };
 
-  const observationLine = (participant, result) => `${participant}: ${SITUATIONS[result.situation]}${result.button ? `; нажала бы «${result.button}»` : ''}${result.note ? `. «${result.note}»` : ''}`;
+  // Rule classes that are not model situations: the text for the owner.
+  const RULE_SITUATIONS = Object.freeze({ prompt_unsent: 'текст набран, но не отправлен', info_dialog: 'окно с новостями или советом' });
+  const observationLine = (participant, result) => `${participant}: ${SITUATIONS[result.situation] || RULE_SITUATIONS[result.situation]}${result.button ? `; нажала бы «${result.button}»` : ''}${result.note ? `. «${result.note}»` : ''}`;
 
   // Observation only: reads the stuck tab, asks the model what it sees, keeps the picture and the verdict. Presses nothing, never throws.
   const observeTab = async ({ tabId, participant = '', reason = '' }, { scripting = root.chrome?.scripting, fetchImpl, prepare = allowOwnOrigin, log = addLog, signal = null } = {}) => {
@@ -299,14 +301,25 @@ ${page.text || ''}
       return null;
     }
     if (!page) { log('observe_failed', participant); return null; }
+    // Rules first: when they give a situation, the model is not asked. 'unknown' means the rules do not know, so the model decides.
+    const ruled = root.LocalRules?.classify(page);
+    if (ruled && ruled !== 'unknown') {
+      const result = { situation: ruled, button: '', note: '', by: 'rule' };
+      log('observed', `правило: ${observationLine(participant, result)}`);
+      await updateState((state) => ({
+        observations: [{ at: Date.now(), participant, reason, ...result, page: { ...page, text: String(page.text).slice(-2500) } }, ...(state.observations || [])].slice(0, OBSERVATION_LIMIT)
+      })).catch(() => {});
+      return result;
+    }
     try { await prepare(); } catch (error) { log('rule_failed', error?.message || ''); return null; }
     let context = '';
     try { context = String((await loadState()).system || '').trim(); } catch (_) { /* the observation goes without the instruction */ }
     const answer = await post(buildObservationRequest(page, reason, context), { signal, fetchImpl });
     if (answer.problem) { log(answer.problem.kind, answer.problem.detail); return null; }
     if (answer.content === undefined) return null;
-    const result = checkObservation(answer.content, page);
-    if (!result) { log('bad_reply', String(answer.content).slice(0, 200)); return null; }
+    const modelled = checkObservation(answer.content, page);
+    if (!modelled) { log('bad_reply', String(answer.content).slice(0, 200)); return null; }
+    const result = { ...modelled, by: 'model' };
     log('observed', observationLine(participant, result));
     await updateState((state) => ({
       observations: [{ at: Date.now(), participant, reason, ...result, page: { ...page, text: String(page.text).slice(-2500) } }, ...(state.observations || [])].slice(0, OBSERVATION_LIMIT)
