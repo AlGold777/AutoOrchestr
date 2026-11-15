@@ -110,6 +110,9 @@ def install():
 
 def start():
     state = load()
+    if screen_locked():
+        print('SCREEN_LOCKED')
+        return
     if state.get('current'):
         print('ALREADY', state['current'])
         return
@@ -253,6 +256,12 @@ def fix_unsent():
     return True
 
 
+def screen_locked():
+    """A locked screen hides every tab (visibilityState hidden): requests are not taken by the pages, and the data of the stretch is invalid."""
+    out = subprocess.run('ioreg -n Root -d1 -a 2>/dev/null | grep -A1 CGSSessionScreenIsLocked', shell=True, capture_output=True, text=True).stdout
+    return '<true/>' in out
+
+
 def reachable():
     out = tool('extension-version.js')
     return bool(out) and 'NO TAB' not in out and 'execution error' not in out
@@ -267,6 +276,9 @@ def watch(limit):
     idle = 0
     while time.time() < end:
         beat()
+        if screen_locked():
+            print(json.dumps({'event': 'screen_locked'}), flush=True)
+            return 'screen_locked'
         fix_unsent()
         # Chrome answers scripts for the profile in front: with an incognito window in front the panel cannot be seen for a while.
         if not reachable():

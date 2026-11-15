@@ -16,14 +16,6 @@
   {
    "id": "c01",
    "who": "perplexity-a (пустой)"
-  },
-  {
-   "id": "c02",
-   "who": "qwen-a (пустой)"
-  },
-  {
-   "id": "c02",
-   "who": "qwen-a (пустой)"
   }
  ],
  "synth": "gpt",
@@ -33,7 +25,8 @@
  ],
  "chatCheck": {
   "c01": [],
-  "c02-fail2": []
+  "c02-fail2": [],
+  "c02-fail3": []
  },
  "schemaHash": "bde8eba24ae7d8ed5551c9226471c02046bbd214",
  "restarts": [
@@ -52,6 +45,13 @@
    "id": "c02",
    "at": 1794741961,
    "len": 21090
+  }
+ ],
+ "invalid": [
+  {
+   "id": "c02",
+   "attempt": 3,
+   "why": "экран Mac заблокирован (CGSSessionScreenIsLocked), вкладки скрыты: запросы DeepSeek и Qwen остались в полях ввода; данные недействительны"
   }
  ]
 }
