@@ -184,6 +184,48 @@ def qwen_wait(modal, match):
     return False
 
 
+PATIENCE_MAX = 90 * 60  # the longest a single participant is waited for while its page still shows generation
+HOST_OF = {'gpt': 'chatgpt.com', 'claude': 'claude.ai', 'deepseek': 'chat.deepseek.com', 'qwen': 'chat.qwen.ai', 'perplexity': 'perplexity.ai'}
+
+
+def generating(name):
+    """True while the participant's page still writes the answer (Stop button, thinking line, spinner or text that keeps growing). Patience: the run never gives up on a page that is working."""
+    host = next((h for k, h in HOST_OF.items() if k in (name or '').lower()), None)
+    if not host:
+        return False
+    def read():
+        out = subprocess.run(['bash', os.path.join(TOOLS, 'js.sh'), os.path.join(HERE, 'gen-state.js'), host], capture_output=True, text=True, timeout=60).stdout.strip()
+        try:
+            return json.loads(out)
+        except ValueError:
+            return None
+    first = read()
+    if not first:
+        return False
+    if first.get('stop') or first.get('thinking') or first.get('spinner'):
+        return True
+    time.sleep(25)
+    second = read()
+    return bool(second and (second.get('stop') or second.get('thinking') or second.get('spinner') or second.get('len', 0) > first.get('len', 0) + 20))
+
+
+def patient(match):
+    """Waits while the participant named in the 'без ответа' window is still generating. Returns True when the caller must keep waiting."""
+    state = load()
+    cur = state.get('current') or {}
+    who = (match[1] if match else '').strip()
+    if not who or not generating(who):
+        return False
+    waited = cur.setdefault('patience', {})
+    start = waited.setdefault(who, int(time.time()))
+    save(state)
+    if time.time() - start > PATIENCE_MAX:
+        print('patience: %s пишет уже больше 90 минут, дальше по правилам' % who, flush=True)
+        return False
+    print('patience: %s ещё пишет ответ, жду' % who, flush=True)
+    return True
+
+
 def reachable():
     out = tool('extension-version.js')
     return bool(out) and 'NO TAB' not in out and 'execution error' not in out
@@ -236,6 +278,10 @@ def watch(limit):
                 return 'ended'
             match = re.search(r'без ответа: ([^.?]*)', modal)
             if qwen_wait(modal, match):
+                continue
+            if match and patient(match):
+                time.sleep(60)
+                beat()
                 continue
             if 'Пропустить участника' in modal and match and not re.search(r'gpt|claude', match[1], re.I):
                 print('auto skip:', match[1], click('Пропустить участника'), flush=True)
