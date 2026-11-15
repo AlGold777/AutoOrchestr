@@ -998,12 +998,26 @@ describe('Pipeline debate favorites view', () => {
     const prefix = 'а'.repeat(100);
     expect(window.__resultsExportDebug.buildResponseExportFilename(null, 'md', new Date(2026, 7, 26, 10, 45)))
       .toBe(`${prefix}… - LLMs aug26 10-45.md`);
+    const modTa = document.getElementById('modTa');
+    const originalModTa = modTa.value;
+    const hadLastExportPrompt = Object.prototype.hasOwnProperty.call(window, '__lastExportPromptText');
+    const originalLastExportPrompt = window.__lastExportPromptText;
+    const cardText = 'Карточка ответа '.repeat(12);
+    const cardPrefix = Array.from(cardText.trim()).slice(0, 100).join('').trim();
+    modTa.value = '';
+    window.__lastExportPromptText = 'Сохранённый старый запрос';
     for (const subject of ['GPT', 'Favourite']) {
       for (const extension of ['html', 'md']) {
-        expect(window.__resultsExportDebug.buildSingleCardExportFilename(subject, extension, new Date(2026, 7, 26, 10, 45)))
-          .toBe(`${subject} - ${prefix} - aug26 10-45.${extension}`);
+        expect(window.__resultsExportDebug.buildSingleCardExportFilename(subject, extension, new Date(2026, 7, 26, 10, 45), cardText, false))
+          .toBe(`${subject} - ${cardPrefix} - aug26 10-45.${extension}`);
       }
     }
+    modTa.value = 'Текущий запрос';
+    expect(window.__resultsExportDebug.buildSingleCardExportFilename('GPT', 'html', new Date(2026, 7, 26, 10, 45), cardText, false))
+      .toBe('GPT - Текущий запрос - aug26 10-45.html');
+    modTa.value = originalModTa;
+    if (hadLastExportPrompt) window.__lastExportPromptText = originalLastExportPrompt;
+    else delete window.__lastExportPromptText;
     expect(favoriteText).toBe('--- GPT ---\n[12:00]\nBase model response.');
     window.__resultsExportDebug.favoriteState.entries = originalFavoriteEntries;
     window.__resultsExportDebug.favoriteState.cardKeyToId = originalFavoriteCardMap;

@@ -11566,7 +11566,7 @@ document.addEventListener('click', (event) => {
                 await refreshNotesList();
             };
 
-            const APP_VERSION = '2.81.1036';
+            const APP_VERSION = '2.81.1041';
             const BACKUP_FILE_PREFIX = 'codex-notes-sessions';
             const buildBackupFilename = () => {
                 const timestamp = formatTimestamp(new Date()).replace(/[: ]/g, '_');
@@ -21729,13 +21729,13 @@ function formatNamedExportStamp(date = new Date()) {
     return `${months[date.getMonth()]}${String(date.getFullYear()).slice(-2)} ${pad(date.getHours())}-${pad(date.getMinutes())}`;
 }
 
-function getExportPromptSource() {
+function getExportPromptSource(includeLastExportPrompt = true) {
     const promptValues = [
         pastedTextComposer.getText(),
         document.getElementById('prompt-input')?.value,
-        document.getElementById('modTa')?.value,
-        window.__lastExportPromptText
+        document.getElementById('modTa')?.value
     ];
+    if (includeLastExportPrompt) promptValues.push(window.__lastExportPromptText);
     return promptValues.map((value) => String(value || '').trim()).find(Boolean) || '';
 }
 
@@ -21764,11 +21764,12 @@ function formatExportPromptExcerpt(promptText = getExportPromptSource()) {
     return Array.from(normalized).slice(0, 100).join('').trim() || 'Prompt';
 }
 
-function buildSingleCardExportFilename(subject, extension, date = new Date()) {
+function buildSingleCardExportFilename(subject, extension, date = new Date(), fallbackPromptText = '', includeLastExportPrompt = true) {
     const safeSubject = String(subject || 'Model')
         .replace(/[\\/:?<>|*"']/g, '')
         .trim() || 'Model';
-    return `${safeSubject} - ${formatExportPromptExcerpt()} - ${formatNamedExportStamp(date)}.${extension}`;
+    const promptText = getExportPromptSource(includeLastExportPrompt) || fallbackPromptText;
+    return `${safeSubject} - ${formatExportPromptExcerpt(promptText)} - ${formatNamedExportStamp(date)}.${extension}`;
 }
 
 function escapeGfmText(value = '') {
@@ -22040,6 +22041,12 @@ function buildSingleResponseExportMarkdown(outputEl, modelName) {
         metadata ? `> ${metadata}` : '',
         body
     ].filter(Boolean).join('\n\n') + '\n';
+}
+
+function favoriteCardText() {
+    return buildFavoriteGroups().flatMap((group) => group.items.map((entry) =>
+        entry.html ? plainTextFromHtml(sanitizeInlineHtml(entry.html)) : String(entry.text || '')
+    )).filter(Boolean).join(' ');
 }
 
 function buildFavoriteExportText(entries) {
@@ -22404,7 +22411,7 @@ document.addEventListener('click', (event) => {
     const anchor = document.createElement('a');
     const now = new Date();
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename('Favourite', 'md', now);
+    anchor.download = buildSingleCardExportFilename('Favourite', 'md', now, favoriteCardText(), false);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -22523,7 +22530,7 @@ ${window.DebateExport?.annotationScript?.() || ''}
         anchor.href = url;
 
         const now = new Date();
-        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now);
+        anchor.download = buildSingleCardExportFilename('Favourite', 'html', now, favoriteCardText(), false);
 
         document.body.appendChild(anchor);
         anchor.click();
@@ -22600,7 +22607,7 @@ ${window.DebateExport?.annotationScript?.() || ''}
 
     const modelForFile = String(modelName || 'Model').replace(/[\/\\:?<>|*"']/g, '').trim() || 'Model';
     const now = new Date();
-    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now);
+    anchor.download = buildSingleCardExportFilename(modelForFile, 'html', now, text, false);
 
     document.body.appendChild(anchor);
     anchor.click();
@@ -22627,7 +22634,8 @@ document.addEventListener('click', (event) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = buildSingleCardExportFilename(modelName, 'md');
+    const cardText = outputEl ? String(outputEl.innerText || outputEl.textContent || '').trim() : '';
+    anchor.download = buildSingleCardExportFilename(modelName, 'md', new Date(), cardText, false);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
