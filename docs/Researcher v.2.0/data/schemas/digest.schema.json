@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/digest.schema.json",
+  "title": "Сводка",
+  "type": "object",
+  "properties": {
+    "cycle": {
+      "type": "integer",
+      "description": "Номер цикла",
+      "minimum": 0
+    },
+    "lines": {
+      "type": "object",
+      "description": "Десять строк",
+      "properties": {
+        "checked": {
+          "type": "string",
+          "description": "1. Проверено и опровергнуто заявок",
+          "minLength": 1
+        },
+        "cost_per_result": {
+          "type": "string",
+          "description": "2. Цена проверенного результата",
+          "minLength": 1
+        },
+        "currencies": {
+          "type": "string",
+          "description": "3. Прирост по трём валютам",
+          "minLength": 1
+        },
+        "rebuilds": {
+          "type": "string",
+          "description": "4. Перестроек подтверждено и откачено",
+          "minLength": 1
+        },
+        "risky_share": {
+          "type": "string",
+          "description": "5. Доля рискованных предсказаний",
+          "minLength": 1
+        },
+        "stalled_proposals": {
+          "type": "string",
+          "description": "6. Предложений, не дошедших до испытания",
+          "minLength": 1
+        },
+        "expired": {
+          "type": "string",
+          "description": "7. Сгорело по сроку",
+          "minLength": 1
+        },
+        "violations": {
+          "type": "string",
+          "description": "8. Нарушения, в том числе попытки изменить ядро",
+          "minLength": 1
+        },
+        "sealed_mismatch": {
+          "type": "string",
+          "description": "9. Расхождение с запечатанными ожиданиями владельца",
+          "minLength": 1
+        },
+        "budget": {
+          "type": "string",
+          "description": "10. Бюджет в четырёх единицах и действующий диагноз",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "checked",
+        "cost_per_result",
+        "currencies",
+        "rebuilds",
+        "risky_share",
+        "stalled_proposals",
+        "expired",
+        "violations",
+        "sealed_mismatch",
+        "budget"
+      ],
+      "additionalProperties": false
+    },
+    "stop_rules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Сработавшие стоп-правила"
+    },
+    "decisions_needed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Что требует решения владельца"
+    },
+    "degraded": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Что работало в ослабленном виде"
+    },
+    "alarm": {
+      "type": "string",
+      "description": "Код тревоги или пусто"
+    }
+  },
+  "required": [
+    "cycle",
+    "lines",
+    "stop_rules",
+    "decisions_needed",
+    "degraded"
+  ],
+  "additionalProperties": false
+}

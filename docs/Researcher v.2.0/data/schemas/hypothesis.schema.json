@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/hypothesis.schema.json",
+  "title": "Гипотеза",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер гипотезы",
+      "pattern": "^G[0-9]+$"
+    },
+    "claim": {
+      "type": "string",
+      "description": "Одно проверяемое утверждение",
+      "minLength": 1
+    },
+    "basis": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Номера фактов, на которых стоит",
+      "minItems": 1
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Конкурирующие объяснения",
+      "minItems": 1
+    },
+    "features": {
+      "type": "object",
+      "description": "Признаки для счёта разнообразия",
+      "properties": {
+        "apparatus": {
+          "type": "string",
+          "description": "Аппарат",
+          "minLength": 1
+        },
+        "invariant": {
+          "type": "string",
+          "description": "Инвариант"
+        },
+        "reduction": {
+          "type": "string",
+          "description": "Тип сведения"
+        },
+        "transfer_source": {
+          "type": "string",
+          "description": "Источник переноса"
+        }
+      },
+      "required": [
+        "apparatus"
+      ],
+      "additionalProperties": false
+    },
+    "check_cost": {
+      "type": "string",
+      "description": "Оценка цены проверки в четырёх единицах"
+    },
+    "splits": {
+      "type": "string",
+      "description": "Какие гипотезы эта проверка разведёт"
+    },
+    "author": {
+      "type": "string",
+      "description": "ID участника",
+      "minLength": 1
+    },
+    "config_id": {
+      "type": "string",
+      "description": "Конфигурация, при которой выдвинута",
+      "minLength": 1
+    },
+    "label": {
+      "type": "string",
+      "enum": [
+        "И",
+        "Г"
+      ],
+      "description": "Метка"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "новая",
+        "на проверке",
+        "выжила",
+        "убита",
+        "неясно",
+        "отозвана",
+        "устарела"
+      ],
+      "description": "Состояние"
+    },
+    "result_status": {
+      "type": "string",
+      "enum": [
+        "S0",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "description": "Статус результата"
+    },
+    "killed_reason": {
+      "type": "string",
+      "description": "Почему убита"
+    }
+  },
+  "required": [
+    "id",
+    "claim",
+    "basis",
+    "alternatives",
+    "features",
+    "author",
+    "config_id",
+    "label",
+    "status",
+    "result_status"
+  ],
+  "additionalProperties": false
+}

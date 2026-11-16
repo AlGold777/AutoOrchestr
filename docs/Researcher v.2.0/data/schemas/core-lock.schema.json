@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/core-lock.schema.json",
+  "title": "Замок ядра",
+  "type": "object",
+  "properties": {
+    "core_version": {
+      "type": "integer",
+      "description": "Версия ядра",
+      "minimum": 1
+    },
+    "ratified_at": {
+      "type": "string",
+      "description": "Дата ратификации UTC",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "description": "Владелец",
+      "minLength": 1
+    },
+    "observer": {
+      "type": "string",
+      "description": "Внешний наблюдатель; пусто — прогон не претендует на статус выше S1"
+    },
+    "hashes": {
+      "type": "object",
+      "description": "Хеши документов ядра",
+      "properties": {
+        "task_card": {
+          "type": "string",
+          "description": "SHA-256 карточки задачи",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "thresholds": {
+          "type": "string",
+          "description": "SHA-256 файла порогов",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "config_c0": {
+          "type": "string",
+          "description": "SHA-256 конфигурации C0",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "prompts": {
+          "type": "string",
+          "description": "SHA-256 папки prompts",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "schemas": {
+          "type": "string",
+          "description": "SHA-256 папки basic/schemas",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "methodology": {
+          "type": "string",
+          "description": "SHA-256 папки methodology",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "owner_sealed_test": {
+          "type": "string",
+          "description": "SHA-256 запечатанных ожиданий владельца",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "task_card",
+        "thresholds",
+        "config_c0",
+        "prompts",
+        "schemas",
+        "methodology"
+      ],
+      "additionalProperties": false
+    },
+    "closed_sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Имя набора",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "зачётный",
+              "финальный",
+              "корпус порч",
+              "посевы"
+            ],
+            "description": "Вид набора"
+          },
+          "sha256": {
+            "type": "string",
+            "description": "SHA-256 набора",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "holder": {
+            "type": "string",
+            "description": "У кого хранится",
+            "minLength": 1
+          },
+          "access_limit": {
+            "type": "integer",
+            "description": "Предел обращений",
+            "minimum": 0
+          },
+          "accesses": {
+            "type": "integer",
+            "description": "Сколько обращений было",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "sha256",
+          "holder",
+          "access_limit",
+          "accesses"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Закрытые наборы"
+    },
+    "checkers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "participant": {
+            "type": "string",
+            "description": "ID участника или «владелец»",
+            "minLength": 1
+          },
+          "detect_rate": {
+            "type": "number",
+            "description": "Доля найденных порч",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "false_rate": {
+            "type": "number",
+            "description": "Доля ложных срабатываний",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "corpus_version": {
+            "type": "string",
+            "description": "Версия корпуса порч",
+            "minLength": 1
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "Метка модели на момент калибровки"
+          }
+        },
+        "required": [
+          "participant",
+          "detect_rate",
+          "false_rate",
+          "corpus_version"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Два числа калибровки каждого проверяющего"
+    }
+  },
+  "required": [
+    "core_version",
+    "ratified_at",
+    "owner",
+    "hashes",
+    "closed_sets",
+    "checkers"
+  ],
+  "additionalProperties": false
+}

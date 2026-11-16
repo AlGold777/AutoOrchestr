@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/pit.schema.json",
+  "title": "Яма",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер ямы",
+      "pattern": "^Y[0-9]+$"
+    },
+    "step": {
+      "type": "string",
+      "enum": [
+        "STEP_SEARCH",
+        "STEP_SOURCE",
+        "STEP_HYPOTHESIS",
+        "STEP_CLAIM",
+        "STEP_EXEC",
+        "STEP_VERDICT",
+        "STEP_PLAN",
+        "STEP_REBUILD",
+        "STEP_RECORD"
+      ],
+      "description": "Код шага"
+    },
+    "fail": {
+      "type": "string",
+      "enum": [
+        "FAIL_WRONG_PLACE",
+        "FAIL_WEAK_EVIDENCE",
+        "FAIL_WRONG_HYPOTHESIS",
+        "FAIL_UNTESTABLE",
+        "FAIL_EXEC_BUG",
+        "FAIL_SLOW_CHECK",
+        "FAIL_REPEAT",
+        "FAIL_CONTEXT_LOST",
+        "FAIL_TOO_COMPLEX",
+        "FAIL_EARLY_STOP",
+        "FAIL_PREDICTION_MISS",
+        "FAIL_FALSE_PREMISE"
+      ],
+      "description": "Код провала"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "предикат",
+        "свидетельство"
+      ],
+      "description": "Предикат отсекает кандидатов; свидетельство только питает диагноз"
+    },
+    "root_cause": {
+      "type": "string",
+      "description": "Причина, а не симптом",
+      "minLength": 1
+    },
+    "avoid_rule": {
+      "type": "string",
+      "description": "Что делать вместо; обязательно для предиката"
+    },
+    "bounds": {
+      "type": "string",
+      "description": "Доказанные границы применимости; обязательно для предиката"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Номера вердиктов",
+      "minItems": 1
+    },
+    "revisit_if": {
+      "type": "string",
+      "description": "Что должно измениться, чтобы попробовать снова",
+      "minLength": 1
+    },
+    "config_id": {
+      "type": "string",
+      "description": "При какой конфигурации получена",
+      "minLength": 1
+    },
+    "failure_type": {
+      "type": "string",
+      "enum": [
+        "информативная",
+        "пустая",
+        "обманная"
+      ],
+      "description": "Вид неудачи"
+    },
+    "hits": {
+      "type": "integer",
+      "description": "Сколько раз сработала",
+      "minimum": 0
+    },
+    "false_blocks": {
+      "type": "integer",
+      "description": "Сколько раз запретила верное",
+      "minimum": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "действует",
+        "на пробной попытке",
+        "устарела",
+        "в архиве"
+      ],
+      "description": "Состояние"
+    }
+  },
+  "required": [
+    "id",
+    "step",
+    "fail",
+    "kind",
+    "root_cause",
+    "evidence",
+    "revisit_if",
+    "config_id",
+    "failure_type",
+    "status"
+  ],
+  "additionalProperties": false
+}

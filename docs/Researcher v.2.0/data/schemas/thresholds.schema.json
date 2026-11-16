@@ -1,0 +1,389 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/thresholds.schema.json",
+  "title": "Пороги ядра",
+  "type": "object",
+  "properties": {
+    "k_stagnation": {
+      "type": "object",
+      "description": "Циклов без прироста валют до триггера T1",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "m_repeat": {
+      "type": "object",
+      "description": "Повторов одного кода провала до триггера T2",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "k_diversity": {
+      "type": "object",
+      "description": "Циклов с одним аппаратом гипотез до триггера T3",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "prediction_floor": {
+      "type": "object",
+      "description": "Минимальная доля подтвердившихся предсказаний до триггера T4",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "meta_quota": {
+      "type": "object",
+      "description": "Предельная доля бюджета на перестройки",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "min_config_life": {
+      "type": "object",
+      "description": "Минимум циклов жизни конфигурации",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "k_rebuilds": {
+      "type": "object",
+      "description": "Перестроек без прироста до обязательной смены диагноза",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "tripwire_n": {
+      "type": "object",
+      "description": "Циклов без ошибок, откатов и пересмотров диагноза до флага ручной проверки",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "quarantine_cycles": {
+      "type": "object",
+      "description": "Циклов карантина для перестройки класса A",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "trial_pairs": {
+      "type": "object",
+      "description": "Пар прогонов в испытании классов B и D",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "emergency_floor": {
+      "type": "object",
+      "description": "Аварийный порог просадки в испытании",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "stop_loss": {
+      "type": "object",
+      "description": "Доля бюджета, при которой работа останавливается, если прироста нет",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "reserve_share": {
+      "type": "object",
+      "description": "Доля бюджета на слабые направления, способные сменить понятия",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "checker_detect_min": {
+      "type": "object",
+      "description": "Минимальная доля найденных порч у проверяющего",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "checker_false_max": {
+      "type": "object",
+      "description": "Максимальная доля ложных срабатываний у проверяющего",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "seed_rate": {
+      "type": "object",
+      "description": "Один посев на столько шагов",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "closed_set_access_limit": {
+      "type": "object",
+      "description": "Предел обращений к закрытому набору",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    },
+    "external_view_every": {
+      "type": "object",
+      "description": "Через сколько циклов диагност получает взгляд извне",
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Число"
+        },
+        "procedure": {
+          "type": "string",
+          "description": "Как это число задано",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "procedure"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "k_stagnation",
+    "m_repeat",
+    "k_diversity",
+    "prediction_floor",
+    "meta_quota",
+    "min_config_life",
+    "k_rebuilds",
+    "tripwire_n",
+    "quarantine_cycles",
+    "trial_pairs",
+    "emergency_floor",
+    "stop_loss",
+    "reserve_share",
+    "checker_detect_min",
+    "checker_false_max",
+    "seed_rate",
+    "closed_set_access_limit",
+    "external_view_every"
+  ],
+  "additionalProperties": false
+}

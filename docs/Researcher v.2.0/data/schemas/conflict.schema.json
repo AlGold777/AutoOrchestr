@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/conflict.schema.json",
+  "title": "Противоречие",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер противоречия",
+      "pattern": "^K[0-9]+$"
+    },
+    "claim_a": {
+      "type": "string",
+      "description": "Первое утверждение",
+      "minLength": 1
+    },
+    "claim_b": {
+      "type": "string",
+      "description": "Второе утверждение",
+      "minLength": 1
+    },
+    "sources_a": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Источники первого"
+    },
+    "sources_b": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Источники второго"
+    },
+    "dispute_point": {
+      "type": "string",
+      "description": "Одна точка спора",
+      "minLength": 1
+    },
+    "resolving_test": {
+      "type": "string",
+      "description": "Один минимальный разрешающий тест",
+      "minLength": 1
+    },
+    "resolution": {
+      "type": "string",
+      "enum": [
+        "открыто",
+        "разные условия",
+        "один источник надёжнее",
+        "оба неполны",
+        "нужна новая проверка",
+        "неразрешимо в лимитах"
+      ],
+      "description": "Состояние"
+    },
+    "decision": {
+      "type": "string",
+      "description": "Решение"
+    }
+  },
+  "required": [
+    "id",
+    "claim_a",
+    "claim_b",
+    "dispute_point",
+    "resolving_test",
+    "resolution"
+  ],
+  "additionalProperties": false
+}

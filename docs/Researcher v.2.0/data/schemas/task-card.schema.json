@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/task-card.schema.json",
+  "title": "Карточка задачи",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Версия карточки",
+      "minimum": 1
+    },
+    "title": {
+      "type": "string",
+      "description": "Короткое название задачи",
+      "minLength": 1
+    },
+    "problem": {
+      "type": "string",
+      "description": "1. Проблема и что уже пробовали",
+      "minLength": 1
+    },
+    "solution_sign": {
+      "type": "string",
+      "description": "2. Наблюдаемый признак решения",
+      "minLength": 1
+    },
+    "check_today": {
+      "type": "string",
+      "description": "3. Чем проверяем сегодня",
+      "minLength": 1
+    },
+    "check_future": {
+      "type": "string",
+      "description": "4. Чем будет проверяться то, что сегодня непроверяемо",
+      "minLength": 1
+    },
+    "blind_zones": {
+      "type": "string",
+      "description": "5. Чем не проверяем: слепые зоны",
+      "minLength": 1
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "6. Незыблемые ограничения, включая запретные области и данные, которые нельзя отправлять моделям"
+    },
+    "budget": {
+      "type": "object",
+      "description": "7. Бюджет в четырёх единицах",
+      "properties": {
+        "model_calls": {
+          "type": "integer",
+          "description": "Запросы к моделям",
+          "minimum": 0
+        },
+        "check_runs": {
+          "type": "integer",
+          "description": "Запуски проверок",
+          "minimum": 0
+        },
+        "compute_hours": {
+          "type": "number",
+          "description": "Часы расчёта",
+          "minimum": 0
+        },
+        "human_minutes": {
+          "type": "integer",
+          "description": "Минуты владельца",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "model_calls",
+        "check_runs",
+        "compute_hours",
+        "human_minutes"
+      ],
+      "additionalProperties": false
+    },
+    "n_runs": {
+      "type": "integer",
+      "description": "8. Сколько задач планируется решать этой системой",
+      "minimum": 1
+    },
+    "kill": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "8. Kill-критерии: исходы, при которых работа прекращается",
+      "minItems": 1
+    },
+    "checkpoint_every": {
+      "type": "integer",
+      "description": "9. Через сколько циклов окно решений владельца",
+      "minimum": 1
+    },
+    "extension_limit": {
+      "type": "integer",
+      "description": "Сколько расширений сверх методологии допустимо в конфигурации C0",
+      "minimum": 0
+    },
+    "review_period_cycles": {
+      "type": "integer",
+      "description": "Через сколько циклов пересматриваются правила проверки",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "version",
+    "title",
+    "problem",
+    "solution_sign",
+    "check_today",
+    "check_future",
+    "blind_zones",
+    "constraints",
+    "budget",
+    "n_runs",
+    "kill",
+    "checkpoint_every"
+  ],
+  "additionalProperties": false
+}

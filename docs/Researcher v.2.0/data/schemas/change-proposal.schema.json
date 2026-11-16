@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/change-proposal.schema.json",
+  "title": "Предложение изменения",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер предложения",
+      "pattern": "^X[0-9]+$"
+    },
+    "class": {
+      "type": "string",
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "description": "Класс перестройки"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "меню",
+        "каталог ходов",
+        "библиотека",
+        "внешний канал",
+        "плацебо",
+        "владелец"
+      ],
+      "description": "Источник"
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7"
+      ],
+      "description": "Сработавший триггер"
+    },
+    "observed": {
+      "type": "string",
+      "description": "1. Наблюдается: показатель, числа, номера циклов",
+      "minLength": 1
+    },
+    "threshold": {
+      "type": "string",
+      "description": "2. Порог из ядра и способ его задания",
+      "minLength": 1
+    },
+    "rewrites": {
+      "type": "object",
+      "description": "3. Что переписывается",
+      "properties": {
+        "section": {
+          "type": "string",
+          "description": "Раздел конфигурации",
+          "minLength": 1
+        },
+        "was": {
+          "type": "string",
+          "description": "Было"
+        },
+        "becomes": {
+          "type": "string",
+          "description": "Стало",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "section",
+        "becomes"
+      ],
+      "additionalProperties": false
+    },
+    "forbidden": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "4. Что запрещено трогать",
+      "minItems": 1
+    },
+    "prediction": {
+      "type": "object",
+      "description": "5. Предсказание",
+      "properties": {
+        "expected": {
+          "type": "string",
+          "description": "Исход, которого прежняя конфигурация не даёт",
+          "minLength": 1
+        },
+        "metric": {
+          "type": "string",
+          "description": "Показатель"
+        },
+        "qualitative": {
+          "type": "boolean",
+          "description": "Качественное предсказание"
+        },
+        "deadline": {
+          "type": "object",
+          "description": "Срок отложенного предсказания",
+          "properties": {
+            "due_cycle": {
+              "type": "integer",
+              "description": "Номер цикла, к которому тест должен быть выполнен",
+              "minimum": 0
+            },
+            "test": {
+              "type": "string",
+              "description": "Конкретный тест",
+              "minLength": 1
+            },
+            "judge": {
+              "type": "string",
+              "description": "Кто судит: участник группы проверки или владелец",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "due_cycle",
+            "test",
+            "judge"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "expected",
+        "qualitative"
+      ],
+      "additionalProperties": false
+    },
+    "rollback_if": {
+      "type": "string",
+      "description": "6. Наблюдаемое условие отката",
+      "minLength": 1
+    },
+    "transfer_map": {
+      "type": "object",
+      "description": "Карта переноса",
+      "properties": {
+        "keeps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Что сохраняет силу"
+        },
+        "stale": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Что устаревает"
+        },
+        "rederive": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Что вывести заново"
+        }
+      },
+      "required": [
+        "keeps",
+        "stale",
+        "rederive"
+      ],
+      "additionalProperties": false
+    },
+    "move": {
+      "type": "string",
+      "description": "Ход каталога, если использован"
+    },
+    "diagnosis": {
+      "type": "string",
+      "description": "Диагноз метода, на который отвечает"
+    },
+    "cost": {
+      "type": "string",
+      "description": "Цена испытания в четырёх единицах"
+    },
+    "author": {
+      "type": "string",
+      "description": "ID участника",
+      "minLength": 1
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "предложено",
+        "отклонено приёмщиком",
+        "принято к испытанию",
+        "собрано",
+        "на испытании",
+        "подтверждено",
+        "откат",
+        "истекло"
+      ],
+      "description": "Состояние"
+    }
+  },
+  "required": [
+    "id",
+    "class",
+    "source",
+    "trigger",
+    "observed",
+    "threshold",
+    "rewrites",
+    "forbidden",
+    "prediction",
+    "rollback_if",
+    "transfer_map",
+    "author",
+    "state"
+  ],
+  "additionalProperties": false
+}

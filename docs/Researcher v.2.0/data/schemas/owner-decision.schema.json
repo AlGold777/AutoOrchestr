@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/owner-decision.schema.json",
+  "title": "Решение владельца",
+  "type": "object",
+  "properties": {
+    "cycle": {
+      "type": "integer",
+      "description": "Номер цикла",
+      "minimum": 0
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "продолжать",
+        "перестройка",
+        "ручное задание выполнено",
+        "правка карты",
+        "операция над ядром",
+        "стоп"
+      ],
+      "description": "Решение"
+    },
+    "proposal_id": {
+      "type": "string",
+      "description": "Номер предложения, если перестройка"
+    },
+    "text": {
+      "type": "string",
+      "description": "Текст решения"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "по доказательствам",
+        "волевое"
+      ],
+      "description": "Волевое решение уроком о мире не становится"
+    },
+    "minutes": {
+      "type": "integer",
+      "description": "Минуты владельца",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "cycle",
+    "decision",
+    "kind",
+    "minutes"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/branch-summary.schema.json",
+  "title": "Итоги ветки",
+  "type": "object",
+  "properties": {
+    "branch": {
+      "type": "string",
+      "description": "Ветка",
+      "minLength": 1
+    },
+    "closed_cycle": {
+      "type": "integer",
+      "description": "Цикл закрытия",
+      "minimum": 0
+    },
+    "dead_ends": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Проверенные тупики"
+    },
+    "negative_facts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Подтверждённые отрицательные факты"
+    },
+    "stop_reason": {
+      "type": "string",
+      "description": "Причина остановки",
+      "minLength": 1
+    },
+    "unknown": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Что осталось неизвестным",
+      "minItems": 1
+    },
+    "reopen_if": {
+      "type": "string",
+      "description": "При каком условии открыть снова",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "branch",
+    "closed_cycle",
+    "stop_reason",
+    "unknown",
+    "reopen_if"
+  ],
+  "additionalProperties": false
+}
