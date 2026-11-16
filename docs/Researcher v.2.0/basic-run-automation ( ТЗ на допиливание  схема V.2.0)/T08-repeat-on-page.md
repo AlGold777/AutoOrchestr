@@ -35,7 +35,7 @@
    - задача захода: `BasicRepeat.taskForPass({ template, carried, pass, requestsLeft })`, где `requestsLeft` — `repeat.maxRequests − requestsUsed` или `null`;
    - `await runCustomFromPage({ task: задача, forceNewTabs: true })`;
    - взять выгрузку записи захода: `window.CustomRunRecord.exportRun(latestBasicRunRecord)` — её `stopReason` и `artifacts`;
-   - `requestsUsed += lastBasicAutosave?.usage?.requestsSent || 0`;
+   - `requestsUsed += lastBasicAutosave?.usage?.requestsSent ?? числоЗапросовСхемы`. Если запись захода не удалась и точного числа нет, прибавляется верхняя граница — число участников всех раундов схемы: неизвестный расход считается потраченным;
    - `carriedNext = BasicRepeat.carriedText({ artifacts, carry: repeat.carry, extractDocument: window.BasicOutput.extractDocument, cleanAnswer: window.BasicOutput.cleanAnswer })`;
    - строка в ленту: `Заход <pass> из <maxPasses> · запросов <requestsUsed>` и, если задан предел, ` из <maxRequests>`;
    - если `basicRepeatStop` — уведомление «Basic: повтор остановлен User» и выход;
