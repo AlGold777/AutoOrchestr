@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/verdict.schema.json",
+  "title": "Вердикт V#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер вердикта",
+      "pattern": "^V[0-9]+$"
+    },
+    "claim_id": {
+      "type": "string",
+      "description": "Номер заявки H#",
+      "minLength": 1
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "код",
+        "расчёт",
+        "данные",
+        "симуляция",
+        "источник",
+        "формальная проверка",
+        "опыт"
+      ],
+      "description": "Способ проверки"
+    },
+    "raw_result": {
+      "type": "string",
+      "description": "Сырой результат без толкования",
+      "minLength": 1
+    },
+    "executor": {
+      "type": "string",
+      "description": "Кто исполнил: ID участника или «владелец»",
+      "minLength": 1
+    },
+    "dry_run_failed": {
+      "type": "boolean",
+      "description": "Холостой прогон упал, как положено"
+    },
+    "mutation_caught": {
+      "type": "boolean",
+      "description": "Внесённая порча поймана"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "checker": {
+            "type": "string",
+            "description": "ID проверяющего",
+            "minLength": 1
+          },
+          "matches_prediction": {
+            "type": "string",
+            "enum": [
+              "да",
+              "нет",
+              "частично"
+            ],
+            "description": "Совпало ли с предсказанием"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "подтверждено",
+              "опровергнуто",
+              "неясно",
+              "повторить"
+            ],
+            "description": "Вердикт"
+          },
+          "alternative": {
+            "type": "string",
+            "description": "Одно альтернативное объяснение сырого результата",
+            "minLength": 1
+          },
+          "fastest_test": {
+            "type": "string",
+            "description": "Быстрейший тест против альтернативы",
+            "minLength": 1
+          },
+          "fingerprint": {
+            "type": "object",
+            "description": "Отпечаток модели",
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "Имя модели в Basic",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "description": "Метка модели из окна сервиса"
+              },
+              "participant": {
+                "type": "string",
+                "description": "ID участника схемы",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "description": "Дата и время UTC"
+              }
+            },
+            "required": [
+              "model",
+              "participant"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "checker",
+          "matches_prediction",
+          "verdict",
+          "alternative",
+          "fastest_test"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Ответы слепых проверяющих",
+      "minItems": 1
+    },
+    "final": {
+      "type": "string",
+      "enum": [
+        "подтверждено",
+        "опровергнуто",
+        "неясно",
+        "повторить",
+        "расхождение"
+      ],
+      "description": "Итог: совпадение вердиктов или расхождение"
+    },
+    "independence_basis": {
+      "type": "string",
+      "description": "Чем эта проверка отличается от прежних проверок той же гипотезы"
+    },
+    "seeded": {
+      "type": "boolean",
+      "description": "Была ли подложена известная ошибка"
+    },
+    "new_status": {
+      "type": "string",
+      "enum": [
+        "S0",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "description": "Статус результата после вердикта"
+    },
+    "spent": {
+      "type": "object",
+      "description": "Расход",
+      "properties": {
+        "model_calls": {
+          "type": "integer",
+          "description": "Запросы к моделям",
+          "minimum": 0
+        },
+        "check_runs": {
+          "type": "integer",
+          "description": "Запуски проверок",
+          "minimum": 0
+        },
+        "compute_hours": {
+          "type": "number",
+          "description": "Часы расчёта",
+          "minimum": 0
+        },
+        "human_minutes": {
+          "type": "integer",
+          "description": "Минуты владельца",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "model_calls",
+        "check_runs",
+        "compute_hours",
+        "human_minutes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "claim_id",
+    "method",
+    "raw_result",
+    "executor",
+    "dry_run_failed",
+    "mutation_caught",
+    "checks",
+    "final",
+    "new_status"
+  ],
+  "additionalProperties": false
+}

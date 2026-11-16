@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/question-map.schema.json",
+  "title": "Карта вопроса",
+  "type": "object",
+  "properties": {
+    "cycle": {
+      "type": "integer",
+      "description": "Номер последнего учтённого цикла",
+      "minimum": 0
+    },
+    "config_id": {
+      "type": "string",
+      "description": "Действующая конфигурация",
+      "minLength": 1
+    },
+    "core_version": {
+      "type": "integer",
+      "description": "Версия ядра",
+      "minimum": 1
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "идёт",
+        "застой",
+        "на испытании перестройки",
+        "заморожена",
+        "остановлена"
+      ],
+      "description": "Состояние задачи"
+    },
+    "progress": {
+      "type": "object",
+      "description": "Валюты прогресса",
+      "properties": {
+        "constraints": {
+          "type": "integer",
+          "description": "В1: число действующих ям-предикатов",
+          "minimum": 0
+        },
+        "expressibility": {
+          "type": "integer",
+          "description": "В2: подтверждённые единицы выразимости",
+          "minimum": 0
+        },
+        "verifiability": {
+          "type": "integer",
+          "description": "В3: откалиброванные способы проверки",
+          "minimum": 0
+        },
+        "last_gain_cycle": {
+          "type": "integer",
+          "description": "Цикл последнего прироста",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "constraints",
+        "expressibility",
+        "verifiability",
+        "last_gain_cycle"
+      ],
+      "additionalProperties": false
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Факты: номер, утверждение, класс"
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Гипотезы: номер, утверждение, состояние, цена проверки"
+    },
+    "active_hypothesis": {
+      "type": "string",
+      "description": "Номер активной гипотезы"
+    },
+    "pits": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Ямы: номер, ключ, правило обхода"
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Пробелы: номер, чего не хватает, состояние"
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Противоречия: номер, точка спора, состояние"
+    },
+    "open_deadlines": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Отложенные предсказания: номер, тест, срок"
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Кандидаты в выразимость: понятие, срок"
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Сработавшие триггеры и диагнозы"
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Очередь предложений изменения: номер, класс, состояние"
+    },
+    "owner_queue": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Очередь решений владельца"
+    },
+    "incomplete_steps": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Шаги, пропущенные из-за выпавшей модели"
+    },
+    "spent": {
+      "type": "object",
+      "description": "Израсходовано",
+      "properties": {
+        "model_calls": {
+          "type": "integer",
+          "description": "Запросы к моделям",
+          "minimum": 0
+        },
+        "check_runs": {
+          "type": "integer",
+          "description": "Запуски проверок",
+          "minimum": 0
+        },
+        "compute_hours": {
+          "type": "number",
+          "description": "Часы расчёта",
+          "minimum": 0
+        },
+        "human_minutes": {
+          "type": "integer",
+          "description": "Минуты владельца",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "model_calls",
+        "check_runs",
+        "compute_hours",
+        "human_minutes"
+      ],
+      "additionalProperties": false
+    },
+    "left": {
+      "type": "object",
+      "description": "Осталось",
+      "properties": {
+        "model_calls": {
+          "type": "integer",
+          "description": "Запросы к моделям",
+          "minimum": 0
+        },
+        "check_runs": {
+          "type": "integer",
+          "description": "Запуски проверок",
+          "minimum": 0
+        },
+        "compute_hours": {
+          "type": "number",
+          "description": "Часы расчёта",
+          "minimum": 0
+        },
+        "human_minutes": {
+          "type": "integer",
+          "description": "Минуты владельца",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "model_calls",
+        "check_runs",
+        "compute_hours",
+        "human_minutes"
+      ],
+      "additionalProperties": false
+    },
+    "next_step": {
+      "type": "string",
+      "description": "Что делать в следующем цикле",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "cycle",
+    "config_id",
+    "core_version",
+    "state",
+    "progress",
+    "facts",
+    "hypotheses",
+    "pits",
+    "gaps",
+    "conflicts",
+    "open_deadlines",
+    "proposals",
+    "spent",
+    "left",
+    "next_step"
+  ],
+  "additionalProperties": false
+}

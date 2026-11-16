@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/config.schema.json",
+  "title": "Конфигурация C_n",
+  "type": "object",
+  "properties": {
+    "config_id": {
+      "type": "string",
+      "description": "Номер конфигурации",
+      "pattern": "^C[0-9]+$"
+    },
+    "parent": {
+      "type": "string",
+      "description": "Номер прежней конфигурации; у C0 пусто"
+    },
+    "created_cycle": {
+      "type": "integer",
+      "description": "Цикл, в котором создана",
+      "minimum": 0
+    },
+    "barrier": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "Б1",
+          "Б2",
+          "Б3",
+          "Б4",
+          "Б5",
+          "Б6",
+          "Б7"
+        ],
+        "description": "Барьер"
+      },
+      "description": "Действующий диагноз барьера",
+      "minItems": 1
+    },
+    "lead_currency": {
+      "type": "string",
+      "enum": [
+        "В1",
+        "В2",
+        "В3"
+      ],
+      "description": "Ведущая валюта прогресса"
+    },
+    "representation": {
+      "type": "string",
+      "description": "Представление задачи: язык, понятия, формулировка",
+      "minLength": 1
+    },
+    "transfer_kind": {
+      "type": "string",
+      "enum": [
+        "исходная постановка",
+        "доказанная эквивалентность",
+        "ослабление",
+        "сужение",
+        "эвристическая аналогия"
+      ],
+      "description": "Как представление связано с исходной задачей"
+    },
+    "cast": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Код роли",
+            "minLength": 1
+          },
+          "participant": {
+            "type": "string",
+            "description": "ID участника",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "description": "Имя модели",
+            "minLength": 1
+          },
+          "reserve": {
+            "type": "string",
+            "description": "Замена из той же группы"
+          }
+        },
+        "required": [
+          "role",
+          "participant",
+          "model"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Состав"
+    },
+    "techniques": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Код роли",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "Приём: что делать и по какому правилу",
+            "minLength": 1
+          },
+          "addresses": {
+            "type": "string",
+            "description": "Какую точку отказа из журнала отказов адресует"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "методология",
+              "расширение",
+              "перестройка"
+            ],
+            "description": "Откуда приём"
+          }
+        },
+        "required": [
+          "role",
+          "text",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Приёмы ролей"
+    },
+    "step_rule": {
+      "type": "string",
+      "description": "Правило выбора следующего шага",
+      "minLength": 1
+    },
+    "soft_thresholds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Имя",
+            "minLength": 1
+          },
+          "value": {
+            "type": "number",
+            "description": "Значение"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Почему такое",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Изменяемые пороги"
+    },
+    "extensions_used": {
+      "type": "integer",
+      "description": "Сколько расширений сверх методологии использовано",
+      "minimum": 0
+    },
+    "quarantine": {
+      "type": "object",
+      "description": "Заполнено, пока конфигурация на испытании",
+      "properties": {
+        "until_cycle": {
+          "type": "integer",
+          "description": "До какого цикла карантин",
+          "minimum": 0
+        },
+        "proposal_id": {
+          "type": "string",
+          "description": "Номер предложения изменения",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "until_cycle",
+        "proposal_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "config_id",
+    "created_cycle",
+    "barrier",
+    "lead_currency",
+    "representation",
+    "transfer_kind",
+    "cast",
+    "techniques",
+    "step_rule"
+  ],
+  "additionalProperties": false
+}

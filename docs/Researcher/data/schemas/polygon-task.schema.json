@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/polygon-task.schema.json",
+  "title": "Задача полигона",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер",
+      "minLength": 1
+    },
+    "family": {
+      "type": "string",
+      "enum": [
+        "скрытый закон",
+        "удалённое понятие",
+        "ложная предпосылка",
+        "двойник",
+        "негативная",
+        "вживлённый дефект метода"
+      ],
+      "description": "Семейство"
+    },
+    "set": {
+      "type": "string",
+      "enum": [
+        "отладочный",
+        "зачётный",
+        "финальный"
+      ],
+      "description": "Набор"
+    },
+    "statement": {
+      "type": "string",
+      "description": "Что видит система",
+      "minLength": 1
+    },
+    "hidden": {
+      "type": "string",
+      "description": "Скрытая структура и ответ; хранится у владельца или наблюдателя",
+      "minLength": 1
+    },
+    "check": {
+      "type": "string",
+      "description": "Как проверяется ответ",
+      "minLength": 1
+    },
+    "removed_terms": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Удалённое понятие и его синонимы"
+    },
+    "planted_defect": {
+      "type": "string",
+      "description": "Вживлённый дефект метода"
+    },
+    "generator": {
+      "type": "string",
+      "description": "Кто породил; эта модель задачу не решает",
+      "minLength": 1
+    },
+    "seed": {
+      "type": "string",
+      "description": "Параметры порождения"
+    }
+  },
+  "required": [
+    "id",
+    "family",
+    "set",
+    "statement",
+    "hidden",
+    "check",
+    "generator"
+  ],
+  "additionalProperties": false
+}

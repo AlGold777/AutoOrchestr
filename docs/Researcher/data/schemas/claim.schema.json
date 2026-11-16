@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/claim.schema.json",
+  "title": "Заявка на проверку H#",
+  "type": "object",
+  "properties": {
+    "registration": {
+      "type": "object",
+      "description": "Что видят проверяющие",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Номер заявки",
+          "pattern": "^H[0-9]+$"
+        },
+        "hypothesis_id": {
+          "type": "string",
+          "description": "Номер гипотезы",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "description": "Проверяемое утверждение",
+          "minLength": 1
+        },
+        "confirms": {
+          "type": "string",
+          "description": "Какой исход считается «за»",
+          "minLength": 1
+        },
+        "refutes": {
+          "type": "string",
+          "description": "Какой исход считается «против»",
+          "minLength": 1
+        },
+        "prediction": {
+          "type": "object",
+          "description": "Предсказание",
+          "properties": {
+            "expected": {
+              "type": "string",
+              "description": "Ожидаемый исход: число с интервалом, знак сравнения или дискретный исход",
+              "minLength": 1
+            },
+            "conditions": {
+              "type": "string",
+              "description": "Условия"
+            },
+            "measurement": {
+              "type": "string",
+              "description": "Как измеряется",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "expected",
+            "measurement"
+          ],
+          "additionalProperties": false
+        },
+        "baseline_prediction": {
+          "type": "string",
+          "description": "Что дал бы наивный способ",
+          "minLength": 1
+        },
+        "predicted_prob": {
+          "type": "number",
+          "description": "Ставка уверенности",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "currency": {
+          "type": "string",
+          "enum": [
+            "В1",
+            "В2",
+            "В3"
+          ],
+          "description": "В какой валюте ожидается прирост"
+        },
+        "deadline": {
+          "type": "object",
+          "description": "Срок отложенного предсказания",
+          "properties": {
+            "due_cycle": {
+              "type": "integer",
+              "description": "Номер цикла, к которому тест должен быть выполнен",
+              "minimum": 0
+            },
+            "test": {
+              "type": "string",
+              "description": "Конкретный тест",
+              "minLength": 1
+            },
+            "judge": {
+              "type": "string",
+              "description": "Кто судит: участник группы проверки или владелец",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "due_cycle",
+            "test",
+            "judge"
+          ],
+          "additionalProperties": false
+        },
+        "config_id": {
+          "type": "string",
+          "description": "Конфигурация",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "hypothesis_id",
+        "claim",
+        "confirms",
+        "refutes",
+        "prediction",
+        "baseline_prediction",
+        "predicted_prob",
+        "currency",
+        "config_id"
+      ],
+      "additionalProperties": false
+    },
+    "procedure": {
+      "type": "object",
+      "description": "Что видит исполнитель проверки",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Номер заявки",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Шаги проверки без упоминания гипотезы и ожидаемого исхода",
+          "minItems": 1
+        },
+        "inputs": {
+          "type": "string",
+          "description": "Данные и где их взять"
+        },
+        "output_format": {
+          "type": "string",
+          "description": "В каком виде вернуть сырой результат",
+          "minLength": 1
+        },
+        "dry_run": {
+          "type": "string",
+          "description": "Холостой прогон: что подать, чтобы процедура обязана была упасть",
+          "minLength": 1
+        },
+        "mutation": {
+          "type": "string",
+          "description": "Порча: что внести, чтобы процедура обязана была её поймать",
+          "minLength": 1
+        },
+        "needs_human": {
+          "type": "boolean",
+          "description": "Нужен ли владелец для исполнения"
+        }
+      },
+      "required": [
+        "id",
+        "steps",
+        "output_format",
+        "dry_run",
+        "mutation",
+        "needs_human"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "registration",
+    "procedure"
+  ],
+  "additionalProperties": false
+}

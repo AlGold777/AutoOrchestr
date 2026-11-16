@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/corpus-item.schema.json",
+  "title": "Элемент корпуса порч",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер",
+      "minLength": 1
+    },
+    "domain": {
+      "type": "string",
+      "description": "Область",
+      "minLength": 1
+    },
+    "statement": {
+      "type": "string",
+      "description": "Утверждение с выводом или решением",
+      "minLength": 1
+    },
+    "is_corrupted": {
+      "type": "boolean",
+      "description": "Испорчено ли"
+    },
+    "corruption": {
+      "type": "string",
+      "enum": [
+        "нет",
+        "подмена квантора",
+        "потеря условия",
+        "циклическая ссылка",
+        "сдвиг на единицу",
+        "неверная база индукции",
+        "подстановка целевого числа",
+        "смена единиц",
+        "ложная ссылка",
+        "вывод шире данных",
+        "смешение корреляции и причины",
+        "другое"
+      ],
+      "description": "Вид порчи"
+    },
+    "critical": {
+      "type": "boolean",
+      "description": "Критическая: обязана ловиться всегда"
+    },
+    "where": {
+      "type": "string",
+      "description": "Где порча; хранится отдельно от того, что видит проверяющий"
+    }
+  },
+  "required": [
+    "id",
+    "domain",
+    "statement",
+    "is_corrupted",
+    "corruption",
+    "critical"
+  ],
+  "additionalProperties": false
+}

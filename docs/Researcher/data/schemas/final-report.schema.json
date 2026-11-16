@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/final-report.schema.json",
+  "title": "Итог задачи",
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "Задача",
+      "minLength": 1
+    },
+    "end_state": {
+      "type": "string",
+      "enum": [
+        "SOLVED",
+        "PARTIAL",
+        "COUNTEREXAMPLE",
+        "LIMIT",
+        "EXPRESSIBLE",
+        "STOPPED"
+      ],
+      "description": "Конечное состояние"
+    },
+    "answer": {
+      "type": "string",
+      "description": "Ответ",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "S0",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5"
+      ],
+      "description": "Статус результата"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Цепочка номеров вердиктов",
+      "minItems": 1
+    },
+    "independent_confirmations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Независимые подтверждения и чем они независимы"
+    },
+    "novelty": {
+      "type": "string",
+      "enum": [
+        "новое",
+        "комбинация известного",
+        "переоткрытие",
+        "не проверялось"
+      ],
+      "description": "Новизна"
+    },
+    "unknown": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Что осталось неизвестным",
+      "minItems": 1
+    },
+    "pits_avoided": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Обойдённые ямы"
+    },
+    "rebuilds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Перестройки и их исходы"
+    },
+    "self_learning": {
+      "type": "string",
+      "enum": [
+        "подтверждено",
+        "не подтверждено",
+        "не проверялось"
+      ],
+      "description": "Перенос на отложенные задачи"
+    },
+    "kill_fired": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Сработавшие kill-критерии"
+    },
+    "reproduction": {
+      "type": "object",
+      "description": "Пакет воспроизведения",
+      "properties": {
+        "config_final": {
+          "type": "string",
+          "description": "Итоговая конфигурация",
+          "minLength": 1
+        },
+        "chain_last_line": {
+          "type": "string",
+          "description": "Последняя строка chain.txt",
+          "minLength": 1
+        },
+        "fingerprints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Отпечатки моделей"
+        },
+        "core_version": {
+          "type": "integer",
+          "description": "Версия ядра",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "config_final",
+        "chain_last_line",
+        "core_version"
+      ],
+      "additionalProperties": false
+    },
+    "spent": {
+      "type": "object",
+      "description": "Расход",
+      "properties": {
+        "model_calls": {
+          "type": "integer",
+          "description": "Запросы к моделям",
+          "minimum": 0
+        },
+        "check_runs": {
+          "type": "integer",
+          "description": "Запуски проверок",
+          "minimum": 0
+        },
+        "compute_hours": {
+          "type": "number",
+          "description": "Часы расчёта",
+          "minimum": 0
+        },
+        "human_minutes": {
+          "type": "integer",
+          "description": "Минуты владельца",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "model_calls",
+        "check_runs",
+        "compute_hours",
+        "human_minutes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "task",
+    "end_state",
+    "answer",
+    "status",
+    "evidence",
+    "novelty",
+    "unknown",
+    "self_learning",
+    "reproduction",
+    "spent"
+  ],
+  "additionalProperties": false
+}

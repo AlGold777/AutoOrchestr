@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/fact.schema.json",
+  "title": "Факт",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер факта",
+      "pattern": "^F[0-9]+$"
+    },
+    "claim": {
+      "type": "string",
+      "description": "Утверждение",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "description": "Ссылка и дата, или номер вердикта",
+      "minLength": 1
+    },
+    "conditions": {
+      "type": "string",
+      "description": "При каких условиях верно"
+    },
+    "reliability": {
+      "type": "string",
+      "enum": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5"
+      ],
+      "description": "Класс надёжности"
+    },
+    "conflicts_with": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Номера фактов, которым противоречит"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Номера вердиктов"
+    },
+    "known_before": {
+      "type": "boolean",
+      "description": "Известно до начала работы: не засчитывается как собственное продвижение"
+    }
+  },
+  "required": [
+    "id",
+    "claim",
+    "source",
+    "reliability",
+    "known_before"
+  ],
+  "additionalProperties": false
+}

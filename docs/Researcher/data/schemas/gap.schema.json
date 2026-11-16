@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/gap.schema.json",
+  "title": "Пробел",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер пробела",
+      "pattern": "^P[0-9]+$"
+    },
+    "missing": {
+      "type": "string",
+      "description": "Чего не хватает",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "данные",
+        "расчёт",
+        "прибор",
+        "опыт",
+        "эксперт",
+        "программа",
+        "понятие",
+        "ручное задание"
+      ],
+      "description": "Вид"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Номера гипотез и направлений, которые он блокирует"
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Варианты получения"
+    },
+    "price": {
+      "type": "string",
+      "description": "Цена"
+    },
+    "lead_time": {
+      "type": "string",
+      "description": "Срок"
+    },
+    "usefulness_check": {
+      "type": "string",
+      "description": "Как проверить, что получение помогло",
+      "minLength": 1
+    },
+    "default_if_no_answer": {
+      "type": "string",
+      "description": "Что делать, если владелец не ответил к сроку"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "открыт",
+        "у владельца",
+        "закрыт",
+        "отклонён"
+      ],
+      "description": "Состояние"
+    }
+  },
+  "required": [
+    "id",
+    "missing",
+    "kind",
+    "usefulness_check",
+    "status"
+  ],
+  "additionalProperties": false
+}

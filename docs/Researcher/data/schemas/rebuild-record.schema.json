@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/rebuild-record.schema.json",
+  "title": "Запись библиотеки перестроек",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Номер записи",
+      "pattern": "^L[0-9]+$"
+    },
+    "task": {
+      "type": "string",
+      "description": "Задача",
+      "minLength": 1
+    },
+    "proposal_id": {
+      "type": "string",
+      "description": "Номер предложения",
+      "minLength": 1
+    },
+    "class": {
+      "type": "string",
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "description": "Класс"
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7"
+      ],
+      "description": "Триггер"
+    },
+    "barrier": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "Б1",
+          "Б2",
+          "Б3",
+          "Б4",
+          "Б5",
+          "Б6",
+          "Б7"
+        ],
+        "description": "Барьер"
+      },
+      "description": "Диагноз барьера"
+    },
+    "diagnosis": {
+      "type": "string",
+      "description": "Диагноз метода",
+      "minLength": 1
+    },
+    "change": {
+      "type": "string",
+      "description": "Что изменено",
+      "minLength": 1
+    },
+    "move": {
+      "type": "string",
+      "description": "Ход каталога"
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "При каких условиях применима",
+      "minItems": 1
+    },
+    "prediction": {
+      "type": "string",
+      "description": "Предсказание",
+      "minLength": 1
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "подтверждено",
+        "откат",
+        "истекло"
+      ],
+      "description": "Исход"
+    },
+    "arms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "arm": {
+            "type": "string",
+            "enum": [
+              "прежняя",
+              "новая",
+              "плацебо"
+            ],
+            "description": "Плечо"
+          },
+          "result": {
+            "type": "string",
+            "description": "Итог плеча",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "arm",
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Итоги плеч"
+    },
+    "noise": {
+      "type": "string",
+      "description": "Измеренный шум"
+    },
+    "beat_placebo": {
+      "type": "string",
+      "enum": [
+        "да",
+        "нет",
+        "не проверялось"
+      ],
+      "description": "Лучше ли плацебо"
+    },
+    "risky": {
+      "type": "boolean",
+      "description": "Прежняя конфигурация предсказанного исхода не дала"
+    },
+    "lesson": {
+      "type": "string",
+      "description": "Урок: где работает и где нет",
+      "minLength": 1
+    },
+    "cost": {
+      "type": "object",
+      "description": "Цена перестройки",
+      "properties": {
+        "model_calls": {
+          "type": "integer",
+          "description": "Запросы к моделям",
+          "minimum": 0
+        },
+        "check_runs": {
+          "type": "integer",
+          "description": "Запуски проверок",
+          "minimum": 0
+        },
+        "compute_hours": {
+          "type": "number",
+          "description": "Часы расчёта",
+          "minimum": 0
+        },
+        "human_minutes": {
+          "type": "integer",
+          "description": "Минуты владельца",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "model_calls",
+        "check_runs",
+        "compute_hours",
+        "human_minutes"
+      ],
+      "additionalProperties": false
+    },
+    "transferred_to": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Задачи, где проверен перенос, и исход"
+    }
+  },
+  "required": [
+    "id",
+    "task",
+    "proposal_id",
+    "class",
+    "trigger",
+    "diagnosis",
+    "change",
+    "preconditions",
+    "prediction",
+    "outcome",
+    "arms",
+    "beat_placebo",
+    "risky",
+    "lesson"
+  ],
+  "additionalProperties": false
+}

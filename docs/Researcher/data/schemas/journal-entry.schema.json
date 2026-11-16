@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/journal-entry.schema.json",
+  "title": "Запись цикла",
+  "type": "object",
+  "properties": {
+    "n": {
+      "type": "integer",
+      "description": "Номер записи",
+      "minimum": 1
+    },
+    "cycle": {
+      "type": "integer",
+      "description": "Номер цикла",
+      "minimum": 0
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "fact",
+        "hypothesis",
+        "claim",
+        "exec",
+        "verdict",
+        "conflict",
+        "gap",
+        "pit",
+        "trigger",
+        "proposal",
+        "rebuild",
+        "control",
+        "owner_decision",
+        "core_change",
+        "branch_closed",
+        "incomplete_step",
+        "closed_set_access",
+        "correction"
+      ],
+      "description": "Вид события"
+    },
+    "ref": {
+      "type": "string",
+      "description": "Номер объекта: G, H, V, F, K, P, Y, X"
+    },
+    "step": {
+      "type": "string",
+      "description": "Шаг схемы и участник, из чьего ответа взято",
+      "minLength": 1
+    },
+    "text": {
+      "type": "string",
+      "description": "Содержание без толкования",
+      "minLength": 1
+    },
+    "corrects": {
+      "type": "integer",
+      "description": "Номер записи, которую исправляет",
+      "minimum": 1
+    },
+    "config_id": {
+      "type": "string",
+      "description": "Конфигурация",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "n",
+    "cycle",
+    "type",
+    "step",
+    "text",
+    "config_id"
+  ],
+  "additionalProperties": false
+}

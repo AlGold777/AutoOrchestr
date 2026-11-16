@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "researcher/control-report.schema.json",
+  "title": "Донесение контролёра",
+  "type": "object",
+  "properties": {
+    "cycle": {
+      "type": "integer",
+      "description": "Номер цикла",
+      "minimum": 0
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "V_LATE_PREDICTION",
+              "V_LEAK_TO_CHECKER",
+              "V_VERDICT_EDIT",
+              "V_EXECUTOR_SWAP",
+              "V_EXTERNAL_AS_INSTRUCTION",
+              "V_OVERREACH",
+              "V_NO_RECEIPT",
+              "V_NO_POSTMORTEM",
+              "V_CORE_WRITE",
+              "V_GOAL_DRIFT",
+              "V_SOFTENING",
+              "V_FORMAL_COMPLIANCE",
+              "V_UNMARKED_CLAIM"
+            ],
+            "description": "Код нарушения"
+          },
+          "hard": {
+            "type": "boolean",
+            "description": "Жёсткое"
+          },
+          "step": {
+            "type": "string",
+            "description": "Шаг и участник",
+            "minLength": 1
+          },
+          "quote": {
+            "type": "string",
+            "description": "Дословная цитата",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string",
+            "description": "Почему это нарушение",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "code",
+          "hard",
+          "step",
+          "quote",
+          "why"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Находки"
+    },
+    "record_mismatches": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Расхождения записей цикла и карты с ответами"
+    },
+    "conflicts_of_interest": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Нарушения разделения ролей"
+    },
+    "alarm": {
+      "type": "string",
+      "description": "Код тревоги или пусто"
+    }
+  },
+  "required": [
+    "cycle",
+    "findings",
+    "record_mismatches",
+    "conflicts_of_interest"
+  ],
+  "additionalProperties": false
+}
