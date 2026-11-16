@@ -218,10 +218,10 @@ S['10-polygon'] = schema(
 S['11-methodology-review'] = schema(
   'Рецензия методологии. В поле задачи — текст одного документа методологии. Четыре рецензента независимо ищут дыры в формате «утверждение, проверка, следствие»; автор принимает только доказанные замечания и готовит патч; владелец утверждает.',
   [
-    round('Рецензия', [who('GPT', 'rev1', 'V01', 600), who('Qwen', 'rev2', 'V01', 600), who('DeepSeek', 'rev3', 'V01', 600), who('Grok', 'rev4', 'V01', 600)], { chat: 'new', output: { strictLength: true } }),
+    round('Рецензия', [who('GPT', 'rev1', 'V01', 800), who('Qwen', 'rev2', 'V01', 800), who('DeepSeek', 'rev3', 'V01', 800), who('Grok', 'rev4', 'V01', 800)], { chat: 'new', output: { strictLength: true } }),
     round('Патч', [who('Claude', 'patch', 'V02', 1500)], { input: ['r1'], output: doc('patch', 'Патч') }),
     owner('patch', 'O-patch', { document: 'r2' }),
-  ], 27000);
+  ], 16000);
 
 // --- Проверка и запись ---
 const problems = [];
