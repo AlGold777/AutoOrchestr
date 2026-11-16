@@ -18,9 +18,9 @@
           "description": "1. Проверено и опровергнуто заявок",
           "minLength": 1
         },
-        "cost_per_result": {
+        "results": {
           "type": "string",
-          "description": "2. Цена проверенного результата",
+          "description": "Результатов со статусом S1 и выше: в цикле и всего; сколько получено запуском владельца",
           "minLength": 1
         },
         "currencies": {
@@ -38,9 +38,9 @@
           "description": "5. Доля рискованных предсказаний",
           "minLength": 1
         },
-        "stalled_proposals": {
+        "trigger": {
           "type": "string",
-          "description": "6. Предложений, не дошедших до испытания",
+          "description": "Триггер этого цикла и действующий диагноз метода",
           "minLength": 1
         },
         "expired": {
@@ -66,11 +66,11 @@
       },
       "required": [
         "checked",
-        "cost_per_result",
+        "results",
         "currencies",
         "rebuilds",
         "risky_share",
-        "stalled_proposals",
+        "trigger",
         "expired",
         "violations",
         "sealed_mismatch",

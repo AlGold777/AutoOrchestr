@@ -5,9 +5,8 @@
   "type": "object",
   "properties": {
     "n": {
-      "type": "integer",
-      "description": "Номер записи",
-      "minimum": 1
+      "type": "string",
+      "description": "Номер записи: <цикл>.<а|б>.<порядковый>"
     },
     "cycle": {
       "type": "integer",
@@ -23,19 +22,20 @@
         "claim",
         "exec",
         "verdict",
+        "alternative",
         "conflict",
         "gap",
         "pit",
         "trigger",
-        "proposal",
         "rebuild",
-        "control",
         "owner_decision",
         "core_change",
         "branch_closed",
         "incomplete_step",
         "closed_set_access",
-        "correction"
+        "correction",
+        "calibration",
+        "trial_setup"
       ],
       "description": "Вид события"
     },

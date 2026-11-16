@@ -152,8 +152,7 @@
         "S1",
         "S2",
         "S3",
-        "S4",
-        "S5"
+        "S4"
       ],
       "description": "Статус результата после вердикта"
     },
@@ -171,11 +170,6 @@
           "description": "Запуски проверок",
           "minimum": 0
         },
-        "compute_hours": {
-          "type": "number",
-          "description": "Часы расчёта",
-          "minimum": 0
-        },
         "human_minutes": {
           "type": "integer",
           "description": "Минуты владельца",
@@ -185,10 +179,18 @@
       "required": [
         "model_calls",
         "check_runs",
-        "compute_hours",
         "human_minutes"
       ],
       "additionalProperties": false
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "запуск владельца",
+        "инструмент модели",
+        "запуска нет"
+      ],
+      "description": "Происхождение сырого результата. «Запуска нет» — статус не повышается; «инструмент модели» — не выше S1, пока владелец не повторил запуск"
     }
   },
   "required": [
@@ -201,7 +203,8 @@
     "mutation_caught",
     "checks",
     "final",
-    "new_status"
+    "new_status",
+    "provenance"
   ],
   "additionalProperties": false
 }

@@ -61,11 +61,6 @@
           "description": "Запуски проверок",
           "minimum": 0
         },
-        "compute_hours": {
-          "type": "number",
-          "description": "Часы расчёта",
-          "minimum": 0
-        },
         "human_minutes": {
           "type": "integer",
           "description": "Минуты владельца",
@@ -75,7 +70,6 @@
       "required": [
         "model_calls",
         "check_runs",
-        "compute_hours",
         "human_minutes"
       ],
       "additionalProperties": false

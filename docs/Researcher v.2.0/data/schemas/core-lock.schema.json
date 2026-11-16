@@ -61,6 +61,10 @@
           "type": "string",
           "description": "SHA-256 запечатанных ожиданий владельца",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "extract": {
+          "type": "string",
+          "description": "SHA-256 выжимки ядра core/extract.txt: она входит в каждый пакет без изменений"
         }
       },
       "required": [
@@ -69,7 +73,8 @@
         "config_c0",
         "prompts",
         "schemas",
-        "methodology"
+        "methodology",
+        "extract"
       ],
       "additionalProperties": false
     },
@@ -107,11 +112,6 @@
             "type": "integer",
             "description": "Предел обращений",
             "minimum": 0
-          },
-          "accesses": {
-            "type": "integer",
-            "description": "Сколько обращений было",
-            "minimum": 0
           }
         },
         "required": [
@@ -119,54 +119,11 @@
           "kind",
           "sha256",
           "holder",
-          "access_limit",
-          "accesses"
+          "access_limit"
         ],
         "additionalProperties": false
       },
       "description": "Закрытые наборы"
-    },
-    "checkers": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "participant": {
-            "type": "string",
-            "description": "ID участника или «владелец»",
-            "minLength": 1
-          },
-          "detect_rate": {
-            "type": "number",
-            "description": "Доля найденных порч",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "false_rate": {
-            "type": "number",
-            "description": "Доля ложных срабатываний",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "corpus_version": {
-            "type": "string",
-            "description": "Версия корпуса порч",
-            "minLength": 1
-          },
-          "fingerprint": {
-            "type": "string",
-            "description": "Метка модели на момент калибровки"
-          }
-        },
-        "required": [
-          "participant",
-          "detect_rate",
-          "false_rate",
-          "corpus_version"
-        ],
-        "additionalProperties": false
-      },
-      "description": "Два числа калибровки каждого проверяющего"
     }
   },
   "required": [
@@ -174,8 +131,8 @@
     "ratified_at",
     "owner",
     "hashes",
-    "closed_sets",
-    "checkers"
+    "closed_sets"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "description": "Замок ядра. После подписи не меняется: обращения к закрытым наборам и числа калибровки записываются событиями журнала"
 }

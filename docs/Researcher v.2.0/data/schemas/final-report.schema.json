@@ -33,8 +33,7 @@
         "S1",
         "S2",
         "S3",
-        "S4",
-        "S5"
+        "S4"
       ],
       "description": "Статус результата"
     },
@@ -58,12 +57,12 @@
     "novelty": {
       "type": "string",
       "enum": [
-        "новое",
+        "не проверялась",
+        "известно",
         "комбинация известного",
-        "переоткрытие",
-        "не проверялось"
+        "новизна подтверждена в пределах поиска"
       ],
-      "description": "Новизна"
+      "description": "Отметка новизны; статус её не содержит"
     },
     "unknown": {
       "type": "array",
@@ -156,11 +155,6 @@
           "description": "Запуски проверок",
           "minimum": 0
         },
-        "compute_hours": {
-          "type": "number",
-          "description": "Часы расчёта",
-          "minimum": 0
-        },
         "human_minutes": {
           "type": "integer",
           "description": "Минуты владельца",
@@ -170,7 +164,6 @@
       "required": [
         "model_calls",
         "check_runs",
-        "compute_hours",
         "human_minutes"
       ],
       "additionalProperties": false

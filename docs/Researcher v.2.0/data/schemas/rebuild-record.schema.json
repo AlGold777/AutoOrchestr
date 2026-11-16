@@ -23,7 +23,6 @@
       "type": "string",
       "enum": [
         "A",
-        "B",
         "C",
         "D",
         "E"
@@ -93,7 +92,9 @@
       "enum": [
         "подтверждено",
         "откат",
-        "истекло"
+        "недействительно",
+        "пограничный",
+        "волевое: не испытано"
       ],
       "description": "Исход"
     },
@@ -107,7 +108,7 @@
             "enum": [
               "прежняя",
               "новая",
-              "плацебо"
+              "контрольная"
             ],
             "description": "Плечо"
           },
@@ -136,11 +137,7 @@
         "нет",
         "не проверялось"
       ],
-      "description": "Лучше ли плацебо"
-    },
-    "risky": {
-      "type": "boolean",
-      "description": "Прежняя конфигурация предсказанного исхода не дала"
+      "description": "Лучше ли новая конфигурация контрольной по правилу вердикта"
     },
     "lesson": {
       "type": "string",
@@ -161,11 +158,6 @@
           "description": "Запуски проверок",
           "minimum": 0
         },
-        "compute_hours": {
-          "type": "number",
-          "description": "Часы расчёта",
-          "minimum": 0
-        },
         "human_minutes": {
           "type": "integer",
           "description": "Минуты владельца",
@@ -175,7 +167,6 @@
       "required": [
         "model_calls",
         "check_runs",
-        "compute_hours",
         "human_minutes"
       ],
       "additionalProperties": false
@@ -187,6 +178,14 @@
         "minLength": 1
       },
       "description": "Задачи, где проверен перенос, и исход"
+    },
+    "control_item": {
+      "type": "string",
+      "description": "Контрольное изменение: класс и пункт каталога"
+    },
+    "where_failed": {
+      "type": "string",
+      "description": "Условия, при которых перестройка не дала исхода; при откате обязательно"
     }
   },
   "required": [
@@ -202,8 +201,8 @@
     "outcome",
     "arms",
     "beat_placebo",
-    "risky",
-    "lesson"
+    "lesson",
+    "control_item"
   ],
   "additionalProperties": false
 }

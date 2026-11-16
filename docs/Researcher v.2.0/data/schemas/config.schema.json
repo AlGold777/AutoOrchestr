@@ -61,40 +61,6 @@
       ],
       "description": "Как представление связано с исходной задачей"
     },
-    "cast": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "description": "Код роли",
-            "minLength": 1
-          },
-          "participant": {
-            "type": "string",
-            "description": "ID участника",
-            "minLength": 1
-          },
-          "model": {
-            "type": "string",
-            "description": "Имя модели",
-            "minLength": 1
-          },
-          "reserve": {
-            "type": "string",
-            "description": "Замена из той же группы"
-          }
-        },
-        "required": [
-          "role",
-          "participant",
-          "model"
-        ],
-        "additionalProperties": false
-      },
-      "description": "Состав"
-    },
     "techniques": {
       "type": "array",
       "items": {
@@ -131,7 +97,7 @@
         ],
         "additionalProperties": false
       },
-      "description": "Приёмы ролей"
+      "description": "Приёмы ролей C01, C02, C04, C05, C06. Приёмов исполнителя проверки, проверяющих, секретарей и контролёров здесь нет: они — ядро"
     },
     "step_rule": {
       "type": "string",
@@ -201,9 +167,9 @@
     "lead_currency",
     "representation",
     "transfer_kind",
-    "cast",
     "techniques",
     "step_rule"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "description": "Конфигурация: метод работы над задачей. Текст конфигурации в пакете — не длиннее 4 500 знаков. Состав моделей задаётся сборщиком схем, а не конфигурацией"
 }

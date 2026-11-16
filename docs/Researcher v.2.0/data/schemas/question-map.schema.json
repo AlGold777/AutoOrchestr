@@ -131,14 +131,6 @@
       },
       "description": "Сработавшие триггеры и диагнозы"
     },
-    "proposals": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "description": "Очередь предложений изменения: номер, класс, состояние"
-    },
     "owner_queue": {
       "type": "array",
       "items": {
@@ -154,72 +146,6 @@
         "minLength": 1
       },
       "description": "Шаги, пропущенные из-за выпавшей модели"
-    },
-    "spent": {
-      "type": "object",
-      "description": "Израсходовано",
-      "properties": {
-        "model_calls": {
-          "type": "integer",
-          "description": "Запросы к моделям",
-          "minimum": 0
-        },
-        "check_runs": {
-          "type": "integer",
-          "description": "Запуски проверок",
-          "minimum": 0
-        },
-        "compute_hours": {
-          "type": "number",
-          "description": "Часы расчёта",
-          "minimum": 0
-        },
-        "human_minutes": {
-          "type": "integer",
-          "description": "Минуты владельца",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "model_calls",
-        "check_runs",
-        "compute_hours",
-        "human_minutes"
-      ],
-      "additionalProperties": false
-    },
-    "left": {
-      "type": "object",
-      "description": "Осталось",
-      "properties": {
-        "model_calls": {
-          "type": "integer",
-          "description": "Запросы к моделям",
-          "minimum": 0
-        },
-        "check_runs": {
-          "type": "integer",
-          "description": "Запуски проверок",
-          "minimum": 0
-        },
-        "compute_hours": {
-          "type": "number",
-          "description": "Часы расчёта",
-          "minimum": 0
-        },
-        "human_minutes": {
-          "type": "integer",
-          "description": "Минуты владельца",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "model_calls",
-        "check_runs",
-        "compute_hours",
-        "human_minutes"
-      ],
-      "additionalProperties": false
     },
     "next_step": {
       "type": "string",
@@ -239,10 +165,8 @@
     "gaps",
     "conflicts",
     "open_deadlines",
-    "proposals",
-    "spent",
-    "left",
     "next_step"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "description": "Карта вопроса: состояние задачи. Каждая строка несёт номер записи цикла, из которой взята; строка без номера — «не проверено». Расход и остаток бюджета — в разделе «ХОД» пакета, а не в карте"
 }

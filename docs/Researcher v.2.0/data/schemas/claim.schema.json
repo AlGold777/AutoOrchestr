@@ -6,22 +6,12 @@
   "properties": {
     "registration": {
       "type": "object",
-      "description": "Что видят проверяющие",
+      "description": "То, что видят проверяющие: условия, по которым судят результат. Утверждения и гипотезы здесь нет",
       "properties": {
         "id": {
           "type": "string",
           "description": "Номер заявки",
           "pattern": "^H[0-9]+$"
-        },
-        "hypothesis_id": {
-          "type": "string",
-          "description": "Номер гипотезы",
-          "minLength": 1
-        },
-        "claim": {
-          "type": "string",
-          "description": "Проверяемое утверждение",
-          "minLength": 1
         },
         "confirms": {
           "type": "string",
@@ -58,29 +48,9 @@
           ],
           "additionalProperties": false
         },
-        "baseline_prediction": {
-          "type": "string",
-          "description": "Что дал бы наивный способ",
-          "minLength": 1
-        },
-        "predicted_prob": {
-          "type": "number",
-          "description": "Ставка уверенности",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "currency": {
-          "type": "string",
-          "enum": [
-            "В1",
-            "В2",
-            "В3"
-          ],
-          "description": "В какой валюте ожидается прирост"
-        },
         "deadline": {
           "type": "object",
-          "description": "Срок отложенного предсказания",
+          "description": "Срок отложенного предсказания; обязателен для качественного предсказания",
           "properties": {
             "due_cycle": {
               "type": "integer",
@@ -105,23 +75,31 @@
           ],
           "additionalProperties": false
         },
-        "config_id": {
-          "type": "string",
-          "description": "Конфигурация",
-          "minLength": 1
+        "baseline": {
+          "type": "object",
+          "description": "Наивное предсказание: каким способом и что он даёт",
+          "properties": {
+            "method": {
+              "type": "string",
+              "description": "Какой наивный способ"
+            },
+            "expected": {
+              "type": "string",
+              "description": "Что он даёт"
+            }
+          },
+          "required": [
+            "method",
+            "expected"
+          ]
         }
       },
       "required": [
         "id",
-        "hypothesis_id",
-        "claim",
         "confirms",
         "refutes",
         "prediction",
-        "baseline_prediction",
-        "predicted_prob",
-        "currency",
-        "config_id"
+        "baseline"
       ],
       "additionalProperties": false
     },
@@ -176,11 +154,60 @@
         "needs_human"
       ],
       "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "description": "Заметка автора для записей цикла. Проверяющим и исполнителю не передаётся",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Номер заявки H"
+        },
+        "hypothesis_id": {
+          "type": "string",
+          "description": "Номер гипотезы",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "description": "Проверяемое утверждение",
+          "minLength": 1
+        },
+        "predicted_prob": {
+          "type": "number",
+          "description": "Ставка уверенности",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "currency": {
+          "type": "string",
+          "enum": [
+            "В1",
+            "В2",
+            "В3"
+          ],
+          "description": "В какой валюте ожидается прирост"
+        },
+        "config_id": {
+          "type": "string",
+          "description": "Конфигурация",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "hypothesis_id",
+        "claim",
+        "predicted_prob",
+        "currency",
+        "config_id"
+      ]
     }
   },
   "required": [
     "registration",
-    "procedure"
+    "procedure",
+    "note"
   ],
   "additionalProperties": false
 }
