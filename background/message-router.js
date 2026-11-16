@@ -2371,6 +2371,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return true;
             }
 
+            case 'OPEN_MODEL_CHAT': {
+                (async () => {
+                    try {
+                        const tabId = jobState?.llms?.[message.llmName]?.tabId || TabMapManager.get(message.llmName);
+                        if (!tabId) return sendResponse({ success: false });
+                        const tab = await chrome.tabs.update(tabId, { active: true });
+                        if (tab?.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+                        sendResponse({ success: true });
+                    } catch (_) {
+                        sendResponse({ success: false });
+                    }
+                })();
+                return true;
+            }
+
             case 'GET_ACTIVE_RUN_STATE': {
                 const session = jobState?.session || null;
                 const llmEntries = Object.values(jobState?.llms || {});
