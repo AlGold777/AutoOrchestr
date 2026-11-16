@@ -23,28 +23,31 @@
           "name": "GPT",
           "id": "rev1",
           "label": "Рецензент методологии · GPT",
-          "maxWords": 800
+          "maxWords": 600
         },
         {
           "name": "Qwen",
           "id": "rev2",
           "label": "Рецензент методологии · Qwen",
-          "maxWords": 800
+          "maxWords": 600
         },
         {
           "name": "DeepSeek",
           "id": "rev3",
           "label": "Рецензент методологии · DeepSeek",
-          "maxWords": 800
+          "maxWords": 600
         },
         {
           "name": "Grok",
           "id": "rev4",
           "label": "Рецензент методологии · Grok",
-          "maxWords": 800
+          "maxWords": 600
         }
       ],
-      "chat": "new"
+      "chat": "new",
+      "output": {
+        "strictLength": true
+      }
     },
     {
       "ref": "r2",
