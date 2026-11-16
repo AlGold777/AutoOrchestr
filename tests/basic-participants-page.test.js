@@ -16,6 +16,9 @@ describe('Basic participant page integration', () => {
     };
     H.renderDebateDom();
     document.body.classList.add('pipeline-page');
+    ['disput/basic-input-files.js', 'results/basic-input-canvas.js'].forEach((file) => {
+      window.eval(require('fs').readFileSync(require('path').join(__dirname, '..', file), 'utf8'));
+    });
     await H.loadResultsScript();
   });
 
@@ -180,6 +183,77 @@ describe('Basic participant page integration', () => {
     expect(block.classList.contains('is-participant-editing')).toBe(true);
     pointer(document.body, 'pointerdown', { pointerId: 4 });
     expect(block.classList.contains('is-participant-editing')).toBe(false);
+  });
+
+  test('round territory guide appears only during file dragover, not ordinary pointer movement', async () => {
+    resetPipelineStore();
+    const name = 'File drop territory';
+    expect(await debug().installBasicSchema(name, schemaV2([round('r1', [{ id: 'claude-main', name: 'Claude' }])]))).toEqual({ ok: true, errors: [] });
+    await selectPipeline(name);
+    const canvas = document.querySelector('#pipeline-panel .pipeline-canvas');
+    // The results-page harness omits the real page's .pipeline-flow wrapper.
+    const flow = document.createElement('div');
+    flow.className = 'pipeline-flow';
+    Array.from(canvas.children).filter((node) => node.matches('.stage-column, .connector-group')).forEach((node) => flow.append(node));
+    canvas.append(flow);
+    canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 20, clientY: 20 }));
+    expect(document.querySelector('.pipeline-round-territory')).toBeNull();
+
+    const dragover = () => {
+      const event = new Event('dragover', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clientX', { value: 20 });
+      Object.defineProperty(event, 'clientY', { value: 20 });
+      Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], dropEffect: 'none' } });
+      canvas.dispatchEvent(event);
+      return event;
+    };
+    expect(dragover().defaultPrevented).toBe(true);
+    expect(flow.querySelector('.pipeline-round-territory')).not.toBeNull();
+    document.dispatchEvent(new Event('dragend'));
+    expect(flow.querySelector('.pipeline-round-territory')).toBeNull();
+    dragover();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(flow.querySelector('.pipeline-round-territory')).toBeNull();
+    dragover();
+    document.dispatchEvent(new Event('drop', { bubbles: true }));
+    expect(flow.querySelector('.pipeline-round-territory')).toBeNull();
+  });
+
+  test('unlinking one shared file binding preserves the same ID in another scope and keeps IndexedDB bytes', async () => {
+    resetPipelineStore();
+    const descriptor = { id: 'shared-file-id', name: 'brief.txt', type: 'text/plain', size: 4 };
+    const storedFile = { name: descriptor.name, type: descriptor.type, bytes: 'keep' };
+    const bytesById = new Map([[descriptor.id, storedFile]]);
+    const previousIndexedDB = Object.getOwnPropertyDescriptor(window, 'indexedDB');
+    const openIndexedDB = jest.fn();
+    Object.defineProperty(window, 'indexedDB', { configurable: true, value: { open: openIndexedDB } });
+    const name = 'Scoped file unlink';
+    const schema = schemaV2([round('r1', [{ id: 'claude-main', name: 'Claude', files: [descriptor] }], { files: [descriptor] })]);
+    try {
+      expect(await debug().installBasicSchema(name, schema)).toEqual({ ok: true, errors: [] });
+      await selectPipeline(name);
+      const sharedChip = document.querySelector('.stage-column[data-round="1"] .basic-input-canvas-layer .basic-input-file-wrap [data-file-id="shared-file-id"]');
+      expect(sharedChip).not.toBeNull();
+      const down = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 });
+      Object.defineProperty(down, 'pointerId', { value: 9 });
+      sharedChip.dispatchEvent(down);
+      await H.delay(570);
+      const remove = sharedChip.parentElement.querySelector('.basic-input-file-delete');
+      expect(remove.hidden).toBe(false);
+      remove.click();
+      await H.delay(30);
+
+      const activePlan = window.__getActivePipelineDraftPlan();
+      const updated = debug().basicSchemaFromPage(window.__pipelineDraftPlanForCanvas(activePlan), null, { forSave: true, basedOn: '' });
+      expect(updated.steps[0].files || []).toEqual([]);
+      expect(updated.steps[0].models[0].files).toEqual([descriptor]);
+      expect(openIndexedDB).not.toHaveBeenCalled();
+      expect(bytesById.get(descriptor.id)).toBe(storedFile);
+      expect(bytesById.get(descriptor.id).bytes).toBe('keep');
+    } finally {
+      if (previousIndexedDB) Object.defineProperty(window, 'indexedDB', previousIndexedDB);
+      else delete window.indexedDB;
+    }
   });
 
   test('canvas alignment ResizeObserver excludes rebuilt owner stacks', async () => {

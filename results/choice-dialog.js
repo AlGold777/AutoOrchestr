@@ -69,7 +69,7 @@
             }
           } catch (_) { /* no valid source URL */ }
           if (documentSpec.downloadName) {
-            const blob = new Blob([String(documentSpec.text ?? '')], { type: 'text/plain;charset=utf-8' });
+            const blob = documentSpec.fileBlob || new Blob([String(documentSpec.text ?? '')], { type: 'text/plain;charset=utf-8' });
             const url = root.URL.createObjectURL(blob); objectUrls.push(url);
             const download = el(doc, 'a', 'choice-dialog-document-download', '↓');
             download.href = url; download.download = String(documentSpec.downloadName).replace(/[\\/]/g, '_');
@@ -79,7 +79,14 @@
           dialog.append(header);
         }
         if (docHeading) dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docHeading));
-        dialog.append(el(doc, 'pre', 'choice-dialog-document', String(documentSpec.text ?? '')));
+        if (documentSpec.fileBlob && documentSpec.previewKind === 'image') {
+          const url = root.URL.createObjectURL(documentSpec.fileBlob); objectUrls.push(url);
+          const preview = el(doc, 'img', 'choice-dialog-file-preview'); preview.src = url; preview.alt = String(title || 'Файл'); dialog.append(preview);
+        } else if (documentSpec.previewKind !== 'download') {
+          dialog.append(el(doc, 'pre', 'choice-dialog-document', String(documentSpec.text ?? '')));
+        } else {
+          dialog.append(el(doc, 'p', 'choice-dialog-message', 'Предпросмотр недоступен. Скачайте файл.'));
+        }
       } else if (mode === 'editable') {
         if (docHeading) dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docHeading));
         area =el(doc, 'textarea', 'choice-dialog-document-edit');

@@ -5130,12 +5130,52 @@ document.addEventListener('click', (event) => {
             });
         };
 
+        const openBasicInputFile = async (file) => {
+            try {
+                const stored = typeof file.content === 'string'
+                    ? new Blob([file.content], { type: file.type || 'text/plain' })
+                    : await window.BasicInputFiles.createStore().get(file);
+                if (!stored) throw new Error('Файл не найден в локальном хранилище');
+                const type = String(file.type || stored.type || '').toLowerCase().split(';')[0];
+                const image = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'].includes(type);
+                const textual = type.startsWith('text/') || ['application/json', 'application/xml'].includes(type)
+                    || (!type && /\.(txt|md|csv|tsv|json|xml|log)$/i.test(file.name));
+                const text = textual ? await stored.text() : '';
+                await askChoiceDialog({ title: file.name, document: { kind: 'read', readOnly: true, name: '', text,
+                    fileBlob: stored, previewKind: image ? 'image' : textual ? 'text' : 'download', downloadName: file.name }, choices: [], cancelText: 'Закрыть' });
+            } catch (error) { showNotification(`Файл «${file.name}» не открыт: ${error?.message || error}`, 'warn'); }
+        };
+        const removeBasicInputFile = async (file, scope) => {
+            if (pipelineRunActive) return;
+            const ref = scope.ref;
+            if (scope.participant) {
+                const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true });
+                const model = (schema.steps || []).find((step) => step.ref === ref)?.models?.find((item) => (item.id ?? item.name) === scope.participant);
+                if (!model) return;
+                const settings = getCustomCardSettings();
+                if (!settings[ref]) settings[ref] = {};
+                settings[ref][scope.participant] = { ...(settings[ref][scope.participant] || {}), files: (model.files || []).filter((item) => item.id !== file.id) };
+                const name = draftPlanStorageKey();
+                customCardSettings.set(name, settings);
+                if (!isDefaultPipelineName(name) && pipelineStore.pipelines[name]) { persistBasicSettings(name); await persistPipelineStore(); }
+            } else if (/^r\d+$/.test(ref)) {
+                const files = getCustomRoundSettings()[ref]?.files || [];
+                await setCustomRoundSetting(ref, 'files', files.filter((item) => item.id !== file.id));
+            } else {
+                const entries = getCustomControls().map((item) => item.step.ref === ref
+                    ? { ...item, step: { ...item.step, files: (item.step.files || []).filter((entry) => entry.id !== file.id) } } : item);
+                await setCustomControls(entries);
+            }
+            syncBasicInputCanvas();
+        };
         const syncBasicInputCanvas = () => {
             if (!window.BasicInputCanvas || !pipelinePanel) return;
             const schema = isCustomEnginePipeline()
                 ? basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }) : { steps: [] };
             const attachments = Array.from(promptAttachmentBar?.querySelectorAll('[data-attachment-key]') || [], (item) => ({ name: item.title }));
-            return window.BasicInputCanvas.sync({ panel: pipelinePanel, schema, attachments });
+            return window.BasicInputCanvas.sync({ panel: pipelinePanel, schema, attachments,
+                onFile: (file) => { void openBasicInputFile(file); },
+                onRemoveFile: pipelineRunActive ? null : (file, scope) => { void removeBasicInputFile(file, scope).catch((error) => showNotification(`Файл не удалён: ${error?.message || error}`, 'error')); } });
         };
         // A change of the structure on the canvas of a saved Basic pipeline (Send, a role, a round, a participant) rebuilds its record
         // at once, as a card save does (basic-developer.md, «Save»): the record and the run never differ, a switch to another
@@ -5192,13 +5232,14 @@ document.addEventListener('click', (event) => {
             territoryGuide.style.width = `${territory.right - territory.left}px`;
             territoryGuide.style.height = `${Math.max(0, Math.max(flowRect.height, pipelineCanvas.clientHeight) - 36)}px`;
         };
-        pipelineCanvas?.addEventListener('pointermove', (event) => showRoundTerritory(roundTerritoryAt(event)));
-        pipelineCanvas?.addEventListener('pointerleave', () => showRoundTerritory(null));
         pipelineCanvas?.addEventListener('scroll', () => showRoundTerritory(null));
         window.addEventListener('resize', () => showRoundTerritory(null));
         pipelineCanvas?.addEventListener('dragleave', (event) => {
             if (!event.relatedTarget || !pipelineCanvas.contains(event.relatedTarget)) showRoundTerritory(null);
         });
+        document.addEventListener('dragend', () => showRoundTerritory(null), true);
+        document.addEventListener('drop', () => showRoundTerritory(null), true);
+        document.addEventListener('keydown', (event) => { if (event.key === 'Escape') showRoundTerritory(null); });
         pipelinePanel?.addEventListener('dragover', (event) => {
             if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
             const territory = roundTerritoryAt(event);

@@ -90,3 +90,24 @@ button.basic-input-canvas-chip {
     max-width: 100%;
     box-sizing: border-box;
 }
+
+.pipeline-canvas .basic-input-canvas-layer > .basic-input-file-wrap {
+    position: relative;
+    display: block;
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+}
+.basic-input-file-wrap { position: relative; display: inline-block; min-width: 0; max-width: 100%; }
+.basic-input-file-wrap > .basic-input-canvas-chip {
+    display: block; width: 100%; max-width: none; height: 18px; min-height: 0;
+    margin: 0; padding: 0 3px; box-sizing: border-box; overflow: hidden;
+    border-color: #88888866; border-radius: 6px; font-size: 11px; line-height: 16px;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.basic-input-file-delete {
+    position: absolute; right: -7px; top: -9px; z-index: 4;
+    width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%;
+    color: #fff; background: #dc2626; font: 14px/16px sans-serif; cursor: pointer;
+}
+.basic-input-file-delete[hidden] { display: none; }
