@@ -30,16 +30,17 @@
       (block.dataset.participantId || block.dataset.providerName || block.dataset.model || block.querySelector('.model-name')?.textContent?.trim()) === wanted) || null;
   };
 
-  function sync({ panel, schema, attachments = [], onFile } = {}) {
+  function sync({ panel, schema, attachments = [], onFile, onRemoveFile } = {}) {
     if (!panel || typeof panel.querySelector !== 'function') return { chips: 0, links: 0 };
     const previous = syncByPanel.get(panel);
     if (previous) {
+      previous.cleanup?.();
       if (previous.resize) panel.ownerDocument.defaultView?.removeEventListener('resize', previous.resize);
       if (previous.frame && panel.ownerDocument.defaultView?.cancelAnimationFrame) panel.ownerDocument.defaultView.cancelAnimationFrame(previous.frame);
     }
     // Keep document buttons and their handlers when only attachments are refreshed.
     panel.querySelectorAll('.basic-input-canvas-layer .pipeline-doc-frame').forEach((frame) => frame.closest('.stage-column')?.appendChild(frame));
-    panel.querySelectorAll('.basic-input-canvas-layer, .basic-input-canvas-chip, .basic-input-canvas-svg').forEach((node) => node.remove());
+    panel.querySelectorAll('.basic-input-canvas-layer, .basic-input-file-wrap, .basic-input-canvas-chip, .basic-input-canvas-svg').forEach((node) => node.remove());
     const canvas = panel.querySelector('.pipeline-canvas') || panel;
     const steps = list(schema?.steps).filter(object);
     const byRef = new Map(steps.map((step) => [step.ref, step]));
@@ -49,6 +50,8 @@
     const rows = new Map();
     const usedDocumentFrames = new Set();
     let chipCount = 0;
+    const cleanups = [];
+    let editingFile = null;
 
     const artifactRow = (column) => {
       if (!column) return null;
@@ -61,9 +64,9 @@
       return rows.get(column);
     };
 
-    const makeChip = (host, { name, type = 'artifact', description = '', key = '', file = null } = {}) => {
+    const makeChip = (host, { name, type = 'artifact', description = '', key = '', file = null, scope = null } = {}) => {
       if (!host || !text(name)) return null;
-      const chip = document.createElement(file && typeof onFile === 'function' ? 'button' : 'span');
+      const chip = document.createElement(file && scope && typeof onFile === 'function' ? 'button' : 'span');
       chip.className = `basic-input-canvas-chip is-${type}`;
       if (chip.tagName === 'BUTTON') chip.type = 'button';
       chip.textContent = text(name);
@@ -71,8 +74,44 @@
       chip.setAttribute('aria-label', `${type === 'file' ? 'Файл' : 'Артефакт'}: ${text(name)}`);
       if (key) chip.dataset.artifactKey = key;
       if (file) chip.dataset.fileId = text(file.id);
-      if (file && typeof onFile === 'function') chip.addEventListener('click', () => onFile(file));
-      host.appendChild(chip);
+      if (file && scope && typeof onFile === 'function') {
+        let suppressClick = false;
+        let press = null;
+        const cancel = () => { if (press) clearTimeout(press.timer); press = null; };
+        const wrapper = document.createElement('span');
+        wrapper.className = 'basic-input-file-wrap';
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'basic-input-file-delete'; remove.textContent = '×';
+        remove.setAttribute('aria-label', `Удалить файл: ${text(name)}`);
+        remove.hidden = true;
+        wrapper.append(chip, remove);
+        const hide = () => { remove.hidden = true; if (editingFile === hide) editingFile = null; };
+        const down = (event) => {
+          event.stopPropagation();
+          if (event.button !== 0 || typeof onRemoveFile !== 'function') return;
+          cancel(); suppressClick = false;
+          const current = { x: event.clientX, y: event.clientY, id: event.pointerId, timer: null };
+          current.timer = setTimeout(() => {
+            if (!wrapper.isConnected || press !== current) return;
+            if (editingFile) editingFile();
+            editingFile = hide; remove.hidden = false; suppressClick = true;
+          }, 550);
+          press = current;
+        };
+        const move = (event) => { if (press && (event.pointerId !== press.id || Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8)) cancel(); };
+        const outside = (event) => { if (!wrapper.contains(event.target)) hide(); };
+        const escape = (event) => { if (event.key === 'Escape') { cancel(); hide(); } };
+        chip.addEventListener('pointerdown', down);
+        chip.addEventListener('dragstart', cancel);
+        chip.addEventListener('click', (event) => { event.stopPropagation(); if (suppressClick) { suppressClick = false; return; } onFile(file, scope); });
+        remove.addEventListener('click', (event) => { event.stopPropagation(); hide(); onRemoveFile?.(file, scope); });
+        const doc = panel.ownerDocument;
+        doc.addEventListener('pointermove', move); doc.addEventListener('pointerup', cancel); doc.addEventListener('pointercancel', cancel);
+        doc.addEventListener('pointerdown', outside, true); doc.addEventListener('keydown', escape);
+        cleanups.push(() => { cancel(); doc.removeEventListener('pointermove', move); doc.removeEventListener('pointerup', cancel);
+          doc.removeEventListener('pointercancel', cancel); doc.removeEventListener('pointerdown', outside, true); doc.removeEventListener('keydown', escape); });
+        host.appendChild(wrapper);
+      } else host.appendChild(chip);
       chipCount += 1;
       return chip;
     };
@@ -88,12 +127,12 @@
       const column = stepColumn(panel, step);
       if (!column) return;
       const stepFiles = list(step.files);
-      stepFiles.forEach((file, index) => makeChip(artifactRow(column), { name: file?.name, type: 'file', file: { ...file, id: file?.id || `${step.ref}-file-${index + 1}` } }));
+      stepFiles.forEach((file, index) => makeChip(artifactRow(column), { name: file?.name, type: 'file', file: { ...file, id: file?.id || `${step.ref}-file-${index + 1}` }, scope: { ref: step.ref } }));
       const round = /^r\d+$/.test(step.ref || '');
       if (round) {
         list(step.models).forEach((model) => {
           const block = modelBlock(column, idOf(model));
-          list(model?.files).forEach((file, index) => makeChip(block, { name: file?.name, type: 'file', file: { ...file, id: file?.id || `${step.ref}-${idOf(model)}-file-${index + 1}` } }));
+          list(model?.files).forEach((file, index) => makeChip(block, { name: file?.name, type: 'file', file: { ...file, id: file?.id || `${step.ref}-${idOf(model)}-file-${index + 1}` }, scope: { ref: step.ref, participant: idOf(model) } }));
         });
       }
 
@@ -248,7 +287,7 @@
     const view = panel.ownerDocument.defaultView;
     const resize = () => draw();
     view?.addEventListener('resize', resize);
-    const state = { resize, frame: 0 };
+    const state = { resize, frame: 0, cleanup: () => cleanups.forEach((fn) => fn()) };
     syncByPanel.set(panel, state);
     if (view?.requestAnimationFrame) state.frame = view.requestAnimationFrame(draw);
     return { chips: chipCount, links: links.length, redraw: draw };

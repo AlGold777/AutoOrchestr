@@ -216,8 +216,121 @@ describe('Basic input canvas', () => {
       ] }
     ] } });
     panel.querySelector('[data-file-id="step-file"]').click();
-    expect(onFile).toHaveBeenCalledWith({ id: 'step-file', name: 'input.txt' });
+    expect(onFile).toHaveBeenCalledWith({ id: 'step-file', name: 'input.txt' }, { ref: 'r1' });
     expect(panel.querySelector('.model-block[data-participant-id="claude-id"] [data-file-id="model-file"]')?.textContent).toBe('model.csv');
+  });
+
+  test('file long press reveals scoped unlink, suppresses the following click, and dismisses outside or with Escape', () => {
+    jest.useFakeTimers();
+    const onFile = jest.fn();
+    const onRemoveFile = jest.fn();
+    const file = { id: 'shared-id', name: 'same.pdf' };
+    BasicInputCanvas.sync({ panel, onFile, onRemoveFile, schema: { steps: [
+      { ref: 'r1', kind: 'round', files: [file], models: [{ id: 'claude-id', name: 'Claude', files: [file] }] }
+    ] } });
+    const shared = panel.querySelector('.stage-column[data-round="1"] .basic-input-file-wrap [data-file-id="shared-id"]');
+    const privateFile = panel.querySelector('.model-block[data-participant-id="claude-id"] .basic-input-file-wrap [data-file-id="shared-id"]');
+    expect(shared.tagName).toBe('BUTTON');
+    expect(privateFile.tagName).toBe('BUTTON');
+
+    const pointer = (target, type, { x = 10, y = 10, pointerId = 1 } = {}) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      Object.defineProperty(event, 'pointerId', { value: pointerId });
+      target.dispatchEvent(event);
+    };
+
+    pointer(shared, 'pointerdown');
+    jest.advanceTimersByTime(550);
+    const removeShared = shared.parentElement.querySelector('.basic-input-file-delete');
+    expect(removeShared.hidden).toBe(false);
+    pointer(document, 'pointerup');
+    shared.click();
+    expect(onFile).not.toHaveBeenCalled();
+
+    pointer(document.body, 'pointerdown', { pointerId: 2 });
+    expect(removeShared.hidden).toBe(true);
+
+    pointer(privateFile, 'pointerdown', { pointerId: 3 });
+    jest.advanceTimersByTime(550);
+    const removePrivate = privateFile.parentElement.querySelector('.basic-input-file-delete');
+    expect(removePrivate.hidden).toBe(false);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(removePrivate.hidden).toBe(true);
+    jest.useRealTimers();
+  });
+
+  test('movement beyond 8px cancels file long press; exactly 8px remains within tolerance', () => {
+    jest.useFakeTimers();
+    const onFile = jest.fn();
+    const onRemoveFile = jest.fn();
+    BasicInputCanvas.sync({ panel, onFile, onRemoveFile, schema: { steps: [
+      { ref: 'r1', kind: 'round', files: [{ id: 'step-file', name: 'input.txt' }], models: [] }
+    ] } });
+    const chip = panel.querySelector('[data-file-id="step-file"]');
+    const pointer = (target, type, { x = 10, pointerId = 1 } = {}) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: 10 });
+      Object.defineProperty(event, 'pointerId', { value: pointerId });
+      target.dispatchEvent(event);
+    };
+    pointer(chip, 'pointerdown', { pointerId: 1 });
+    pointer(document, 'pointermove', { x: 18, pointerId: 1 });
+    jest.advanceTimersByTime(550);
+    expect(chip.parentElement.querySelector('.basic-input-file-delete').hidden).toBe(false);
+
+    pointer(document, 'pointerup', { pointerId: 1 });
+    chip.parentElement.querySelector('.basic-input-file-delete').click();
+    expect(onRemoveFile).toHaveBeenCalledWith({ id: 'step-file', name: 'input.txt' }, { ref: 'r1' });
+
+    BasicInputCanvas.sync({ panel, onFile, onRemoveFile, schema: { steps: [
+      { ref: 'r1', kind: 'round', files: [{ id: 'step-file', name: 'input.txt' }], models: [] }
+    ] } });
+    const fresh = panel.querySelector('[data-file-id="step-file"]');
+    pointer(fresh, 'pointerdown', { pointerId: 2 });
+    pointer(document, 'pointermove', { x: 19, pointerId: 2 });
+    jest.advanceTimersByTime(550);
+    expect(fresh.parentElement.querySelector('.basic-input-file-delete').hidden).toBe(true);
+    jest.useRealTimers();
+  });
+
+  test('unlink callback targets only the selected scope and canvas does not delete stored bytes', () => {
+    jest.useFakeTimers();
+    const shared = { id: 'same-id', name: 'same.txt' };
+    const personal = { ...shared };
+    const scopes = { shared: [shared], participant: [personal] };
+    const store = { remove: jest.fn() };
+    const onRemoveFile = jest.fn((file, scope) => {
+      if (scope.participant) scopes.participant = scopes.participant.filter((item) => item.id !== file.id);
+      else scopes.shared = scopes.shared.filter((item) => item.id !== file.id);
+    });
+    BasicInputCanvas.sync({ panel, onFile: jest.fn(), onRemoveFile, schema: { steps: [
+      { ref: 'r1', kind: 'round', files: scopes.shared, models: [{ id: 'claude-id', name: 'Claude', files: scopes.participant }] }
+    ] } });
+    const chip = panel.querySelector('.model-block[data-participant-id="claude-id"] [data-file-id="same-id"]');
+    const event = new MouseEvent('pointerdown', { bubbles: true, button: 0 });
+    Object.defineProperty(event, 'pointerId', { value: 1 });
+    chip.dispatchEvent(event);
+    jest.advanceTimersByTime(550);
+    chip.parentElement.querySelector('.basic-input-file-delete').click();
+
+    expect(onRemoveFile).toHaveBeenCalledWith(personal, { ref: 'r1', participant: 'claude-id' });
+    expect(scopes.shared).toEqual([shared]);
+    expect(scopes.participant).toEqual([]);
+    expect(store.remove).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  test('rerender removes file long-press document listeners and stale controls', () => {
+    const onFile = jest.fn();
+    const onRemoveFile = jest.fn();
+    const removeSpy = jest.spyOn(document, 'removeEventListener');
+    const schema = { steps: [{ ref: 'r1', kind: 'round', files: [{ id: 'file', name: 'a.txt' }], models: [] }] };
+    BasicInputCanvas.sync({ panel, schema, onFile, onRemoveFile });
+    BasicInputCanvas.sync({ panel, schema, onFile, onRemoveFile });
+    expect(removeSpy).toHaveBeenCalledWith('pointermove', expect.any(Function));
+    expect(removeSpy).toHaveBeenCalledWith('pointerup', expect.any(Function));
+    expect(panel.querySelectorAll('.basic-input-file-wrap')).toHaveLength(1);
+    expect(panel.querySelectorAll('.basic-input-file-delete')).toHaveLength(1);
+    removeSpy.mockRestore();
   });
 
   test('document artifact frames move into the output row and keep their handlers across syncs', () => {

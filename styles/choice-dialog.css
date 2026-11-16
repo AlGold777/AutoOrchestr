@@ -34,3 +34,5 @@
 
 .choice-dialog-document-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .choice-dialog-document-download { margin-left: auto; font-size: 20px; text-decoration: none; }
+
+.choice-dialog-file-preview { display: block; max-width: 100%; max-height: 60vh; margin: 8px auto; }

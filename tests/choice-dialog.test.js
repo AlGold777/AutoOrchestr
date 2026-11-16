@@ -201,6 +201,81 @@ describe('Choice dialog: a document to edit, a document to view only', () => {
   });
 });
 
+describe('Choice dialog: Basic input-file previews', () => {
+  beforeEach(() => { document.body.innerHTML = ''; });
+  const originalCreate = URL.createObjectURL;
+  const originalRevoke = URL.revokeObjectURL;
+  let created;
+  let revoked;
+  beforeEach(() => {
+    created = [];
+    revoked = [];
+    URL.createObjectURL = jest.fn((blob) => { created.push(blob); return `blob:file-preview-${created.length}`; });
+    URL.revokeObjectURL = jest.fn((url) => revoked.push(url));
+  });
+  afterEach(() => {
+    URL.createObjectURL = originalCreate;
+    URL.revokeObjectURL = originalRevoke;
+  });
+
+  test('text preview uses textContent and download links to the original Blob', async () => {
+    const blob = new Blob(['<img src=x onerror=alert(1)>'], { type: 'text/plain' });
+    const answer = ChoiceDialog.ask({ title: 'readme.txt', document: { kind: 'read', readOnly: true,
+      text: '<img src=x onerror=alert(1)>', fileBlob: blob, previewKind: 'text', downloadName: 'readme.txt' } });
+    const pre = document.querySelector('.choice-dialog-document');
+    const download = document.querySelector('.choice-dialog-document-download');
+    expect(pre.textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(pre.querySelector('img')).toBeNull();
+    expect(download.download).toBe('readme.txt');
+    expect(download.href).toContain('blob:file-preview-1');
+    expect(created).toEqual([blob]);
+    document.querySelector('.choice-dialog-cancel').click();
+    await expect(answer).resolves.toBeNull();
+    expect(revoked).toEqual(['blob:file-preview-1']);
+  });
+
+  test('raster images preview safely; PDF is download-only with a notice and original Blob', async () => {
+    const imageBlob = new Blob(['image bytes'], { type: 'image/png' });
+    const imageAnswer = ChoiceDialog.ask({ title: 'photo.png', document: { kind: 'read', readOnly: true,
+      text: '', fileBlob: imageBlob, previewKind: 'image', downloadName: 'photo.png' } });
+    const image = document.querySelector('img.choice-dialog-file-preview');
+    expect(image.alt).toBe('photo.png');
+    expect(image.src).toContain('blob:file-preview-2');
+    expect(document.querySelector('.choice-dialog-document-download').href).toContain('blob:file-preview-1');
+    document.querySelector('.choice-dialog-cancel').click();
+    await expect(imageAnswer).resolves.toBeNull();
+
+    const pdfBlob = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+    const pdfAnswer = ChoiceDialog.ask({ title: 'scan.pdf', document: { kind: 'read', readOnly: true,
+      text: '', fileBlob: pdfBlob, previewKind: 'download', downloadName: 'scan.pdf' } });
+    expect(document.querySelector('iframe.choice-dialog-file-preview')).toBeNull();
+    expect(document.querySelector('img.choice-dialog-file-preview')).toBeNull();
+    expect(document.querySelector('.choice-dialog-document')).toBeNull();
+    expect(document.querySelector('.choice-dialog-message').textContent).toBe('Предпросмотр недоступен. Скачайте файл.');
+    expect(document.querySelector('.choice-dialog-document-download').href).toContain('blob:file-preview-3');
+    expect(document.querySelector('.choice-dialog-document-download').download).toBe('scan.pdf');
+    expect(created).toEqual([imageBlob, imageBlob, pdfBlob]);
+    expect(created[2]).toBe(pdfBlob);
+    expect(created[2].type).toBe('application/pdf');
+    document.querySelector('.choice-dialog-cancel').click();
+    await expect(pdfAnswer).resolves.toBeNull();
+    expect(revoked).toHaveLength(3);
+  });
+
+  test('unknown or unsafe file types have download only and still download the original Blob', async () => {
+    const blob = new Blob(['<script>unsafe()</script>'], { type: 'text/html' });
+    const answer = ChoiceDialog.ask({ title: 'page.html', document: { kind: 'read', readOnly: true,
+      text: '', fileBlob: blob, previewKind: 'download', downloadName: 'page.html' } });
+    expect(document.querySelector('.choice-dialog-document')).toBeNull();
+    expect(document.querySelector('.choice-dialog-file-preview')).toBeNull();
+    expect(document.querySelector('.choice-dialog-document-download').download).toBe('page.html');
+    expect(created).toEqual([blob]);
+    document.querySelector('.choice-dialog-cancel').click();
+    await expect(answer).resolves.toBeNull();
+    expect(revoked).toEqual(['blob:file-preview-1']);
+  });
+});
+
 describe('Choice dialog: the folder of documents', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
 
