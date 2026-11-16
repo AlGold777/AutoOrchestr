@@ -14,16 +14,17 @@ function indexedDBHarness() {
   const db = {
     get objectStoreNames() { return { contains: (name) => name === 'files' && hasStore }; },
     createObjectStore() { hasStore = true; },
+    close() {},
     transaction() {
       const tx = {};
       tx.objectStore = () => ({
-        put(value, key) { writes.push(key); data.set(JSON.stringify(key), value); },
+        put(value, key) { writes.push(key); data.set(JSON.stringify(key), value); return { result: undefined }; },
         get(key) {
           const request = {};
           setTimeout(() => { request.result = data.get(JSON.stringify(key)); request.onsuccess?.(); }, 0);
           return request;
         },
-        delete(key) { data.delete(JSON.stringify(key)); }
+        delete(key) { data.delete(JSON.stringify(key)); return { result: undefined }; }
       });
       setTimeout(() => tx.oncomplete?.(), 0);
       return tx;
