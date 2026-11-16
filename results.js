@@ -2316,8 +2316,6 @@ document.addEventListener('click', (event) => {
     const DIAG_COLLAPSED_HEIGHT = 120;
     const DIAG_ENTRY_FALLBACK_HEIGHT = 32;
     const diagEntryHeightCache = new WeakMap();
-    const apiIndicatorRegistry = new Map();
-    const apiIndicatorState = {};
     const SELECTOR_ELEMENT_TYPES = ['composer', 'sendButton', 'response'];
     const SELECTOR_WORKBENCH_FIELDS = [
         { key: 'composer', label: 'composer' },
@@ -15107,7 +15105,7 @@ document.addEventListener('click', (event) => {
             // а не только по названию модели. Игнорируем интерактивные элементы шапки
             // (кнопки копирования/экспорта/очистки, индикаторы статуса/API).
             headerEl.addEventListener('dblclick', (event) => {
-                if (event.target.closest('button, a, input, select, textarea, [role="button"], .status-control-cluster, .status-indicator, .api-indicator')) {
+                if (event.target.closest('button, a, input, select, textarea, [role="button"], .status-control-cluster, .status-indicator, .model-chat-btn')) {
                     return;
                 }
                 if (typeof chrome !== 'undefined' && typeof chrome.windows?.create === 'function') {
@@ -15155,69 +15153,25 @@ document.addEventListener('click', (event) => {
         viewStackBtn.addEventListener('click', () => setResultsViewMode('stack'));
     }
 
-    const getPanelByLLMName = (llmName) => {
-        if (!llmName) return null;
-        const targetName = llmName.trim().toLowerCase();
-        return Array.from(llmPanels || []).find((panel) => {
-            const title = panel.querySelector('.llm-title');
-            return title && title.textContent.trim().toLowerCase() === targetName;
-        }) || null;
-    };
-
-    const ensureApiIndicator = (llmName) => {
-        if (!llmName) return null;
-        if (apiIndicatorRegistry.has(llmName)) {
-            return apiIndicatorRegistry.get(llmName);
-        }
-        const panel = getPanelByLLMName(llmName);
-        if (!panel) return null;
-        const referenceBtn = panel.querySelector('.status-ping-btn');
-        const referenceNode = referenceBtn || panel.querySelector('.status-indicator');
-        if (!referenceNode) return null;
-        const indicator = document.createElement('span');
-        indicator.className = 'api-indicator is-idle';
-        indicator.dataset.llmName = llmName;
-        indicator.textContent = 'API';
-        indicator.setAttribute('role', 'button');
-        indicator.tabIndex = 0;
-        indicator.setAttribute('aria-label', `${llmName} API status. Double-click to open telemetry.`);
-        referenceNode.insertAdjacentElement('afterend', indicator);
-        const partialMark = panel.querySelector('.answer-partial-mark');
-        if (partialMark) indicator.after(partialMark);
-        apiIndicatorRegistry.set(llmName, indicator);
-        return indicator;
-    };
-
-    const setApiIndicatorState = (llmName, state = 'idle', meta = {}) => {
-        if (!llmName) return;
-        const indicator = ensureApiIndicator(llmName);
-        if (!indicator) return;
-        const normalized = state === 'active' || state === 'pending' ? state : 'idle';
-        indicator.classList.remove('is-idle', 'is-active', 'is-pending');
-        indicator.classList.add(`is-${normalized}`);
-        indicator.dataset.state = normalized;
-        const detailParts = [];
-        if (meta.endpoint) {
-            detailParts.push(`Endpoint: ${meta.endpoint}`);
-        }
-        if (meta.connectionTimeout || meta.responseTimeout) {
-            const connectMs = meta.connectionTimeout ? `${meta.connectionTimeout}ms` : '?';
-            const responseMs = meta.responseTimeout ? `${meta.responseTimeout}ms` : '?';
-            detailParts.push(`Timeouts ${connectMs}/${responseMs}`);
-        }
-        const statusText = meta.message || (detailParts.length ? detailParts.join(' • ') : 'API status');
-        indicator.title = `${statusText} • Double-click to open telemetry`;
-        indicator.setAttribute('aria-label', `${llmName} API status: ${statusText}. Double-click to open telemetry.`);
-        apiIndicatorState[llmName] = normalized;
-    };
-
-    const initializeApiIndicators = () => {
+    const initializeModelChatButtons = () => {
         Array.from(llmPanels || []).forEach((panel) => {
-            const title = panel.querySelector('.llm-title');
-            const llmName = title?.textContent?.trim();
-            if (!llmName) return;
-            ensureApiIndicator(llmName);
-            setApiIndicatorState(llmName, apiIndicatorState[llmName] || 'idle');
+            const llmName = panel.querySelector('.llm-title')?.textContent?.trim();
+            const referenceNode = panel.querySelector('.status-ping-btn, .status-indicator');
+            if (!llmName || !referenceNode) return;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'model-chat-btn';
+            button.title = `Open ${llmName} chat`;
+            button.setAttribute('aria-label', button.title);
+            button.innerHTML = '<span aria-hidden="true">☰</span>';
+            button.addEventListener('click', () => {
+                chrome.runtime.sendMessage({ type: 'OPEN_MODEL_CHAT', llmName }, (response) => {
+                    if (chrome.runtime.lastError || !response?.success) {
+                        showNotification(`Chat for ${llmName} is not available`);
+                    }
+                });
+            });
+            referenceNode.insertAdjacentElement('afterend', button);
         });
     };
 
@@ -18080,7 +18034,7 @@ document.addEventListener('click', (event) => {
     }
 
     initializeDiagnosticsUI();
-    initializeApiIndicators();
+    initializeModelChatButtons();
 
     // (reverted) Telemetry Dev UI removed to restore original layout and behavior.
 
@@ -19085,9 +19039,6 @@ document.addEventListener('click', (event) => {
             }
         });
 
-        if (Object.prototype.hasOwnProperty.call(statusData, 'apiStatus')) {
-            setApiIndicatorState(normalizedName, statusData.apiStatus, statusData);
-        }
     }
 
     function syncStatusFromResponseMessage(message = {}) {
@@ -24033,10 +23984,10 @@ function checkCompareButtonState() {
         }
         mark.textContent = 'uncompleted';
         mark.title = `Генерация не завершилась чисто (${status}). Текст может быть обрезан.`;
-        const api = container.querySelector('.llm-header .api-indicator');
+        const chatButton = container.querySelector('.llm-header .model-chat-btn');
         const header = container.querySelector('.llm-header');
         const round = container.querySelector('.debate-model-card-round');
-        if (api && api.nextElementSibling !== mark) api.after(mark);
+        if (chatButton && chatButton.nextElementSibling !== mark) chatButton.after(mark);
         else if (header && mark.parentElement !== header) header.appendChild(mark);
         else if (!header && round && round.nextElementSibling !== mark) round.after(mark);
     }
@@ -26886,26 +26837,10 @@ function exportSingleTemplate(templateName, sourceData = null) {
 
         try {
             document.addEventListener('dblclick', (event) => {
-                const indicator = event.target?.closest?.('.api-indicator');
-                if (!indicator) return;
-                event.preventDefault();
-                event.stopPropagation();
-                openDevtoolsModal().catch((err) => console.error('[results] openDevtoolsModal error', err));
-            }, true);
-
-            document.addEventListener('dblclick', (event) => {
                 const logoTrigger = event.target?.closest?.('.logo-icon, .logo-version');
                 if (!logoTrigger) return;
                 event.preventDefault();
                 event.stopPropagation();
-                openDevtoolsModal().catch((err) => console.error('[results] openDevtoolsModal error', err));
-            }, true);
-
-            document.addEventListener('keydown', (event) => {
-                const indicator = event.target?.closest?.('.api-indicator');
-                if (!indicator) return;
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
                 openDevtoolsModal().catch((err) => console.error('[results] openDevtoolsModal error', err));
             }, true);
 

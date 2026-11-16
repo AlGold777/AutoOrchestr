@@ -877,54 +877,18 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   gap: 6px;
 }
 
-.api-indicator {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid #cbd5f5;
-  background: #f8fafc;
-  color: #94a3b8;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  transition: color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+.model-chat-btn {
+  border: 0;
+  background: transparent;
+  color: #64748b;
   cursor: pointer;
-  user-select: none;
+  font-size: 16px;
+  line-height: 1;
+  padding: 3px;
 }
 
-.api-indicator:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-.api-indicator.is-idle {
-  background: #f8fafc;
-  color: #a0aec0;
-  border-color: #e2e8f0;
-}
-
-.api-indicator.is-active {
-  background: #fff7ed;
-  border-color: #fdba74;
-  color: #ea580c;
-}
-
-.api-indicator.is-pending {
-  background: #0f172a;
-  color: #fff;
-  border-color: #0f172a;
-  animation: api-indicator-blink 1.2s ease-in-out infinite;
-}
-
-@keyframes api-indicator-blink {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.2;
-  }
-}
+.model-chat-btn:hover { color: #2563eb; }
+.model-chat-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
 .panel-action-btn {
   background: transparent;
