@@ -58,6 +58,26 @@
       let formBox = null;
       let formAsks = [];
       if (mode === 'readOnly') {
+        if (documentSpec.sourceUrl || documentSpec.downloadName) {
+          const header = el(doc, 'div', 'choice-dialog-document-header');
+          try {
+            const source = new URL(documentSpec.sourceUrl);
+            if (source.protocol === 'https:' || source.protocol === 'http:') {
+              const link = el(doc, 'a', 'choice-dialog-document-source', 'Страница модели');
+              link.href = source.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+              header.append(link);
+            }
+          } catch (_) { /* no valid source URL */ }
+          if (documentSpec.downloadName) {
+            const blob = new Blob([String(documentSpec.text ?? '')], { type: 'text/plain;charset=utf-8' });
+            const url = root.URL.createObjectURL(blob); objectUrls.push(url);
+            const download = el(doc, 'a', 'choice-dialog-document-download', '↓');
+            download.href = url; download.download = String(documentSpec.downloadName).replace(/[\\/]/g, '_');
+            download.setAttribute('aria-label', 'Скачать документ'); download.title = 'Скачать документ';
+            header.append(download);
+          }
+          dialog.append(header);
+        }
         if (docHeading) dialog.append(el(doc, 'h3', 'choice-dialog-document-title', docHeading));
         dialog.append(el(doc, 'pre', 'choice-dialog-document', String(documentSpec.text ?? '')));
       } else if (mode === 'editable') {

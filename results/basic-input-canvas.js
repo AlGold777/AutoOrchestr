@@ -114,12 +114,17 @@
         const key = JSON.stringify([step.ref, participant, artifact.id]);
         const host = artifactRow(column);
         const frame = Array.from(column.querySelectorAll('.pipeline-doc-frame'))
-          .find((item) => item.dataset.docId === artifact.id && !usedDocumentFrames.has(item));
+          .find((item) => item.dataset.docId === artifact.id && item.dataset.docParticipant === participant && !usedDocumentFrames.has(item));
         let chip;
         if (frame) {
           usedDocumentFrames.add(frame);
           frame.dataset.artifactKey = key;
           host.appendChild(frame);
+          Array.from(column.querySelectorAll('.pipeline-doc-frame')).filter((item) => item.dataset.docId === artifact.id && item.dataset.docParticipant === participant && !usedDocumentFrames.has(item)).forEach((item) => {
+            usedDocumentFrames.add(item);
+            host.appendChild(item);
+            chipCount += 1;
+          });
           chip = frame;
           chipCount += 1;
         } else {
@@ -130,6 +135,11 @@
           artifactSources.push({ ref: step.ref, participant, key, element: chip });
         }
       });
+    });
+
+    // Versions made by User have no output declaration of their own, but remain visible in that step.
+    panel.querySelectorAll('.pipeline-doc-frame').forEach((frame) => {
+      if (!usedDocumentFrames.has(frame)) artifactRow(frame.closest('.stage-column'))?.appendChild(frame);
     });
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

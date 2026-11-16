@@ -3906,6 +3906,18 @@ describe('Pipeline debate favorites view', () => {
       // A07 documents (stage 2): the versions of the run record, the frames on the canvas, the owner window of a document.
       const docRound = { ref: 'r1', kind: 'round', models: [{ name: 'Claude' }], output: { document: 'read', artifacts: [{ id: 'spec', name: 'ТЗ', pointer: '' }] } };
       const docDialogOpen = async () => { for (let i = 0; i < 200 && !document.querySelector('.choice-dialog'); i += 1) await delay(10); };
+      const mockArtifactDownloadUrls = () => {
+        const create = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+        const revoke = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+        URL.createObjectURL = jest.fn(() => 'blob:artifact-test');
+        URL.revokeObjectURL = jest.fn();
+        return () => {
+          if (create) Object.defineProperty(URL, 'createObjectURL', create);
+          else delete URL.createObjectURL;
+          if (revoke) Object.defineProperty(URL, 'revokeObjectURL', revoke);
+          else delete URL.revokeObjectURL;
+        };
+      };
 
       test('A07 documents: a round with a read document shows its frame pending in its column, named by the artifact', async () => {
         const h = setupCustomInheritance('Doc frame pending');
@@ -4055,6 +4067,7 @@ describe('Pipeline debate favorites view', () => {
       test('A07 documents: the document is written by the model, edited by the owner and approved; the frame, the record and the next round carry it', async () => {
         require('../results/choice-dialog');
         require('../results/stage-card');
+        const restoreObjectUrls = mockArtifactDownloadUrls();
         const h = setupCustomInheritance('Doc approve run');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
@@ -4100,19 +4113,29 @@ describe('Pipeline debate favorites view', () => {
           expect(window.CustomRunRecord.textOf(record, versions[1].content.answerRef)).toBe('ТЗ-ПРАВКА');
           expect(record.snapshot.results).toContainEqual(expect.objectContaining({ owner: expect.objectContaining({ approved: expect.objectContaining({ id: 'spec' }) }) }));
 
-          // The frame opens the document for reading; «Закрыть» closes the window.
-          approved.click();
+          // The model and User versions have separate frames and open their own recorded text.
+          const modelFrame = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame[data-doc-participant="Claude"]');
+          const userFrame = document.querySelector('.pipeline-control-step[data-control-ref="owner:u"] .pipeline-doc-frame[data-doc-participant="owner"]');
+          expect(modelFrame).not.toBeNull();
+          expect(userFrame).not.toBeNull();
+          modelFrame.click();
+          await docDialogOpen();
+          expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ТЕКСТ');
+          document.querySelector('.choice-dialog-cancel').click();
+          await settleCustomCard();
+          userFrame.click();
           await docDialogOpen();
           expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ПРАВКА');
           document.querySelector('.choice-dialog-cancel').click();
           await settleCustomCard();
           expect(document.querySelector('.choice-dialog')).toBeNull();
-        } finally { h.cleanup(); }
+        } finally { h.cleanup(); restoreObjectUrls(); }
       }, 60000);
 
       test('A07 documents scenario: the model writes, the owner edits and sends, the next round gets the edit, the frame survives a pipeline switch', async () => {
         require('../results/choice-dialog');
         require('../results/stage-card');
+        const restoreObjectUrls = mockArtifactDownloadUrls();
         const h = setupCustomInheritance('Doc scenario');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
@@ -4145,15 +4168,22 @@ describe('Pipeline debate favorites view', () => {
           document.querySelector('.choice-dialog-choice').click();
           await run;
           await settleCustomCard();
-          // (г) after the run the frame is approved
-          const approved = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved');
-          expect(approved?.textContent).toMatch(/^ТЗ( v\d+)? · утверждено$/);
+          // (г) after the run, the model and User versions each have a frame.
+          const modelFrame = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame[data-doc-participant="Claude"]');
+          const userFrame = document.querySelector('.pipeline-control-step[data-control-ref="owner:u"] .pipeline-doc-frame[data-doc-participant="owner"]');
+          expect(modelFrame).not.toBeNull();
+          expect(userFrame).not.toBeNull();
           // (в) the next round's request carries the edit, not the model text
           const gptRequest = h.starts.find((message) => message.selectedLLMs.includes('GPT'));
           expect(JSON.stringify(gptRequest)).toContain('ТЗ-ПРАВКА');
           expect(JSON.stringify(gptRequest)).not.toContain('ТЗ-ТЕКСТ');
-          // (д) the frame opens the document for reading; «Закрыть» closes it
-          approved.click();
+          // (д) each frame opens its own exact version; «Закрыть» closes the window.
+          modelFrame.click();
+          await docDialogOpen();
+          expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ТЕКСТ');
+          document.querySelector('.choice-dialog-cancel').click();
+          await settleCustomCard();
+          userFrame.click();
           await docDialogOpen();
           expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ПРАВКА');
           expect(document.querySelector('.choice-dialog-cancel').textContent).toContain('Закрыть');
@@ -4168,14 +4198,21 @@ describe('Pipeline debate favorites view', () => {
           document.querySelector('.pipeline-item[data-name="Doc scenario"]').click();
           await settleCustomCard();
           await settleCustomCard();
-          const back = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame.is-approved');
-          expect(back?.textContent).toMatch(/^ТЗ( v\d+)? · утверждено$/);
-          back.click();
+          const backModel = document.querySelector('.stage-column[data-round="1"] .pipeline-doc-frame[data-doc-participant="Claude"]');
+          const backUser = document.querySelector('.pipeline-control-step[data-control-ref="owner:u"] .pipeline-doc-frame[data-doc-participant="owner"]');
+          expect(backModel).not.toBeNull();
+          expect(backUser).not.toBeNull();
+          backModel.click();
+          await docDialogOpen();
+          expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ТЕКСТ');
+          document.querySelector('.choice-dialog-cancel').click();
+          await settleCustomCard();
+          backUser.click();
           await docDialogOpen();
           expect(document.querySelector('.choice-dialog-document').textContent).toContain('ТЗ-ПРАВКА');
           document.querySelector('.choice-dialog-cancel').click();
           await settleCustomCard();
-        } finally { h.cleanup(); }
+        } finally { h.cleanup(); restoreObjectUrls(); }
       }, 60000);
 
       test('A07 documents: after a new run cleared the frames, the page brings the approved frame back from the store', async () => {

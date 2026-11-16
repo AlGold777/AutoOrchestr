@@ -225,6 +225,7 @@ describe('Basic input canvas', () => {
     const frame = document.createElement('button');
     frame.className = 'pipeline-doc-frame';
     frame.dataset.docId = 'spec';
+    frame.dataset.docParticipant = 'claude-id';
     frame.textContent = 'Spec';
     const onClick = jest.fn();
     frame.addEventListener('click', onClick);
@@ -247,6 +248,39 @@ describe('Basic input canvas', () => {
     expect(column.querySelector('.basic-input-canvas-layer .pipeline-doc-frame')).toBe(frame);
     frame.click();
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  test('document versions are kept with their producing participant when artifact IDs overlap', () => {
+    const column = panel.querySelector('.stage-column[data-round="1"]');
+    const claudeV1 = document.createElement('button');
+    Object.assign(claudeV1.dataset, { docId: 'report', docParticipant: 'claude-id' });
+    claudeV1.className = 'pipeline-doc-frame is-ready';
+    claudeV1.textContent = 'Claude report · 1';
+    const claudeV2 = document.createElement('button');
+    Object.assign(claudeV2.dataset, { docId: 'report', docParticipant: 'claude-id' });
+    claudeV2.className = 'pipeline-doc-frame is-ready';
+    claudeV2.textContent = 'Claude report · 2';
+    const geminiV1 = document.createElement('button');
+    Object.assign(geminiV1.dataset, { docId: 'report', docParticipant: 'gemini-id' });
+    geminiV1.className = 'pipeline-doc-frame is-ready';
+    geminiV1.textContent = 'Gemini report';
+    column.append(claudeV1, claudeV2, geminiV1);
+
+    const result = BasicInputCanvas.sync({ panel, schema: { steps: [
+      { ref: 'r1', kind: 'round', models: [
+        { id: 'claude-id', name: 'Claude', output: { artifacts: [{ id: 'report', name: 'Report' }] } },
+        { id: 'gemini-id', name: 'Gemini', output: { artifacts: [{ id: 'report', name: 'Report' }] } }
+      ] }
+    ] } });
+
+    const frames = Array.from(column.querySelectorAll('.basic-input-canvas-layer .pipeline-doc-frame'));
+    expect(frames).toEqual([claudeV1, claudeV2, geminiV1]);
+    expect(frames.map((frame) => frame.dataset.artifactKey)).toEqual([
+      JSON.stringify(['r1', 'claude-id', 'report']),
+      undefined,
+      JSON.stringify(['r1', 'gemini-id', 'report'])
+    ]);
+    expect(result.chips).toBe(3);
   });
 
   test('a document frame recreated by the run-record lifecycle is reclaimed on the next canvas sync', () => {

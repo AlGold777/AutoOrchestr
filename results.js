@@ -5005,41 +5005,51 @@ document.addEventListener('click', (event) => {
         // reading. Their state is read from the record of the run (frameRecord): pending without a version, ready with one,
         // approved when the owner approved its line.
         let frameRecord = null;
-        // The name of the artifact and whether the owner approved it, from the record; null when the record has no version of it.
-        const documentFrameOf = (record, artifactId) => {
-            const entries = (record?.artifacts || []).filter((entry) => entry.id === artifactId);
-            if (!entries.length) return null;
-            const approved = (record.snapshot?.results || []).some((item) => item?.owner?.approved?.id === artifactId);
-            return { name: entries[entries.length - 1].name, approved };
-        };
         const syncDocumentFrames = ({ syncCanvas = true } = {}) => {
             if (!pipelinePanel) return;
-            // The frames are drawn again from the canvas: a frame of a pipeline that no longer has its document goes.
             pipelinePanel.querySelectorAll('.pipeline-doc-frame').forEach((node) => node.remove());
             let steps = [];
             try { steps = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }).steps || []; } catch (_) { steps = []; }
             steps.forEach((step) => {
                 const round = /^r(\d+)$/.exec(step.ref || '');
                 if (!round || step.kind !== 'round') return;
-                // The output of a model is its own declaration; the output of the step is the one of the rest.
-                const output = (step.models || []).map((model) => model.output).find(Boolean) || step.output;
-                if (output?.document !== 'read' || !Array.isArray(output.artifacts) || output.artifacts.length !== 1) return;
-                const artifact = output.artifacts[0];
                 const column = pipelinePanel.querySelector(`.stage-column[data-round="${round[1]}"]:not(.pipeline-control-step)`);
                 if (!column) return;
-                const frameState = documentFrameOf(frameRecord, artifact.id);
-                const state = !frameState ? 'pending' : (frameState.approved ? 'approved' : 'ready');
+                (step.models || []).filter((model) => model.enabled !== false).forEach((model) => {
+                    const participant = model.id ?? model.name;
+                    const output = model.output || step.output;
+                    (output?.artifacts || []).forEach((artifact) => {
+                        const versions = (frameRecord?.artifacts || []).filter((entry) => entry.id === artifact.id
+                            && entry.source?.step === step.ref && entry.source?.participant === participant);
+                        (versions.length ? versions : [null]).forEach((entry, index) => {
+                            const approved = entry && index === versions.length - 1 && (frameRecord.snapshot?.results || []).some((item) => item?.owner?.approved?.id === entry.id);
+                            const frame = document.createElement('button');
+                            frame.type = 'button';
+                            frame.disabled = !entry;
+                            frame.className = `pipeline-doc-frame is-${!entry ? 'pending' : approved ? 'approved' : 'ready'}`;
+                            frame.dataset.docRef = step.ref;
+                            frame.dataset.docId = artifact.id;
+                            frame.dataset.docParticipant = participant;
+                            frame.textContent = `${entry?.name || artifact.name || artifact.id}${versions.length > 1 ? ` · ${index + 1}` : ''}${approved ? ' · утверждено' : ''}`;
+                            setCanvasTooltip(frame, artifact.name || artifact.id, artifact.description);
+                            if (entry) frame.addEventListener('click', () => { void openDocumentFrame(entry); });
+                            column.append(frame);
+                        });
+                    });
+                });
+            });
+            // A User edit is a version too, placed in the User step's column.
+            (frameRecord?.artifacts || []).filter((entry) => entry.source?.participant === 'owner').forEach((entry) => {
+                const column = Array.from(pipelinePanel.querySelectorAll('.pipeline-control-step[data-control-ref]'))
+                    .find((node) => node.dataset.controlRef === entry.source.step);
+                if (!column) return;
                 const frame = document.createElement('button');
-                frame.type = 'button';
-                frame.className = `pipeline-doc-frame is-${state}`;
-                frame.dataset.docRef = step.ref;
-                frame.dataset.docId = artifact.id;
-                frame.textContent = !frameState ? (artifact.name || artifact.id) : `${frameState.name}${state === 'approved' ? ' · утверждено' : ''}`;
-                setCanvasTooltip(frame, artifact.name || artifact.id, artifact.description);
-                if (frameState) frame.addEventListener('click', () => { void openDocumentFrame(artifact.id); });
+                frame.type = 'button'; frame.className = 'pipeline-doc-frame is-ready';
+                frame.dataset.docRef = entry.source.step; frame.dataset.docId = entry.id; frame.dataset.docParticipant = 'owner';
+                frame.textContent = `${entry.name || entry.id} · User ${entry.source.visit}`;
+                frame.addEventListener('click', () => { void openDocumentFrame(entry); });
                 column.append(frame);
             });
-            // A refreshed run record replaces the buttons too: replace their SVG endpoints in the same pass.
             if (syncCanvas) syncBasicInputCanvas();
         };
 
@@ -5146,6 +5156,40 @@ document.addEventListener('click', (event) => {
             }, 150);
         };
         const touchBasicStructure = () => { basicStructureTouched = draftPlanStorageKey(); persistBasicStructureSoon(); };
+        let fileDropQueue = Promise.resolve();
+        pipelinePanel?.addEventListener('dragover', (event) => {
+            if (!event.dataTransfer?.types?.includes('Files') || !event.target.closest('.stage-column[data-round]:not(.pipeline-control-step)')) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = pipelineRunActive ? 'none' : 'copy';
+        });
+        pipelinePanel?.addEventListener('drop', (event) => {
+            const column = event.target.closest('.stage-column[data-round]:not(.pipeline-control-step)');
+            if (!column || !event.dataTransfer?.files?.length) return;
+            event.preventDefault();
+            if (pipelineRunActive || !isCustomEnginePipeline()) return;
+            const files = Array.from(event.dataTransfer.files);
+            const ref = `r${column.dataset.round}`;
+            const pipeline = draftPlanStorageKey();
+            fileDropQueue = fileDropQueue.then(async () => {
+                if (pipelineRunActive || pipeline !== draftPlanStorageKey()) throw new Error('Схема или состояние прогона изменились');
+                const existing = getCustomRoundSettings()[ref]?.files || [];
+                const store = window.BasicInputFiles.createStore();
+                const sizes = await Promise.all(existing.map(async (item) => ({ name: item.name,
+                    size: Number.isSafeInteger(item.size) ? item.size : typeof item.content === 'string'
+                        ? new Blob([item.content]).size : (await store.get(item))?.size || 0 })));
+                window.BasicInputFiles.validateBatch([...sizes, ...files]);
+                const added = [];
+                try {
+                    for (const file of files) added.push(await store.put(file));
+                    if (pipelineRunActive || pipeline !== draftPlanStorageKey()) throw new Error('Схема или состояние прогона изменились');
+                    await setCustomRoundSetting(ref, 'files', [...existing, ...added]);
+                    syncBasicInputCanvas();
+                } catch (error) {
+                    await Promise.all(added.map((item) => store.remove(item.id)));
+                    throw error;
+                }
+            }).catch((error) => showNotification(`Файлы не добавлены: ${error?.message || error}`, 'error'));
+        });
         pipelinePanel?.addEventListener('change', (event) => { if (event.target?.closest?.('.model-input-checkbox, .role-selector')) touchBasicStructure(); });
         pipelinePanel?.addEventListener('click', (event) => { if (event.target?.closest?.(BASIC_STRUCTURE_CONTROLS)) touchBasicStructure(); });
         const updatePipelineAll = ({ deferFinalLayout = true } = {}) => {
@@ -7011,15 +7055,14 @@ document.addEventListener('click', (event) => {
             ? window.CustomRunRecord.createStore({ storage: window.CustomRunRecord.chromeStorage(chrome.storage.local) })
             : null;
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Default').trim();
-        // A click on a frame: the last version of its line is read from the record of the run, in a window for reading.
-        const openDocumentFrame = async (artifactId) => {
-            const entries = (frameRecord?.artifacts || []).filter((entry) => entry.id === artifactId);
-            const entry = entries[entries.length - 1];
-            const name = entry?.name || artifactId;
-            const text = entry ? window.CustomRunRecord.textOf(frameRecord, entry.content?.answerRef) : '';
+        // Each frame opens the exact recorded version, including its creator's chat when known.
+        const openDocumentFrame = async (entry) => {
+            const name = entry.name || entry.id;
+            const answer = window.CustomRunRecord.textOf(frameRecord, entry.content?.answerRef);
+            const text = window.StageCard.feed.artifactText(answer, entry.content?.pointer, window.BasicOutput.readPointer);
             if (!text) { showNotification(`Текст документа «${name}» не найден в записи прогона`, 'warn'); return; }
             try {
-                await askChoiceDialog({ title: `Документ: ${name}`, document: { kind: 'read', readOnly: true, name, text }, choices: [], cancelText: 'Закрыть' });
+                await askChoiceDialog({ title: name, document: { kind: 'read', readOnly: true, name: '', text, sourceUrl: entry.sourceUrl || '', downloadName: `${name}.txt` }, choices: [], cancelText: 'Закрыть' });
             } catch (error) {
                 showNotification(`Basic: документ «${name}» не открыт: ${error?.message || String(error)}`, 'error');
             }
@@ -7308,7 +7351,15 @@ document.addEventListener('click', (event) => {
                 };
             };
             const checkpointRecord = (state) => {
-                window.CustomRunRecord.setArtifacts(record, state.artifacts);
+                const prior = record.artifacts || [];
+                const versions = (state.artifacts || []).map((entry) => {
+                    const previous = prior.find((item) => JSON.stringify([item.lineage, item.source]) === JSON.stringify([entry.lineage, entry.source]));
+                    const binding = chatBindings[entry.source?.participant];
+                    const url = binding?.stepRef === entry.source?.step && binding?.visit === entry.source?.visit
+                        ? (binding.chatUrl || '') : '';
+                    return { ...entry, ...((previous?.sourceUrl || url) ? { sourceUrl: previous?.sourceUrl || url } : {}) };
+                });
+                window.CustomRunRecord.setArtifacts(record, versions);
                 window.CustomRunRecord.setSnapshot(record, buildSnapshotPayload(state, { current: state.current, ownerAnswers: state.ownerAnswers, pendingOwner: state.pendingOwner }));
                 syncDocumentFrames();
                 return writeRecord();
@@ -7348,13 +7399,12 @@ document.addEventListener('click', (event) => {
                 void saveRecord();
             };
             if (runContext.forceNewTabs) resetNewPagesCheckboxAfterOpen();
+            frameRecord = record;
+            syncDocumentFrames();
             if (!resumeRecord) {
                 composerBackup = getModeratorDispatchText();
                 clearModeratorComposer();
                 appendModeratorFeedEntry(task, { pipelineRunId: runContext.pipelineRunId });
-                // A new run takes its frames from its own record: its versions fill them in.
-                frameRecord = record;
-                syncDocumentFrames();
             }
             // Canvas progress from the engine's own events: a round is canvas-rN, an owner step its ref.
             // The step index is the position in `steps`.
@@ -7614,11 +7664,13 @@ document.addEventListener('click', (event) => {
                     wave.forEach((request) => {
                         const bound = live[request.participantId];
                         if (!bound || bound.modelName !== request.modelName) return;
+                        const previous = chatBindings[request.participantId];
+                        const sameChat = previous?.tabId === bound.tabId && !isNewChat(request);
                         chatBindings[request.participantId] = {
-                            ...chatBindings[request.participantId],
+                            ...previous,
                             tabId: bound.tabId, requestId: bound.requestId || null, stageAttemptId: bound.stageAttemptId || null,
-                            chatUrl: bound.chatUrl || chatBindings[request.participantId]?.chatUrl || null,
-                            initialUrl: bound.initialUrl || chatBindings[request.participantId]?.initialUrl || null
+                            chatUrl: bound.chatUrl || (sameChat ? previous?.chatUrl : null) || null,
+                            initialUrl: bound.initialUrl || (sameChat ? previous?.initialUrl : null) || null
                         };
                     });
                 };
@@ -7768,7 +7820,11 @@ document.addEventListener('click', (event) => {
                 if (record) {
                     // The registry and the state of the run at its end: what a later resume needs (8.2).
                     const CustomRecord = window.CustomRunRecord;
-                    CustomRecord.setArtifacts(record, result.artifacts);
+                    const previous = record.artifacts || [];
+                    CustomRecord.setArtifacts(record, (result.artifacts || []).map((entry) => {
+                        const saved = previous.find((item) => JSON.stringify([item.lineage, item.source]) === JSON.stringify([entry.lineage, entry.source]));
+                        return saved?.sourceUrl ? { ...entry, sourceUrl: saved.sourceUrl } : entry;
+                    }));
                     CustomRecord.setSnapshot(record, buildSnapshotPayload(result.state, {
                         ownerAnswers: result.ownerAnswers,
                         chatBindings
@@ -10370,6 +10426,18 @@ document.addEventListener('click', (event) => {
                     roleChoice
                 });
                 title.textContent = model.title;
+                const header = dialog.querySelector('.pipeline-stage-dialog-header');
+                header?.querySelector('[data-basic-input-files]')?.remove();
+                if (roleChoice && header && window.InputFilesUI && window.BasicInputFiles) {
+                    try {
+                        window.InputFilesUI.mount({ header, after: title, container: header, mountKey: header,
+                            files: getCustomRoundSettings()[`r${round}`]?.files || [], disabled: pipelineRunActive,
+                            store: window.BasicInputFiles.createStore(), validateBatch: window.BasicInputFiles.validateBatch,
+                            notify: (message) => showNotification(message, 'error'),
+                            onChange: async (files) => { await setCustomRoundSetting(`r${round}`, 'files', files); syncBasicInputCanvas(); }
+                        });
+                    } catch (error) { showNotification(`Хранилище входных файлов недоступно: ${error?.message || error}`, 'error'); }
+                }
                 window.StageCard.render(body, model, {
                     onCopy: (text) => navigator.clipboard?.writeText?.(text)
                         .then(() => showNotification('Задание этапа скопировано.', 'info'))
