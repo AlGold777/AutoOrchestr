@@ -152,6 +152,42 @@ describe('Resumed Basic run keeps the chats of its participants (R01)', () => {
     expect(results.indexOf('await refreshParticipantChats(runContext.pipelineRunId, wave);', sendAt)).toBeGreaterThan(sendAt);
   });
 
+  test('a new chat never inherits the previous URL; a continuing chat may keep it while the binding refreshes', async () => {
+    const start = results.indexOf('const refreshParticipantChats = async (pipelineRunId, wave) => {');
+    const terminator = '\n                };';
+    const end = results.indexOf(terminator, start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const expression = results.slice(start, end + terminator.length)
+      .replace('const refreshParticipantChats = ', '')
+      .trim()
+      .replace(/;$/, '');
+    const invokeRefresh = (chatBindings, isNewChat, response) => new Function(
+      'sendToBackground', 'chatBindings', 'isNewChat', `return ${expression}`
+    )(async () => response, chatBindings, isNewChat);
+    const previous = {
+      participantA: { modelName: 'Claude', tabId: 10, stepRef: 'r1', visit: 1,
+        chatUrl: 'https://claude.ai/chat/old', initialUrl: 'https://claude.ai/new' }
+    };
+    const sameRequest = { participantId: 'participantA', modelName: 'Claude', stepRef: 'r1', visit: 1 };
+    const continueBindings = JSON.parse(JSON.stringify(previous));
+
+    await invokeRefresh(continueBindings, () => false, { bindings: {
+      participantA: { modelName: 'Claude', tabId: 10, requestId: 'continue-1' }
+    } })('run-1', [sameRequest]);
+    expect(continueBindings.participantA.chatUrl).toBe('https://claude.ai/chat/old');
+    expect(continueBindings.participantA.initialUrl).toBe('https://claude.ai/new');
+    expect(continueBindings.participantA.requestId).toBe('continue-1');
+
+    const newChatBindings = JSON.parse(JSON.stringify(previous));
+    await invokeRefresh(newChatBindings, () => true, { bindings: {
+      participantA: { modelName: 'Claude', tabId: 10, requestId: 'new-1' }
+    } })('run-1', [sameRequest]);
+    expect(newChatBindings.participantA.chatUrl).toBeNull();
+    expect(newChatBindings.participantA.initialUrl).toBeNull();
+    expect(newChatBindings.participantA.requestId).toBe('new-1');
+  });
+
   test('the background answers the bindings of one run and passes the saved binding to the participant', () => {
     const handlers = fs.readFileSync(path.join(__dirname, '..', 'background', 'pipeline-message-handlers.js'), 'utf8');
     expect(handlers).toContain("if (message?.type === 'PARTICIPANT_CHAT_BINDINGS') {");

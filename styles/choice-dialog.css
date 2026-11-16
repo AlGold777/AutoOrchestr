@@ -31,3 +31,6 @@
   .choice-dialog { padding: 16px; }
   .choice-dialog-actions button { flex: 1 1 100%; }
 }
+
+.choice-dialog-document-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.choice-dialog-document-download { margin-left: auto; font-size: 20px; text-decoration: none; }
