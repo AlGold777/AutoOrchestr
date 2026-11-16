@@ -271,6 +271,16 @@ body.is-resizing {
     user-select: none;
 }
 
+.pipeline-round-territory {
+    position: absolute;
+    top: 36px;
+    box-sizing: border-box;
+    border-left: 2px dashed #64748b;
+    border-right: 2px dashed #64748b;
+    pointer-events: none;
+    z-index: 2;
+}
+
 .pipeline-flow {
     display: flex;
     align-items: flex-start;

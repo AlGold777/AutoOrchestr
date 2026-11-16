@@ -5158,14 +5158,61 @@ document.addEventListener('click', (event) => {
         };
         const touchBasicStructure = () => { basicStructureTouched = draftPlanStorageKey(); persistBasicStructureSoon(); };
         let fileDropQueue = Promise.resolve();
+        // The visible territory reaches halfway across each connector and the full height of the canvas, including
+        // empty space below short columns. Both the hover guide and file drop use exactly the same boundaries.
+        const roundTerritoryAt = (event) => {
+            const flow = pipelineCanvas?.querySelector('.pipeline-flow');
+            if (!flow || !pipelineCanvas.contains(event.target)) return null;
+            const viewport = pipelineCanvas.getBoundingClientRect();
+            if (event.clientY < viewport.top || event.clientY > viewport.bottom || event.clientX < viewport.left || event.clientX > viewport.right) return null;
+            const columns = Array.from(flow.children).filter((node) => node.classList.contains('stage-column'));
+            const rectangles = columns.map((node) => node.getBoundingClientRect());
+            for (let index = 0; index < columns.length; index += 1) {
+                const column = columns[index];
+                if (!column.matches('.stage-column[data-round]:not(.pipeline-control-step)')) continue;
+                const rect = rectangles[index];
+                const left = index ? (rectangles[index - 1].right + rect.left) / 2 : rect.left;
+                const right = index + 1 < rectangles.length ? (rect.right + rectangles[index + 1].left) / 2
+                    : rect.right + Math.max(0, (rect.left - (rectangles[index - 1]?.right ?? rect.left)) / 2);
+                if (event.clientX >= left && event.clientX < right) return { column, flow, left, right };
+            }
+            return null;
+        };
+        let territoryGuide = null;
+        const showRoundTerritory = (territory) => {
+            if (!territory) { territoryGuide?.remove(); territoryGuide = null; return; }
+            if (!territoryGuide || territoryGuide.parentElement !== territory.flow) {
+                territoryGuide?.remove();
+                territoryGuide = document.createElement('div');
+                territoryGuide.className = 'pipeline-round-territory';
+                territoryGuide.setAttribute('aria-hidden', 'true');
+                territory.flow.append(territoryGuide);
+            }
+            const flowRect = territory.flow.getBoundingClientRect();
+            territoryGuide.style.left = `${territory.left - flowRect.left}px`;
+            territoryGuide.style.width = `${territory.right - territory.left}px`;
+            territoryGuide.style.height = `${Math.max(0, Math.max(flowRect.height, pipelineCanvas.clientHeight) - 36)}px`;
+        };
+        pipelineCanvas?.addEventListener('pointermove', (event) => showRoundTerritory(roundTerritoryAt(event)));
+        pipelineCanvas?.addEventListener('pointerleave', () => showRoundTerritory(null));
+        pipelineCanvas?.addEventListener('scroll', () => showRoundTerritory(null));
+        window.addEventListener('resize', () => showRoundTerritory(null));
+        pipelineCanvas?.addEventListener('dragleave', (event) => {
+            if (!event.relatedTarget || !pipelineCanvas.contains(event.relatedTarget)) showRoundTerritory(null);
+        });
         pipelinePanel?.addEventListener('dragover', (event) => {
-            if (!event.dataTransfer?.types?.includes('Files') || !event.target.closest('.stage-column[data-round]:not(.pipeline-control-step)')) return;
+            if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+            const territory = roundTerritoryAt(event);
+            showRoundTerritory(territory);
+            if (!territory) return;
             event.preventDefault();
-            event.dataTransfer.dropEffect = pipelineRunActive ? 'none' : 'copy';
+            event.dataTransfer.dropEffect = pipelineRunActive || !isCustomEnginePipeline() ? 'none' : 'copy';
         });
         pipelinePanel?.addEventListener('drop', (event) => {
-            const column = event.target.closest('.stage-column[data-round]:not(.pipeline-control-step)');
-            if (!column || !event.dataTransfer?.files?.length) return;
+            const territory = roundTerritoryAt(event);
+            showRoundTerritory(null);
+            if (!territory || !event.dataTransfer?.files?.length) return;
+            const column = territory.column;
             event.preventDefault();
             if (pipelineRunActive || !isCustomEnginePipeline()) return;
             const files = Array.from(event.dataTransfer.files);
