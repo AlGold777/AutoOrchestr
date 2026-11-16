@@ -878,6 +878,9 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 }
 
 .model-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   background: transparent;
   color: #64748b;
@@ -1058,6 +1061,10 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   align-items: center;
   gap: 6px;
   margin-left: 8px;
+}
+
+.llm-header .status-control-cluster > .status-indicator {
+  align-self: center;
 }
 
 .status-ping-btn {
