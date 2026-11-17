@@ -14,6 +14,13 @@
             <div class="notes-top">
                 <div class="sidebar-header">
                     <button type="button" class="sidebar-title" id="notes-mode-toggle" aria-label="Switch to notes" aria-pressed="true">Sessions</button>
+                    <div class="sidebar-hint-actions">
+                        <button type="button" class="sidebar-hint-action" id="notes-hint-sessions-add" title="Add saved sessions from Downloads/Saved sessions (keeps current sessions)" aria-label="Add saved sessions without replacing current ones">+</button>
+                        <button type="button" class="sidebar-hint-action" id="notes-hint-backup-export" title="Export backup to Downloads/Saved sessions" aria-label="Export notes and sessions to Downloads/Saved sessions">↑</button>
+                        <button type="button" class="sidebar-hint-action" id="notes-hint-backup-import" title="Import backup from Downloads/Saved sessions (replaces current sessions)" aria-label="Import notes and sessions, replacing current ones"><i class="ti ti-download" aria-hidden="true"></i></button>
+                        <button type="button" class="sidebar-hint-action notes-delete-btn" id="notes-delete-btn" aria-label="Delete selected" title="Delete selected"><i class="ti ti-trash" aria-hidden="true"></i></button>
+                        <button type="button" class="sidebar-hint-action sessions-delete-btn" id="sessions-delete-btn" aria-label="Delete all sessions" title="Delete all sessions"><i class="ti ti-trash" aria-hidden="true"></i></button>
+                    </div>
                     <div class="sidebar-header-actions">
                         <button type="button" class="notes-action-btn notes-header-action" id="notes-add-root" aria-label="Add note" title="Add note">+</button>
                         <button type="button" class="sessions-action-btn sessions-save-btn notes-header-action" id="sessions-save-btn" aria-label="Save session" title="Save session">Save</button>
@@ -35,14 +42,6 @@
                 </div>
                 <div class="sidebar-hint">
                     <span id="notes-status">Stored locally on this device.</span>
-                    <div class="sidebar-hint-actions">
-                        <button type="button" class="sidebar-hint-action" id="notes-hint-sessions-add" title="Add saved sessions from Downloads/Saved sessions (keeps current sessions)" aria-label="Add saved sessions without replacing current ones">+</button>
-                        <button type="button" class="sidebar-hint-action sidebar-hint-action-txt" id="notes-hint-sessions-export-txt" title="Export all saved sessions as TXT" aria-label="Export all saved sessions as TXT">txt</button>
-                        <button type="button" class="sidebar-hint-action" id="notes-hint-backup-export" title="Export backup to Downloads/Saved sessions" aria-label="Export notes and sessions to Downloads/Saved sessions">↑</button>
-                        <button type="button" class="sidebar-hint-action" id="notes-hint-backup-import" title="Import backup from Downloads/Saved sessions (replaces current sessions)" aria-label="Import notes and sessions, replacing current ones"><i class="ti ti-download" aria-hidden="true"></i></button>
-                        <button type="button" class="sidebar-hint-action notes-delete-btn" id="notes-delete-btn" aria-label="Delete selected" title="Delete selected"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                        <button type="button" class="sidebar-hint-action sessions-delete-btn" id="sessions-delete-btn" aria-label="Delete all sessions" title="Delete all sessions"><i class="ti ti-trash" aria-hidden="true"></i></button>
-                    </div>
                 </div>
             </div>
             <div class="sidebar-resizer" id="left-sidebar-resizer" role="separator" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="520" aria-valuenow="340"></div>

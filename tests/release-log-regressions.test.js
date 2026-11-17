@@ -709,7 +709,7 @@ describe('release log regression guards', () => {
       expect(html).toContain('id="notes-add-root"');
       expect(html).toContain('id="sessions-save-btn"');
     });
-    expect(css).toContain('grid-template-columns: minmax(0, 1fr) 56px;');
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr) auto 56px;');
     expect(css).toContain('justify-self: end;');
     expect(css).toContain('.app-sidebar-left .sidebar-title');
     expect(css).toContain('justify-self: start;');
@@ -767,7 +767,7 @@ describe('release log regression guards', () => {
     const pipelineHtml = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
 
     [resultHtml, pipelineHtml].forEach((html) => {
-      expect(html).toContain('id="notes-hint-sessions-export-txt"');
+      expect(html).not.toContain('id="notes-hint-sessions-export-txt"');
     });
 
     expect(source).toContain('attachBackupAction(notesHintSessionsExportTxtBtn, exportSavedSessionsTxt);');

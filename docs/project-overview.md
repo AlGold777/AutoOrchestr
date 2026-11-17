@@ -99,14 +99,11 @@ The first item in the Sessions list is always `Current session`. It is the work 
 
 Use `Save` in Sessions mode to save the current card state. Use export/import as a backup or to move saved Sessions to another computer.
 
-The buttons at the bottom of the left sidebar work against one dedicated folder, `Downloads/Saved sessions`:
+The buttons in the left sidebar header work against one dedicated folder, `Downloads/Saved sessions`:
 
 - the download icon exports notes and saved Sessions straight into that folder — no Save As dialog, the app only asks for the file name, and a name clash gets a numeric suffix instead of overwriting;
 - `↓` imports a backup **replacing** the current notes and Session set;
-- `+` imports saved Sessions from one or several selected JSON files **without replacing** anything — they are appended to the current set, and colliding ids are reassigned;
-- `txt` exports the answers of every saved Session into one text file, `Saved sessions <stamp>.txt`.
-
-The TXT file groups answers by Session: a line with the Session name, then that Session's prompt, Favourite and model answers indented under it. `Current session` is not included — use the `txt` button on the main page for the work currently open. Saved answers carry no time/URL metadata line, because that metadata describes a live run and is not part of a stored Session.
+- `+` imports saved Sessions from one or several selected JSON files **without replacing** anything — they are appended to the current set, and colliding ids are reassigned.
 
 Both imports open the browser's standard file window inside `Downloads/Saved sessions` — the same dialog any download or upload uses, no in-app file list. The first press after installing opens `Downloads`, where `Saved sessions` sits one folder down; once a backup has been picked there, Chrome remembers that folder for this dialog and every later press opens straight inside it. No extra permission is needed.
 
