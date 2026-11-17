@@ -53,7 +53,7 @@
 | Notes / Pipeline / Telemetry | `#left-sidebar-toggle`, `#right-sidebar-toggle`, `#pipeline-close-btn`, `#telemetry-toggle-btn` | Открывают/закрывают панели или модалку. Состояние правой панели меняет доступность центральной области. Telemetry лениво загружает `results-devtools.js`. |
 | Режим API | `#api-mode-checkbox` и в панели ключей `#api-toggle` | `#api-mode-checkbox` скрыт в текущей разметке и служит состоянием API fallback; `#api-toggle` переключает его и подпись/режим. API fallback — альтернативный транспорт, способный вызывать реальные API; не тестировать с активными ключами без отдельного разрешения. |
 | API ключи | `#api-keys-modal`, `#api-key-openai`, `#api-key-anthropic`, `#api-key-google`, `#api-key-grok`, `#api-key-lechat`, `#api-key-qwen`, `#api-key-deepseek`, `#api-key-perplexity`, `#save-api-keys`, `#close-api-keys-modal` | Ключи загружаются при открытии и хранятся в session storage; пустое поле при Save удаляет ключи. Не считывать, не печатать, не экспортировать и не менять ключи во время теста. |
-| Кнопка чата модели | `.model-chat-btn`, `.status-indicator`, `.status-ping-btn` | Кнопка с тремя линиями открывает вкладку чата модели: сначала привязанную, иначе подходящую открытую вкладку; если вкладки нет, показывает уведомление. Индикатор статуса модели не является кнопкой запуска. |
+| Кнопка чата модели | `.model-chat-btn`, `.status-indicator`, `.status-ping-btn` | Кнопка с тремя линиями открывает вкладку чата модели: сначала привязанную, иначе подходящую открытую вкладку; если вкладки нет, открывает сайт модели в новой вкладке. Индикатор статуса модели не является кнопкой запуска. |
 
 ## 3. Страница Pipeline: `pipeline_panel.html`
 

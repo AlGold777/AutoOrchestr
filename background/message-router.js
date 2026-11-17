@@ -2376,12 +2376,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     try {
                         const tabs = await findReusableTabsForLlm(message.llmName);
                         const tabId = tabs[0]?.id;
-                        if (!tabId) return sendResponse({ success: false });
-                        const tab = await chrome.tabs.update(tabId, { active: true });
-                        if (tab?.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+                        if (tabId) {
+                            const tab = await chrome.tabs.update(tabId, { active: true });
+                            if (tab?.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+                        } else {
+                            const url = LLM_TARGETS[message.llmName]?.url;
+                            if (!url) return sendResponse({ success: false });
+                            await chrome.tabs.create({ url, active: true });
+                        }
                         sendResponse({ success: true });
-                    } catch (_) {
-                        sendResponse({ success: false });
+                    } catch (error) {
+                        sendResponse({ success: false, error: error?.message || String(error) });
                     }
                 })();
                 return true;
