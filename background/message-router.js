@@ -2374,7 +2374,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             case 'OPEN_MODEL_CHAT': {
                 (async () => {
                     try {
-                        const tabId = jobState?.llms?.[message.llmName]?.tabId || TabMapManager.get(message.llmName);
+                        const tabs = await findReusableTabsForLlm(message.llmName);
+                        const tabId = tabs[0]?.id;
                         if (!tabId) return sendResponse({ success: false });
                         const tab = await chrome.tabs.update(tabId, { active: true });
                         if (tab?.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });

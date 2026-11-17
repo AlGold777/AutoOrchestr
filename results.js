@@ -15319,7 +15319,7 @@ document.addEventListener('click', (event) => {
             button.className = 'model-chat-btn';
             button.title = `Open ${llmName} chat`;
             button.setAttribute('aria-label', button.title);
-            button.innerHTML = '<span aria-hidden="true">☰</span>';
+            button.innerHTML = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>';
             button.addEventListener('click', () => {
                 chrome.runtime.sendMessage({ type: 'OPEN_MODEL_CHAT', llmName }, (response) => {
                     if (chrome.runtime.lastError || !response?.success) {
