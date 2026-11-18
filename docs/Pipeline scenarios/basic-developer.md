@@ -96,6 +96,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | Явные значения и запуск | `basicRunForSave`, `markBasicRunExplicit`, `basicRunExplicit`, `basicSchemaLoadErrors` | Какие значения считаются явными и проверка перед запуском |
 | Окна настроек | `renderCustomBlockInspector`, `openStageCard`, `setCustomRoundSetting`, `setCustomRoundPrompt`, `resolveCustomFields`, `customDisciplineDefaults` | Окно настроек модели, открытие окна раунда, значения раунда и модели |
 | Сборка запроса | `composeCustomPrompts`, `prepareCustomPrompts`, `customLengthInstruction` | Дописывает особенность модели, инструкцию длины и требования к содержанию |
+| Повтор схемы | `runBasicRepeat`, `basicRepeatStop`, `lastBasicAutosave`, `ownerWindow` (внутри `runBasicRepeat`) | Повтор `run.repeat` (T08): заход = `runCustomFromPage` с `forceNewTabs`; счёт запросов по `usage` записи, верхний предел без неё; задача следующего захода (`BasicRepeat`); окно User раз в `ownerEvery`; Stop ставит `basicRepeatStop`; состояние только в памяти страницы |
 | Прогон | `runCustomFromPage`, `resumeCustomFromPage`, `builtFromRecord`, `basicRunNotice`, `startDebateFromPage`, `askCustomDecision`, `askCustomOwner`, `customRunProgress`, `isCustomEnginePipeline` | Запуск Basic со страницы, окна паузы и вопросов, состояние холста |
 | Транспорт и карточки ответа | `runModelBatch`, `pipelineWaiter`, `updateDebateModelCardOutput` | Отправка запросов моделям, ожидание ответов, карточки ответа. Карточка Basic строится из `answerHtml` ответа, как карточка главной страницы; запись только текста не заменяет форматирование того же ответа (`BasicCardVerdict.keepsStructure`) |
 | Выгрузка и запись прогона | `buildBasicReportNow`, `autosaveRun`, `lastBasicAutosave` | Отчёт прогона для кнопки Basic и для записи в папку документов (`buildBasicReportNow`); запись прогона в папку и строка цепочки после последнего сохранения записи (`autosaveRun`); результат последней записи (`lastBasicAutosave`) |
@@ -133,6 +134,8 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | `tests/documents-folder.test.js` | Копия документа на диске: очистка имени, штамп времени, путь, выбор папки, доступ и запись (`DocumentsFolder`) |
 | `tests/basic-run-chain.test.js` | Цепочка прогонов: SHA-256, разделы задачи, строка и сумма предыдущей строки, проверка `verify`, `saveRun` на фейковой папке |
 | `tests/basic-repeat.test.js` | Повтор схемы: деление задачи, счётчики, документ следующего захода, причины остановки и окно User |
+| `tests/results-debate-favorites.test.js`, блок «T08: повтор схемы на странице» | Повтор на странице (T08): 17 проверок раздела 8 `endless-pipeline.md` на поддельном транспорте и папке документов; проверка 15 — без перезагрузки (в jsdom не воспроизводится) |
+| `tests/custom-run-resume-wiring.test.js`, блок «T08» | Проводка повтора в `results.js`: запуск, Stop, `forceNewTabs`, `usage`, `finally` |
 | `tests/stage-card-basic.test.js` | Окно настроек раунда |
 | `tests/results-debate-favorites.test.js` | Страница целиком: окна настроек, прогон, Save, Import, Export, установка схемы |
 | `tests/results-tooltips.test.js` | Разметка подсказки на элементах холста (название и описание через `ResultsTooltips`) |

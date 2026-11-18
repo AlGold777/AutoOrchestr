@@ -101,6 +101,32 @@ describe('Этап 2: документы в запуске', () => {
   });
 });
 
+describe('T08: повтор схемы на странице', () => {
+  test('the start hands a schema with run.repeat to runBasicRepeat, the others go on as before', () => {
+    expect(results).toContain('if (repeat) return runBasicRepeat({ task, repeat });');
+    expect(results).toMatch(/const \{ repeat \} = buildBasicRun\(draftPlanForCanvas\(getActiveDraftPlan\(\)\)\)\.run;/);
+  });
+
+  test('Stop marks the repeat as stopped first, before it aborts the pass or a window', () => {
+    expect(results).toMatch(/const cancelPipelineRun = async \(\) => \{\s*basicRepeatStop = true;/);
+  });
+
+  test('every pass is an ordinary run with new chats (forceNewTabs), and the run takes its own record', () => {
+    expect(results).toContain('await runCustomFromPage({ task: passTask(pass, carried, passesLeft(requestsUsed)), forceNewTabs: true });');
+    expect(results).toContain('forceNewTabs: forceNewTabs || (newPagesCheckbox ? newPagesCheckbox.checked : true),');
+  });
+
+  test('the request count of a pass comes from the autosave report, the upper bound is the fallback', () => {
+    expect(results).toContain('const sent = lastBasicAutosave?.usage?.requestsSent;');
+    expect(results).toContain('requestsUsed += typeof sent === \'number\' ? sent : requestsPerPass;');
+    expect(results).toContain('return { ...result, usage: report?.usage ?? null };');
+  });
+
+  test('the repeat is cleared in finally, so an exception leaves the page free', () => {
+    expect(results).toMatch(/\} catch \(error\) \{\s*stopNotice\(`повтор остановлен из-за ошибки: [^`]*`, 'error'\);\s*return finished > 0;\s*\} finally \{\s*customAbortController = null;\s*pipelineRunActive = false;\s*setPipelineRunUi\(false\);\s*updateDebateButtonsUi\(\);/);
+  });
+});
+
 describe('T03: запись прогона на диск и строка цепочки', () => {
   const panel = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
 

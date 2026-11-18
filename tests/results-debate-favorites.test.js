@@ -5736,6 +5736,350 @@ describe('Pipeline debate favorites view', () => {
     expect(document.querySelectorAll('.model-block').length).toBeGreaterThan(0);
   });
 
+
+    describe('T08: повтор схемы на странице', () => {
+      const notice = () => document.getElementById('notification-message').textContent;
+      const feed = () => [...document.querySelectorAll('.basic-run-line')].map((line) => line.textContent).join('\n');
+      const sha = (text) => require('crypto').createHash('sha256').update(text).digest('hex');
+      const CARRY_MARKER = '=== КАРТА ВОПРОСА ===';
+      // Answers of the fake transport still in the timer queue: a stopped pass answers later, into the next test, unless cleared.
+      const pendingAnswers = [];
+      const TASK = `Задача захода {заход} из 3, осталось {осталось запросов}.\n${CARRY_MARKER}\nИсходный вопрос\n`;
+      const repeatOf = (overrides = {}) => ({ carry: { step: 'r1', participant: 'GPT', artifact: 'map' }, carryMarker: CARRY_MARKER,
+        maxPasses: 3, maxRequests: 250, ...overrides });
+      // A round of the given models; the document artifact "map" of each answer is the text between its marks.
+      const repeatSchema = (repeat, { models = ['GPT'], run = {} } = {}) => ({ schemaVersion: 1, origin: 'user', description: 'Повтор T08',
+        run: { policy: 'auto', ...run, repeat }, steps: [{ ref: 'r1', kind: 'round', task: 'Общее задание шага.',
+          output: { document: 'read', artifacts: [{ id: 'map', name: 'Карта', pointer: '' }] },
+          models: models.map((name) => ({ name })) }] });
+      const docAnswer = (model, pass) => `[[DOC: map]]\nКарта захода ${pass}\n[[/DOC]]`;
+      // An in-memory documents folder: the methods of DocumentsFolder.create that the run record and the chain use.
+      // failRuns makes the write of a run record fail; onWrite runs before each write.
+      const memoryFolder = ({ access = 'granted' } = {}) => {
+        const files = new Map();
+        const key = (dirs, file) => [...dirs, file].join('/');
+        const folder = {
+          files,
+          failRuns: false,
+          onWrite: null,
+          folderName: async () => 'Docs',
+          pick: jest.fn(),
+          write: jest.fn(async () => ({ ok: true, path: 'copy' })),
+          ensureAccess: jest.fn(async () => access),
+          readAt: jest.fn(async ({ dirs, file }) => (files.has(key(dirs, file))
+            ? { ok: true, text: files.get(key(dirs, file)) } : { ok: false, reason: 'missing' })),
+          writeAt: jest.fn(async ({ dirs, file, text }) => {
+            if (folder.onWrite) folder.onWrite(file);
+            if (folder.failRuns && file.startsWith('run_')) return { ok: false, reason: 'error', message: 'диск недоступен' };
+            files.set(key(dirs, file), text);
+            return { ok: true, path: key(dirs, file) };
+          })
+        };
+        return folder;
+      };
+      // The first request of every pass (the correction retries of a pass are not counted).
+      const passesOf = (starts) => starts.filter((message, index) => starts.findIndex((other) => other.pipelineContext.pipelineRunId
+        === message.pipelineContext.pipelineRunId) === index);
+      const runRecords = (folder) => [...folder.files.keys()].filter((item) => /\/run_[^/]+\.json$/.test(item));
+      // The fake transport: every round is one request to its models; answer(model, pass) gives the text ('' is no answer).
+      const transport = ({ answer, onStart = () => {} }) => {
+        const debug = window.__pipelineLifecycleDebug;
+        const starts = [];
+        const runIds = [];
+        chrome.runtime.sendMessage.mockImplementation((message, callback) => {
+          if (message.type !== 'START_FULLPAGE_PROCESS') { callback?.({ status: 'ok', active: false }); return; }
+          starts.push(message);
+          callback?.({ status: 'process_started' });
+          // A pass is one run (pipelineRunId); the engine's correction retries are more starts of the same pass.
+          const runId = message.pipelineContext.pipelineRunId;
+          let pass = runIds.indexOf(runId) + 1;
+          if (pass === 0) { runIds.push(runId); pass = runIds.length; onStart(pass, message); }
+          pendingAnswers.push(setTimeout(() => message.selectedLLMs.forEach((model) => debug.pipelineWaiter.handleFinal({ type: 'LLM_RESPONSE', llmName: model,
+            transportRequestId: message.pipelineContext.transportRequestIds[model],
+            answer: answer(model, pass),
+            metadata: { ...message.pipelineContext, status: 'SUCCESS', attribution: 'verified', completion: 'complete' }
+          })), 0));
+        });
+        return starts;
+      };
+      const setup = async (name, schema, { answer = docAnswer, onStart, folder = memoryFolder() } = {}) => {
+        require('../disput/basic-run-chain');
+        require('../disput/basic-repeat');
+        window.BasicTelemetry = require('../shared/basic-telemetry');
+        const h = setupCustomInheritance(name);
+        const realRecord = window.CustomRunRecord;
+        const previousFolder = window.DocumentsFolder;
+        expect((await h.debug.installBasicSchema(name, schema)).ok).toBe(true);
+        // An install with remarks opens a window of its own: it is closed, so it does not block the run or the next test.
+        document.querySelectorAll('dialog.choice-dialog').forEach((dialog) => dialog.remove());
+        document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
+        await delay();
+        window.DocumentsFolder = { instance: folder, runDirs: ({ pipeline, startedAt }) => [pipeline, String(startedAt)] };
+        const starts = transport({ answer, onStart: (pass, message) => onStart?.(pass, message, { folder, starts, h }) });
+        return { h, folder, starts, cleanup() {
+          pendingAnswers.splice(0).forEach((timer) => clearTimeout(timer));
+          window.DocumentsFolder = previousFolder;
+          window.CustomRunRecord = realRecord;
+          h.cleanup();
+        } };
+      };
+      const start = (task = TASK) => {
+        document.getElementById('modTa').value = task;
+        return window.runPipeline();
+      };
+      // The owner window of the repeat: the text is changed and taken with «Продолжить», or the window is closed with the cancel button.
+      const answerWindow = async ({ edit = null } = {}) => {
+        for (let i = 0; i < 300 && !document.querySelector('.choice-dialog'); i += 1) await delay(10);
+        const dialog = document.querySelector('.choice-dialog');
+        if (edit === null) { dialog.querySelector('.choice-dialog-cancel').click(); return dialog; }
+        const area = dialog.querySelector('.choice-dialog-document-edit');
+        area.value = edit;
+        area.dispatchEvent(new Event('input', { bubbles: true }));
+        dialog.querySelector('.choice-dialog-choice').click();
+        return dialog;
+      };
+      const freePage = async (h, starts) => {
+        // A run starts only when the page is free: the second start reports «already running» otherwise.
+        const before = passesOf(starts).length;
+        await start(TASK);
+        expect(notice()).not.toContain('Pipeline already running');
+        expect(passesOf(starts).length).toBeGreaterThan(before);
+      };
+
+      test('check 1: maxPasses 3, all answer: three passes; pass 2 takes the document of pass 1 and {заход} is 2; three records and three chain lines', async () => {
+        const { h, folder, starts, cleanup } = await setup('T08 passes', repeatSchema(repeatOf()));
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(3);
+          expect(JSON.stringify(passesOf(starts)[0])).toContain('Исходный вопрос');
+          expect(JSON.stringify(passesOf(starts)[1])).toContain('Задача захода 2 из 3, осталось 249.');
+          expect(JSON.stringify(passesOf(starts)[1])).toContain('Карта захода 1');
+          expect(JSON.stringify(passesOf(starts)[1])).not.toContain('Исходный вопрос');
+          expect(feed()).toContain('Заход 2 из 3 · запросов 2 из 250');
+          expect(notice()).toContain('достигнут предел заходов');
+          expect(runRecords(folder)).toHaveLength(3);
+          expect(folder.files.get('chain.txt').trim().split('\n')).toHaveLength(3);
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 2: the answer of pass 2 starts with a mark: pass 3 is not started, the notice names the reason, the record of pass 2 is saved', async () => {
+        const answer = (model, pass) => (pass === 2 ? `ТРЕВОГА: нужна проверка\n[[DOC: map]]\nКарта захода ${pass}\n[[/DOC]]` : docAnswer(model, pass));
+        const { folder, starts, cleanup } = await setup('T08 marks', repeatSchema(repeatOf(), { run: { stopMarks: ['ТРЕВОГА:'] } }), { answer });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(2);
+          expect(notice()).toContain('повтор остановлен после захода 2: заход не дошёл до конца: остановлено по метке в ответе');
+          expect(runRecords(folder)).toHaveLength(2);
+          expect(folder.files.get('chain.txt').trim().split('\n')).toHaveLength(2);
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 3: the only participant of a step gives no answer with onNoAnswer skip: the run stops, the next pass is not started, no owner window opens', async () => {
+        const { starts, cleanup } = await setup('T08 single no answer', repeatSchema(repeatOf(), { run: { onNoAnswer: 'skip' } }),
+          { answer: () => '' });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(1);
+          expect(notice()).toContain('заход не дошёл до конца: шаг остался без принятых ответов');
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 4: one of two participants gives no answer with onNoAnswer skip: the pass goes to its end and the repeat continues', async () => {
+        const { starts, cleanup } = await setup('T08 partial no answer', repeatSchema(repeatOf({ maxPasses: 2 }), { models: ['GPT', 'Claude'], run: { onNoAnswer: 'skip' } }),
+          { answer: (model, pass) => (model === 'Claude' ? '' : docAnswer(model, pass)) });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(2);
+          expect(notice()).toContain('достигнут предел заходов');
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 5: maxRequests below the requests of the first pass: the second pass is not started', async () => {
+        const { starts, cleanup } = await setup('T08 requests', repeatSchema(repeatOf({ maxRequests: 1 })));
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(1);
+          expect(feed()).toContain('Заход 1 из 3 · запросов 1 из 1');
+          expect(notice()).toContain('достигнут предел запросов');
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 6: the documents folder is denied: no request is sent', async () => {
+        const { starts, cleanup } = await setup('T08 denied', repeatSchema(repeatOf()), { folder: memoryFolder({ access: 'denied' }) });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(0);
+          expect(notice()).toContain('повтор требует папку документов');
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 7: the record of pass 2 cannot be written: pass 3 is not started', async () => {
+        const folder = memoryFolder();
+        const { starts, cleanup } = await setup('T08 record fails', repeatSchema(repeatOf()), {
+          folder, onStart: (pass) => { if (pass === 2) folder.failRuns = true; } });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(2);
+          expect(runRecords(folder)).toHaveLength(1);
+          expect(notice()).toContain('повтор остановлен после захода 2: запись захода не сохранена');
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 8: the participant the carry names gives no answer: the step ends without that document, the next pass is not started, the notice says so', async () => {
+        const { starts, cleanup } = await setup('T08 no carry', repeatSchema(repeatOf({ carry: { step: 'r1', participant: 'Claude', artifact: 'map' } }),
+          { models: ['GPT', 'Claude'], run: { onNoAnswer: 'skip' } }), { answer: (model, pass) => (model === 'Claude' ? '' : docAnswer(model, pass)) });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(1);
+          expect(notice()).toContain('нет документа для переноса');
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 9: the carried document is longer than carryMaxChars: the next pass is not started', async () => {
+        const long = `[[DOC: map]]\n${'х'.repeat(150)}\n[[/DOC]]`;
+        const { starts, cleanup } = await setup('T08 long carry', repeatSchema(repeatOf({ carryMaxChars: 100 })), { answer: () => long });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(1);
+          expect(notice()).toContain('документ для переноса длиннее предела');
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 10: Stop during pass 2 and Stop between passes: the next pass is not started, the page is free again', async () => {
+        const during = await setup('T08 stop during', repeatSchema(repeatOf()), {
+          onStart: (pass) => { if (pass === 2) window.cancelPipelineRun(); } });
+        try {
+          await start();
+          expect(passesOf(during.starts)).toHaveLength(2);
+          expect(notice()).toContain('повтор остановлен User');
+          await freePage(during.h, during.starts);
+        } finally { during.cleanup(); }
+
+        const between = await setup('T08 stop between', repeatSchema(repeatOf()));
+        try {
+          between.folder.onWrite = (file) => { if (file.startsWith('run_') && runRecords(between.folder).length === 0) window.cancelPipelineRun(); };
+          await start();
+          expect(passesOf(between.starts)).toHaveLength(1);
+          expect(notice()).toContain('повтор остановлен User');
+          await freePage(between.h, between.starts);
+        } finally { between.cleanup(); }
+      }, 60000);
+
+      test('check 11: ownerEvery 2: the window opens after pass 2; the changed text is the document of pass 3; cancelling the window stops the repeat', async () => {
+        const edited = await setup('T08 owner edit', repeatSchema(repeatOf({ ownerEvery: 2 })));
+        try {
+          const running = start();
+          await answerWindow({ edit: 'ПРАВКА ВЛАДЕЛЬЦА' });
+          await running;
+          expect(passesOf(edited.starts)).toHaveLength(3);
+          expect(JSON.stringify(passesOf(edited.starts)[2])).toContain('ПРАВКА ВЛАДЕЛЬЦА');
+          expect(JSON.stringify(passesOf(edited.starts)[2])).not.toContain('Карта захода 2');
+        } finally { edited.cleanup(); }
+
+        const cancelled = await setup('T08 owner cancel', repeatSchema(repeatOf({ ownerEvery: 2 })));
+        try {
+          const running = start();
+          await answerWindow({ edit: null });
+          await running;
+          expect(passesOf(cancelled.starts)).toHaveLength(2);
+          expect(notice()).toContain('повтор остановлен: User не продолжил');
+        } finally { cancelled.cleanup(); }
+
+        const stopped = await setup('T08 owner stop', repeatSchema(repeatOf({ ownerEvery: 2 })));
+        try {
+          const running = start();
+          for (let i = 0; i < 300 && !document.querySelector('.choice-dialog'); i += 1) await delay(10);
+          window.cancelPipelineRun();
+          await running;
+          expect(passesOf(stopped.starts)).toHaveLength(2);
+          expect(notice()).toContain('повтор остановлен User');
+          expect(document.querySelector('.choice-dialog')).toBeNull();
+        } finally { stopped.cleanup(); }
+      }, 60000);
+
+      test('check 12: policy manual: the repeat is refused before the first request', async () => {
+        const { starts, h, cleanup } = await setup('T08 manual', repeatSchema(repeatOf()));
+        try {
+          document.getElementById('debate-run-policy-select').value = 'manual';
+          await start();
+          expect(passesOf(starts)).toHaveLength(0);
+          expect(notice()).toContain('повтор идёт только при политике auto');
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 13: the task has no marker line: the repeat is refused before the first request', async () => {
+        const { starts, cleanup } = await setup('T08 no marker', repeatSchema(repeatOf()));
+        try {
+          await start('Задача без строки-маркера {заход}');
+          expect(passesOf(starts)).toHaveLength(0);
+          expect(notice()).toContain(`в задаче нет строки ${CARRY_MARKER}, повтор не запущен`);
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 14: an exception inside a pass stops the repeat, the page is free and a new start is possible', async () => {
+        const realRecord = window.CustomRunRecord;
+        const { starts, cleanup } = await setup('T08 exception', repeatSchema(repeatOf()), {
+          onStart: (pass) => {
+            if (pass !== 2) return;
+            window.CustomRunRecord = { ...window.CustomRunRecord, exportRun: () => { throw new Error('сбой захода'); } };
+          } });
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(2);
+          expect(notice()).toContain('повтор остановлен из-за ошибки: сбой захода');
+          window.CustomRunRecord = realRecord;
+          await freePage({}, starts);
+        } finally { cleanup(); }
+      }, 60000);
+
+      test('check 15: after a stop at pass 2 nothing is kept for a resume: the two records stay, and a new start begins with pass 1', async () => {
+        const { folder, starts, cleanup } = await setup('T08 reload', repeatSchema(repeatOf({ ownerEvery: 2 })));
+        try {
+          const running = start();
+          await answerWindow({ edit: null });
+          await running;
+          expect(runRecords(folder)).toHaveLength(2);
+          const before = passesOf(starts).length;
+          const running2 = start();
+          await answerWindow({ edit: null });
+          await running2;
+          expect(JSON.stringify(passesOf(starts)[before])).toContain('Задача захода 1 из 3');
+        } finally { cleanup(); }
+      }, 60000);
+
+      test('check 16: a schema without run.repeat runs one pass as before', async () => {
+        const schema = { schemaVersion: 1, origin: 'user', description: 'Без повтора', run: { policy: 'auto' }, steps: [
+          { ref: 'r1', kind: 'round', task: 'Общее задание шага.', models: [{ name: 'GPT' }] }
+        ] };
+        const { starts, folder, cleanup } = await setup('T08 no repeat', schema);
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(1);
+          expect(feed()).not.toContain('Повтор:');
+          expect(feed()).not.toContain('Заход 1 из');
+          expect(runRecords(folder)).toHaveLength(1);
+        } finally { cleanup(); }
+      }, 30000);
+
+      test('check 17: after three passes every chain line checks: the fourth field is the SHA-256 of its file, the fifth the hash of the line before', async () => {
+        const { folder, starts, cleanup } = await setup('T08 chain', repeatSchema(repeatOf()));
+        try {
+          await start();
+          expect(passesOf(starts)).toHaveLength(3);
+          const chainText = folder.files.get('chain.txt');
+          const lines = chainText.trim().split('\n');
+          expect(lines).toHaveLength(3);
+          expect(await require('../disput/basic-run-chain').verify(chainText)).toEqual({ ok: true, brokenAt: null });
+          runRecords(folder).forEach((key, index) => {
+            expect(lines[index].split(' ')[3]).toBe(sha(folder.files.get(key)));
+          });
+          expect(lines[1].split(' ')[4]).toBe(sha(`${lines[0]}\n`));
+          expect(lines[2].split(' ')[4]).toBe(sha(`${lines[1]}\n`));
+        } finally { cleanup(); }
+      }, 30000);
+    });
+
 });
 
 describe('Pipeline canvas run state (engine-derived)', () => {
