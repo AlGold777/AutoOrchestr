@@ -101,9 +101,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Code blocks of every shown answer: header with the language and a Copy button; one delegated handler.
     if (window.ResultsCodeBlocks) window.ResultsCodeBlocks.install(document);
     const llmResultsContainer = document.querySelector('.llm-results');
-    const responseCardCover = document.body.classList.contains('pipeline-page')
-        ? null
-        : window.ResultsResponseCardCover?.create(llmResultsContainer);
     const sanitizeInlineHtml = (html) => {
         if (!html) return '';
         if (typeof sanitizeHTML === 'function') {
@@ -15394,7 +15391,6 @@ document.addEventListener('click', (event) => {
         llmResultsContainer.classList.add(useStack ? 'view-stack' : 'view-grid');
         if (viewGridBtn) viewGridBtn.classList.toggle('is-active', !useStack);
         if (viewStackBtn) viewStackBtn.classList.toggle('is-active', useStack);
-        responseCardCover?.refresh();
     };
 
     setResultsViewMode('grid');
