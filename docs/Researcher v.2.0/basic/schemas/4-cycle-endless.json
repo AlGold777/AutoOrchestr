@@ -4,7 +4,25 @@
   "description": "Э3. Рабочий цикл для непрерывного режима: без шагов владельца. В поле задачи — пакет цикла: ЯДРО, ХОД, КОНФИГУРАЦИЯ, КАРТА ВОПРОСА. Ручное задание становится пробелом в карте; решения владельца принимаются на чекпоинте.",
   "run": {
     "policy": "auto",
-    "maxWords": 1000
+    "maxWords": 1000,
+    "stopMarks": [
+      "ТРЕВОГА:",
+      "СТОП:",
+      "ЦИКЛ НЕ ВЫПОЛНЯЕТСЯ"
+    ],
+    "onNoAnswer": "skip",
+    "repeat": {
+      "carry": {
+        "step": "r14",
+        "participant": "map",
+        "artifact": "map"
+      },
+      "carryMarker": "=== КАРТА ВОПРОСА ===",
+      "maxPasses": 10,
+      "maxRequests": 250,
+      "ownerEvery": 5,
+      "carryMaxChars": 7500
+    }
   },
   "defaults": {
     "discipline": {

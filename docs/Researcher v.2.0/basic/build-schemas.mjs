@@ -63,7 +63,7 @@ const round = (title, models, extra = {}) => {
 };
 const owner = (id, code, extra = {}) => ({ ref: `owner:${id}`, kind: 'owner', models: [], task: P(code), ...extra });
 
-function schema(description, steps, taskLimit = PACKAGE_LIMIT) {
+function schema(description, steps, taskLimit = PACKAGE_LIMIT, runExtra = {}) {
   let n = 0;
   const numbered = steps.map((step) => (step.kind === 'round' ? { ref: `r${++n}`, ...step } : step));
   const built = {
@@ -71,7 +71,7 @@ function schema(description, steps, taskLimit = PACKAGE_LIMIT) {
       schemaVersion: 2,
       origin: 'user',
       description,
-      run: { policy: 'auto', maxWords: 1000 },
+      run: { policy: 'auto', maxWords: 1000, ...runExtra },
       defaults: { discipline: { limit: 'Объём ответа — не больше {слов} слов.', content: COMMON } },
       steps: numbered,
     },
@@ -186,7 +186,23 @@ function cycle(endless) {
     endless
       ? 'Э3. Рабочий цикл для непрерывного режима: без шагов владельца. В поле задачи — пакет цикла: ЯДРО, ХОД, КОНФИГУРАЦИЯ, КАРТА ВОПРОСА. Ручное задание становится пробелом в карте; решения владельца принимаются на чекпоинте.'
       : 'Э3. Рабочий цикл. В поле задачи — пакет цикла: ЯДРО, ХОД, КОНФИГУРАЦИЯ, КАРТА ВОПРОСА. План, поиск, гипотезы, заявка с предсказанием, исполнение проверки, слепая проверка, диагноз метода, записи, контроль записей, карта вопроса, контроль карты, сводка, окно решений владельца.',
-    steps);
+    steps,
+    PACKAGE_LIMIT,
+    endless
+      ? {
+        stopMarks: ['ТРЕВОГА:', 'СТОП:', 'ЦИКЛ НЕ ВЫПОЛНЯЕТСЯ'],
+        onNoAnswer: 'skip',
+        repeat: {
+          carry: { step: 'r14', participant: 'map', artifact: 'map' },
+          carryMarker: '=== КАРТА ВОПРОСА ===',
+          maxPasses: 10,
+          maxRequests: 250,
+          ownerEvery: 5,
+          carryMaxChars: 7500,
+        },
+      }
+      : { stopMarks: ['ЦИКЛ НЕ ВЫПОЛНЯЕТСЯ'] },
+  );
 }
 S['4-cycle'] = cycle(false);
 S['4-cycle-endless'] = cycle(true);
