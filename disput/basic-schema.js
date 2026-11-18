@@ -8,7 +8,7 @@
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, comment?, defaults?, steps }
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
 //   comment: the text the model wrote around the schema JSON (kept when the schema is pasted); shown under the description, never read by the engine
-//   run: { policy?: 'auto' | 'manual', maxWords?, strictLength?, stopMarks?, onNoAnswer? } — the run policy, the shared answer limit, the strict length check, the stop marks and the step without all answers ('ask' | 'skip')
+//   run: { policy?: 'auto' | 'manual', maxWords?, strictLength?, stopMarks?, onNoAnswer?, repeat? } — the run policy, the shared answer limit, the strict length check, the stop marks, the step without all answers ('ask' | 'skip') and the repeat of the schema
 //   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
 //     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
@@ -331,7 +331,7 @@
     if (schema.run != null) {
       if (!isObject(schema.run)) fail('run', 'ожидается объект');
       else {
-        unknownKeys(schema.run, ['policy', 'maxWords', 'strictLength', 'stopMarks', 'onNoAnswer'], 'run');
+        unknownKeys(schema.run, ['policy', 'maxWords', 'strictLength', 'stopMarks', 'onNoAnswer', 'repeat'], 'run');
         if ('onNoAnswer' in schema.run) oneOf(schema.run.onNoAnswer, ON_NO_ANSWER, 'run.onNoAnswer', 'участник без ответа');
         if ('policy' in schema.run) oneOf(schema.run.policy, POLICIES, 'run.policy', 'политика запуска');
         if ('maxWords' in schema.run && !(Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0)) fail('run.maxWords', 'ожидается положительное целое число слов');
@@ -628,6 +628,46 @@
         }
       });
     });
+    // run.repeat (T06): the artifact the next pass takes is named by its address; a repeat has no User step (one window, every ownerEvery passes).
+    if (isObject(schema.run) && 'repeat' in schema.run) {
+      const repeat = schema.run.repeat;
+      const at = 'run.repeat';
+      schema.steps.forEach((step, index) => { if (isObject(step) && step.kind === 'owner') fail(`steps[${index}]`, 'в схеме с повтором нет шагов User: окно одно, раз в ownerEvery заходов'); });
+      if (!isObject(repeat)) fail(at, 'ожидается объект');
+      else {
+        unknownKeys(repeat, ['carry', 'carryMarker', 'maxPasses', 'maxRequests', 'ownerEvery', 'carryMaxChars'], at);
+        if (!('carry' in repeat)) fail(`${at}.carry`, 'адрес артефакта для переноса не указан');
+        else if (!isObject(repeat.carry)) fail(`${at}.carry`, 'ожидается объект: step, participant, artifact');
+        else {
+          const source = repeat.carry;
+          unknownKeys(source, ['step', 'participant', 'artifact'], `${at}.carry`);
+          const position = typeof source.step === 'string' && positions.has(source.step) ? positions.get(source.step) : -1;
+          if (position < 0) fail(`${at}.carry.step`, `неизвестный шаг «${source.step}»`);
+          else if (!isObject(schema.steps[position]) || schema.steps[position].kind !== 'round') fail(`${at}.carry.step`, 'шаг должен быть раундом, не User');
+          else {
+            const step = schema.steps[position];
+            const model = (Array.isArray(step.models) ? step.models : []).find((item) => isObject(item) && idOf(item) === source.participant);
+            if (!model) fail(`${at}.carry.participant`, `участник «${source.participant}» не объявлен в шаге «${step.ref}»`);
+            else if (model.enabled === false) fail(`${at}.carry.participant`, `участник «${source.participant}» выключен`);
+            else {
+              const output = outputOf(step, source.participant);
+              const declared = isObject(output) && Array.isArray(output.artifacts) && output.artifacts.some((item) => isObject(item) && item.id === source.artifact);
+              if (!declared) fail(`${at}.carry.artifact`, `артефакт «${source.artifact}» не объявлен в output участника или шага «${step.ref}»`);
+            }
+          }
+        }
+        if (!('carryMarker' in repeat)) fail(`${at}.carryMarker`, 'строка-заголовок не указана');
+        else if (typeof repeat.carryMarker !== 'string' || !repeat.carryMarker.trim() || repeat.carryMarker.length > 80 || /[\r\n]/.test(repeat.carryMarker)) fail(`${at}.carryMarker`, 'строка-заголовок: непустая строка в одну строку, до 80 знаков');
+        const range = (key, min, max, required) => {
+          if (!(key in repeat)) { if (required) fail(`${at}.${key}`, 'не указано'); return; }
+          if (!(Number.isSafeInteger(repeat[key]) && repeat[key] >= min && repeat[key] <= max)) fail(`${at}.${key}`, `ожидается целое число от ${min} до ${max}`);
+        };
+        range('maxPasses', 1, 500, true);
+        range('maxRequests', 1, 100000, false);
+        range('ownerEvery', 1, 500, false);
+        range('carryMaxChars', 100, 50000, false);
+      }
+    }
     errors.push(...executabilityErrors(schema.steps));
     return errors;
   }
@@ -722,7 +762,8 @@
     maxWords: Number.isSafeInteger(schema.run?.maxWords) ? schema.run.maxWords : DEFAULTS.run.maxWords,
     strictLength: typeof schema.run?.strictLength === 'boolean' ? schema.run.strictLength : DEFAULTS.run.strictLength,
     stopMarks: Array.isArray(schema.run?.stopMarks) ? schema.run.stopMarks.slice() : [],
-    onNoAnswer: schema.run?.onNoAnswer === 'skip' ? 'skip' : 'ask'
+    onNoAnswer: schema.run?.onNoAnswer === 'skip' ? 'skip' : 'ask',
+    repeat: isObject(schema.run?.repeat) ? clone(schema.run.repeat) : null
   });
 
   // Remarks about a valid schema that do not block it (the author decides): [{ path, message }]. Three patterns that lose

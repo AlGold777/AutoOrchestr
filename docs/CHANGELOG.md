@@ -1,5 +1,12 @@
 # CHANGELOG — Project
 
+### 2026-11-18 — Поле повтора схемы (run.repeat), версия 2.81.1063
+
+- **Схема:** новое необязательное поле `run.repeat` (`carry`, `carryMarker`, `maxPasses`, `maxRequests`, `ownerEvery`, `carryMaxChars`). Проверка даёт ошибку с путём; в схеме с повтором нет шагов User. Схема без поля работает как раньше.
+- **Страница:** `run.repeat` сохраняется при Save, экспорте и запуске (`basicKeptRunFields`). Сам повтор на странице пока не запускается: прогон идёт один раз.
+- **Документы:** `basic-schema-guide.md` (поле, пример, ошибки, проверка), `basic-developer.md` (совместимость).
+- **Тесты:** `tests/basic-schema.test.js` (блок T06, проверка Researcher-схемы `4-cycle-endless.json`), `tests/results-debate-favorites.test.js` (Save, Export, запуск); ожидания `resolveRun` и `built.run` дополнены полем `repeat`.
+
 ### 2026-11-18 — Пропуск участника без ответа без вопроса (run.onNoAnswer), версия 2.81.1062
 
 - **Схема:** новое поле `run.onNoAnswer`: `ask` (как раньше) или `skip`. Со `skip` участник без ответа пропускается без окна User; шаг без принятых ответов останавливает прогон (`no_answer`). Шаг с подтверждением User вопрос сохраняет. Схема без поля работает как раньше.

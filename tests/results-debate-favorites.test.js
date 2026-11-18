@@ -2561,7 +2561,7 @@ describe('Pipeline debate favorites view', () => {
       const built = h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()));
       expect(built.errors).toEqual([]);
       expect(built.schema.run).toEqual({ policy: 'auto', maxWords: 300 });
-      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
+      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat: null });
     } finally { h.cleanup(); }
   });
 
@@ -3230,7 +3230,7 @@ describe('Pipeline debate favorites view', () => {
         h.debug.applyPipelineConfig(record);
         expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
         expect(document.getElementById('debate-length-select').value).toBe('700');
-        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
+        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat: null });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3420,7 +3420,7 @@ describe('Pipeline debate favorites view', () => {
           expect(saved.run).toEqual({ policy: 'auto', strictLength: true });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true, stopMarks: [], onNoAnswer: 'ask' });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true, stopMarks: [], onNoAnswer: 'ask', repeat: null });
           const exported = h.debug.buildBasicExport();
           expect(exported.ok).toBe(true);
           expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', strictLength: true });
@@ -3444,7 +3444,7 @@ describe('Pipeline debate favorites view', () => {
           expect(saved.run).toEqual({ policy: 'auto', stopMarks: ['ТРЕВОГА:'] });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: ['ТРЕВОГА:'], onNoAnswer: 'ask' });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: ['ТРЕВОГА:'], onNoAnswer: 'ask', repeat: null });
           const exported = h.debug.buildBasicExport();
           expect(exported.ok).toBe(true);
           expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', stopMarks: ['ТРЕВОГА:'] });
@@ -3464,8 +3464,27 @@ describe('Pipeline debate favorites view', () => {
           expect(saved.run).toEqual({ policy: 'auto', onNoAnswer: 'skip' });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'skip' });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'skip', repeat: null });
           expect(JSON.parse(h.debug.buildBasicExport().text).run).toEqual({ policy: 'auto', onNoAnswer: 'skip' });
+        } finally { h.cleanup(); }
+      });
+
+      test('run.repeat of the schema survives Save, Export and the run (T06)', async () => {
+        const h = setupCustomInheritance('Repeat host');
+        try {
+          const repeat = { carry: { step: 'r1', participant: 'GPT', artifact: 'map' }, carryMarker: '=== КАРТА ВОПРОСА ===', maxPasses: 3, maxRequests: 40 };
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto', repeat }, steps: [
+            { ref: 'r1', kind: 'round', output: { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] }, models: [{ name: 'GPT' }, { name: 'Claude' }] }
+          ] };
+          expect(await h.debug.installBasicSchema('Repeat', schema)).toEqual({ ok: true, errors: [] });
+          select('Repeat');
+          await settleCustomCard();
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.run).toEqual({ policy: 'auto', repeat });
+          const built = h.debug.buildBasicRun(planOf());
+          expect(built.errors).toEqual([]);
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat });
+          expect(JSON.parse(h.debug.buildBasicExport().text).run).toEqual({ policy: 'auto', repeat });
         } finally { h.cleanup(); }
       });
 

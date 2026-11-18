@@ -257,9 +257,9 @@ describe('Basic schema: values are kept as given until the end', () => {
   });
 
   test('the run policy and the shared limit are part of the schema', () => {
-    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
+    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat: null });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat: null });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat: null });
     expect(Schema.validate(base([round('r1', ['A'])], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
     expect(errorPaths(base([round('r1', ['A'])], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
     expect(errorPaths(base([round('r1', ['A'])], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
@@ -270,7 +270,7 @@ describe('Basic schema: values are kept as given until the end', () => {
   test('run.strictLength is an optional true or false of the whole run; without it the run is not strict', () => {
     expect(Schema.validate(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual([]);
     expect(Schema.validate(base([round('r1', ['A'])], { run: { strictLength: false } }))).toEqual([]);
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual({ policy: 'manual', maxWords: 300, strictLength: true, stopMarks: [], onNoAnswer: 'ask' });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual({ policy: 'manual', maxWords: 300, strictLength: true, stopMarks: [], onNoAnswer: 'ask', repeat: null });
     expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: false } })).strictLength).toBe(false);
     expect(errorPaths(base([round('r1', ['A'])], { run: { strictLength: 'yes' } }))).toEqual(['run.strictLength']);
     expect(errorPaths(base([round('r1', ['A'])], { run: { strictLength: 1 } }))).toEqual(['run.strictLength']);
@@ -296,6 +296,74 @@ describe('Basic schema: values are kept as given until the end', () => {
     expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { onNoAnswer: 'skip' } }))).toMatchObject({ onNoAnswer: 'skip' });
     expect(Schema.resolveRun(base([round('r1', ['A'])]))).toMatchObject({ onNoAnswer: 'ask' });
     expect(errorPaths(base([round('r1', ['A'])], { run: { onNoAnswer: 'sometimes' } }))).toEqual(['run.onNoAnswer']);
+  });
+
+  // T06: run.repeat carries one artifact from pass to pass; the schema holds no User step (one window, every ownerEvery passes).
+  describe('run.repeat (T06)', () => {
+    const declared = { output: { artifacts: [{ id: 'map', name: 'Map', pointer: '' }] } };
+    const repeatSteps = (extra = {}) => [
+      round('r1', [{ name: 'A', id: 'map' }, { name: 'B', id: 'b' }], declared),
+      round('r2', [{ name: 'C', id: 'c' }]),
+      ...(extra.steps || [])
+    ];
+    const carry = { step: 'r1', participant: 'map', artifact: 'map' };
+    const repeatOf = (repeat) => base(repeatSteps(), { run: { repeat } });
+    const full = { carry, carryMarker: '=== КАРТА ВОПРОСА ===', maxPasses: 10, maxRequests: 400, ownerEvery: 5, carryMaxChars: 7500 };
+
+    test('a full and a minimal run.repeat are valid and resolveRun keeps a copy of it', () => {
+      expect(Schema.validate(repeatOf(full))).toEqual([]);
+      expect(Schema.validate(repeatOf({ carry, carryMarker: 'M', maxPasses: 1 }))).toEqual([]);
+      expect(Schema.resolveRun(repeatOf(full)).repeat).toEqual(full);
+      expect(Schema.resolveRun(repeatOf(full)).repeat).not.toBe(full);
+      expect(Schema.resolveRun(base(repeatSteps())).repeat).toBeNull();
+    });
+
+    test('carry, carryMarker and maxPasses are required, each with its own path', () => {
+      const { carry: _c, ...noCarry } = full;
+      const { carryMarker: _m, ...noMarker } = full;
+      const { maxPasses: _p, ...noPasses } = full;
+      expect(errorPaths(repeatOf(noCarry))).toEqual(['run.repeat.carry']);
+      expect(errorPaths(repeatOf(noMarker))).toEqual(['run.repeat.carryMarker']);
+      expect(errorPaths(repeatOf(noPasses))).toEqual(['run.repeat.maxPasses']);
+    });
+
+    test('carry names a round, an enabled participant and an artifact declared in its output', () => {
+      expect(errorPaths(repeatOf({ ...full, carry: { step: 'nope', participant: 'map', artifact: 'map' } }))).toEqual(['run.repeat.carry.step']);
+      expect(errorPaths(repeatOf({ ...full, carry: { step: 'r2', participant: 'c', artifact: 'map' } }))).toEqual(['run.repeat.carry.artifact']);
+      expect(errorPaths(repeatOf({ ...full, carry: { step: 'r1', participant: 'zzz', artifact: 'map' } }))).toEqual(['run.repeat.carry.participant']);
+      expect(errorPaths(repeatOf({ ...full, carry: { step: 'r1', participant: 'map', artifact: 'nope' } }))).toEqual(['run.repeat.carry.artifact']);
+      const off = base([round('r1', [{ name: 'A', id: 'map', enabled: false }, { name: 'B', id: 'b' }], declared), round('r2', [{ name: 'C', id: 'c' }])], { run: { repeat: full } });
+      expect(errorPaths(off)).toEqual(['run.repeat.carry.participant']);
+      const user = base([round('r1', [{ name: 'A', id: 'map' }], declared), { ref: 'owner:u1', kind: 'owner', task: 'Ответьте', models: [] }], { run: { repeat: { ...full, carry: { step: 'owner:u1', participant: 'owner', artifact: 'map' } } } });
+      expect(errorPaths(user)).toEqual(['steps[1]', 'run.repeat.carry.step']);
+    });
+
+    test('the numbers and the marker keep their ranges; unknown keys in repeat and carry are errors', () => {
+      expect(errorPaths(repeatOf({ ...full, maxPasses: 0 }))).toEqual(['run.repeat.maxPasses']);
+      expect(errorPaths(repeatOf({ ...full, maxPasses: 501 }))).toEqual(['run.repeat.maxPasses']);
+      expect(errorPaths(repeatOf({ ...full, maxPasses: 2.5 }))).toEqual(['run.repeat.maxPasses']);
+      expect(errorPaths(repeatOf({ ...full, maxRequests: 100001 }))).toEqual(['run.repeat.maxRequests']);
+      expect(errorPaths(repeatOf({ ...full, ownerEvery: 0 }))).toEqual(['run.repeat.ownerEvery']);
+      expect(errorPaths(repeatOf({ ...full, carryMaxChars: 99 }))).toEqual(['run.repeat.carryMaxChars']);
+      expect(errorPaths(repeatOf({ ...full, carryMarker: '  ' }))).toEqual(['run.repeat.carryMarker']);
+      expect(errorPaths(repeatOf({ ...full, carryMarker: 'а'.repeat(81) }))).toEqual(['run.repeat.carryMarker']);
+      expect(errorPaths(repeatOf({ ...full, carryMarker: 'А\nБ' }))).toEqual(['run.repeat.carryMarker']);
+      expect(errorPaths(repeatOf({ ...full, extra: 1 }))).toEqual(['run.repeat.extra']);
+      expect(errorPaths(repeatOf({ ...full, carry: { ...carry, artifact: 'map', extra: 1 } }))).toEqual(['run.repeat.carry.extra']);
+    });
+
+    test('the endless cycle schema of the Researcher system passes the check with the repeat of the task', () => {
+      const file = path.join(__dirname, '..', 'docs', 'Researcher v.2.0', 'basic', 'schemas', '4-cycle-endless.json');
+      const schema = JSON.parse(fs.readFileSync(file, 'utf8'));
+      schema.run = { ...schema.run, repeat: { carry: { step: 'r14', participant: 'map', artifact: 'map' }, carryMarker: '=== КАРТА ВОПРОСА ===', maxPasses: 10, maxRequests: 400, ownerEvery: 5, carryMaxChars: 7500 } };
+      expect(Schema.validate(schema)).toEqual([]);
+      expect(Schema.resolveRun(schema).repeat).toMatchObject({ maxPasses: 10 });
+    });
+
+    test('a schema with run.repeat has no User step', () => {
+      const withOwner = base([...repeatSteps(), { ref: 'owner:u1', kind: 'owner', task: 'Ответьте', models: [] }], { run: { repeat: full } });
+      expect(errorPaths(withOwner)).toEqual(['steps[2]']);
+    });
   });
 });
 

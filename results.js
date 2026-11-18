@@ -6843,14 +6843,15 @@ document.addEventListener('click', (event) => {
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
-        // run.strictLength, run.stopMarks and run.onNoAnswer have no control in the ▶ window: the values the loaded schema holds go on with Save and with the run.
+        // run.strictLength, run.stopMarks, run.onNoAnswer and run.repeat have no control in the ▶ window: the values the loaded schema holds go on with Save and with the run.
         // A new run.* field goes here too, or Save and the run lose it.
         const basicKeptRunFields = () => {
             const source = basicSourceSchema.get(draftPlanStorageKey())?.run || {};
             return {
                 ...('strictLength' in source ? { strictLength: source.strictLength } : {}),
                 ...('stopMarks' in source ? { stopMarks: source.stopMarks } : {}),
-                ...('onNoAnswer' in source ? { onNoAnswer: source.onNoAnswer } : {})
+                ...('onNoAnswer' in source ? { onNoAnswer: source.onNoAnswer } : {}),
+                ...('repeat' in source ? { repeat: source.repeat } : {})
             };
         };
         const basicRunForSave = () => {
