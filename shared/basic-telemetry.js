@@ -153,6 +153,7 @@
       journal: deliveryProcessed.selected,
       executionActive
     });
+    const usage = buildUsage({ customRun, rounds });
     const diagnosis = buildDiagnosis(deliveryProcessed.selected, { extensionVersion, exportedAt });
 
     return {
@@ -163,6 +164,7 @@
       executionActive,
       customRun,
       rounds,
+      usage,
       delivery: {
         journal: deliveryProcessed.selected,
         unassigned: deliveryProcessed.unassigned,
@@ -321,6 +323,45 @@
     });
   }
 
+  // An attempt counts as a sent request when the record confirms the dispatch (not_sent or cancelled before dispatch do not).
+  function isConfirmedSent(a) {
+    if (a.state === 'not_sent' || a.reason === 'cancelled_before_dispatch') return false;
+    if (a.state === 'done' || a.state === 'sent') return true;
+    if (a.state === 'unknown' && typeof a.sentAt === 'number') return true;
+    return false;
+  }
+
+  // Totals of the run for the export: sums of the rounds and attempts, nothing judged. Missing text counts as zero.
+  function buildUsage({ customRun, rounds = [] }) {
+    const chars = (text) => typeof text === 'string' ? text.length : 0;
+    const modelRounds = list(rounds).filter((r) => r.kind !== 'owner');
+    const participants = modelRounds.flatMap((r) => list(r.participants));
+    const attempts = list(customRun?.attempts);
+    const participantsExpected = modelRounds.reduce((sum, r) => sum + list(r.expectedParticipants).length, 0);
+    const participantsAccepted = participants.filter((p) => p.outcome === 'accepted').length;
+    const byModel = {};
+    attempts.forEach((a) => {
+      const name = a.model || 'unknown';
+      if (!byModel[name]) byModel[name] = { requestsSent: 0, accepted: 0 };
+      if (isConfirmedSent(a)) byModel[name].requestsSent += 1;
+      if (a.accepted === true) byModel[name].accepted += 1;
+    });
+    const { startedAt, finishedAt } = customRun || {};
+    return {
+      requestsSent: modelRounds.reduce((sum, r) => sum + (r.sentCount || 0), 0),
+      attempts: modelRounds.reduce((sum, r) => sum + (r.attemptCount || 0), 0),
+      participantsExpected,
+      participantsAccepted,
+      participantsWithoutAnswer: participantsExpected - participantsAccepted,
+      ownerWaitMs: list(rounds).reduce((sum, r) => sum + (typeof r.userWaitDurationMs === 'number' ? r.userWaitDurationMs : 0), 0),
+      ownerWaitUnknown: list(rounds).some((r) => r.userWaitDurationMs === null),
+      durationMs: typeof startedAt === 'number' && typeof finishedAt === 'number' ? finishedAt - startedAt : null,
+      promptChars: attempts.filter(isConfirmedSent).reduce((sum, a) => sum + chars(a.sentPrompt || a.prompt), 0),
+      answerChars: attempts.filter((a) => a.accepted === true).reduce((sum, a) => sum + chars(a.answer), 0),
+      byModel
+    };
+  }
+
   function buildRoundsSummary({ customRun, events = [], journal = [], executionActive = false }) {
     if (!customRun) return [];
     const steps = list(customRun.steps);
@@ -374,12 +415,6 @@
         const outcome = endEvt ? (endEvt.outcome || 'completed') : (interruptedEvt ? (interruptedEvt.outcome || 'interrupted') : null);
         const durationMs = startedAt != null && endedAt != null && endedAt >= startedAt ? (endedAt - startedAt) : null;
 
-        const isConfirmedSent = (a) => {
-          if (a.state === 'not_sent' || a.reason === 'cancelled_before_dispatch') return false;
-          if (a.state === 'done' || a.state === 'sent') return true;
-          if (a.state === 'unknown' && typeof a.sentAt === 'number') return true;
-          return false;
-        };
         const sentCount = visitAttempts.filter(isConfirmedSent).length;
 
         const hasOpenWait = visitWaits.some((w) => w.endedAt == null);
@@ -431,6 +466,6 @@
     return rounds;
   }
 
-  root.BasicTelemetry = Object.freeze({ buildReport });
+  root.BasicTelemetry = Object.freeze({ buildReport, buildUsage });
   if (typeof module !== 'undefined' && module.exports) module.exports = root.BasicTelemetry;
 })(typeof window !== 'undefined' ? window : globalThis);

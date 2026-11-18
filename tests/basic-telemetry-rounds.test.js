@@ -326,3 +326,89 @@ describe('Basic telemetry: delivery diagnosis', () => {
     expect(build(run()).format).toBe('basic-telemetry/3');
   });
 });
+
+describe('Basic telemetry: usage', () => {
+  // Two rounds with the same model and a User step between them: the sums must count the rounds only.
+  const usageRun = (attempts, extra = {}) => ({
+    runId: 'run-u',
+    startedAt: 1000,
+    finishedAt: 5000,
+    steps: [
+      { ref: 'r1', kind: 'round', models: [{ id: 'C1', name: 'Claude' }, { id: 'G1', name: 'GPT' }] },
+      { ref: 'o1', kind: 'owner', models: [] },
+      { ref: 'r2', kind: 'round', models: [{ id: 'C1', name: 'Claude' }] }
+    ],
+    attempts,
+    waits: [{ waitId: 'w1', kind: 'owner', stepRef: 'o1', visit: 1, startedAt: 1000, endedAt: 2000, outcome: 'answered' }],
+    ...extra
+  });
+  const usageOf = (run, options) => {
+    const report = build(run, options);
+    return { report, usage: report.usage };
+  };
+  const roundOne = [
+    attempt('C1', 1, 'done', { model: 'Claude', accepted: false, prompt: 'p1', answer: 'a1' }),
+    attempt('C1', 2, 'done', { model: 'Claude', accepted: true, sentPrompt: 'p2', answer: 'answer' }),
+    attempt('G1', 1, 'done', { model: 'GPT', accepted: false, prompt: 'pg', answer: 'x' })
+  ];
+  const roundTwo = [attempt('C1', 1, 'done', { ref: 'r2', step: 2, model: 'Claude', accepted: true, prompt: 'q', answer: 'yes' })];
+
+  test('two rounds and a User step: the sums count model requests, attempts and participants of the rounds only', () => {
+    const { usage } = usageOf(usageRun([...roundOne, ...roundTwo]));
+
+    expect(usage.requestsSent).toBe(4);
+    expect(usage.attempts).toBe(4);
+    expect(usage.participantsExpected).toBe(3);
+    expect(usage.participantsAccepted).toBe(2);
+    expect(usage.participantsWithoutAnswer).toBe(1);
+  });
+
+  test('a not_sent attempt is not a request sent: it is out of requestsSent and promptChars, its answer is not counted', () => {
+    const run = usageRun([
+      attempt('C1', 1, 'done', { ref: 'r2', step: 2, model: 'Claude', accepted: true, prompt: 'abcd', answer: 'xy' }),
+      attempt('C1', 2, 'not_sent', { ref: 'r2', step: 2, model: 'Claude', prompt: '0123456789' })
+    ]);
+    const { usage } = usageOf(run);
+
+    expect(usage.requestsSent).toBe(1);
+    expect(usage.promptChars).toBe(4);
+    expect(usage.answerChars).toBe(2);
+  });
+
+  test('the User step is not in requestsSent, but its wait is in ownerWaitMs', () => {
+    const run = { runId: 'run-o', steps: [{ ref: 'o1', kind: 'owner', models: [] }], attempts: [], waits: usageRun([]).waits };
+    const { usage } = usageOf(run);
+
+    expect(usage.requestsSent).toBe(0);
+    expect(usage.ownerWaitMs).toBe(1000);
+    expect(usage.ownerWaitUnknown).toBe(false);
+  });
+
+  test('a record without waits gives ownerWaitUnknown: true', () => {
+    const run = { runId: 'run-old', steps: [{ ref: 'r1', kind: 'round', models: [{ id: 'C1', name: 'Claude' }] }], attempts: [attempt('C1', 1, 'done', { accepted: true })] };
+    const { usage } = usageOf(run);
+
+    expect(usage.ownerWaitUnknown).toBe(true);
+  });
+
+  test('an unfinished run gives durationMs: null', () => {
+    expect(BasicTelemetry.buildUsage({ customRun: { startedAt: 1000, finishedAt: null, attempts: [] }, rounds: [] }).durationMs).toBeNull();
+    expect(BasicTelemetry.buildUsage({ customRun: { startedAt: 1000, finishedAt: 4000, attempts: [] }, rounds: [] }).durationMs).toBe(3000);
+  });
+
+  test('byModel counts requests and accepted answers per model name', () => {
+    const { usage } = usageOf(usageRun([...roundOne, ...roundTwo]));
+
+    expect(usage.byModel).toEqual({
+      Claude: { requestsSent: 3, accepted: 2 },
+      GPT: { requestsSent: 1, accepted: 0 }
+    });
+  });
+
+  test('buildReport returns usage next to rounds and keeps the format basic-telemetry/3', () => {
+    const report = build(usageRun([...roundOne, ...roundTwo]));
+
+    expect(report.usage).toMatchObject({ requestsSent: 4, attempts: 4 });
+    expect(report.format).toBe('basic-telemetry/3');
+  });
+});
