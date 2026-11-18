@@ -1063,8 +1063,8 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
   margin-left: 8px;
 }
 
-.llm-header .status-control-cluster > .status-indicator {
-  align-self: center;
+.llm-header .status-control-cluster {
+  transform: translateY(3px);
 }
 
 .status-ping-btn {
