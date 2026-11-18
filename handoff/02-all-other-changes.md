@@ -1,3 +1,5 @@
+> **Исторический документ.** Снимок версии 2.80.200. Режимы Duel, Triad, Multi и FreeTalk из него удалены; актуальное описание — `docs/project-overview.md` и `docs/Pipeline scenarios/basic-start-here.md`.
+
 # Документ 2 — Все остальные изменения этой беседы
 
 > База: та же (версия 2.80.200, основная папка `/Users/restart/Downloads/LLM_Sol-Fable`).

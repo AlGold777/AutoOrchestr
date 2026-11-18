@@ -28,30 +28,16 @@ diagnostics, and `timings-settings.md` owns current runtime timing values.
 - Watches response lifecycle and streaming completion.
 - Extracts, cleans, and stores model answers.
 - Tracks per-model run state and terminal outcomes.
-- Supports evaluation and Disput/debate pipelines.
+- Supports evaluation and the Basic pipeline.
 - Provides a left sidebar for Notes and saved Sessions.
 - Records telemetry and diagnostics for failure analysis.
 - Maintains selector profiles, fallback discovery, and signed remote selector updates.
-- Disput has three fixed topologies — Duel, Triad and Multi — plus the
-  trigger-driven FreeTalk. Runtime ownership is implemented in `disput/` and
-  covered by the Disput tests; the former prose contract set was removed from
-  `/docs` when it became stale.
-- Disput also includes pipeline profiles, a persistent state case/map and the
-  trigger-driven `FreeTalk MVP`. FreeTalk accepts one or more selected models,
-  has no fixed round/model ceiling, reserves finalization budget and chooses
-  work from open claims, blockers, evidence gaps and dissent. Its contract is
-  the runtime contracts in `disput/` and `results.js`.
-- All Debate topologies share typed task/stage/action contracts, bounded
-  provenance-aware context and prompt pack `3.0.0`; accepted semantic changes
-  reach the map only through an anchored StateDelta. The prompt contract is in
-  the runtime contracts in `disput/` and `results.js`.
-- FreeTalk rules are profile-driven; the same rules run in shadow mode after
-  fixed-topology checkpoints. Typed moderator forks, progress windows,
-  cross-run rule history and the map History page are specified in
-  the runtime contracts in `disput/` and `results.js`.
-- Built-in presets and their current plan are defined by the executable
-  pipeline profiles and their tests.
-- Saved Pipelines store runnable protocol settings, including topology, models, run policy, limits, synthesizer and round plan.
+- The only developed pipeline is Basic: a universal engine and a JSON schema on
+  top of it (see [Basic Pipeline](#basic-pipeline)). The earlier fixed
+  topologies and the trigger-driven free-form mode were removed; the names
+  survive only in [CHANGELOG.md](CHANGELOG.md) and in dated hand-off notes.
+- Built-in templates are defined by `disput/pipeline-presets.js`; saved
+  pipelines store the Basic schema.
 - Release-by-release project history is intentionally kept only in [CHANGELOG.md](CHANGELOG.md).
 
 ## Prompt Editing
@@ -266,7 +252,7 @@ User prompt
   -> answer watcher / lifecycle detector
   -> background state manager
   -> results UI
-  -> optional evaluation / debate pipeline
+  -> optional evaluation / Basic pipeline
 ```
 
 ### Main State Machines
@@ -276,8 +262,7 @@ User prompt
 - `shared/model-run-state.js`: per-model state contract.
 - `shared/finalization-controller.js`: completion and finality checks.
 - `shared/recovery-intent.js`: recovery classification and retry intent.
-- `shared/debate-schema.js`: log-only validation for serial Debate runtime state.
-- `disput/debate-runtime.js` (`DebateFSM`): explicit serial-debate state machine — state shape, A0/B0 opening-phase gate, A/B routing, run-status lifecycle, and turn progression. `results.js` routes its debate runtime through it.
+- `disput/debate-runtime.js` (`DebateFSM`): run state shape, run-status lifecycle and turn/card status mapping used by `results.js` (the name is historical; see [Architecture/debate-removal-registry.md](Architecture/debate-removal-registry.md)).
 
 Terminal states must be treated as final unless a new run/session explicitly supersedes them.
 
@@ -497,44 +482,21 @@ policy; it stores only explicit differences from the Basic defaults. Start with
 [Pipeline scenarios/basic-start-here.md](Pipeline%20scenarios/basic-start-here.md)
 for the glossary, the name map from interface to code, and the reading order.
 
-## Debate / Disput Pipeline
+## Disput page: run layer under Basic
 
-The Disput pipeline is implemented through:
+Basic runs through the modules that kept the historical name `Debate`
+(which of them Basic needs and which are leftovers: [Architecture/debate-removal-registry.md](Architecture/debate-removal-registry.md)):
 
-- `disput/debate-runtime.js` (`DebateFSM`) — the explicit state machine for a debate run: immutable participant slots, A0/B0 opening-phase gate, separate opening/public turn counters, event log, A/B routing, run-status lifecycle, and turn progression. Pure and unit-tested (`tests/debate-runtime.test.js`).
-- `disput/triad-registry.js` / `disput/debate-registry.js` — shared registry core for Debate state: raw event log, open issues, claims, term mismatches, pending actions, violations, derived operational logs, and compact prompt serialization.
-- `results.js` (`serialDebateState`) — the UI controller/orchestration for a debate run (DOM, dispatch via `runModelBatch`, cancel, pause, approval UI); routes all state transitions through `DebateFSM`.
-- `disput/disput-massage.js` — message/prompt templates for A, B, and public turns.
-- `disput/debate-engine.js` — transcript persistence/export + template delegate utility (NOT a parallel runtime).
-- `disput/debate-run-store.js` / `disput/debate-projections.js` — canonical run aggregate, event stream and read projections.
-- `results/debate-transport.js`, `results/debate-controller.js`, `results/debate-renderer.js`, `results/debate-sessions-store.js`, `results/debate-export.js` — focused UI/transport adapters.
+- `disput/debate-runtime.js` (`DebateFSM`) — run state shape, run-status lifecycle, turn status mapping. Unit-tested (`tests/debate-runtime.test.js`).
+- `disput/debate-engine.js` — transcript persistence/export.
+- `disput/debate-run-store.js` / `disput/debate-projections.js` — run aggregate, event stream and read projections.
+- `results/debate-transport.js`, `results/debate-controller.js`, `results/debate-renderer.js`, `results/debate-sessions-store.js`, `results/debate-export.js` — UI/transport adapters.
 - `disput/pipeline-actions.json` — moderator intervention templates.
 
-User-facing Debate has two related controls. Saved pipelines choose the
-scenario and selected models, including flexible `Multi Verdict` (`many`), where
-the app selects all available models first and then lets the user turn
-individual models off without collapsing the selection to two or three. The
-active pipeline item chooses the runtime shape for the next run through
-`protocol.presetId`: fixed-length `Duel`, `Triad`, or `Multi`, and open-ended
-`Duel Long` / `Triad Long`.
+> Background owns delivery/control state through `PipelineRunState`, `PipelineFSM`
+> and `PipelineMessageHandlers`; page-side run logic is in `results.js` and `disput/`.
 
-The state map appears as a collapsible block below saved pipelines. `Structure`
-is the prioritized case register; `Graf` visualizes actual artifact relations.
-The block remains available for partial, failed, budget-limited and manually
-stopped cases. Profiles can be validated, copied, saved, imported and exported
-from the Disput page.
-Only `Duel Long` and `Triad Long` show the round selector. Fixed `Duel`,
-`Triad`, and `Multi` presets hide it and use their saved round plans instead.
-`Multi Long — later` is visible as a disabled future option.
-
-> Consolidation note: the former shadow background executor was removed. Debate
-> semantics stay in page protocol FSMs; background owns delivery/control state
-> through `PipelineRunState`, `PipelineFSM` and `PipelineMessageHandlers`.
-> The executable ownership is in `results.js`, `background/` and `disput/`.
-
-This layer coordinates debate-style execution over collected model outputs. It depends on stable run completion, answer availability, and UI controls in `results.js`. Changes to this layer should include behavioural tests for start, cancel/pause lifecycle, approval routing, immutable participants, public-turn accounting, the opening A0/B0 phase gate, duplicate-card prevention, registry feedback, and malformed (error-string) answer handling.
-
-For non-developers: the Debate page now remembers more about the structure of a debate. It does not just pass the last answer to the next model. It can keep a small, checked list of unresolved questions, unsupported claims, repeated weak spots, and focus suggestions. The models only see compact summaries, so the debate stays directed without flooding every prompt with the full history.
+Changes to this layer should include behavioural tests for start, cancel/pause lifecycle, approval routing, duplicate-card prevention and malformed (error-string) answer handling.
 
 ### Semi-automatic pipeline (Auto off)
 
@@ -569,11 +531,6 @@ With the **Auto** toggle off the moderator drives the pipeline stage by stage:
   shown at the pause). A marker is a line of its own; text in code fences and
   quotes is ignored. See the automation behavior described in this section; implementation history: `docs/CHANGELOG.md`, version 2.81.529.
 - The one built-in template is **Default** (the Basic engine, `disput/pipeline-presets.js`); the templates Polishing, Delta, Test, Research and Architecture were removed on 14.10.2026 and are to be rebuilt as Basic schemas. Run stage by stage: switch **Auto** off (the choice outranks the template's default policy) and pick a pipeline. Auto off without a pipeline is a single moderator dispatch without stages.
-
-Preset naming rule: built-in presets with the same suffix should be comparable.
-`Verdict` means a standard quick-to-final-answer budget across Duel, Triad, and
-Multi. `Long` means user-controlled/open-ended depth. This prevents a topology
-from looking better just because it silently received more critique rounds.
 
 ## Development Workflow
 
