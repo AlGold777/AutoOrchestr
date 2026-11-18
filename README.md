@@ -13,11 +13,13 @@ card up from below to cover the current card in a stable reading viewport.
 In the three-column grid, the next row of three cards covers the current row
 as one block, including an incomplete final row. Narrower layouts group cards
 by the available number of columns.
-Small initial scrolls hold the current card in place; scrolling back reverses
-the transition. Long answers scroll inside each card. Switching layouts keeps
-the reading model in view. Stacking also works in the full-height stream preview,
-before submitting a prompt and when viewing restored answers. Expanded cards and
-reduced-motion preferences use the normal layout.
+Small initial scrolls hold the current card in place. Scrolling back reverses
+the transition. The reading area fits the window below the toolbar, so the
+final card or row can settle fully. Long answers scroll inside each card.
+Switching layouts keeps the reading model in view. Stacking also works in the
+full-height stream preview, before submitting a prompt and when viewing
+restored answers. Expanded cards and reduced-motion preferences use the normal
+layout.
 
 Pipeline answer cards show a small round badge beside the model name (`GPT R1`).
 Each model has one card per round: streaming updates reuse it, and later answer

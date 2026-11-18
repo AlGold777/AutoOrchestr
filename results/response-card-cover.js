@@ -33,12 +33,24 @@
       const bar = document.querySelector('.top-control-bar');
       const barTop = bar ? Number.parseFloat(getComputedStyle(bar).top) || 0 : 0;
       state.top = Math.max(window.innerWidth <= 700 ? 66 : 76, (bar?.offsetHeight || 0) + barTop + 8);
-      state.height = Math.max(1, Math.min(620, Math.max(470, window.innerHeight - 96), window.innerHeight - state.top - 20));
+      const availableHeight = window.innerHeight - state.top;
       state.step = Math.max(1, window.innerHeight * 0.92);
       root.style.setProperty('--response-cover-top', `${state.top}px`);
-      root.style.setProperty('--response-cover-height', `${state.height}px`);
       root.style.setProperty('--response-cover-travel', `${(state.groups.length - 1) * state.step}px`);
       root.style.setProperty('--response-cover-columns', String(state.columns));
+
+      state.height = Math.max(1, availableHeight - 20);
+      root.style.setProperty('--response-cover-height', `${state.height}px`);
+      // When the deck ends the page, leave room for trailing layout space so its header stays below the toolbar.
+      const favorites = root.nextElementSibling;
+      if (!favorites?.matches('.favorites-section') || !favorites.getClientRects().length) {
+        const bottomInDocument = root.getBoundingClientRect().bottom + window.scrollY;
+        const trailingSpace = Math.ceil(document.documentElement.scrollHeight - bottomInDocument);
+        if (trailingSpace > 20) {
+          state.height = Math.max(1, availableHeight - trailingSpace);
+          root.style.setProperty('--response-cover-height', `${state.height}px`);
+        }
+      }
     }
 
     function progress() {

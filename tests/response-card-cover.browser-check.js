@@ -37,6 +37,7 @@ const read = (file) => fs.readFileSync(path.join(project, file), 'utf8');
       return {
         columns: Number(root.style.getPropertyValue('--response-cover-columns')),
         height: Number.parseFloat(root.style.getPropertyValue('--response-cover-height')),
+        inset: Number.parseFloat(root.style.getPropertyValue('--response-cover-top')),
         top: sticky?.getBoundingClientRect().top,
         groups: [...root.querySelectorAll('.response-cover-group')].map((group) => ({
           top: group.getBoundingClientRect().top,
@@ -81,6 +82,20 @@ const read = (file) => fs.readFileSync(path.join(project, file), 'utf8');
     assert.ok(await page.evaluate(() => document.querySelector('.response-cover-sticky') === originalSticky));
     state = await scroll(0.25);
     assert.ok(state.groups[0].visible && !state.groups[1].visible, 'reverse scroll restores the first row');
+    await page.setViewportSize({ width: 1280, height: 1200 });
+    await page.evaluate(async () => {
+      const afterLayout = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await afterLayout();
+      scrollTo(0, document.documentElement.scrollHeight);
+      await afterLayout();
+    });
+    state = await snapshot();
+    const lastGroup = state.groups.at(-1);
+    assert.ok(state.groups.slice(0, -1).every((group) => !group.visible), 'only the last row is visible at the page end');
+    assert.ok(lastGroup.visible && Math.abs(lastGroup.top - state.top) < 1, 'the last row seats in a tall viewport');
+    assert.ok(Math.abs(state.top - state.inset) < 1, 'the last row stays below the toolbar at the page end');
+    assert.ok(lastGroup.cards.every((card) => card.scrollable && !card.inert), 'the last row is readable');
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => {
       const root = document.querySelector('.llm-results');
       root.classList.replace('view-grid', 'view-stack');
@@ -95,7 +110,7 @@ const read = (file) => fs.readFileSync(path.join(project, file), 'utf8');
     assert.ok(state.height > 0 && state.height < 500);
     await page.evaluate(() => cover.destroy());
     assert.ok(await page.evaluate(() => originalCards.every((card, index) => document.querySelector('.llm-results').children[index] === card)));
-    console.log('PASS: preview/restored grid, full-height cards, overlap, reverse, submitted transition, stack, mobile, original nodes');
+    console.log('PASS: preview/restored grid, full-height cards, overlap, reverse, submitted transition, last row in a tall viewport, stack, mobile, original nodes');
   } finally {
     await browser.close();
   }
