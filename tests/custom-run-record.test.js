@@ -173,10 +173,11 @@ test('card history text references survive serialize, revive, and export without
 
 test('the Basic export flushes card history before cloning the exported run', () => {
   const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
-  const handlerStart = source.indexOf("const button = event.target.closest('#disput-basic');");
+  // The export and the record on disk share buildBasicReportNow (T03): the flush is in that function.
+  const handlerStart = source.indexOf("const buildBasicReportNow = async");
   const handler = source.slice(handlerStart, source.indexOf("const btn = event.target.closest('#export-diagnostics-html');", handlerStart));
   expect(handler).toContain('basicCardHistory?.flush()');
-  expect(handler.indexOf('basicCardHistory?.flush()')).toBeLessThan(handler.indexOf('JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))'));
+  expect(handler.indexOf('basicCardHistory?.flush()')).toBeLessThan(handler.indexOf('JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(source)))'));
 });
 
 

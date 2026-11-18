@@ -2768,6 +2768,8 @@ document.addEventListener('click', (event) => {
     let customAbortController = null;
     let activePipelineRunContext = null;
     let latestBasicRunRecord = null;
+    // The result of the last autosave of a run to the documents folder (T03); T08 reads it.
+    let lastBasicAutosave = null;
     let basicCardHistory = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const compiledPromptEvidence = new Map();
@@ -7390,6 +7392,28 @@ document.addEventListener('click', (event) => {
                 if (now) { await write(); return; }
                 saveTimer = setTimeout(write, 600);
             };
+            // T03: the report of the run goes to the documents folder with its line in chain.txt. Without a folder it is silent;
+            // a denied or failed write gives one notice. It never throws.
+            const autosaveRun = async () => {
+                let result;
+                try {
+                    const folder = window.DocumentsFolder?.instance;
+                    const report = window.BasicRunChain && folder && record
+                        ? await buildBasicReportNow({ record, executionActive: false })
+                        : null;
+                    result = report
+                        ? await window.BasicRunChain.saveRun({ folder, dirs: window.DocumentsFolder.runDirs({ pipeline: customPipelineName(), startedAt: runContext.startedAt }), report, at: new Date().toISOString() })
+                        : { ok: false, reason: 'none', message: '' };
+                } catch (error) {
+                    result = { ok: false, reason: 'error', message: String(error?.message || error) };
+                }
+                if (result.ok) {
+                    appendBasicRunLine(`Запись прогона: ${result.path} · строка цепочки ${result.number}`);
+                } else if (result.reason === 'denied' || result.reason === 'error') {
+                    showNotification(`Запись прогона не сохранена в папку: ${result.reason === 'denied' ? 'нет доступа к папке' : (result.message || 'ошибка записи')}`, 'warn');
+                }
+                return result;
+            };
             // Observe the feed from before the first User/Basic line. Keep observing after
             // completion so late revisions and card deletions remain part of this run.
             basicCardHistory?.disconnect();
@@ -7939,6 +7963,8 @@ document.addEventListener('click', (event) => {
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
                 if (!['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);
                 showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
+                // After the end notice: the notice window holds one text, and a failed save must stay visible.
+                lastBasicAutosave = await autosaveRun();
                 if (result.stopReason !== 'steps_done') offerResumeLine(record);
                 return result.stopReason !== 'cancelled';
             } catch (err) {
@@ -7949,6 +7975,7 @@ document.addEventListener('click', (event) => {
                 window.MessageDelivery?.batchEvent?.('custom_end', { pipelineRunId: runContext.pipelineRunId, stopReason: 'error', error: String(err?.message || err) });
                 showNotification(`Pipeline: error (${err?.message || String(err)})`, 'error');
                 if (record) { window.CustomRunRecord.finishRun(record, { stopReason: 'error' }); await saveRecord(true); }
+                lastBasicAutosave = await autosaveRun();
                 offerResumeLine(record);
                 return false;
             } finally {
@@ -17972,38 +17999,48 @@ document.addEventListener('click', (event) => {
         }
     };
 
+    // The report of a Basic run: the export button and the record written to the documents folder (T03) use it.
+    // Without a record it takes the latest one; executionActive null means "a run of this page is still going".
+    const buildBasicReportNow = async ({ record = null, executionActive = null } = {}) => {
+        // Freeze the live record before awaiting storage: in-flight attempts stay in-flight,
+        // and the 600 ms persistence delay cannot hide a new run or its latest answers.
+        basicCardHistory?.flush();
+        const source = record || latestBasicRunRecord;
+        const customRun = source
+            ? JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(source)))
+            : await readLatestCustomRun();
+        if (!customRun) return null;
+        const snapshotTs = Date.now();
+        const active = executionActive ?? Boolean(customAbortController && activePipelineRunContext?.pipelineRunId === customRun.runId);
+        let deliverySnap = null;
+        if (window.MessageDelivery?.snapshot) {
+            try {
+                deliverySnap = await window.MessageDelivery.snapshot();
+            } catch (_) {}
+        }
+        const delivery = JSON.parse(JSON.stringify({
+            journal: deliverySnap?.events || window.MessageDelivery?.journal?.() || [],
+            collection: deliverySnap?.collection || window.MessageDelivery?.collection?.() || {}
+        }));
+        const events = await getTelemetryEventsForExport(snapshotTs, { applyFilters: false });
+        const report = window.BasicTelemetry.buildReport({ customRun, delivery, events, executionActive: active,
+            exportedAt: new Date(snapshotTs).toISOString(), extensionVersion: chrome.runtime.getManifest().version });
+        report.taskSections = await window.BasicRunChain.taskSections(report.customRun.task);
+        return report;
+    };
+
     document.addEventListener('click', async (event) => {
         const button = event.target.closest('#disput-basic');
         if (!button || button.disabled) return;
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
         try {
-            // Freeze the live record before awaiting storage: in-flight attempts stay in-flight,
-            // and the 600 ms persistence delay cannot hide a new run or its latest answers.
-            basicCardHistory?.flush();
-            const customRun = latestBasicRunRecord
-                ? JSON.parse(JSON.stringify(window.CustomRunRecord.exportRun(latestBasicRunRecord)))
-                : await readLatestCustomRun();
-            if (!customRun) {
+            const report = await buildBasicReportNow();
+            if (!report) {
                 showNotification('Basic: нет записи прогона для экспорта.', 'info');
                 flashButtonFeedback(button, 'warn');
                 return;
             }
-            const snapshotTs = Date.now();
-            const executionActive = Boolean(customAbortController && activePipelineRunContext?.pipelineRunId === customRun.runId);
-            let deliverySnap = null;
-            if (window.MessageDelivery?.snapshot) {
-                try {
-                    deliverySnap = await window.MessageDelivery.snapshot();
-                } catch (_) {}
-            }
-            const delivery = JSON.parse(JSON.stringify({
-                journal: deliverySnap?.events || window.MessageDelivery?.journal?.() || [],
-                collection: deliverySnap?.collection || window.MessageDelivery?.collection?.() || {}
-            }));
-            const events = await getTelemetryEventsForExport(snapshotTs, { applyFilters: false });
-            const report = window.BasicTelemetry.buildReport({ customRun, delivery, events, executionActive,
-                exportedAt: new Date(snapshotTs).toISOString(), extensionVersion: chrome.runtime.getManifest().version });
             downloadDiagnosticsJson('Basic', report, button);
         } catch (error) {
             console.error('[Basic telemetry] export failed', error);

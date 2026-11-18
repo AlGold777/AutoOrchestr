@@ -100,3 +100,38 @@ describe('Этап 2: документы в запуске', () => {
     expect(results).not.toContain('llmComparatorDocuments');
   });
 });
+
+describe('T03: запись прогона на диск и строка цепочки', () => {
+  const panel = fs.readFileSync(path.join(__dirname, '..', 'pipeline_panel.html'), 'utf8');
+
+  test('the export button and the autosave build the report with the same function', () => {
+    expect(results).toContain('const buildBasicReportNow = async ({ record = null, executionActive = null } = {}) => {');
+    expect(results).toContain('const report = await buildBasicReportNow();');
+    expect(results).toContain('buildBasicReportNow({ record, executionActive: false })');
+  });
+
+  test('the report of the export and of the autosave carries the sections of the task', () => {
+    expect(results).toContain('report.taskSections = await window.BasicRunChain.taskSections(report.customRun.task);');
+  });
+
+  test('the autosave runs after the final save of the record and after the end notice (a failed save stays visible), and keeps its result', () => {
+    expect(results).toContain('const autosaveRun = async () => {');
+    expect(results).toMatch(/showNotification\(basicRunNotice\(stopText[^\n]*\n\s*\/\/[^\n]*\n\s*lastBasicAutosave = await autosaveRun\(\);/);
+    expect(results).toMatch(/if \(record\) \{ window\.CustomRunRecord\.finishRun\(record, \{ stopReason: 'error' \}\); await saveRecord\(true\); \}\s*lastBasicAutosave = await autosaveRun\(\);/);
+    expect(results).toContain('let lastBasicAutosave = null;');
+  });
+
+  test('the autosave writes through the chain module with the documents folder and the run folders', () => {
+    expect(results).toContain('window.BasicRunChain.saveRun({ folder, dirs: window.DocumentsFolder.runDirs({ pipeline: customPipelineName(), startedAt: runContext.startedAt }), report, at: new Date().toISOString() })');
+  });
+
+  test('a failed autosave without a folder is silent; a denied or failed one gives one notice', () => {
+    expect(results).toContain('Запись прогона не сохранена в папку: ');
+    expect(results).toMatch(/result\.reason === 'denied' \|\| result\.reason === 'error'/);
+  });
+
+  test('the chain module loads before the page script', () => {
+    expect(panel.indexOf('disput/basic-run-chain.js')).toBeGreaterThan(-1);
+    expect(panel.indexOf('disput/basic-run-chain.js')).toBeLessThan(panel.indexOf('src="results.js"'));
+  });
+});

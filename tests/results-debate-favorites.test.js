@@ -4943,6 +4943,85 @@ describe('Pipeline debate favorites view', () => {
     });
     });
 
+    describe('T03: запись прогона в папку документов и строка цепочки', () => {
+      const notice = () => document.getElementById('notification-message').textContent;
+      // An in-memory folder with the methods of DocumentsFolder.create that the chain module uses.
+      const memoryFolder = (access = 'granted') => {
+        const files = new Map();
+        const key = (dirs, file) => [...dirs, file].join('/');
+        return {
+          files,
+          folderName: async () => 'Docs',
+          pick: jest.fn(),
+          write: jest.fn(),
+          ensureAccess: jest.fn(async () => access),
+          readAt: jest.fn(async ({ dirs, file }) => (files.has(key(dirs, file))
+            ? { ok: true, text: files.get(key(dirs, file)) } : { ok: false, reason: 'missing' })),
+          writeAt: jest.fn(async ({ dirs, file, text }) => {
+            files.set(key(dirs, file), text);
+            return { ok: true, path: key(dirs, file) };
+          })
+        };
+      };
+      const withFolder = async (instance, run) => {
+        const previous = window.DocumentsFolder;
+        window.DocumentsFolder = { instance, runDirs: ({ pipeline, startedAt }) => [pipeline, String(startedAt)] };
+        try { await run(); } finally { window.DocumentsFolder = previous; }
+      };
+      const oneRoundRun = async (name, folder) => {
+        require('../disput/basic-run-chain');
+        window.BasicTelemetry = require('../shared/basic-telemetry');
+        const h = setupCustomInheritance(name);
+        const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto' }, steps: [
+          { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }
+        ] };
+        expect((await h.debug.installBasicSchema(name, schema)).ok).toBe(true);
+        document.querySelector(`.pipeline-item[data-name="${name}"]`).click();
+        await settleCustomCard();
+        await withFolder(folder, () => h.debug.runCustomFromPage({ task: 'T' }));
+        return h;
+      };
+
+      test('a run with a folder leaves its record file and one line in chain.txt; the line carries the SHA-256 of the file', async () => {
+        const folder = memoryFolder();
+        const h = await oneRoundRun('T03 folder run', folder);
+        try {
+          const runKeys = [...folder.files.keys()].filter((item) => /\/run_[^/]+\.json$/.test(item));
+          expect(runKeys).toHaveLength(1);
+          const text = folder.files.get(runKeys[0]);
+          const report = JSON.parse(text);
+          expect(report.executionActive).toBe(false);
+          expect(Array.isArray(report.taskSections)).toBe(true);
+          const chain = folder.files.get('chain.txt').trim().split('\n');
+          expect(chain).toHaveLength(1);
+          const fields = chain[0].split(' ');
+          expect(fields[0]).toBe('1');
+          expect(fields[1]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+          expect(fields[2]).toBe(runKeys[0].replace(/ /g, '%20'));
+          expect(fields[3]).toBe(require('crypto').createHash('sha256').update(text).digest('hex'));
+          expect(fields[4]).toBe('-');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a run without a chosen folder finishes without a notice about the record', async () => {
+        const folder = memoryFolder('none');
+        const h = await oneRoundRun('T03 no folder', folder);
+        try {
+          expect(folder.writeAt).not.toHaveBeenCalled();
+          expect(notice()).not.toContain('Запись прогона не сохранена');
+        } finally { h.cleanup(); }
+      }, 30000);
+
+      test('a run whose folder is denied finishes and gives one notice about the record', async () => {
+        const folder = memoryFolder('denied');
+        const h = await oneRoundRun('T03 denied', folder);
+        try {
+          expect(folder.writeAt).not.toHaveBeenCalled();
+          expect(notice()).toContain('Запись прогона не сохранена в папку: нет доступа к папке');
+        } finally { h.cleanup(); }
+      }, 30000);
+    });
+
     describe('copy of a document into the folder of documents', () => {
       const debug = () => window.__pipelineLifecycleDebug;
       const notice = () => document.getElementById('notification-message').textContent;

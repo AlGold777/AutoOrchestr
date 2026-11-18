@@ -97,6 +97,7 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 | Сборка запроса | `composeCustomPrompts`, `prepareCustomPrompts`, `customLengthInstruction` | Дописывает особенность модели, инструкцию длины и требования к содержанию |
 | Прогон | `runCustomFromPage`, `resumeCustomFromPage`, `builtFromRecord`, `basicRunNotice`, `startDebateFromPage`, `askCustomDecision`, `askCustomOwner`, `customRunProgress`, `isCustomEnginePipeline` | Запуск Basic со страницы, окна паузы и вопросов, состояние холста |
 | Транспорт и карточки ответа | `runModelBatch`, `pipelineWaiter`, `updateDebateModelCardOutput` | Отправка запросов моделям, ожидание ответов, карточки ответа. Карточка Basic строится из `answerHtml` ответа, как карточка главной страницы; запись только текста не заменяет форматирование того же ответа (`BasicCardVerdict.keepsStructure`) |
+| Выгрузка и запись прогона | `buildBasicReportNow`, `autosaveRun`, `lastBasicAutosave` | Отчёт прогона для кнопки Basic и для записи в папку документов (`buildBasicReportNow`); запись прогона в папку и строка цепочки после последнего сохранения записи (`autosaveRun`); результат последней записи (`lastBasicAutosave`) |
 | Холст | `draftPlanForCanvas`, `applyPipelineConfig`, `syncPipelineRoundModelsFromSelectedLLMs`, `getActiveDraftPlan`, `syncCanvasTooltips`, `syncStepErrorBadges`, `setCanvasTooltip`, `applyCanvasArrows`, `ARROWS_HIDDEN_KEY` | План холста и применение конфигурации к холсту; подсказки с названием и описанием на элементах холста (через `ResultsTooltips`); кнопка «Стрелки» (класс `arrows-hidden`, `localStorage`); значок ошибок на шаге |
 | Документы окна User | `syncDocumentFrames`, `restoreDocumentFrames`, `openDocumentFrame`, `removeLastRound` | Рамки документов на холсте (строятся из записи прогона, обновляются при сохранении состояния), открытие документа для чтения, восстановление при переключении схем в рабочей сессии, удаление последнего раунда со сбросом источника документа |
 
@@ -335,6 +336,14 @@ Ctrl/Cmd+S сохраняет подсветки и избранное вмес�
 - Доступ запрашивается на ▶ и на «Продолжить прогон» (`requestDocumentsAccess`). Ошибка записи не останавливает прогон.
 
 **Встроенные схемы (`user_doc`).** `BUILTIN_SCHEMAS` в `disput/pipeline-presets.js` ставятся в список при первом старте (`seedBuiltinSchemas` в `results.js`). Схема из три шага: `r1` (DeepSeek составляет опросник, `output.document: form`), `owner:fill` (User заполняет и нажимает «Отправить»), `r2` (DeepSeek, `input: previous`, пересказывает ответы User по пунктам). Тот же текст лежит в `docs/Pipeline scenarios/questionnaire-deepseek.json`; тест сверяет их. Имя записывается в `pipelineStore.seeded` (сохраняется), поэтому удалённая пользователем схема не возвращается. Если pipeline с таким именем уже есть, он не перезаписывается. Ревизия встроенной схемы задаётся в `BUILTIN_SCHEMA_REVISIONS` (сейчас `user_doc: 2`, поле `pipelineStore.seededRev`). При повышении ревизии встроенная схема заменяет сохранённую копию (правки User в ней теряются), удалённая не возвращается.
+
+### Запись прогона на диск и цепочка
+
+- В конце каждого прогона — успешного, остановленного и с ошибкой — `autosaveRun` (`results.js`) собирает отчёт через `buildBasicReportNow` с `executionActive: false` и вызывает `BasicRunChain.saveRun` (`disput/basic-run-chain.js`).
+- Файл прогона: `run_<runId>.json` в папке `<имя схемы>/<дата и время старта>` внутри папки документов. Строка цепочки: `chain.txt` в корне папки, пять полей через пробел: номер, время UTC, путь файла (пробелы заменены на `%20`), SHA-256 файла, SHA-256 предыдущей строки (`-` у первой). Строка собирается функцией `chainLine`.
+- Без выбранной папки запись молча пропускается. Без доступа (`ensureAccess({ request: false })`) или при ошибке записи — одно уведомление «Запись прогона не сохранена в папку: …», прогон продолжается. Доступ запрашивает ▶, как для документов.
+- Отчёт содержит поле `taskSections`: заголовок, длина и SHA-256 каждого раздела задачи. Кнопка Basic выгружает то же поле.
+- В корень папки документов теперь попадают `chain.txt` и файлы прогонов, а не только документы.
 
 ### Прежние настройки страницы
 

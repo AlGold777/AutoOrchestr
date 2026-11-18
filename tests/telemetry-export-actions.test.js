@@ -86,12 +86,13 @@ describe('Telemetry export actions', () => {
   });
 
   test('Basic export uses the in-memory run before storage and delegates identity filtering to the report builder', () => {
-    const handlerAt = resultsSource.indexOf("const button = event.target.closest('#disput-basic');");
+    // The button and the record on disk share buildBasicReportNow (T03); the handler only calls it and downloads the result.
+    const handlerAt = resultsSource.indexOf('const buildBasicReportNow = async');
     const handlerEnd = resultsSource.indexOf("const btn = event.target.closest('#export-diagnostics-html');", handlerAt);
     expect(handlerEnd).toBeGreaterThan(handlerAt);
     const handler = resultsSource.slice(handlerAt, handlerEnd);
     expect(handler).toContain('latestBasicRunRecord');
-    expect(handler).toContain('window.CustomRunRecord.exportRun(latestBasicRunRecord)');
+    expect(handler).toContain('window.CustomRunRecord.exportRun(source)');
     expect(handler).toContain('await readLatestCustomRun()');
     expect(handler).toContain('window.BasicTelemetry.buildReport({ customRun, delivery, events');
     expect(handler).toMatch(/journal:\s*deliverySnap\?\.events\s*\|\|\s*window\.MessageDelivery(?:\?\.journal\?\.\(\)|\.journal\(\))/);
