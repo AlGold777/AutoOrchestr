@@ -1,5 +1,5 @@
 // Собирает схемы Basic из запросов папки ../prompts и проверяет их валидатором Basic.
-// Запуск из корня проекта: node docs/Researcher/basic/build-schemas.mjs
+// Запуск из корня проекта: node "docs/Researcher v.1.0/basic/build-schemas.mjs"
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';

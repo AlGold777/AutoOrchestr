@@ -3,7 +3,7 @@
 Каждый этап — схема в [schemas/](schemas/). Схемы собираются из запросов папки [../prompts/](../prompts/README.md):
 
 ```bash
-node docs/Researcher/basic/build-schemas.mjs
+node "docs/Researcher v.1.0/basic/build-schemas.mjs"
 ```
 
 Сборка проверяет каждую схему валидатором Basic, сверяет, что каждый запрос вошёл в схему, и оценивает размер запросов против предела в 52 000 знаков. Файлы схем руками не правятся.

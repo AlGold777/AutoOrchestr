@@ -22,10 +22,10 @@ shasum -a 256 core/task-card.json
 Папка — хеш от списка хешей её файлов (путь к папке запросов — от корня проекта):
 
 ```bash
-find docs/Researcher/prompts -type f | sort | xargs shasum -a 256 | shasum -a 256
+find "docs/Researcher v.1.0/prompts" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256
 ```
 
-Так же считаются `docs/Researcher/basic/schemas` и `docs/Researcher/methodology`.
+Так же считаются `docs/Researcher v.1.0/basic/schemas` и `docs/Researcher v.1.0/methodology`.
 
 ## 3. Цепочка журнала
 
@@ -110,8 +110,8 @@ wc -m state/package.txt
 
 ## 8. Смена запросов и схем
 
-1. Править текст в `docs/Researcher/prompts/`.
-2. Пересобрать: `node docs/Researcher/basic/build-schemas.mjs`.
+1. Править текст в `docs/Researcher v.1.0/prompts/`.
+2. Пересобрать: `node "docs/Researcher v.1.0/basic/build-schemas.mjs"`.
 3. Заново импортировать изменённые схемы в Basic.
 4. Пересчитать хеши папок в `core/lock.json`, увеличить версию ядра, записать событие `core_change` в цепочку.
 
