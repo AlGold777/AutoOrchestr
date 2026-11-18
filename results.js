@@ -6843,13 +6843,14 @@ document.addEventListener('click', (event) => {
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
-        // run.strictLength and run.stopMarks have no control in the ▶ window: the values the loaded schema holds go on with Save and with the run.
+        // run.strictLength, run.stopMarks and run.onNoAnswer have no control in the ▶ window: the values the loaded schema holds go on with Save and with the run.
         // A new run.* field goes here too, or Save and the run lose it.
         const basicKeptRunFields = () => {
             const source = basicSourceSchema.get(draftPlanStorageKey())?.run || {};
             return {
                 ...('strictLength' in source ? { strictLength: source.strictLength } : {}),
-                ...('stopMarks' in source ? { stopMarks: source.stopMarks } : {})
+                ...('stopMarks' in source ? { stopMarks: source.stopMarks } : {}),
+                ...('onNoAnswer' in source ? { onNoAnswer: source.onNoAnswer } : {})
             };
         };
         const basicRunForSave = () => {
@@ -7822,6 +7823,8 @@ document.addEventListener('click', (event) => {
                     runStrictLength: built.run.strictLength,
                     // run.stopMarks: a mark at the start of a line of an accepted answer stops the run after its step.
                     stopMarks: built.run.stopMarks,
+                    // run.onNoAnswer: "skip" passes a step on without the question when some participants gave no answer.
+                    onNoAnswer: built.run.onNoAnswer,
                     // M-11: before a repeat the page is read again; the background takes the answer of the request's own turn (or says there is none).
                     reread: async (request) => {
                         const saved = chatBindings[request.participantId];

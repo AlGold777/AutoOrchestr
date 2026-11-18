@@ -147,3 +147,64 @@ describe('Custom engine: findStopMark', () => {
     expect(findStopMark('• ТРЕВОГА: x', ['ТРЕВОГА:'])).toMatchObject({ mark: 'ТРЕВОГА:' });
   });
 });
+
+// run.onNoAnswer: "skip" passes a step on without asking the owner when some participants gave no answer ("ask" is the question, as now).
+describe('Custom engine: run.onNoAnswer', () => {
+  const P = { ref: 'r1', kind: 'round', input: 'none', models: ['A', 'B', 'C'] };
+  const next = { ref: 'r2', kind: 'round', input: 'previous', models: ['D'] };
+  const replies = { A: ['ОТВЕТ-A'], B: ['ОТВЕТ-B'], D: ['итог'] }; // C never answers
+
+  test('skip: the owner is not asked; the participant without an answer is skipped, the next step gets the two answers', async () => {
+    const { send, calls } = transport(replies);
+    const decide = jest.fn(async () => 'continue');
+    const events = [];
+    let last = null;
+    const result = await Engine.run({ task: 'T', steps: [P, next], send, decide, onNoAnswer: 'skip',
+      onEvent: (kind, fields) => events.push({ kind, fields }), checkpoint: async (state) => { last = JSON.parse(JSON.stringify(state)); } });
+    expect(decide).not.toHaveBeenCalled();
+    expect(result.stopReason).toBe('steps_done');
+    expect(result.steps[0]).toMatchObject({ ref: 'r1', skipped: false });
+    expect(calls[calls.length - 1].prompts.D).toContain('ОТВЕТ-A');
+    expect(calls[calls.length - 1].prompts.D).toContain('ОТВЕТ-B');
+    expect(events.find((item) => item.kind === 'custom_decision').fields).toMatchObject({ action: 'skip_participant', auto: true, skipped: ['C'] });
+    const kept = last.results.find((item) => item.stepRef === 'r1');
+    expect(kept.outcome.C.ok).toBe(false);
+    expect(kept.skipped).toBe(false);
+  });
+
+  test('skip with no accepted answer: the run stops with no_answer and the next step is not sent', async () => {
+    const { send, calls } = transport({ D: ['итог'] });
+    const result = await Engine.run({ task: 'T', steps: [{ ref: 'r1', kind: 'round', input: 'none', models: ['A'] }, next], send, onNoAnswer: 'skip' });
+    expect(result.stopReason).toBe('no_answer');
+    expect(calls.some((call) => call.models[0] === 'D')).toBe(false);
+    expect(Engine.STOP_TEXT.no_answer).toBe('шаг остался без принятых ответов');
+  });
+
+  test('ask (the default and the explicit value): the owner is asked as now; skip_participant keeps the accepted answers', async () => {
+    for (const onNoAnswer of [undefined, 'ask']) {
+      const { send } = transport(replies);
+      const decide = jest.fn(async () => 'skip_participant');
+      const result = await Engine.run({ task: 'T', steps: [P, next], send, decide, ...(onNoAnswer ? { onNoAnswer } : {}) });
+      expect(decide).toHaveBeenCalledTimes(1);
+      expect(decide.mock.calls[0][0]).toMatchObject({ failed: ['C'] });
+      expect(result.stopReason).toBe('steps_done');
+    }
+  });
+
+  test('a run resumed after the automatic skip does not ask about the same step again', async () => {
+    const data = {};
+    let seq = 0;
+    const texts = { putText: (value) => { seq += 1; data[`t${seq}`] = value; return `t${seq}`; }, getText: (ref) => data[ref] };
+    const states = [];
+    await Engine.run({ task: 'T', steps: [P, next], send: transport(replies).send, onNoAnswer: 'skip', ...texts,
+      checkpoint: async (state) => { states.push(JSON.parse(JSON.stringify(state))); } });
+    const saved = states.find((state) => Object.keys(state.decisions || {}).length > 0);
+    expect(saved).toBeDefined();
+    const second = transport({ D: ['итог'] });
+    const decide = jest.fn(async () => 'continue');
+    const result = await Engine.run({ task: 'T', steps: [P, next], send: second.send, decide, onNoAnswer: 'skip', ...texts, resume: saved });
+    expect(decide).not.toHaveBeenCalled();
+    expect(result.stopReason).toBe('steps_done');
+    expect(second.calls.map((call) => call.models[0])).toEqual(['D']);
+  });
+});

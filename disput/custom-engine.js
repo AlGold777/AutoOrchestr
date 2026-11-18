@@ -83,7 +83,8 @@
     no_decision: 'нет принятых ответов, решение User не получено',
     missing_input: 'обязательный вход не получен, запрос не отправлен',
     unsupported_input: 'двоичный файл не передаётся тексту модели; шаг не отправлен',
-    stop_mark: 'остановлено по метке в ответе'
+    stop_mark: 'остановлено по метке в ответе',
+    no_answer: 'шаг остался без принятых ответов'
   });
   // run.stopMarks: the first line of an answer that starts with a mark. The markup at the start of a line (quote, bold, heading,
   // bullet) is not counted; the comparison is by case. Returns { mark, line } or null. The text is only compared, never judged.
@@ -457,7 +458,7 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, stopMarks = [], putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
+    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, stopMarks = [], onNoAnswer = 'ask', putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
@@ -1423,6 +1424,15 @@
             emit('custom_step', { step: step.index, label: stepLabel(step), accepted: accepted.length, failed: failed.length, required, approve });
             if (enough && !semiAuto && !approve) break;
             if (enough && semiAuto && last && !failed.length && !approve) break;
+            // run.onNoAnswer "skip": the owner is not asked. The participants without an answer are skipped (the accepted answers go on);
+            // a step with no accepted answer stops the run. A step with an owner approval keeps its question.
+            if (onNoAnswer === 'skip' && !enough && !approve) {
+              if (!accepted.length) throw new StopRun('no_answer', `шаг «${step.ref}»: нет принятых ответов; без ответа: ${failed.join(', ')}`);
+              state.decisions[decidedKey] = 'continue';
+              await checkpointNow('decision', { pendingOwner: null });
+              emit('custom_decision', { step: step.index, action: 'skip_participant', auto: true, skipped: failed });
+              break;
+            }
             // Without every answer "continue" is not offered: the owner repeats, skips the participants without an answer
             // (the accepted answers stay), skips the whole step (it passes nothing on) or stops the step.
             const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip_participant', 'skip', 'stop'];

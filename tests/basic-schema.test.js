@@ -257,9 +257,9 @@ describe('Basic schema: values are kept as given until the end', () => {
   });
 
   test('the run policy and the shared limit are part of the schema', () => {
-    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300, strictLength: false, stopMarks: [] });
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [] });
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700, strictLength: false, stopMarks: [] });
+    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700, strictLength: false, stopMarks: [], onNoAnswer: 'ask' });
     expect(Schema.validate(base([round('r1', ['A'])], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
     expect(errorPaths(base([round('r1', ['A'])], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
     expect(errorPaths(base([round('r1', ['A'])], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
@@ -270,7 +270,7 @@ describe('Basic schema: values are kept as given until the end', () => {
   test('run.strictLength is an optional true or false of the whole run; without it the run is not strict', () => {
     expect(Schema.validate(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual([]);
     expect(Schema.validate(base([round('r1', ['A'])], { run: { strictLength: false } }))).toEqual([]);
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual({ policy: 'manual', maxWords: 300, strictLength: true, stopMarks: [] });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual({ policy: 'manual', maxWords: 300, strictLength: true, stopMarks: [], onNoAnswer: 'ask' });
     expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: false } })).strictLength).toBe(false);
     expect(errorPaths(base([round('r1', ['A'])], { run: { strictLength: 'yes' } }))).toEqual(['run.strictLength']);
     expect(errorPaths(base([round('r1', ['A'])], { run: { strictLength: 1 } }))).toEqual(['run.strictLength']);
@@ -288,6 +288,14 @@ describe('Basic schema: values are kept as given until the end', () => {
     expect(errorPaths(with_(['а'.repeat(61)]))).toEqual(['run.stopMarks[0]']);
     expect(errorPaths(with_(['ТРЕВОГА:\nСТОП']))).toEqual(['run.stopMarks[0]']);
     expect(errorPaths(with_(Array.from({ length: 11 }, (_, i) => `М${i}:`)))).toEqual(['run.stopMarks']);
+  });
+
+  test('run.onNoAnswer is "ask" (the question, as now) or "skip"; without it the run asks', () => {
+    expect(Schema.validate(base([round('r1', ['A'])], { run: { onNoAnswer: 'skip' } }))).toEqual([]);
+    expect(Schema.validate(base([round('r1', ['A'])], { run: { onNoAnswer: 'ask' } }))).toEqual([]);
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { onNoAnswer: 'skip' } }))).toMatchObject({ onNoAnswer: 'skip' });
+    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toMatchObject({ onNoAnswer: 'ask' });
+    expect(errorPaths(base([round('r1', ['A'])], { run: { onNoAnswer: 'sometimes' } }))).toEqual(['run.onNoAnswer']);
   });
 });
 

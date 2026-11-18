@@ -93,7 +93,7 @@ describe('Basic participant identities: format compatibility', () => {
     const preview = Engine.previewPrompt({ task: 'MAIN TASK', steps: [step], stepIndex: 0, modelName: 'Claude', participantId: 'claude-blank' });
     expect(preview.inputMode).toBe('none');
     expect(preview.prompt).toBe('Задача:\nMAIN TASK');
-    expect(Schema.resolveRun(value)).toEqual({ policy: 'manual', maxWords: 700, strictLength: true, stopMarks: [] });
+    expect(Schema.resolveRun(value)).toEqual({ policy: 'manual', maxWords: 700, strictLength: true, stopMarks: [], onNoAnswer: 'ask' });
   });
 
   test('preview selects a duplicated provider by participant ID rather than the first matching provider', () => {

@@ -8,7 +8,7 @@
 // Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, comment?, defaults?, steps }
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
 //   comment: the text the model wrote around the schema JSON (kept when the schema is pasted); shown under the description, never read by the engine
-//   run: { policy?: 'auto' | 'manual', maxWords?, strictLength?, stopMarks? } — the run policy, the shared answer limit, the strict length check and the stop marks
+//   run: { policy?: 'auto' | 'manual', maxWords?, strictLength?, stopMarks?, onNoAnswer? } — the run policy, the shared answer limit, the strict length check, the stop marks and the step without all answers ('ask' | 'skip')
 //   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
 //     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
@@ -56,6 +56,7 @@
   });
   const INPUTS = Object.freeze(['none', 'previous', 'all']);
   const POLICIES = Object.freeze(['auto', 'manual']);
+  const ON_NO_ANSWER = Object.freeze(['ask', 'skip']);
   // The shared answer limits the page offers (its length select); the request to models names the same list.
   const RUN_WORDS = Object.freeze([300, 500, 700, 1000]);
   const OUTPUT_FORMATS = Object.freeze(['json']);
@@ -330,7 +331,8 @@
     if (schema.run != null) {
       if (!isObject(schema.run)) fail('run', 'ожидается объект');
       else {
-        unknownKeys(schema.run, ['policy', 'maxWords', 'strictLength', 'stopMarks'], 'run');
+        unknownKeys(schema.run, ['policy', 'maxWords', 'strictLength', 'stopMarks', 'onNoAnswer'], 'run');
+        if ('onNoAnswer' in schema.run) oneOf(schema.run.onNoAnswer, ON_NO_ANSWER, 'run.onNoAnswer', 'участник без ответа');
         if ('policy' in schema.run) oneOf(schema.run.policy, POLICIES, 'run.policy', 'политика запуска');
         if ('maxWords' in schema.run && !(Number.isSafeInteger(schema.run.maxWords) && schema.run.maxWords > 0)) fail('run.maxWords', 'ожидается положительное целое число слов');
         else if ('maxWords' in schema.run && !RUN_WORDS.includes(schema.run.maxWords)) fail('run.maxWords', `предел длины pipeline: допустимо ${RUN_WORDS.join(', ')}`);
@@ -719,7 +721,8 @@
     policy: typeof schema.run?.policy === 'string' ? schema.run.policy : DEFAULTS.run.policy,
     maxWords: Number.isSafeInteger(schema.run?.maxWords) ? schema.run.maxWords : DEFAULTS.run.maxWords,
     strictLength: typeof schema.run?.strictLength === 'boolean' ? schema.run.strictLength : DEFAULTS.run.strictLength,
-    stopMarks: Array.isArray(schema.run?.stopMarks) ? schema.run.stopMarks.slice() : []
+    stopMarks: Array.isArray(schema.run?.stopMarks) ? schema.run.stopMarks.slice() : [],
+    onNoAnswer: schema.run?.onNoAnswer === 'skip' ? 'skip' : 'ask'
   });
 
   // Remarks about a valid schema that do not block it (the author decides): [{ path, message }]. Three patterns that lose
