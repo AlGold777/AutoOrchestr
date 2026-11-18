@@ -31,11 +31,22 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
   };
 
+  // The folders of a run: the pipeline name, then the start time of the run.
+  const runDirs = ({ pipeline, startedAt }) => [sanitizeName(pipeline), stamp(startedAt)];
+
   // The path of a copy inside the folder: the folders to create, then the file name.
   const relativePath = ({ pipeline, startedAt, name, kind }) => ({
-    dirs: [sanitizeName(pipeline), stamp(startedAt)],
+    dirs: runDirs({ pipeline, startedAt }),
     file: `${sanitizeName(name)}${kind === 'form' ? '.json' : '.md'}`
   });
+
+  // A file name with its extension kept: the base name is cleaned, the extension only loses forbidden characters.
+  const fileName = (value) => {
+    const text = String(value == null ? '' : value);
+    const dot = text.lastIndexOf('.');
+    if (dot <= 0) return sanitizeName(text);
+    return `${sanitizeName(text.slice(0, dot))}${text.slice(dot).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')}`;
+  };
 
   const isAbort = (error) => error?.name === 'AbortError';
 
@@ -104,7 +115,44 @@
       }
     };
 
-    return { folderName, pick, ensureAccess, write };
+    // Reads a file by its path in the folder; creates nothing.
+    const readAt = async ({ dirs = [], file }) => {
+      try {
+        const handle = await store.get();
+        if (!handle) return { ok: false, reason: 'none' };
+        if ((await ensureAccess({ request: false })) !== 'granted') return { ok: false, reason: 'denied' };
+        let dir = handle;
+        for (const part of dirs) dir = await dir.getDirectoryHandle(sanitizeName(part));
+        const fileHandle = await dir.getFileHandle(fileName(file));
+        const text = await (await fileHandle.getFile()).text();
+        return { ok: true, text };
+      } catch (error) {
+        if (error?.name === 'NotFoundError') return { ok: false, reason: 'missing' };
+        return { ok: false, reason: 'error', message: String(error?.message || error) };
+      }
+    };
+
+    // Writes a file by its path, creating the folders; the file is overwritten. Returns the path, never throws.
+    const writeAt = async ({ dirs = [], file, text }) => {
+      try {
+        const handle = await store.get();
+        if (!handle) return { ok: false, reason: 'none' };
+        if ((await ensureAccess({ request: false })) !== 'granted') return { ok: false, reason: 'denied' };
+        const names = dirs.map(sanitizeName);
+        const name = fileName(file);
+        let dir = handle;
+        for (const part of names) dir = await dir.getDirectoryHandle(part, { create: true });
+        const fileHandle = await dir.getFileHandle(name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(String(text == null ? '' : text));
+        await writable.close();
+        return { ok: true, path: [...names, name].join('/') };
+      } catch (error) {
+        return { ok: false, reason: 'error', message: String(error?.message || error) };
+      }
+    };
+
+    return { folderName, pick, ensureAccess, write, readAt, writeAt };
   }
 
   // The store in IndexedDB opens the base only on the first call, so creating it is safe without indexedDB.
@@ -142,7 +190,7 @@
   };
 
   const instance = create({ store: indexedDbStore, picker: defaultPicker });
-  const api = Object.freeze({ sanitizeName, stamp, relativePath, create, instance });
+  const api = Object.freeze({ sanitizeName, stamp, runDirs, relativePath, create, instance });
   root.DocumentsFolder = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

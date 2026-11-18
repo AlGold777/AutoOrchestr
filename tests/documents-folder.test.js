@@ -15,6 +15,11 @@ class FakeFile {
     this.opts = opts;
   }
 
+  async getFile() {
+    const file = this;
+    return { text: async () => file.text };
+  }
+
   async createWritable() {
     if (this.opts.failWrites) throw new Error('disk full');
     const file = this;
@@ -243,5 +248,80 @@ describe('documents-folder: write', () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('error');
     expect(result.message).toBe('disk full');
+  });
+});
+
+describe('documents-folder: readAt и writeAt', () => {
+  test('writeAt пишет по пути и перезаписывает файл целиком (без «(2)»)', async () => {
+    const root = new FakeDir('Документы');
+    const folder = DocumentsFolder.create({ store: makeStore(root), picker: jest.fn() });
+
+    expect(await folder.writeAt({ dirs: ['Папка', 'Прогон'], file: 'chain.txt', text: 'один' }))
+      .toEqual({ ok: true, path: 'Папка/Прогон/chain.txt' });
+    expect(await folder.writeAt({ dirs: ['Папка', 'Прогон'], file: 'chain.txt', text: 'два' }))
+      .toEqual({ ok: true, path: 'Папка/Прогон/chain.txt' });
+    const dir = root.children.get('Папка').children.get('Прогон');
+    expect(dir.children.size).toBe(1);
+    expect(dir.children.get('chain.txt').text).toBe('два');
+  });
+
+  test('writeAt очищает имена папок и файла, расширение сохраняет', async () => {
+    const root = new FakeDir('Документы');
+    const folder = DocumentsFolder.create({ store: makeStore(root), picker: jest.fn() });
+
+    const result = await folder.writeAt({ dirs: ['Пайп:1'], file: 'run/1?.json', text: 't' });
+    expect(result).toEqual({ ok: true, path: 'Пайп_1/run_1_.json' });
+  });
+
+  test('readAt читает текст файла, не создавая папок', async () => {
+    const root = new FakeDir('Документы');
+    const folder = DocumentsFolder.create({ store: makeStore(root), picker: jest.fn() });
+    await folder.writeAt({ dirs: ['П'], file: 'chain.txt', text: 'строка\n' });
+
+    expect(await folder.readAt({ dirs: ['П'], file: 'chain.txt' })).toEqual({ ok: true, text: 'строка\n' });
+    expect(await folder.readAt({ dirs: ['Нет'], file: 'chain.txt' })).toEqual({ ok: false, reason: 'missing' });
+    expect(root.children.has('Нет')).toBe(false);
+  });
+
+  test('readAt без файла в существующей папке — missing', async () => {
+    const root = new FakeDir('Документы');
+    const folder = DocumentsFolder.create({ store: makeStore(root), picker: jest.fn() });
+    expect(await folder.readAt({ file: 'chain.txt' })).toEqual({ ok: false, reason: 'missing' });
+  });
+
+  test('без дескриптора readAt и writeAt возвращают none', async () => {
+    const folder = DocumentsFolder.create({ store: makeStore(), picker: jest.fn() });
+    expect(await folder.readAt({ file: 'chain.txt' })).toEqual({ ok: false, reason: 'none' });
+    expect(await folder.writeAt({ file: 'chain.txt', text: 't' })).toEqual({ ok: false, reason: 'none' });
+  });
+
+  test('при permission prompt readAt и writeAt возвращают denied и ничего не трогают', async () => {
+    const root = new FakeDir('Документы', { permission: 'prompt' });
+    const folder = DocumentsFolder.create({ store: makeStore(root), picker: jest.fn() });
+    expect(await folder.readAt({ file: 'chain.txt' })).toEqual({ ok: false, reason: 'denied' });
+    expect(await folder.writeAt({ file: 'chain.txt', text: 't' })).toEqual({ ok: false, reason: 'denied' });
+    expect(root.children.size).toBe(0);
+  });
+
+  test('ошибка записи writeAt возвращается как error с message, не бросает', async () => {
+    const root = new FakeDir('Документы', { failWrites: true });
+    const folder = DocumentsFolder.create({ store: makeStore(root), picker: jest.fn() });
+    expect(await folder.writeAt({ file: 'chain.txt', text: 't' })).toEqual({ ok: false, reason: 'error', message: 'disk full' });
+  });
+
+  test('ошибка чтения, не являющаяся отсутствием, возвращается как error', async () => {
+    const root = new FakeDir('Документы');
+    const folder = DocumentsFolder.create({ store: makeStore(root), picker: jest.fn() });
+    await folder.writeAt({ file: 'chain.txt', text: 't' });
+    const file = root.children.get('chain.txt');
+    file.getFile = async () => { throw new Error('io'); };
+    expect(await folder.readAt({ file: 'chain.txt' })).toEqual({ ok: false, reason: 'error', message: 'io' });
+  });
+
+  test('runDirs — папки прогона, те же, что у relativePath', () => {
+    const startedAt = new Date(2026, 9, 25, 9, 30, 5).getTime();
+    expect(DocumentsFolder.runDirs({ pipeline: 'П:1', startedAt })).toEqual(['П_1', expectedStamp(startedAt)]);
+    expect(DocumentsFolder.relativePath({ pipeline: 'П:1', startedAt, name: 'N', kind: 'read' }).dirs)
+      .toEqual(DocumentsFolder.runDirs({ pipeline: 'П:1', startedAt }));
   });
 });
