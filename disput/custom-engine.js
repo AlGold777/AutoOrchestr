@@ -82,8 +82,22 @@
     cancelled: 'остановлено пользователем',
     no_decision: 'нет принятых ответов, решение User не получено',
     missing_input: 'обязательный вход не получен, запрос не отправлен',
-    unsupported_input: 'двоичный файл не передаётся тексту модели; шаг не отправлен'
+    unsupported_input: 'двоичный файл не передаётся тексту модели; шаг не отправлен',
+    stop_mark: 'остановлено по метке в ответе'
   });
+  // run.stopMarks: the first line of an answer that starts with a mark. The markup at the start of a line (quote, bold, heading,
+  // bullet) is not counted; the comparison is by case. Returns { mark, line } or null. The text is only compared, never judged.
+  const MARK_MARKUP = /^[\s>*_#`~\-–—•]+/;
+  function findStopMark(answer, marks) {
+    if (!Array.isArray(marks) || !marks.length) return null;
+    for (const raw of String(answer ?? '').split('\n')) {
+      const line = raw.trim();
+      const rest = line.replace(MARK_MARKUP, '');
+      const mark = marks.find((item) => rest.startsWith(item));
+      if (mark !== undefined) return { mark, line };
+    }
+    return null;
+  }
   const text = (value) => String(value == null ? '' : value).trim();
   // The key of a step in the state of the run: its ref, or its position in the schema for a step without a ref.
   const refKey = (step) => step.ref ?? `#${step.index}`;
@@ -443,7 +457,7 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
+    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, stopMarks = [], putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
@@ -1449,6 +1463,14 @@
         results.push(entry);
         pos += 1;
         current = null;
+        // run.stopMarks: a mark at the start of a line of an accepted answer stops the run after this step, which is kept.
+        // The owner steps and the skipped steps have no answers to check.
+        if (stopMarks.length && step.kind !== 'owner' && !entry.skipped) {
+          for (const model of step.models) {
+            const hit = outcome[model.id]?.ok ? findStopMark(outcome[model.id].text, stopMarks) : null;
+            if (hit) throw new StopRun('stop_mark', `шаг «${step.ref}», участник «${model.id}»: ${hit.line.slice(0, 120)}`);
+          }
+        }
       }
     } catch (error) {
       if (current) {
@@ -1513,7 +1535,7 @@
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : '') } };
   }
 
-  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, run });
+  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, findStopMark, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

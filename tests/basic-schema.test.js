@@ -257,9 +257,9 @@ describe('Basic schema: values are kept as given until the end', () => {
   });
 
   test('the run policy and the shared limit are part of the schema', () => {
-    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300, strictLength: false });
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300, strictLength: false });
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700, strictLength: false });
+    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toEqual({ policy: 'manual', maxWords: 300, strictLength: false, stopMarks: [] });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'auto' } }))).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [] });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { policy: 'manual', maxWords: 700 } }))).toEqual({ policy: 'manual', maxWords: 700, strictLength: false, stopMarks: [] });
     expect(Schema.validate(base([round('r1', ['A'])], { run: { policy: 'auto', maxWords: 700 } }))).toEqual([]);
     expect(errorPaths(base([round('r1', ['A'])], { run: { policy: 'sometimes' } }))).toEqual(['run.policy']);
     expect(errorPaths(base([round('r1', ['A'])], { run: { maxWords: 0 } }))).toEqual(['run.maxWords']);
@@ -270,11 +270,24 @@ describe('Basic schema: values are kept as given until the end', () => {
   test('run.strictLength is an optional true or false of the whole run; without it the run is not strict', () => {
     expect(Schema.validate(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual([]);
     expect(Schema.validate(base([round('r1', ['A'])], { run: { strictLength: false } }))).toEqual([]);
-    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual({ policy: 'manual', maxWords: 300, strictLength: true });
+    expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: true } }))).toEqual({ policy: 'manual', maxWords: 300, strictLength: true, stopMarks: [] });
     expect(Schema.resolveRun(base([round('r1', ['A'])], { run: { strictLength: false } })).strictLength).toBe(false);
     expect(errorPaths(base([round('r1', ['A'])], { run: { strictLength: 'yes' } }))).toEqual(['run.strictLength']);
     expect(errorPaths(base([round('r1', ['A'])], { run: { strictLength: 1 } }))).toEqual(['run.strictLength']);
     expect(Schema.describeErrors(Schema.validate(base([round('r1', ['A'])], { run: { strictLength: 1 } })))).toBe('run.strictLength: ожидается true или false');
+  });
+
+  test('run.stopMarks is an optional list of one to ten marks, each non-empty, up to 60 characters, on one line', () => {
+    const with_ = (stopMarks) => base([round('r1', ['A'])], { run: { stopMarks } });
+    expect(Schema.validate(with_(['ТРЕВОГА:', 'СТОП:']))).toEqual([]);
+    expect(Schema.resolveRun(with_(['ТРЕВОГА:']))).toMatchObject({ stopMarks: ['ТРЕВОГА:'] });
+    expect(Schema.resolveRun(base([round('r1', ['A'])]))).toMatchObject({ stopMarks: [] });
+    expect(errorPaths(with_('ТРЕВОГА:'))).toEqual(['run.stopMarks']);
+    expect(errorPaths(with_([]))).toEqual(['run.stopMarks']);
+    expect(errorPaths(with_(['  ']))).toEqual(['run.stopMarks[0]']);
+    expect(errorPaths(with_(['а'.repeat(61)]))).toEqual(['run.stopMarks[0]']);
+    expect(errorPaths(with_(['ТРЕВОГА:\nСТОП']))).toEqual(['run.stopMarks[0]']);
+    expect(errorPaths(with_(Array.from({ length: 11 }, (_, i) => `М${i}:`)))).toEqual(['run.stopMarks']);
   });
 });
 

@@ -6808,7 +6808,7 @@ document.addEventListener('click', (event) => {
                     });
                 });
             }
-            const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() };
+            const runValue = forSave ? (run || basicRunForSave()) : { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicKeptRunFields() };
             // The format of the schema: the one of its source, and format 2 only when the page uses what format 2 adds (a label
             // other than the model name, an explicit profile). A schema of format 1 stays format 1 through Save, Run and Export.
             // Format 2 holds the permanent id of every participant (its name when it has none); format 1 has no labels.
@@ -6843,17 +6843,21 @@ document.addEventListener('click', (event) => {
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
-        // run.strictLength has no control in the ▶ window: the value the loaded schema holds goes on with Save and with the run.
-        const basicStrictLengthRun = () => {
+        // run.strictLength and run.stopMarks have no control in the ▶ window: the values the loaded schema holds go on with Save and with the run.
+        // A new run.* field goes here too, or Save and the run lose it.
+        const basicKeptRunFields = () => {
             const source = basicSourceSchema.get(draftPlanStorageKey())?.run || {};
-            return 'strictLength' in source ? { strictLength: source.strictLength } : {};
+            return {
+                ...('strictLength' in source ? { strictLength: source.strictLength } : {}),
+                ...('stopMarks' in source ? { stopMarks: source.stopMarks } : {})
+            };
         };
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
             const defaults = window.BasicSchema.DEFAULTS.run;
             const policy = getDebateRunPolicy();
             const maxWords = getDebateMaxWords();
-            return { ...(explicit.policy || policy !== defaults.policy ? { policy } : {}), ...(explicit.maxWords || maxWords !== defaults.maxWords ? { maxWords } : {}), ...basicStrictLengthRun() };
+            return { ...(explicit.policy || policy !== defaults.policy ? { policy } : {}), ...(explicit.maxWords || maxWords !== defaults.maxWords ? { maxWords } : {}), ...basicKeptRunFields() };
         };
         // The working copies the cards edit, read from a stored record: a record with a schema gives them
         // from the schema (a schema that cannot be read gives an error and nothing); an earlier record gives
@@ -6994,7 +6998,7 @@ document.addEventListener('click', (event) => {
             // The run checks and runs the schema Save writes (every round r1…rN, the switched-off participants): what is installed
             // and saved is what runs. The run values are those of the header now.
             const schema = basicSchemaFromPage(plan, previewModel, { forSave: true,
-                run: { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicStrictLengthRun() } });
+                run: { policy: getDebateRunPolicy(), maxWords: getDebateMaxWords(), ...basicKeptRunFields() } });
             const loadError = basicSchemaLoadErrors.get(draftPlanStorageKey());
             const errors = [...(loadError ? [{ path: 'сохранённая схема', message: loadError }] : []), ...window.BasicSchema.validate(schema)];
             return { schema, errors, run: window.BasicSchema.resolveRun(schema), steps: errors.length ? [] : window.BasicSchema.assemble(schema, { roleText: customRoleText }) };
@@ -7816,6 +7820,8 @@ document.addEventListener('click', (event) => {
                     runMaxWords: built.run.maxWords,
                     // The strict check of the length for the steps without their own output.strictLength (run.strictLength).
                     runStrictLength: built.run.strictLength,
+                    // run.stopMarks: a mark at the start of a line of an accepted answer stops the run after its step.
+                    stopMarks: built.run.stopMarks,
                     // M-11: before a repeat the page is read again; the background takes the answer of the request's own turn (or says there is none).
                     reread: async (request) => {
                         const saved = chatBindings[request.participantId];

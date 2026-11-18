@@ -2561,7 +2561,7 @@ describe('Pipeline debate favorites view', () => {
       const built = h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()));
       expect(built.errors).toEqual([]);
       expect(built.schema.run).toEqual({ policy: 'auto', maxWords: 300 });
-      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false });
+      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [] });
     } finally { h.cleanup(); }
   });
 
@@ -3230,7 +3230,7 @@ describe('Pipeline debate favorites view', () => {
         h.debug.applyPipelineConfig(record);
         expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
         expect(document.getElementById('debate-length-select').value).toBe('700');
-        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false });
+        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false, stopMarks: [] });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3420,7 +3420,7 @@ describe('Pipeline debate favorites view', () => {
           expect(saved.run).toEqual({ policy: 'auto', strictLength: true });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true, stopMarks: [] });
           const exported = h.debug.buildBasicExport();
           expect(exported.ok).toBe(true);
           expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', strictLength: true });
@@ -3428,6 +3428,26 @@ describe('Pipeline debate favorites view', () => {
           select('Strict run again');
           await settleCustomCard();
           expect(h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' }).run).toEqual(saved.run);
+        } finally { h.cleanup(); }
+      });
+
+      test('run.stopMarks of the schema survives Save, Export and the run; the run hands the marks to the engine', async () => {
+        const h = setupCustomInheritance('Stop marks host');
+        try {
+          const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto', stopMarks: ['ТРЕВОГА:'] }, steps: [
+            { ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'Claude' }] }
+          ] };
+          expect(await h.debug.installBasicSchema('Stop marks', schema)).toEqual({ ok: true, errors: [] });
+          select('Stop marks');
+          await settleCustomCard();
+          const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
+          expect(saved.run).toEqual({ policy: 'auto', stopMarks: ['ТРЕВОГА:'] });
+          const built = h.debug.buildBasicRun(planOf());
+          expect(built.errors).toEqual([]);
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: ['ТРЕВОГА:'] });
+          const exported = h.debug.buildBasicExport();
+          expect(exported.ok).toBe(true);
+          expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', stopMarks: ['ТРЕВОГА:'] });
         } finally { h.cleanup(); }
       });
 
