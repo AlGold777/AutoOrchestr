@@ -2772,6 +2772,8 @@ document.addEventListener('click', (event) => {
     let lastBasicAutosave = null;
     // T08: set by Stop; the repeat of a schema (runBasicRepeat) reads it before it starts a pass. Only in memory.
     let basicRepeatStop = false;
+    // T08: true from the start of a repeat to its end (the page is busy even between two passes).
+    let basicRepeatActive = false;
     let basicCardHistory = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const compiledPromptEvidence = new Map();
@@ -7330,6 +7332,10 @@ document.addEventListener('click', (event) => {
                 showNotification('Basic: не загружены модули приёма ответов (DebateResponseAcceptance, DebateStageMarkers). Перезагрузите страницу.', 'error');
                 return false;
             }
+            // The controller exists from here on: Stop while the input files are prepared aborts the run before its first request.
+            const runAbort = new AbortController();
+            customAbortController = runAbort;
+            const releaseAbort = () => { if (customAbortController === runAbort) customAbortController = null; };
             // Resolve every declared input before starting: no participant is sent without its files.
             const hasScopedFiles = steps.some((step) => step.files?.length || (step.models || []).some((model) => model.files?.length));
             let inputFileStore = null;
@@ -7354,13 +7360,14 @@ document.addEventListener('click', (event) => {
                     }));
                 } catch (error) {
                     showNotification(`Basic: запуск остановлен. ${error?.message || error}`, 'error');
+                    releaseAbort();
                     return false;
                 }
             }
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             const semiAuto = built.run.policy !== 'auto';
+            if (runAbort.signal.aborted) { releaseAbort(); return false; }
             pipelineRunActive = true;
-            customAbortController = new AbortController();
             activePipelineRunContext = {
                 pipelineRunId: resumeRecord ? resumeRecord.runId : makePipelineRunId(),
                 sessionId: debateTabsState?.activeSessionId
@@ -8067,48 +8074,54 @@ document.addEventListener('click', (event) => {
         const runBasicRepeat = async ({ task, repeat }) => {
             const Repeat = window.BasicRepeat;
             const stopNotice = (text, kind = 'warn') => showNotification(`Basic: ${text}`, kind);
+            // The lock is taken before the first await: a second start cannot pass it and sends nothing. Every exit releases it (finally).
+            if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
+            pipelineRunActive = true;
+            basicRepeatActive = true;
+            basicRepeatStop = false;
+            setPipelineRunUi(true);
             let split = null;
-            try {
-                if (getDebateRunPolicy() !== 'auto') { stopNotice('повтор идёт только при политике auto'); return false; }
-                split = Repeat.splitTask(task, repeat.carryMarker);
-                if (!split) { stopNotice(`в задаче нет строки ${repeat.carryMarker}, повтор не запущен`); return false; }
-                // The record of every pass is written to the folder: without access no pass starts.
-                if ((await window.DocumentsFolder?.instance?.ensureAccess({ request: true })) !== 'granted') {
-                    stopNotice('повтор требует папку документов: запись каждого захода обязательна');
-                    return false;
-                }
-            } catch (error) {
-                stopNotice(`повтор не запущен: ${error?.message || error}`, 'error');
-                return false;
-            }
-            // Requests of a pass whose count is unknown: every participant of every round (an upper bound).
-            const requestsPerPass = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan())).steps
-                .reduce((sum, step) => sum + (step.kind === 'round' ? step.models.length : 0), 0);
-            const passTask = (pass, carried, requestsLeft) => Repeat.taskForPass({ template: split.template, carried, pass, requestsLeft });
-            const limitText = repeat.maxRequests == null ? 'предел запросов не задан' : `до ${repeat.maxRequests} запросов`;
-            const passesLeft = (requestsUsed) => (repeat.maxRequests == null ? null : repeat.maxRequests - requestsUsed);
-            const ownerWindow = async ({ pass, requestsUsed, carried }) => {
-                customAbortController = new AbortController();
-                try {
-                    return await askChoiceDialog({
-                        title: `Повтор: заход ${pass} из ${repeat.maxPasses}`,
-                        message: `Запросов израсходовано: ${requestsUsed}${repeat.maxRequests == null ? '' : ` из ${repeat.maxRequests}`}. Документ для следующего захода можно поправить.`,
-                        document: { kind: 'read', editable: true, name: 'Документ для следующего захода', text: carried },
-                        choices: [{ value: 'continue', label: 'Продолжить' }],
-                        cancelText: 'Остановить повтор'
-                    });
-                } finally {
-                    customAbortController = null;
-                }
-            };
             let pass = 1;
-            let carried = split.carried;
+            let carried = '';
             let requestsUsed = 0;
             let finished = 0;
-            basicRepeatStop = false;
-            pipelineRunActive = true;
-            setPipelineRunUi(true);
             try {
+                try {
+                    if (getDebateRunPolicy() !== 'auto') { stopNotice('повтор идёт только при политике auto'); return false; }
+                    split = Repeat.splitTask(task, repeat.carryMarker);
+                    if (!split) { stopNotice(`в задаче нет строки ${repeat.carryMarker}, повтор не запущен`); return false; }
+                    // The record of every pass is written to the folder: without access no pass starts.
+                    if ((await window.DocumentsFolder?.instance?.ensureAccess({ request: true })) !== 'granted') {
+                        stopNotice('повтор требует папку документов: запись каждого захода обязательна');
+                        return false;
+                    }
+                } catch (error) {
+                    stopNotice(`повтор не запущен: ${error?.message || error}`, 'error');
+                    return false;
+                }
+                // Stop during the access check: no pass starts.
+                if (basicRepeatStop) { stopNotice('повтор остановлен User'); return false; }
+                // Requests of a pass whose count is unknown: every participant of every round (an upper bound).
+                const requestsPerPass = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan())).steps
+                    .reduce((sum, step) => sum + (step.kind === 'round' ? step.models.length : 0), 0);
+                const passTask = (pass, carried, requestsLeft) => Repeat.taskForPass({ template: split.template, carried, pass, requestsLeft });
+                const limitText = repeat.maxRequests == null ? 'предел запросов не задан' : `до ${repeat.maxRequests} запросов`;
+                const passesLeft = (requestsUsed) => (repeat.maxRequests == null ? null : repeat.maxRequests - requestsUsed);
+                const ownerWindow = async ({ pass, requestsUsed, carried }) => {
+                    customAbortController = new AbortController();
+                    try {
+                        return await askChoiceDialog({
+                            title: `Повтор: заход ${pass} из ${repeat.maxPasses}`,
+                            message: `Запросов израсходовано: ${requestsUsed}${repeat.maxRequests == null ? '' : ` из ${repeat.maxRequests}`}. Документ для следующего захода можно поправить.`,
+                            document: { kind: 'read', editable: true, name: 'Документ для следующего захода', text: carried },
+                            choices: [{ value: 'continue', label: 'Продолжить' }],
+                            cancelText: 'Остановить повтор'
+                        });
+                    } finally {
+                        customAbortController = null;
+                    }
+                };
+                carried = split.carried;
                 appendBasicRunLine(`Повтор: до ${repeat.maxPasses} заходов, ${limitText}`);
                 // The first pass is confirmed as an ordinary run is (the requests with their warnings).
                 customAbortController = new AbortController();
@@ -8116,6 +8129,7 @@ document.addEventListener('click', (event) => {
                 customAbortController = null;
                 if (!confirmed || basicRepeatStop) { if (!basicRepeatStop) stopNotice('повтор не запущен: запуск отменён'); return false; }
                 for (;;) {
+                    if (basicRepeatStop) { stopNotice('повтор остановлен User'); return finished > 0; }
                     latestBasicRunRecord = null;
                     lastBasicAutosave = null;
                     await runCustomFromPage({ task: passTask(pass, carried, passesLeft(requestsUsed)), forceNewTabs: true });
@@ -8123,7 +8137,8 @@ document.addEventListener('click', (event) => {
                     setPipelineRunUi(true);
                     const exported = latestBasicRunRecord ? window.CustomRunRecord.exportRun(latestBasicRunRecord) : null;
                     const stopReason = exported?.stopReason || '';
-                    const sent = lastBasicAutosave?.usage?.requestsSent;
+                    // Counted as an upper bound: an attempt that may have been sent is spent (telemetry usage.requestsUpperBound).
+                    const sent = lastBasicAutosave?.usage?.requestsUpperBound;
                     requestsUsed += typeof sent === 'number' ? sent : requestsPerPass;
                     if (stopReason === 'steps_done') finished += 1;
                     const next = Repeat.carriedText({ artifacts: exported?.artifacts || [], carry: repeat.carry,
@@ -8154,6 +8169,7 @@ document.addEventListener('click', (event) => {
                 return finished > 0;
             } finally {
                 customAbortController = null;
+                basicRepeatActive = false;
                 pipelineRunActive = false;
                 setPipelineRunUi(false);
                 updateDebateButtonsUi();
@@ -8197,6 +8213,8 @@ document.addEventListener('click', (event) => {
                 if (runId) { try { await debateTransportPort?.cancelRun?.(runId); } catch (_) {} }
                 return true;
             }
+            // A repeat between its passes (or while it prepares one) stops before the next request; the repeat frees the page itself.
+            if (basicRepeatActive) return true;
             if (!pipelineRunActive) return false;
             await notifyPipelineControlState('CANCELLED', {
                 stage: 'cancelled',

@@ -107,6 +107,11 @@ describe('T08: повтор схемы на странице', () => {
     expect(results).toMatch(/const \{ repeat \} = buildBasicRun\(draftPlanForCanvas\(getActiveDraftPlan\(\)\)\)\.run;/);
   });
 
+  test('the repeat lock is taken before the first await and released in finally (F2)', () => {
+    expect(results).toMatch(/const runBasicRepeat = async \(\{ task, repeat \}\) => \{[\s\S]*?pipelineRunActive = true;\s*basicRepeatActive = true;[\s\S]*?const \{ repeat \}/);
+    expect(results).toMatch(/finally \{\s*customAbortController = null;\s*basicRepeatActive = false;\s*pipelineRunActive = false;/);
+  });
+
   test('Stop marks the repeat as stopped first, before it aborts the pass or a window', () => {
     expect(results).toMatch(/const cancelPipelineRun = async \(\) => \{\s*basicRepeatStop = true;/);
   });
@@ -117,13 +122,13 @@ describe('T08: повтор схемы на странице', () => {
   });
 
   test('the request count of a pass comes from the autosave report, the upper bound is the fallback', () => {
-    expect(results).toContain('const sent = lastBasicAutosave?.usage?.requestsSent;');
+    expect(results).toContain('const sent = lastBasicAutosave?.usage?.requestsUpperBound;');
     expect(results).toContain('requestsUsed += typeof sent === \'number\' ? sent : requestsPerPass;');
     expect(results).toContain('return { ...result, usage: report?.usage ?? null };');
   });
 
   test('the repeat is cleared in finally, so an exception leaves the page free', () => {
-    expect(results).toMatch(/\} catch \(error\) \{\s*stopNotice\(`повтор остановлен из-за ошибки: [^`]*`, 'error'\);\s*return finished > 0;\s*\} finally \{\s*customAbortController = null;\s*pipelineRunActive = false;\s*setPipelineRunUi\(false\);\s*updateDebateButtonsUi\(\);/);
+    expect(results).toMatch(/\} catch \(error\) \{\s*stopNotice\(`повтор остановлен из-за ошибки: [^`]*`, 'error'\);\s*return finished > 0;\s*\} finally \{\s*customAbortController = null;\s*basicRepeatActive = false;\s*pipelineRunActive = false;\s*setPipelineRunUi\(false\);\s*updateDebateButtonsUi\(\);/);
   });
 });
 

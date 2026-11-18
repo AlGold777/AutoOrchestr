@@ -347,8 +347,12 @@
       if (a.accepted === true) byModel[name].accepted += 1;
     });
     const { startedAt, finishedAt } = customRun || {};
+    const requestsSent = modelRounds.reduce((sum, r) => sum + (r.sentCount || 0), 0);
+    // An upper bound of the requests for the repeat limit: every attempt that may have left (not_sent and cancelled before dispatch did not).
+    const attemptsMayBeSent = attempts.filter((a) => a.state !== 'not_sent' && a.reason !== 'cancelled_before_dispatch').length;
     return {
-      requestsSent: modelRounds.reduce((sum, r) => sum + (r.sentCount || 0), 0),
+      requestsSent,
+      requestsUpperBound: Math.max(requestsSent, attemptsMayBeSent),
       attempts: modelRounds.reduce((sum, r) => sum + (r.attemptCount || 0), 0),
       participantsExpected,
       participantsAccepted,

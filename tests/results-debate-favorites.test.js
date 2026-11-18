@@ -6078,6 +6078,43 @@ describe('Pipeline debate favorites view', () => {
           expect(lines[2].split(' ')[4]).toBe(sha(`${lines[1]}\n`));
         } finally { cleanup(); }
       }, 30000);
+
+      test('check 18 (F1): Stop while the input files of the first pass are being prepared: the repeat stops before the first request', async () => {
+        const schema = repeatSchema(repeatOf());
+        schema.steps[0].models = [{ name: 'GPT', files: [{ id: 'f1', name: 'brief.txt', type: 'text/plain', size: 5, content: 'brief' }] }];
+        const { starts, cleanup } = await setup('T08 stop in files', schema);
+        const previous = { inputFiles: window.BasicInputFiles, delivery: window.BasicFileDelivery };
+        let stopOnce = true;
+        // The real delivery; the store is in memory and resolve waits here, where the Stop of the test comes.
+        const realFiles = require('../disput/basic-input-files');
+        window.BasicInputFiles = { ...realFiles, createStore: () => ({ putRun: async () => {}, getRun: async () => ({}) }),
+          resolve: async (steps) => {
+            if (stopOnce) { stopOnce = false; window.cancelPipelineRun(); }
+            return Object.fromEntries(realFiles.collect(steps).map((file) => [file.id, { name: file.name, type: file.type, size: 5, base64: 'YnJpZWY=' }]));
+          } };
+        window.BasicFileDelivery = require('../disput/basic-file-delivery');
+        try {
+          // A run that sends would wait for the file delivery of this fake: the race keeps a red result from hanging.
+          await Promise.race([start(), delay(5000)]);
+          expect(passesOf(starts)).toHaveLength(0);
+          expect(notice()).toContain('повтор остановлен User');
+        } finally {
+          window.BasicInputFiles = previous.inputFiles;
+          window.BasicFileDelivery = previous.delivery;
+          cleanup();
+        }
+      }, 30000);
+
+      test('check 19 (F2): a second start while the repeat is starting is refused: only one repeat sends requests', async () => {
+        const { starts, cleanup } = await setup('T08 double start', repeatSchema(repeatOf()));
+        try {
+          const first = start();
+          const second = start();
+          expect(await second).toBe(false);
+          await first;
+          expect(passesOf(starts)).toHaveLength(3);
+        } finally { cleanup(); }
+      }, 60000);
     });
 
 });

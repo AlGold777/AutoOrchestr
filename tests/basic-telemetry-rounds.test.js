@@ -375,6 +375,28 @@ describe('Basic telemetry: usage', () => {
     expect(usage.answerChars).toBe(2);
   });
 
+  test('requestsUpperBound counts every attempt that may have been sent: not_sent and cancelled before dispatch are out, requestsSent keeps its meaning', () => {
+    const run = usageRun([
+      attempt('C1', 1, 'done', { ref: 'r2', step: 2, model: 'Claude', accepted: true, prompt: 'a', answer: 'x' }),
+      attempt('C1', 2, 'dispatch_created', { ref: 'r2', step: 2, model: 'Claude' }),
+      attempt('G1', 1, 'armed', { ref: 'r2', step: 2, model: 'GPT' }),
+      attempt('G1', 2, 'failed', { ref: 'r2', step: 2, model: 'GPT' }),
+      attempt('G1', 3, 'cancelled', { ref: 'r2', step: 2, model: 'GPT' }),
+      attempt('G1', 4, 'cancelled', { ref: 'r2', step: 2, model: 'GPT', reason: 'cancelled_before_dispatch' }),
+      attempt('G1', 5, 'not_sent', { ref: 'r2', step: 2, model: 'GPT' })
+    ]);
+    const { usage } = usageOf(run);
+
+    expect(usage.requestsSent).toBe(1);
+    expect(usage.requestsUpperBound).toBe(5);
+  });
+
+  test('requestsUpperBound is never below requestsSent', () => {
+    const { usage } = usageOf(usageRun([...roundOne, ...roundTwo]));
+
+    expect(usage.requestsUpperBound).toBeGreaterThanOrEqual(usage.requestsSent);
+  });
+
   test('the User step is not in requestsSent, but its wait is in ownerWaitMs', () => {
     const run = { runId: 'run-o', steps: [{ ref: 'o1', kind: 'owner', models: [] }], attempts: [], waits: usageRun([]).waits };
     const { usage } = usageOf(run);
