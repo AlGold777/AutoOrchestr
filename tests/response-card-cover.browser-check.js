@@ -53,7 +53,7 @@ const read = (file) => fs.readFileSync(path.join(project, file), 'utf8');
       await page.evaluate((progress) => {
         const root = document.querySelector('.llm-results');
         scrollTo(0, root.getBoundingClientRect().top + scrollY
-          - Number.parseFloat(root.style.getPropertyValue('--response-cover-top')) + progress * innerHeight * 0.92);
+          - Number.parseFloat(root.style.getPropertyValue('--response-cover-top')) + progress * innerHeight * 0.62);
       }, progress);
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       return snapshot();
