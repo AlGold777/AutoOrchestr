@@ -59,15 +59,15 @@ describe('Response card cover reading view', () => {
   test('holds the current card, covers it from below, and reverses when scrolling back', async () => {
     const first = document.getElementById('a');
     const second = document.getElementById('b');
-    await scroll(920 * 0.29);
+    await scroll(620 * 0.09);
     expect(transform(first)).toBe('translate3d(0, 0%, 0)');
     expect(second.parentElement.style.visibility).toBe('hidden');
-    await scroll(920 * 0.55);
+    await scroll(620 * 0.35);
     expect(Number.parseFloat(transform(second).split(',')[1])).toBeGreaterThan(0);
     expect(Number.parseFloat(transform(second).split(',')[1])).toBeLessThan(100);
     expect(first.hasAttribute('inert')).toBe(true);
     expect(second.hasAttribute('inert')).toBe(true);
-    await scroll(920 * 0.84);
+    await scroll(620 * 0.60);
     expect(transform(second)).toBe('translate3d(0, 0%, 0)');
     expect(transform(first)).toBe('translate3d(0, -34%, 0)');
     expect(first.hasAttribute('inert')).toBe(true);
@@ -96,7 +96,7 @@ describe('Response card cover reading view', () => {
   });
 
   test('updates visible model membership without resetting the current reading card', async () => {
-    await scroll(920);
+    await scroll(620);
     document.getElementById('c').style.display = 'block';
     await flush();
     expect(Array.from(root.querySelectorAll('.response-cover-card')).map((card) => card.id)).toEqual(['a', 'b', 'c']);
@@ -112,7 +112,7 @@ describe('Response card cover reading view', () => {
     await flush();
     const sticky = root.querySelector('.response-cover-sticky');
     expect(sticky).not.toBeNull();
-    await scroll(920);
+    await scroll(620);
     expect(transform(document.getElementById('b'))).toBe('translate3d(0, 0%, 0)');
     document.body.classList.remove('llm-stream-preview-open');
     await flush();
@@ -142,7 +142,7 @@ describe('Response card cover reading view', () => {
   });
 
   test('keeps the reading card when the viewport height changes', async () => {
-    await scroll(920);
+    await scroll(620);
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 500 });
     window.dispatchEvent(new Event('resize'));
     await flush();
@@ -154,13 +154,13 @@ describe('Response card cover reading view', () => {
     await useThreeColumnGrid();
     expect(root.style.getPropertyValue('--response-cover-columns')).toBe('3');
     expect(Array.from(root.querySelectorAll('.response-cover-group')).map((group) => group.children.length)).toEqual([3, 3, 1]);
-    await scroll(920 * 0.29);
+    await scroll(620 * 0.09);
     expect(transform(document.getElementById('a'))).toBe('translate3d(0, 0%, 0)');
     expect(document.getElementById('d').parentElement.style.visibility).toBe('hidden');
-    await scroll(920 * 0.55);
+    await scroll(620 * 0.35);
     expect(Number.parseFloat(transform(document.getElementById('d')).split(',')[1])).toBeGreaterThan(0);
     expect(document.getElementById('d').parentElement).toBe(document.getElementById('f').parentElement);
-    await scroll(920 * 0.84);
+    await scroll(620 * 0.60);
     ['d', 'e', 'f'].forEach((id) => {
       expect(transform(document.getElementById(id))).toBe('translate3d(0, 0%, 0)');
       expect(document.getElementById(id).hasAttribute('inert')).toBe(false);
@@ -175,7 +175,7 @@ describe('Response card cover reading view', () => {
 
   test('keeps the reading model when switching between grid and single-column blocks', async () => {
     await useThreeColumnGrid();
-    await scroll(920);
+    await scroll(620);
     const reading = document.getElementById('d');
     setMode('stack');
     await flush();
@@ -189,7 +189,7 @@ describe('Response card cover reading view', () => {
 
   test('regroups a grid on narrower screens while retaining the reading model', async () => {
     await useThreeColumnGrid();
-    await scroll(920);
+    await scroll(620);
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 650 });
     window.dispatchEvent(new Event('resize'));
     await flush();

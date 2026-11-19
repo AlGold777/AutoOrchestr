@@ -2,13 +2,12 @@
   'use strict';
   if (window.ResultsResponseCardCover) return;
 
-  const HOLD = 0.30;
-  const FINISH = 0.84;
+  const HOLD = 0.10;
+  const FINISH = 0.60;
   const EXIT = 34;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-  const pull = (raw) => raw < 0.55
-    ? raw * 0.72
-    : 0.396 + 0.604 * (1 - Math.pow(1 - (raw - 0.55) / 0.45, 2.4));
+  // Smootherstep: gentle start and end, quick middle.
+  const pull = (raw) => raw * raw * raw * (raw * (raw * 6 - 15) + 10);
 
   function create(root) {
     if (!root) return null;
@@ -34,7 +33,7 @@
       const barTop = bar ? Number.parseFloat(getComputedStyle(bar).top) || 0 : 0;
       state.top = Math.max(window.innerWidth <= 700 ? 66 : 76, (bar?.offsetHeight || 0) + barTop + 8);
       const availableHeight = window.innerHeight - state.top;
-      state.step = Math.max(1, window.innerHeight * 0.92);
+      state.step = Math.max(1, window.innerHeight * 0.62);
       root.style.setProperty('--response-cover-top', `${state.top}px`);
       root.style.setProperty('--response-cover-travel', `${(state.groups.length - 1) * state.step}px`);
       root.style.setProperty('--response-cover-columns', String(state.columns));
