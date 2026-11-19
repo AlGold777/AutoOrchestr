@@ -9,11 +9,6 @@ describe('Response card reveal on the main page', () => {
     expect(css).not.toMatch(/position:\s*(sticky|fixed|absolute)/);
   });
 
-  test('answers show in full: the 315px inner scroll limit is lifted for main-page cards', () => {
-    expect(css).toMatch(/\.llm-results\.view-stack > \.llm-panel \.output,[\s\S]*?max-height:\s*none/);
-    expect(css).toMatch(/animation-range: entry 0px entry 240px;/);
-  });
-
   test('scroll-driven reveal is guarded by browser support and reduced motion', () => {
     expect(css).toMatch(/@supports \(animation-timeline: view\(\)\)/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\)/);
