@@ -1,13 +1,21 @@
-/* Answer cards on the main page: each card rises and fades in as it scrolls into view.
-   Native scroll-driven animation: no JavaScript, no pinning. Cards stay in normal flow,
-   so the page scrolls as usual. Without support or with reduced motion, cards are static. */
+/* Answer cards on the main page: each card shows its full answer in normal page flow
+   (no inner scrolling, no pinning), so the page scrolls as usual. */
+.llm-results.view-stack > .llm-panel .output,
+.llm-results.view-grid > .llm-panel .output {
+  max-height: none;
+  overflow-y: visible;
+}
+
+/* Each card also rises and fades in as it scrolls into view: native scroll-driven
+   animation, no JavaScript. The range is a fixed length, so a tall card is fully
+   visible after a short scroll. Without support or with reduced motion, cards are static. */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .llm-results.view-stack > .llm-panel,
     .llm-results.view-grid > .llm-panel {
       animation: response-card-reveal linear both;
       animation-timeline: view();
-      animation-range: entry 0% entry 45%;
+      animation-range: entry 0px entry 240px;
     }
   }
 }
