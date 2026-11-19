@@ -17,19 +17,19 @@ describe('Pipeline internal cover deck', () => {
     });
     afterEach(() => cover.destroy());
     const scroll = (position) => {
-        root.scrollTop = position * 400 * 0.92;
+        root.scrollTop = position * 400 * 0.62;
         root.dispatchEvent(new Event('scroll'));
     };
     test('holds, covers and seats original direct children; reverse scrolling works', () => {
         expect([...root.children]).toEqual(cards);
-        scroll(0.25);
+        scroll(0.09);
         expect(cards[0].dataset.coverState).toBe('seated');
         expect(cards[1].dataset.coverState).toBe('hidden');
-        scroll(0.57);
+        scroll(0.35);
         expect(cards[1].style.getPropertyValue('--pipeline-cover-y')).toBe('200.00px');
         expect(cards[0].style.getPropertyValue('--pipeline-cover-y')).toBe('-68.00px');
         expect(cards[0].inert).toBe(true);
-        scroll(0.9);
+        scroll(0.6);
         expect(cards[1].dataset.coverState).toBe('seated');
         expect(cards[1].inert).toBe(false);
         scroll(0);
@@ -48,7 +48,7 @@ describe('Pipeline internal cover deck', () => {
         scroll(1.57);
         Object.defineProperty(root, 'clientHeight', { value: 314, configurable: true });
         cover.refresh();
-        expect(root.scrollTop).toBeCloseTo(1.57 * 300 * 0.92);
+        expect(root.scrollTop).toBeCloseTo(1.57 * 300 * 0.62);
         cover.setEnabled(false);
         expect(root.classList.contains('pipeline-cover-host')).toBe(false);
         expect([...root.children]).toEqual(cards);
@@ -59,7 +59,7 @@ describe('Pipeline internal cover deck', () => {
         });
     });
     test('export removes hidden/moving presentation without changing live cards', () => {
-        scroll(0.57);
+        scroll(0.35);
         const clone = cards[1].cloneNode(true);
         window.PipelineCardCover.cleanSnapshot(clone);
         expect(clone.classList.contains('pipeline-cover-card')).toBe(false);

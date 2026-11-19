@@ -22,7 +22,9 @@
             if (!height || !cards.length) return;
             const position = Math.min(cards.length - 1, Math.max(0, root.scrollTop / step));
             const index = Math.floor(position);
-            const progress = Math.min(1, Math.max(0, (position - index - 0.30) / 0.54));
+            // Short hold, then a quick smootherstep change (gentle start and end).
+            const raw = Math.min(1, Math.max(0, (position - index - 0.10) / 0.50));
+            const progress = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
             readingCard = cards[progress >= 1 ? Math.min(index + 1, cards.length - 1) : index];
             cards.forEach((card, i) => {
                 const active = i === index || (i === index + 1 && progress > 0);
@@ -59,7 +61,7 @@
             cards = next;
             const style = getComputedStyle(root);
             height = root.clientHeight - parseFloat(style.paddingTop || 0) - parseFloat(style.paddingBottom || 0);
-            step = height * 0.92;
+            step = height * 0.62;
             root.style.setProperty('--pipeline-cover-height', `${height}px`);
             root.style.setProperty('--pipeline-cover-travel', `${(cards.length - 1) * step}px`);
             root.classList.add('pipeline-cover-host');
