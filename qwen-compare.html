@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qwen 4B и 9B</title>
+<link rel="stylesheet" href="styles/qwen-compare.css">
+</head>
+<body class="qwen-compare">
+  <main class="panels">
+    <section class="panel" data-model="qwen3.5:4b-mlx">
+      <header class="panel-head"><span class="panel-name">Qwen3.5-4B</span><span class="panel-status">готова</span></header>
+      <div class="log" aria-live="polite"></div>
+    </section>
+    <section class="panel" data-model="qwen3.5:9b-mlx">
+      <header class="panel-head"><span class="panel-name">Qwen3.5-9B</span><span class="panel-status">готова</span></header>
+      <div class="log" aria-live="polite"></div>
+    </section>
+  </main>
+  <form class="composer" id="composer">
+    <textarea id="prompt" placeholder="Вопрос обеим моделям. Enter — отправить, Shift+Enter — новая строка" aria-label="Вопрос обеим моделям" autofocus></textarea>
+    <div class="actions">
+      <button type="submit" id="send">Отправить</button>
+      <button type="button" id="clear">Очистить</button>
+    </div>
+  </form>
+  <script src="disput/local-rules.js"></script>
+  <script src="disput/local-model.js"></script>
+  <script src="results/qwen-compare.js"></script>
+</body>
+</html>

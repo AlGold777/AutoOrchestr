@@ -90,6 +90,10 @@
                                     <img class="llm-button-icon" src="icons/models/qwen.svg" alt="Qwen icon">
                                     <span class="llm-button-label">Qwen</span>
                                 </button>
+                                <button class="llm-button" id="llm-qwenlocal" title="Qwen Local">
+                                    <img class="llm-button-icon" src="icons/models/qwen.svg" alt="Qwen Local icon">
+                                    <span class="llm-button-label">Qwen Local</span>
+                                </button>
                                 <button class="llm-button" id="llm-zai" title="Z.ai">
                                     <img class="llm-button-icon" src="icons/models/zai.svg" alt="Z.ai icon">
                                     <span class="llm-button-label">Z.ai</span>
@@ -236,6 +240,7 @@
             </div>
             <div class="msg-head-right">
                 <div class="msg-head-right-top">
+                    <select id="local-model-select" class="mod-select local-model-select" aria-label="Local model" title="Local model: hints and watching of stuck tabs. Without LLM: Basic works on its own."></select>
                     <label class="debate-auto-toggle" title="Debate auto mode">
                         <input type="checkbox" id="debate-auto-toggle-btn" class="pipeline-radio debate-auto-radio" aria-label="Auto mode" aria-pressed="false" data-persist-state="true">
                         <span>Auto</span>
@@ -495,8 +500,12 @@
                         <button class="devtools-tab" id="api-tab" role="tab" aria-selected="false" aria-controls="api-tabpanel" data-tab-target="api-tabpanel">
                             API
                         </button>
+                        <button class="devtools-tab" id="local-llm-tab" role="tab" aria-selected="false" aria-controls="local-llm-tabpanel" data-tab-target="local-llm-tabpanel">
+                            Local LLM
+                        </button>
                     </div>
                     <div class="devtools-tabpanels">
+                        <section class="devtools-tabpanel" id="local-llm-tabpanel" role="tabpanel" aria-labelledby="local-llm-tab" tabindex="0" hidden=""></section>
 
                         <section class="devtools-tabpanel" id="telemetry-tabpanel" role="tabpanel" aria-labelledby="telemetry-tab" tabindex="0" hidden="">
                             <div class="devtools-toolbar">
@@ -849,6 +858,8 @@
     <script src="disput/schema-text-reader.js"></script>
     <script src="disput/basic-spec.js"></script>
     <script src="disput/custom-run-record.js"></script>
+    <script src="disput/local-rules.js"></script>
+    <script src="disput/local-model.js"></script>
     <script src="shared/run-error.js"></script>
     <script src="shared/judge-prompt-builder.js"></script>
     <link rel="stylesheet" href="shared/message-delivery-view.css">
@@ -880,6 +891,9 @@
     <script src="disput/basic-run-chain.js"></script>
     <script src="disput/basic-repeat.js"></script>
     <script src="results/owner-ask.js"></script>
+    <script src="results/local-llm-tab.js"></script>
+    <script src="results/local-model-select.js"></script>
+    <script src="results/storage-report.js"></script>
     <script src="results/debate-renderer.js"></script>
     <script src="results/debate-sessions-store.js"></script>
     <script src="results/debate-export.js"></script>
@@ -889,6 +903,7 @@
     <script src="results/basic-card-history.js"></script>
     <script src="results/storage-report.js"></script>
     <script src="results/basic-card-verdict.js"></script>
+    <a class="assistant-bubble" href="qwen-compare.html" target="_blank" rel="noopener" title="Qwen 4B/9B" aria-label="Qwen 4B/9B: compare the answers of the two local models"><i class="ti ti-message-chatbot" aria-hidden="true"></i></a>
     <script src="results.js"></script>
     <!-- results-devtools.js is lazy-loaded by results.js (ensureTelemetryDevtoolsLoaded)
          just after boot; not loaded synchronously here to keep its parse cost off

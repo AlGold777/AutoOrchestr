@@ -1,0 +1,1 @@
+(function(){var m=document.querySelector("extensions-manager");var l=m.shadowRoot.querySelector("extensions-item-list");var it=[...l.shadowRoot.querySelectorAll("extensions-item")].filter(function(i){return i.id==="dpnajmofhnhhikfbefjbhlbfidejcnkk"})[0];var b=it.shadowRoot.querySelector("#dev-reload-button");if(!b)return "no reload btn";b.click();return "reloaded"})()

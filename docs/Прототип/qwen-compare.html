@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qwen 4B и 9B</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --surface: #fff; --text: #1f2328; --muted: #656d76; --border: #d0d7de;
+    --accent: #1f6feb; --accent-text: #fff; --user: #eef2f7; --error: #b42318;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 10px; padding: 10px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-height: 0; }
+  .panel { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+  .panel-name { font-weight: 600; }
+  .panel-status { color: var(--muted); font-size: 13px; }
+  .log { overflow-y: auto; padding: 14px; overflow-wrap: anywhere; }
+  .msg { white-space: pre-wrap; margin: 0 0 12px; }
+  .msg.user { padding: 8px 12px; border-radius: 8px; background: var(--user); }
+  .msg.error { color: var(--error); }
+  .stats { margin: -6px 0 16px; color: var(--muted); font-size: 12px; }
+  .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+  textarea { width: 100%; height: 76px; resize: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; color: inherit; background: #fff; font: inherit; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .actions { display: grid; grid-auto-rows: 1fr; gap: 6px; width: 112px; }
+  button { border: 1px solid var(--border); border-radius: 8px; background: #fff; color: inherit; font: inherit; cursor: pointer; }
+  button:disabled { cursor: default; opacity: .5; }
+  #send { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  @media (max-width: 700px) { .panels { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+  <main class="panels">
+    <section class="panel" data-model="qwen3.5:4b-mlx">
+      <header class="panel-head"><span class="panel-name">Qwen3.5-4B</span><span class="panel-status">готова</span></header>
+      <div class="log" aria-live="polite"></div>
+    </section>
+    <section class="panel" data-model="qwen3.5:9b-mlx">
+      <header class="panel-head"><span class="panel-name">Qwen3.5-9B</span><span class="panel-status">готова</span></header>
+      <div class="log" aria-live="polite"></div>
+    </section>
+  </main>
+  <form class="composer" id="composer">
+    <textarea id="prompt" placeholder="Вопрос обеим моделям. Enter — отправить, Shift+Enter — новая строка" aria-label="Вопрос обеим моделям" autofocus></textarea>
+    <div class="actions">
+      <button type="submit" id="send">Отправить</button>
+      <button type="button" id="clear">Очистить</button>
+    </div>
+  </form>
+<script>
+(() => {
+  'use strict';
+  const ENDPOINT = 'http://127.0.0.1:11434/api/chat';
+  const OPTIONS = { temperature: 0.3, num_ctx: 16384 };
+  const FILE_HINT = 'Страница открыта как файл, и Ollama её не принимает. Откройте её через http://localhost:8799/qwen-compare.html.';
+
+  const form = document.getElementById('composer');
+  const prompt = document.getElementById('prompt');
+  const send = document.getElementById('send');
+  const clear = document.getElementById('clear');
+  const panels = [...document.querySelectorAll('.panel')].map((node) => ({
+    model: node.dataset.model,
+    log: node.querySelector('.log'),
+    status: node.querySelector('.panel-status'),
+    history: []
+  }));
+  let control = null;
+
+  const nearBottom = (log) => log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  const add = (panel, className, text = '') => {
+    const stick = nearBottom(panel.log);
+    const node = document.createElement('p');
+    node.className = className;
+    node.textContent = text;
+    panel.log.append(node);
+    if (stick) panel.log.scrollTop = panel.log.scrollHeight;
+    return node;
+  };
+  const seconds = (ms) => `${(ms / 1000).toFixed(1).replace('.', ',')} с`;
+
+  const statsText = (firstMs, totalMs, last) => {
+    const parts = [`первое слово ${seconds(firstMs)}`, `всего ${seconds(totalMs)}`];
+    if (last?.eval_count && last?.eval_duration) {
+      parts.push(`${last.eval_count} ток.`, `${Math.round(last.eval_count / (last.eval_duration / 1e9))} ток/с`);
+    }
+    return parts.join(' · ');
+  };
+
+  async function ask(panel, question, signal) {
+    panel.history.push({ role: 'user', content: question });
+    add(panel, 'msg user', question);
+    const answer = add(panel, 'msg');
+    const started = performance.now();
+    let firstMs = null;
+    let text = '';
+    let last = null;
+    panel.status.textContent = 'думает…';
+
+    const consume = (line) => {
+      if (!line.trim()) return;
+      const chunk = JSON.parse(line);
+      if (chunk.error) throw new Error(chunk.error);
+      const piece = chunk.message?.content || '';
+      if (piece) {
+        if (firstMs === null) { firstMs = performance.now() - started; panel.status.textContent = 'отвечает…'; }
+        const stick = nearBottom(panel.log);
+        text += piece;
+        answer.textContent = text;
+        if (stick) panel.log.scrollTop = panel.log.scrollHeight;
+      }
+      if (chunk.done) last = chunk;
+    };
+
+    try {
+      const response = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: panel.model, messages: panel.history, stream: true, think: false, keep_alive: '30m', options: OPTIONS }),
+        signal
+      });
+      if (!response.ok) throw new Error((await response.text()) || `Ollama ответила ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        lines.forEach(consume);
+      }
+      consume(buffer);
+      panel.history.push({ role: 'assistant', content: text });
+      add(panel, 'stats', statsText(firstMs ?? 0, performance.now() - started, last));
+      panel.status.textContent = 'готова';
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        if (text) panel.history.push({ role: 'assistant', content: text });
+        else panel.history.pop();
+        add(panel, 'stats', 'остановлено');
+        panel.status.textContent = 'остановлена';
+      } else {
+        panel.history.pop();
+        if (!text) answer.remove();
+        const offline = error instanceof TypeError;
+        add(panel, 'msg error', offline ? (location.protocol === 'file:' ? FILE_HINT : 'Ollama не отвечает. Запустите её и повторите вопрос.') : error.message);
+        panel.status.textContent = 'ошибка';
+      }
+    }
+  }
+
+  function setBusy(busy) {
+    send.textContent = busy ? 'Стоп' : 'Отправить';
+    send.type = busy ? 'button' : 'submit';
+    clear.disabled = busy;
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const question = prompt.value.trim();
+    if (!question || control) return;
+    prompt.value = '';
+    control = new AbortController();
+    setBusy(true);
+    await Promise.all(panels.map((panel) => ask(panel, question, control.signal)));
+    control = null;
+    setBusy(false);
+    prompt.focus();
+  });
+
+  send.addEventListener('click', () => { if (control) control.abort(); });
+
+  prompt.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+  clear.addEventListener('click', () => {
+    panels.forEach((panel) => { panel.history.length = 0; panel.log.textContent = ''; panel.status.textContent = 'готова'; });
+    prompt.value = '';
+    prompt.focus();
+  });
+})();
+</script>
+</body>
+</html>

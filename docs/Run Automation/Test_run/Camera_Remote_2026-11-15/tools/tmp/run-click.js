@@ -1,0 +1,1 @@
+(function(){var b=document.getElementById('debate-run-toggle-btn');b.click();return 'run clicked: '+b.textContent.trim()})()

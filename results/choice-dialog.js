@@ -4,6 +4,7 @@
 // document { kind: 'read' } shows a text to read with an optional comment; document { kind: 'form' } shows a questionnaire
 // (window.OwnerAsk) and gives its answer in answerFormat ('text' or 'json').
 // folder { name, onPick } shows the row «Папка документов» with the name of the folder; onPick() gives the new name or null.
+// hint: a promise of text lines, shown above the buttons when ready; it does not change the answer.
 // Texts are written with textContent only.
 (function initChoiceDialog(root) {
   'use strict';
@@ -25,7 +26,17 @@
     return bytes;
   };
 
-  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, allowChoicesWithReadOnlyDocument = false, inputFiles = [], documentRef = root.document } = {}) {
+  // A hint never holds a window: its lines are added when they are ready. No lines, a failure or a closed window (isOpen() false) add nothing.
+  // The lines are text (textContent); the title is the first line of the paragraph.
+  function appendHint(container, hint, { title = 'Подсказка локальной модели (решаете вы):', before = null, doc = root.document, isOpen = () => true, className = 'choice-dialog-hint' } = {}) {
+    if (!hint) return;
+    Promise.resolve(hint).then((lines) => {
+      if (!isOpen() || !Array.isArray(lines) || !lines.length) return;
+      container.insertBefore(el(doc, 'p', className, [title, ...lines].join('\n')), before);
+    }).catch(() => {});
+  }
+
+  function ask({ title = '', message = '', choices = [], textInput = null, document: documentSpec = null, answerFormat = 'text', cancelText = null, signal = null, folder = null, allowChoicesWithReadOnlyDocument = false, inputFiles = [], hint = null, documentRef = root.document } = {}) {
     const doc = documentRef;
     return new Promise((resolve) => {
       const objectUrls = [];
@@ -186,6 +197,7 @@
         abortHandler = () => finish(null);
         signal.addEventListener('abort', abortHandler, { once: true });
       }
+      appendHint(dialog, hint, { before: actions, doc, isOpen: () => !finished });
       // Escape closes the native dialog: the answer is a cancel.
       dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });
       doc.body.append(dialog);
@@ -195,7 +207,7 @@
     });
   }
 
-  const api = Object.freeze({ ask });
+  const api = Object.freeze({ ask, appendHint });
   root.ChoiceDialog = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

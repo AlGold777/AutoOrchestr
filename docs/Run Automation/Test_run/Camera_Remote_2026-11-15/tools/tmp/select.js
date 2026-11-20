@@ -1,0 +1,1 @@
+(function(){var i=document.querySelector('.pipeline-item[data-name='+JSON.stringify("Camera-Agree")+']');if(!i)return 'absent';(i.querySelector('.pipeline-item-name')||i).click();return 'selected'})()

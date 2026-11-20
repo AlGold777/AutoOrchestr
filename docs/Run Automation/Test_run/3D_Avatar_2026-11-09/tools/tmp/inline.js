@@ -1,0 +1,1 @@
+(function(){var b=[...document.querySelectorAll('button')].filter(function(x){return x.offsetParent&&x.textContent.trim()==="Остановить прогон"})[0];if(!b)return 'no button';b.click();return 'clicked'})()

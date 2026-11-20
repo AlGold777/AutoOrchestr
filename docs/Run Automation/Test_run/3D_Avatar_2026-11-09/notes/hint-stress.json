@@ -1,0 +1,494 @@
+{
+ "full": [
+  {
+   "f": "a01_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог проверки: Вернуть решение на доработку...",
+   "sec": 7.2
+  },
+  {
+   "f": "a02_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог проверки: Вернуть на доработку.",
+   "sec": 6.7
+  },
+  {
+   "f": "a03_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог проверки: Вернуть на доработку, сохранив PSD как базовую архитектуру.",
+   "sec": 8.4
+  },
+  {
+   "f": "a04_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог Вернуть на доработку, сохранив низкоразмерную мобильную динамику как основу.",
+   "sec": 9.4
+  },
+  {
+   "f": "a05_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Итог проверки: Вернуть на ограниченную доработку.",
+   "sec": 8.2
+  },
+  {
+   "f": "a06_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог проверки: Вернуть на ограниченную доработку.",
+   "sec": 8.5
+  },
+  {
+   "f": "a07_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Вернуть на доработку, архитектурную основу сохранить.",
+   "sec": 7.2
+  },
+  {
+   "f": "a08_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог проверки: Вернуть на ограниченную доработку.",
+   "sec": 7.5
+  },
+  {
+   "f": "q01_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Итог проверки Вернуть на доработку, сохранив направление.",
+   "sec": 7.6
+  },
+  {
+   "f": "q02_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог — вернуть на доработку, не принимать с мелкими правками.",
+   "sec": 8.2
+  },
+  {
+   "f": "q03_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Вернуть на доработку. Базовая инженерная ставка на риггированный mesh с серверной детализа",
+   "sec": 10
+  },
+  {
+   "f": "q04_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Вернуть на доработку, сохранив hair cards как базовый кандидат.",
+   "sec": 9
+  },
+  {
+   "f": "q05_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Вернуть на доработку, сохранив выбранное направление.",
+   "sec": 8.7
+  },
+  {
+   "f": "q06_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Итог проверки: вернуть на доработку.",
+   "sec": 8.1
+  },
+  {
+   "f": "q07_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Решение вернуть на доработку, сохранив базовую архитектуру...",
+   "sec": 8.7
+  },
+  {
+   "f": "q08_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Итог проверки: вернуть на доработку.",
+   "sec": 8.2
+  },
+  {
+   "f": "q09_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Вернуть на ограниченную доработку, не пересматривать базовую стратегию.",
+   "sec": 9
+  },
+  {
+   "f": "q12_r3_gpt-rev.md",
+   "gold": "rework",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Общий итог Вернуть методику на доработку, архитектурный принцип сохранить.",
+   "sec": 6.4
+  }
+ ],
+ "noverdict": [
+  {
+   "f": "a01_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.6
+  },
+  {
+   "f": "a02_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.7
+  },
+  {
+   "f": "a03_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Исправление: разделить управление позой, предполагаемой активацией и динамикой мягких ткан",
+   "sec": 6.2
+  },
+  {
+   "f": "a04_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.7
+  },
+  {
+   "f": "a05_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Исправление: сохранять материальные координаты; UV-перенос применять только при ремешинге ",
+   "sec": 6.5
+  },
+  {
+   "f": "a06_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.6
+  },
+  {
+   "f": "a07_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "Главная ошибка — использовать силуэт одежды как силуэт тела. Широкий пиджак задаёт лишь сл",
+   "sec": 7.2
+  },
+  {
+   "f": "a08_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 6.2
+  },
+  {
+   "f": "q01_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.7
+  },
+  {
+   "f": "q02_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "1. [Критично] Несоответствие результата продукту. Предложено фотографировать тело 2–3 раза",
+   "sec": 7.3
+  },
+  {
+   "f": "q03_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.9
+  },
+  {
+   "f": "q04_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.6
+  },
+  {
+   "f": "q05_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 6.7
+  },
+  {
+   "f": "q06_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "rework",
+   "shown": "rework",
+   "problem": null,
+   "q": "1. Несовпадение лицевых каналов — фактическая ошибка... Следовательно, утверждение «одинак",
+   "sec": 6.5
+  },
+  {
+   "f": "q07_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.3
+  },
+  {
+   "f": "q08_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 6
+  },
+  {
+   "f": "q09_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.3
+  },
+  {
+   "f": "q12_r3_gpt-rev.md",
+   "gold": "none",
+   "lab": "none",
+   "shown": null,
+   "problem": null,
+   "q": "",
+   "sec": 5.5
+  }
+ ],
+ "pass": [
+  {
+   "f": "a01_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.2
+  },
+  {
+   "f": "a02_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.8
+  },
+  {
+   "f": "a03_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.5
+  },
+  {
+   "f": "a04_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 3
+  },
+  {
+   "f": "a05_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.6
+  },
+  {
+   "f": "a06_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.3
+  },
+  {
+   "f": "a07_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.5
+  },
+  {
+   "f": "a08_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 6.1
+  },
+  {
+   "f": "q01_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 5.4
+  },
+  {
+   "f": "q02_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 3.7
+  },
+  {
+   "f": "q03_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.6
+  },
+  {
+   "f": "q04_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.2
+  },
+  {
+   "f": "q05_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.2
+  },
+  {
+   "f": "q06_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2.1
+  },
+  {
+   "f": "q07_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 2
+  },
+  {
+   "f": "q08_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 1.9
+  },
+  {
+   "f": "q09_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 1.8
+  },
+  {
+   "f": "q12_r3_gpt-rev.md",
+   "gold": "pass",
+   "lab": "pass",
+   "shown": "pass",
+   "problem": null,
+   "q": "Общий итог проверки: серьёзных препятствий нет, решение можно принимать, достаточно мелких",
+   "sec": 1.8
+  }
+ ]
+}

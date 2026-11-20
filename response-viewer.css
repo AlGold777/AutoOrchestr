@@ -46,8 +46,9 @@ body { overflow: hidden; }
 #viewer-content {
     padding: 24px 48px;
     font-size: 15px;
-    line-height: 1.55;
+    line-height: 1.50;
     overflow-wrap: anywhere;
+    BACKGROUND-COLOR: #9da1a824;
 }
 
 #viewer-content :where(p, div, ul, ol, li, pre, code, blockquote, table, thead, tbody, tr, th, td, h1, h2, h3, h4, h5, h6) {

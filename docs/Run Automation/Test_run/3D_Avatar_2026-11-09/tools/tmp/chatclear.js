@@ -1,0 +1,1 @@
+(function(){var p=document.getElementById('local-llm-tabpanel');var b=[...p.querySelectorAll('.local-llm-card')].filter(function(c){return c.querySelector('h2').textContent==='Чат с моделью'})[0].querySelector('.local-llm-clear');b.click();return 'cleared'})()

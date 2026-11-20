@@ -1592,6 +1592,7 @@ document.addEventListener('click', (event) => {
         'grok': 'Grok',
         'lechat': 'Le Chat',
         'qwen': 'Qwen',
+        'qwenlocal': 'Qwen Local',
         'deepseek': 'DeepSeek',
         'perplexity': 'Perplexity',
         'zai': 'Z.ai',
@@ -7070,7 +7071,7 @@ document.addEventListener('click', (event) => {
         const waitSinceText = () => (customWaitSince ? `Ожидает с ${new Date(customWaitSince).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : '');
         // The buttons are the choices the engine allows: «Продолжить» only at the threshold (the engine refuses it below),
         // below it «Пропустить шаг» and «Повторить».
-        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, details = {}, required = 0 }) => {
+        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, details = {}, required = 0 }, hint = null) => {
             // The reason with its detail: a usage limit names the reset time («лимит использования модели, сброс в 16:30»).
             const reasonWithDetail = (name) => {
                 const code = reasons[name];
@@ -7085,6 +7086,7 @@ document.addEventListener('click', (event) => {
             customDecisionOpen = true;
             // Without every answer the main button skips the participants without an answer: the accepted answers stay.
             const answer = await showConfirm(message, {
+                hint,
                 confirmText: canContinue ? 'Продолжить' : 'Пропустить участника',
                 cancelText: 'Остановить прогон',
                 retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : '',
@@ -7336,6 +7338,20 @@ document.addEventListener('click', (event) => {
             const runAbort = new AbortController();
             customAbortController = runAbort;
             const releaseAbort = () => { if (customAbortController === runAbort) customAbortController = null; };
+            // «Qwen Local» runs on this computer: Ollama must answer before the run starts (the same call warms the model up),
+            // and it takes no files: nothing is sent to a participant that cannot get them.
+            const isLocalName = (name) => Boolean(window.LocalModel?.isLocal(name));
+            if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name)))) {
+                if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name) && model.files?.length))) {
+                    showNotification('Basic: у участника «Qwen Local» не бывает входных файлов. Прогон не начат.', 'warn');
+                    return false;
+                }
+                const ready = await window.LocalModel.ping();
+                if (!ready.ok) {
+                    showNotification(`Basic: локальная модель недоступна (${window.LocalModel.unavailableText(ready.problem)}). Запустите Ollama и повторите; прогон не начат.`, 'warn');
+                    return false;
+                }
+            }
             // Resolve every declared input before starting: no participant is sent without its files.
             const hasScopedFiles = steps.some((step) => step.files?.length || (step.models || []).some((model) => model.files?.length));
             let inputFileStore = null;
@@ -7522,7 +7538,11 @@ document.addEventListener('click', (event) => {
                 const reasonText = window.CustomEngine?.REASON_TEXT?.[entry.reason] || entry.reason || '';
                 window.BasicCardVerdict.mark(debateModelCards, entry, reasonText);
             };
+            // A tab that shows no change for several minutes is looked at by the local model. Observation only.
+            const stallWatch = window.LocalModel ? window.LocalModel.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId, enabled: () => window.LocalModel.enabled() }) : null;
+            stallWatch?.start();
             const recordAttempt = (entry) => {
+                stallWatch?.note(entry);
                 showBasicCardVerdict(entry);
                 if (!record) return;
                 window.CustomRunRecord.recordAttempt(record, entry);
@@ -7787,6 +7807,101 @@ document.addEventListener('click', (event) => {
                     });
                     return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
                 };
+                // «Qwen Local» participants go to Ollama by HTTP; the rest of the group goes to the tabs as before. The messages of a
+                // local participant are kept in the page for this run only: after a reload a continue cannot be restored (below).
+                const localTransport = window.LocalModel?.createTransport({
+                    delivery: window.MessageDelivery,
+                    makeRequestId: () => window.TransportContract.makeTransportRequestId()
+                });
+                const planLocalWave = (wave, meta) => {
+                    const stepModels = steps[meta.step]?.models || [];
+                    const models = wave.map((request) => request.modelName);
+                    const maxWords = Object.fromEntries(wave.map((request) => [request.modelName, meta.maxWordsByParticipant?.[request.participantId] || null]));
+                    const composed = composeCustomPrompts(models,
+                        Object.fromEntries(wave.map((request) => [request.modelName, request.prompt])), maxWords,
+                        Object.fromEntries(wave.map((request) => [request.modelName, stepModels.find((model) => model.id === request.participantId)?.discipline || {}])),
+                        built.schema.defaults?.modelNotes || {},
+                        Object.fromEntries(wave.map((request) => [request.modelName, Boolean(meta.correctionByParticipant?.[request.participantId])])),
+                        built.run.maxWords);
+                    const lost = {};
+                    const requests = [];
+                    wave.forEach((request) => {
+                        const newChat = Boolean(isNewChat(request));
+                        // After a reload the messages of the chat are gone: a continue of a participant that already answered is refused, not
+                        // sent to a chat without its past.
+                        if (resumeRecord && !newChat && !localTransport.hasHistory(request.participantId)
+                            && (record?.attempts || []).some((item) => item.participant === request.participantId && item.state === 'done')) {
+                            lost[request.participantId] = request;
+                            return;
+                        }
+                        requests.push({ participantId: request.participantId, modelName: request.modelName, prompt: composed[request.modelName], newChat,
+                            words: maxWords[request.modelName] || built.run.maxWords || getDebateMaxWords() });
+                    });
+                    const refused = localTransport.check(requests);
+                    if (refused) {
+                        showNotification(`${meta.label}: запрос к «Qwen Local» не помещается в контекст (≈${refused.tokens} + ${refused.numPredict} из ${refused.limit} токенов). Запрос не отправлен.`, 'warn');
+                        const error = new Error('Qwen Local: полный запрос не помещается в контекст.');
+                        error.code = 'context_full';
+                        throw error;
+                    }
+                    return { wave, requests, lost };
+                };
+                const runLocalWave = async ({ wave, requests, lost }, meta, waveKey) => {
+                    const attemptKeyOf = (request) => window.CustomRunRecord?.attemptKey ? window.CustomRunRecord.attemptKey({
+                        ref: request.stepRef, participant: request.participantId, visit: request.visit, attempt: meta.attempt, phase: request.phase || 'answer'
+                    }) : JSON.stringify([request.stepRef ?? `#${meta.step}`, request.participantId ?? request.modelName, request.visit ?? 1, meta.attempt, request.phase ?? 'answer']);
+                    wave.forEach((request) => recordAttempt({
+                        step: meta.step, ref: request.stepRef, participant: request.participantId, model: request.modelName, visit: request.visit,
+                        attempt: meta.attempt, phase: request.phase || 'answer', attemptKey: attemptKeyOf(request),
+                        chatIntent: { newChat: Boolean(isNewChat(request)), reason: isNewChat(request) ? 'step_new' : 'continue', bindingTabId: null, attachmentNames: [] }
+                    }));
+                    const replies = await localTransport.runWave(requests, { signal, batchId: `custom:${runContext.pipelineRunId}:s${meta.step + 1}:a${meta.attempt}:w${waveKey}` });
+                    runContext.settledBatches = Number(runContext.settledBatches || 0) + 1;
+                    const byParticipant = {};
+                    wave.forEach((request) => {
+                        const lostChat = Boolean(lost[request.participantId]);
+                        const reply = lostChat
+                            ? { text: '', status: 'USER_ACTION_REQUIRED', completion: 'failed', reason: window.RunError?.CODES?.PARTICIPANT_CHAT_LOST || 'participant_chat_lost', sentPrompt: null, attribution: '', answered: false, transportRequestId: '' }
+                            : replies[request.participantId];
+                        if (!reply) return; // Stop came before this request
+                        byParticipant[request.participantId] = reply;
+                        if (reply.text.trim()) {
+                            updateDebateModelCardOutput(request.modelName, reply.text, '', {
+                                answerRevision: meta.attempt > 1,
+                                status: reply.status, source: 'custom',
+                                role: window.StageCard?.feed?.role({ label: meta.label, modelName: request.modelName, participantId: request.participantId, visit: request.visit }) || `Basic · ${meta.label}`,
+                                pipelineRunId: runContext.pipelineRunId,
+                                pipelineRoundId: `s${meta.step + 1}${request.visit > 1 ? `v${request.visit}` : ''}`,
+                                participantId: request.participantId, participantLabel: request.participantLabel || request.label || null,
+                                stepRef: request.stepRef, visit: request.visit,
+                                transportRequestId: reply.transportRequestId || '', requestId: reply.transportRequestId || ''
+                            });
+                        } else if (lostChat) {
+                            showNotification(`${meta.label}: ${PARTICIPANT_REFUSAL_TEXT.participant_chat_lost}`, 'warn');
+                        } else if (reply.reason === 'local_unavailable') {
+                            showNotification(`${meta.label}: локальная модель недоступна (${reply.detail || 'Ollama не отвечает'}). Запрос не отправлен.`, 'warn');
+                        }
+                        const saved = chatBindings[request.participantId];
+                        chatBindings[request.participantId] = {
+                            ...saved, modelName: request.modelName, stepRef: request.stepRef, visit: request.visit,
+                            transportRequestId: reply.transportRequestId,
+                            chatVisit: isNewChat(request) ? request.visit : (saved?.chatVisit ?? request.visit)
+                        };
+                    });
+                    return { byParticipant, closedByOwner: false };
+                };
+                const sendGroup = async (group, meta, key) => {
+                    const local = group.filter((request) => isLocalName(request.modelName));
+                    if (!local.length) return sendWave(group, meta, key);
+                    // The limit is checked before anything of the group goes out.
+                    const plan = planLocalWave(local, meta);
+                    const cloud = group.filter((request) => !isLocalName(request.modelName));
+                    const [localReply, cloudReply] = await Promise.all([
+                        runLocalWave(plan, meta, key),
+                        cloud.length ? sendWave(cloud, meta, key) : { byParticipant: {}, closedByOwner: false }
+                    ]);
+                    return { byParticipant: { ...cloudReply.byParticipant, ...localReply.byParticipant }, closedByOwner: Boolean(cloudReply.closedByOwner) };
+                };
                 // The chats of the wave as the background bound them (R01). A failed read keeps the chats the page has.
                 const refreshParticipantChats = async (pipelineRunId, wave) => {
                     const response = await sendToBackground({ type: 'PARTICIPANT_CHAT_BINDINGS', pipelineRunId }).catch(() => null);
@@ -7848,13 +7963,24 @@ document.addEventListener('click', (event) => {
                     accept: ({ text, completion, status, prompt, reason }) => window.DebateResponseAcceptance.evaluate({ text, meta: { completion, status, prompt, reason } }),
                     parseAsks: (text) => window.DebateStageMarkers.parse(text)?.askItems || [],
                     askOwner: askCustomOwner,
-                    decide: askCustomDecision,
+                    decide: (request) => {
+                        // Observation only: the local model looks at each tab that gave no answer and its lines are a hint in the window; the window does not wait for them.
+                        const hint = window.LocalModel?.enabled()
+                            ? Promise.all((request.failed || []).map((id) => window.LocalModel.observeTab({ tabId: chatBindings[id]?.tabId, participant: id, reason: request.reasons?.[id] || '' })
+                                .then((result) => (result ? window.LocalModel.observationLine(id, result) : null))
+                                .catch(() => null)))
+                                .then((lines) => lines.filter(Boolean))
+                            : null;
+                        return askCustomDecision(request, hint);
+                    },
                     // The owner's answer of an owner step: a text (a file is not supported on this page yet).
                     checkUnknown,
                     provideOwnerResult: async (request) => {
                         const { stepRef, task, goal, input, output, document, reason, detail } = request;
                         const folderName = document ? await documentsFolderName() : '';
+                        const hintControl = new AbortController();
                         const answer = await askChoiceDialog({
+                            hint: window.LocalModel?.enabled() ? window.LocalModel.ownerHint(input, { signal: hintControl.signal }) : null,
                             title: `Ответ User: ${stepTitleOf(stepRef)}`,
                             message: [window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }), waitSinceText()].filter(Boolean).join('\n'),
                             textInput: document ? null : { label: 'Ответ User', required: true },
@@ -7866,6 +7992,7 @@ document.addEventListener('click', (event) => {
                             ...(document ? { document: document.kind === 'read' ? { ...document, editable: true } : document, answerFormat: output?.format === 'json' ? 'json' : 'text' } : {}),
                             ...(document ? { folder: { name: folderName, onPick: pickDocumentsFolder } } : {})
                         });
+                        hintControl.abort();
                         if (typeof answer === 'string' && document) {
                             void saveDocumentCopy({ stepRef, document, answer, startedAt: runContext.startedAt, pipeline: customPipelineName(), runId: runContext.pipelineRunId }, documentCopyState);
                         }
@@ -7920,7 +8047,7 @@ document.addEventListener('click', (event) => {
                                     meta.onWaveStart(group.map((r) => r.participantId));
                                 }
                                 // eslint-disable-next-line no-await-in-loop
-                                const reply = await sendWave(group, meta, key);
+                                const reply = await sendGroup(group, meta, key);
                                 Object.assign(byParticipant, reply.byParticipant);
                                 closedByOwner = closedByOwner || reply.closedByOwner;
                                 if (typeof meta?.onWaveResult === 'function') {
@@ -8001,6 +8128,7 @@ document.addEventListener('click', (event) => {
                 offerResumeLine(record);
                 return false;
             } finally {
+                stallWatch?.stop();
                 // Stop while a pause dialog was open: close it, the run is over.
                 if (customDecisionOpen) { customDecisionOpen = false; cancelConfirmBtn?.click?.(); }
                 if (pendingOwnerAsks?.resolve) { const pending = pendingOwnerAsks; pendingOwnerAsks = null; ownerAskDialog?.close?.(); pending.resolve([]); }
@@ -21902,13 +22030,13 @@ function formatNamedExportStamp(date = new Date()) {
     return `${months[date.getMonth()]}${String(date.getFullYear()).slice(-2)} ${pad(date.getHours())}-${pad(date.getMinutes())}`;
 }
 
-function getExportPromptSource() {
+function getExportPromptSource(includeLastExportPrompt = true) {
     const promptValues = [
         pastedTextComposer.getText(),
         document.getElementById('prompt-input')?.value,
-        document.getElementById('modTa')?.value,
-        window.__lastExportPromptText
+        document.getElementById('modTa')?.value
     ];
+    if (includeLastExportPrompt) promptValues.push(window.__lastExportPromptText);
     return promptValues.map((value) => String(value || '').trim()).find(Boolean) || '';
 }
 
@@ -22219,6 +22347,12 @@ function buildSingleResponseExportMarkdown(outputEl, modelName) {
         metadata ? `> ${metadata}` : '',
         body
     ].filter(Boolean).join('\n\n') + '\n';
+}
+
+function favoriteCardText() {
+    return buildFavoriteGroups().flatMap((group) => group.items.map((entry) =>
+        entry.html ? plainTextFromHtml(sanitizeInlineHtml(entry.html)) : String(entry.text || '')
+    )).filter(Boolean).join(' ');
 }
 
 function buildFavoriteExportText(entries) {
@@ -25902,6 +26036,9 @@ if (smartCompareButton) {
     function showConfirm(message, options = {}) {
         return new Promise((resolve) => {
             if (confirmModal && confirmMessage) {
+                // A hint of the previous window is not left in the reused modal.
+                confirmModal.querySelectorAll('.choice-dialog-hint').forEach((node) => node.remove());
+                let confirmOpen = true;
                 const confirmText = String(options?.confirmText || 'Сохранить');
                 const cancelText = String(options?.cancelText || 'Отмена');
                 const retryText = String(options?.retryText || '').trim();
@@ -25926,6 +26063,12 @@ if (smartCompareButton) {
                     skipStepConfirmBtn.classList.toggle('hidden', !skipStepText);
                 }
                 modalManager.show(confirmModal);
+                // The hint (a promise of lines) comes after the window opens: it does not hold the answer.
+                if (options?.hint) {
+                    window.ChoiceDialog?.appendHint(confirmModal.querySelector('.modal-content'), options.hint, {
+                        title: 'Наблюдение локальной модели (решаете вы):', before: confirmModal.querySelector('.modal-buttons'), isOpen: () => confirmOpen
+                    });
+                }
 
                 const onConfirm = () => {
                     modalManager.hide(confirmModal);
@@ -25952,6 +26095,7 @@ if (smartCompareButton) {
                 };
 
                 const cleanupListeners = () => {
+                    confirmOpen = false;
                     deleteConfirmBtn.removeEventListener('click', onConfirm);
                     cancelConfirmBtn.removeEventListener('click', onCancel);
                     retryConfirmBtn?.removeEventListener('click', onRetry);

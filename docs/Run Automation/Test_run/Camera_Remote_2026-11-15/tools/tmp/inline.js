@@ -1,0 +1,1 @@
+(function(){var b=document.getElementById('disput-basic');if(!b)return 'no button';b.click();return 'export'})()

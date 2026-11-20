@@ -1,0 +1,1 @@
+(function(){var p=document.getElementById('local-llm-tabpanel');var i=p.querySelector('.local-llm-chat-input');i.value='Проверка связи. Ответь одним словом: работает.';i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return 'sent'})()

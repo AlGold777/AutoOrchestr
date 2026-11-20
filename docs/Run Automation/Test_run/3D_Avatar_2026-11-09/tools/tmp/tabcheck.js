@@ -1,0 +1,1 @@
+(function(){var p=document.getElementById('local-llm-tabpanel');return JSON.stringify({panel:!!p,tab:!!document.getElementById('local-llm-tab'),titles:p?[...p.querySelectorAll('h2')].map(function(h){return h.textContent}):[],mounted:p&&p.dataset.localLlmMounted})})()

@@ -1023,3 +1023,23 @@ body.prompt-submitted:not(.pipeline-page) .app-main .container:has(#prefix-conta
 .dev-tools-status[data-tone="error"] {
     color: #dc2626;
 }
+
+.assistant-bubble {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 6000;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: transparent;
+    color: #85898e;
+    font-size: 16px;
+    text-decoration: none;
+    opacity: 0.45;
+    transition: opacity 0.15s, background 0.15s;
+}
+.assistant-bubble:hover { opacity: 1; background: rgba(0, 0, 0, 0.06); }

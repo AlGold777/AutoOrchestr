@@ -1,0 +1,1 @@
+(function(){var p=document.getElementById('local-llm-tabpanel');return JSON.stringify({len:p.querySelector('.local-llm-system').value.length,status:p.querySelector('.local-llm-status').textContent})})()
