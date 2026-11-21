@@ -8,12 +8,12 @@ const answer = (content, doneReason = 'stop', extra = {}) => async () => ({
   ok: true, status: 200,
   json: async () => ({ message: { content }, done_reason: doneReason, load_duration: 5, prompt_eval_count: 11, eval_count: 7, total_duration: 99, ...extra })
 });
-const request = (over = {}) => ({ participantId: 'p1', modelName: 'Qwen Local', prompt: 'Задание', newChat: false, words: 100, ...over });
+const request = (over = {}) => ({ participantId: 'p1', modelName: 'Qwen 4B', prompt: 'Задание', newChat: false, words: 100, ...over });
 const make = (fetchImpl, delivery = null) => LocalModel.createTransport({ fetchImpl, prepare: noPrepare, delivery, makeRequestId: () => 'req-1' });
 
 beforeEach(() => { MessageDelivery.reset?.(); });
 
-describe('Qwen Local transport', () => {
+describe('Qwen 4B transport', () => {
   test('a finished answer: text, SUCCESS, call parameters, delivery tag verified and removed from the text', async () => {
     const fetchImpl = jest.fn(answer('Готовый ответ.'));
     const transport = make(fetchImpl, MessageDelivery);

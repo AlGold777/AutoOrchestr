@@ -412,9 +412,9 @@ ${page.text || ''}
     return lines;
   };
 
-  // «Qwen Local» as a participant of a Basic round (the transport). The page sends such a participant here by HTTP instead of a model
+  // «Qwen 4B» as a participant of a Basic round (the transport). The page sends such a participant here by HTTP instead of a model
   // tab. The model is always MODEL: the choice of the selector above is for hints and watching only.
-  const NAME = 'Qwen Local';
+  const NAME = 'Qwen 4B';
   const KEEP_ALIVE = '15m';
   const TEMPERATURE = 0.2;
   // The context of a call is fixed here, not set per stage. The limit is conservative: tokens are estimated from letters at two
@@ -527,7 +527,7 @@ ${page.text || ''}
     const runWave = async (requests, options = {}) => {
       const refused = check(requests);
       if (refused) {
-        const error = new Error(`Qwen Local: полный запрос не помещается в контекст (≈${refused.tokens} + ${refused.numPredict} из ${refused.limit} токенов).`);
+        const error = new Error(`Qwen 4B: полный запрос не помещается в контекст (≈${refused.tokens} + ${refused.numPredict} из ${refused.limit} токенов).`);
         error.code = 'context_full';
         throw error;
       }

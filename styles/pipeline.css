@@ -296,8 +296,8 @@ body.is-resizing {
    blue outline). Links into a stage: pipeline-link-pending (gray), pipeline-link-running (orange
    pulse), pipeline-link-done (permanent orange). Before the run everything is pending (gray). */
 .pipeline-flow .model-block.pipeline-run-pending {
-    border-color: #cbd5e1;
-    background: #ffffff;
+    border-color: #4870838f;
+    background: #e9f2ff3d;
 }
 
 .pipeline-flow .model-block.pipeline-run-pending .model-name {
@@ -663,7 +663,7 @@ body.is-resizing {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     color: #77869d;
 }
 

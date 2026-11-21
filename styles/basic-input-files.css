@@ -1,5 +1,5 @@
 .basic-input-files { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.basic-input-files-button { flex: 0 0 auto; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; padding: 5px 8px; font: inherit; line-height: 1; cursor: pointer; }
+.basic-input-files-button { flex: 0 0 auto; border: none; border-radius: 7px; background: #fff; color: #334155; padding: 5px 8px; font: inherit; line-height: 1; cursor: pointer; font-size: 18px;}
 .basic-input-files-button:hover:not(:disabled), .basic-input-files-replace:hover:not(:disabled), .basic-input-files-remove:hover:not(:disabled) { background: #eef2f7; }
 .basic-input-files-button:focus-visible, .basic-input-files button:focus-visible { outline: 2px solid #86b9aa; outline-offset: 2px; }
 .basic-input-files button:disabled { cursor: not-allowed; opacity: .55; }

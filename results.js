@@ -1592,7 +1592,7 @@ document.addEventListener('click', (event) => {
         'grok': 'Grok',
         'lechat': 'Le Chat',
         'qwen': 'Qwen',
-        'qwenlocal': 'Qwen Local',
+        'qwenlocal': 'Qwen 4B',
         'deepseek': 'DeepSeek',
         'perplexity': 'Perplexity',
         'zai': 'Z.ai',
@@ -7338,12 +7338,12 @@ document.addEventListener('click', (event) => {
             const runAbort = new AbortController();
             customAbortController = runAbort;
             const releaseAbort = () => { if (customAbortController === runAbort) customAbortController = null; };
-            // «Qwen Local» runs on this computer: Ollama must answer before the run starts (the same call warms the model up),
+            // «Qwen 4B» runs on this computer: Ollama must answer before the run starts (the same call warms the model up),
             // and it takes no files: nothing is sent to a participant that cannot get them.
             const isLocalName = (name) => Boolean(window.LocalModel?.isLocal(name));
             if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name)))) {
                 if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name) && model.files?.length))) {
-                    showNotification('Basic: у участника «Qwen Local» не бывает входных файлов. Прогон не начат.', 'warn');
+                    showNotification('Basic: у участника «Qwen 4B» не бывает входных файлов. Прогон не начат.', 'warn');
                     return false;
                 }
                 const ready = await window.LocalModel.ping();
@@ -7807,7 +7807,7 @@ document.addEventListener('click', (event) => {
                     });
                     return { byParticipant, closedByOwner: batch?.closeReason === 'moderator_closed' };
                 };
-                // «Qwen Local» participants go to Ollama by HTTP; the rest of the group goes to the tabs as before. The messages of a
+                // «Qwen 4B» participants go to Ollama by HTTP; the rest of the group goes to the tabs as before. The messages of a
                 // local participant are kept in the page for this run only: after a reload a continue cannot be restored (below).
                 const localTransport = window.LocalModel?.createTransport({
                     delivery: window.MessageDelivery,
@@ -7839,8 +7839,8 @@ document.addEventListener('click', (event) => {
                     });
                     const refused = localTransport.check(requests);
                     if (refused) {
-                        showNotification(`${meta.label}: запрос к «Qwen Local» не помещается в контекст (≈${refused.tokens} + ${refused.numPredict} из ${refused.limit} токенов). Запрос не отправлен.`, 'warn');
-                        const error = new Error('Qwen Local: полный запрос не помещается в контекст.');
+                        showNotification(`${meta.label}: запрос к «Qwen 4B» не помещается в контекст (≈${refused.tokens} + ${refused.numPredict} из ${refused.limit} токенов). Запрос не отправлен.`, 'warn');
+                        const error = new Error('Qwen 4B: полный запрос не помещается в контекст.');
                         error.code = 'context_full';
                         throw error;
                     }

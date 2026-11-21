@@ -54,7 +54,7 @@
 .models-row-header .llm-buttons {
     justify-content: flex-start;
     flex-wrap: nowrap;
-    gap: 4.65px;
+    gap: 3.15px;
     margin-top: 4px;
     margin-left: 5px;
 }
