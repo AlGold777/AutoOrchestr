@@ -3,8 +3,11 @@
 (function initLocalModelFeatures(root) {
   'use strict';
 
-  const mount = (button, modal, api) => {
+  const mount = (button, modal, api, page) => {
     if (!button || !modal || !api) return;
+    // The window shows the functions and modes of its own page only (data-page of the window, «pipeline» by default).
+    page = page || modal.dataset.page || 'pipeline';
+    const own = api.FEATURES.filter((item) => item.page === page);
     const doc = button.ownerDocument;
     const title = modal.querySelector('.local-model-title');
     const modes = modal.querySelector('.local-model-modes');
@@ -21,13 +24,13 @@
 
     const renderModes = (model) => {
       modes.textContent = '';
-      const current = api.presetOf(model);
-      const own = new Set(api.FEATURES.map((item) => item.level));
-      api.LEVELS.filter((level) => own.has(level.id)).forEach((level) => {
+      const current = api.presetOf(model, page);
+      const levels = new Set(own.map((item) => item.level));
+      api.LEVELS.filter((level) => levels.has(level.id)).forEach((level) => {
         const item = element('button', `local-model-mode${current === level.id ? ' is-active' : ''}`, level.label);
         item.type = 'button';
         item.dataset.level = level.id;
-        item.addEventListener('click', () => { api.applyPreset(level.id, model); render(); });
+        item.addEventListener('click', () => { api.applyPreset(level.id, model, page); render(); });
         modes.append(item);
       });
       if (current === 'custom') modes.append(element('span', 'local-model-mode is-active is-custom', 'Свой'));
@@ -37,7 +40,7 @@
       list.textContent = '';
       const state = api.featureState(model);
       const groups = [];
-      api.FEATURES.forEach((item) => {
+      own.forEach((item) => {
         let group = groups.find((entry) => entry.name === item.group);
         if (!group) { group = { name: item.group, items: [] }; groups.push(group); }
         group.items.push(item);

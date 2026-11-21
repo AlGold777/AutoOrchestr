@@ -179,6 +179,7 @@
             <button type="button" id="clear-prompt-btn" class="prompt-clear-btn" title="Clear prompt" aria-label="Clear prompt"><i class="ti ti-trash"></i></button>
         </div>
         <div class="prompt-footer-right">
+            <select id="local-model-select" class="mod-select local-model-select" aria-label="Local model" title="Local model: watching of stuck tabs and look at a tab that gave no answer. Without LLM: the page works on its own."></select>
             <label class="top-new-pages-toggle long-mode-toggle" data-tooltip="Long: wait passively up to 15 minutes; active focus switching stops after 90 seconds.">
                 <span class="top-new-pages-text">Long</span>
                 <input type="checkbox" id="long-mode-checkbox" class="top-new-pages-checkbox">
@@ -257,6 +258,7 @@
                     </div>
                     <div class="llm-header-right">
                         <div class="toolbar-cluster">
+                            <button type="button" id="local-model-button" class="mod-select local-model-button" title="Local model: functions and modes" hidden></button>
                             <button id="export-html-btn" class="control-icon-btn" data-format="html" data-label="⬆ HTML" title="Export all responses as HTML"><i class="ti ti-download" aria-hidden="true"></i></button>
                             <button type="button" id="export-md-btn" class="control-icon-btn export-md-btn" data-format="md" title="Export all responses as Markdown" aria-label="Export all responses as Markdown">md</button>
                             <button type="button" id="copy-all-btn" class="control-icon-btn" title="Copy all responses" aria-label="Copy all responses"><i class="ti ti-copy" aria-hidden="true"></i></button>
@@ -583,6 +585,18 @@
             </div>
         </div>
 
+        <!-- Local model settings -->
+        <div class="modal" id="local-model-modal" data-page="main">
+            <div class="modal-content local-model-content">
+                <h2 class="local-model-title"></h2>
+                <div class="local-model-modes"></div>
+                <div class="local-model-features"></div>
+                <div class="modal-buttons">
+                    <button type="button" class="modal-button local-model-close">Закрыть</button>
+                </div>
+            </div>
+        </div>
+
    <!-- V2.0: API Keys Modal -->
         <div class="modal" id="api-keys-modal">
             <div class="modal-container">
@@ -601,8 +615,12 @@
                         <button class="devtools-tab" id="api-tab" role="tab" aria-selected="false" aria-controls="api-tabpanel" data-tab-target="api-tabpanel">
                             API
                         </button>
+                        <button class="devtools-tab" id="local-llm-tab" role="tab" aria-selected="false" aria-controls="local-llm-tabpanel" data-tab-target="local-llm-tabpanel">
+                            Local LLM
+                        </button>
                     </div>
                     <div class="devtools-tabpanels">
+                        <section class="devtools-tabpanel" id="local-llm-tabpanel" role="tabpanel" aria-labelledby="local-llm-tab" tabindex="0" hidden=""></section>
 
                         <section class="devtools-tabpanel" id="telemetry-tabpanel" role="tabpanel" aria-labelledby="telemetry-tab" tabindex="0" hidden="">
                             <div class="devtools-toolbar">
@@ -993,6 +1011,8 @@
     <script src="disput/basic-artifacts.js"></script>
     <script src="disput/basic-output.js"></script>
     <script src="shared/basic-reply-text.js"></script>
+    <script src="disput/local-rules.js"></script>
+    <script src="disput/local-model.js"></script>
     <script src="disput/custom-engine.js"></script>
     <script src="disput/basic-schema.js"></script>
     <script src="disput/basic-input-files.js"></script>
@@ -1029,6 +1049,10 @@
     <script src="shared/basic-telemetry.js"></script>
     <script src="utils/selection-block-format.js"></script>
     <script src="results/response-card-cover.js"></script>
+    <script src="results/local-llm-tab.js"></script>
+    <script src="results/local-model-select.js"></script>
+    <script src="results/local-model-features.js"></script>
+    <script src="results/local-model-main.js"></script>
     <script src="results.js"></script>
     <!-- results-devtools.js (telemetry/devtools tab) is NOT loaded here: it is
          lazy-loaded by results.js (ensureTelemetryDevtoolsLoaded) just after

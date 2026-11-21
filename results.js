@@ -19133,6 +19133,7 @@ document.addEventListener('click', (event) => {
     }
 
     function clearCurrentMainRequestIds() {
+        window.LocalModelMain?.stop();
         Object.keys(currentMainRequestIdsByModel).forEach((llmName) => {
             delete currentMainRequestIdsByModel[llmName];
         });
@@ -19140,6 +19141,7 @@ document.addEventListener('click', (event) => {
     }
 
     function markCurrentMainRequestsCancelled() {
+        window.LocalModelMain?.stop();
         Object.entries(currentMainRequestIdsByModel).forEach(([llmName, requestId]) => {
             cancelledMainRequestIdsByModel[llmName] = requestId;
         });
@@ -19440,6 +19442,7 @@ document.addEventListener('click', (event) => {
                 resultMeta: derivedResultMeta,
                 updatedAt: Date.now()
             };
+            window.LocalModelMain?.noteStatus(normalizedName, normalizedStatus);
         }
 
         indicators.forEach((indicator) => {
@@ -20247,6 +20250,10 @@ document.addEventListener('click', (event) => {
                         ...debateFeedMessageMeta(message),
                         status: message.metadata?.status || message.status || message.finalStatus || 'SUCCESS'
                     };
+                    if (window.LocalModelMain && message.answer != null && !isPipelineRequestMeta(finalMeta) && isCurrentMainRequestResponse(message.llmName, finalMeta)) {
+                        const finalText = typeof message.answer === 'object' ? (message.answer.text || message.answer.answer || '') : message.answer;
+                        window.LocalModelMain.noteAnswer(message.llmName, finalText);
+                    }
                     if (message.answer != null || message.answerHtml != null || message.html != null) {
                         updateLLMPanelOutput(message.llmName, message.answer, message.answerHtml || message.html || '', finalMeta);
                     } else {
@@ -20313,6 +20320,7 @@ document.addEventListener('click', (event) => {
                     }
                     break;
                 case 'GLOBAL_STATE_BROADCAST':
+                    window.LocalModelMain?.setTabs(message.state || {});
                     syncStatusFromGlobalState(message.state || {});
                     break;
                 case 'SMART_FOCUS_METRIC':
@@ -25621,6 +25629,8 @@ function checkCompareButtonState() {
             // Claim the new main request before dispatch so a late answer from the
             // previous transport cannot repaint or complete this model's card.
             replaceCurrentMainRequestIds(transportRequestIds);
+            // Local model: the watch of the tabs covers the models of this request (main page only; observation only).
+            window.LocalModelMain?.begin(selectedLLMs);
             selectedLLMs.forEach((name) => {
                 clearModelStatusMemory(name);
                 updateModelStatusUI(name, 'INITIALIZING', { reset: true, force: true });

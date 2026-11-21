@@ -48,9 +48,11 @@
     { id: 'act', label: 'Extra High' }
   ]);
   const FEATURES = Object.freeze([
-    { id: 'stall_watch', label: 'Наблюдение за зависшими вкладками', group: 'Наблюдение за вкладками', level: 'log', defaultOn: true },
-    { id: 'failure_look', label: 'Разбор вкладки, не давшей ответа', group: 'Наблюдение за вкладками', level: 'hint', defaultOn: true },
-    { id: 'owner_hint', label: 'Подсказка владельцу: принять или вернуть', group: 'Подсказки владельцу', level: 'hint', defaultOn: true }
+    { id: 'stall_watch', page: 'pipeline', label: 'Наблюдение за зависшими вкладками', group: 'Наблюдение за вкладками', level: 'log', defaultOn: true },
+    { id: 'failure_look', page: 'pipeline', label: 'Разбор вкладки, не давшей ответа', group: 'Наблюдение за вкладками', level: 'hint', defaultOn: true },
+    { id: 'owner_hint', page: 'pipeline', label: 'Подсказка владельцу: принять или вернуть', group: 'Подсказки владельцу', level: 'hint', defaultOn: true },
+    { id: 'main_stall_watch', page: 'main', label: 'Наблюдение за зависшими вкладками', group: 'Наблюдение за вкладками', level: 'log', defaultOn: true },
+    { id: 'main_failure_look', page: 'main', label: 'Разбор вкладки, не давшей ответа', group: 'Наблюдение за вкладками', level: 'hint', defaultOn: true }
   ].map((item) => Object.freeze(item)));
   let featureChoice = {};
   const cleanFeatures = (value) => {
@@ -78,23 +80,26 @@
     saveFeatures();
     return true;
   };
-  const presetState = (level) => {
+  // Modes and «Свой» are counted for the functions of one page; a mode on one page does not change the boxes of the other.
+  const PAGES = Object.freeze(['pipeline', 'main']);
+  const pageFeatures = (page) => FEATURES.filter((item) => item.page === page);
+  const presetState = (level, page = 'pipeline') => {
     const rank = LEVELS.findIndex((item) => item.id === level);
-    return Object.fromEntries(FEATURES.map((item) => [item.id, LEVELS.findIndex((l) => l.id === item.level) <= rank]));
+    return Object.fromEntries(pageFeatures(page).map((item) => [item.id, LEVELS.findIndex((l) => l.id === item.level) <= rank]));
   };
-  // Modes that have at least one function of their own level.
-  const shownLevels = () => LEVELS.filter((level) => FEATURES.some((item) => item.level === level.id));
-  const applyPreset = (level, model = modelId()) => {
-    if (!LEVELS.some((item) => item.id === level) || !MODELS.some((item) => item.id && item.id === model)) return false;
-    featureChoice = { ...featureChoice, [model]: presetState(level) };
+  // Modes that have at least one function of their own level on the page.
+  const shownLevels = (page = 'pipeline') => LEVELS.filter((level) => pageFeatures(page).some((item) => item.level === level.id));
+  const applyPreset = (level, model = modelId(), page = 'pipeline') => {
+    if (!LEVELS.some((item) => item.id === level) || !PAGES.includes(page) || !MODELS.some((item) => item.id && item.id === model)) return false;
+    featureChoice = { ...featureChoice, [model]: { ...featureState(model), ...presetState(level, page) } };
     saveFeatures();
     return true;
   };
-  const presetOf = (model = modelId()) => {
+  const presetOf = (model = modelId(), page = 'pipeline') => {
     const state = featureState(model);
-    const found = shownLevels().find((level) => {
-      const wanted = presetState(level.id);
-      return FEATURES.every((item) => wanted[item.id] === state[item.id]);
+    const found = shownLevels(page).find((level) => {
+      const wanted = presetState(level.id, page);
+      return pageFeatures(page).every((item) => wanted[item.id] === state[item.id]);
     });
     return found ? found.id : 'custom';
   };
@@ -653,7 +658,7 @@ ${page.text || ''}
     return { check, run, runWave, hasHistory: (participantId) => (histories.get(participantId) || []).length > 0, history: (participantId) => (histories.get(participantId) || []).slice(), reset: () => histories.clear() };
   };
 
-  const api = Object.freeze({ FEATURES, LEVELS, FEATURES_KEY, feature, featureState, setFeature, applyPreset, presetOf, loadFeatures, PRIORITY, post, MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf, NAME, NUM_CTX, isLocal, ping, unavailableText, numPredictOf, fits, stripThinking, createTransport });
+  const api = Object.freeze({ FEATURES, PAGES, pageFeatures, shownLevels, LEVELS, FEATURES_KEY, feature, featureState, setFeature, applyPreset, presetOf, loadFeatures, PRIORITY, post, MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf, NAME, NUM_CTX, isLocal, ping, unavailableText, numPredictOf, fits, stripThinking, createTransport });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

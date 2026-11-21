@@ -7,7 +7,7 @@ const LocalModelFeatures = require('../results/local-model-features');
 const flush = async () => { for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve)); };
 const M4 = 'qwen3.5:4b-mlx';
 const M9 = 'qwen3.5:9b-mlx';
-const ids = LocalModel.FEATURES.map((item) => item.id);
+const ids = LocalModel.FEATURES.filter((item) => item.page === 'pipeline').map((item) => item.id);
 
 describe('functions of the local model', () => {
   let data;
@@ -26,7 +26,7 @@ describe('functions of the local model', () => {
   test('by default all three functions are on and the mode is Middle for both models', () => {
     expect(ids).toEqual(['stall_watch', 'failure_look', 'owner_hint']);
     [M4, M9].forEach((model) => {
-      expect(LocalModel.featureState(model)).toEqual({ stall_watch: true, failure_look: true, owner_hint: true });
+      expect(LocalModel.featureState(model)).toMatchObject({ stall_watch: true, failure_look: true, owner_hint: true });
       expect(LocalModel.presetOf(model)).toBe('hint');
     });
     LocalModel.setModel(M4);
@@ -41,7 +41,7 @@ describe('functions of the local model', () => {
   test('modes set the checkboxes and a manual change gives a custom set', () => {
     LocalModel.setModel(M4);
     LocalModel.applyPreset('log');
-    expect(LocalModel.featureState(M4)).toEqual({ stall_watch: true, failure_look: false, owner_hint: false });
+    expect(LocalModel.featureState(M4)).toMatchObject({ stall_watch: true, failure_look: false, owner_hint: false });
     expect(LocalModel.presetOf(M4)).toBe('log');
     expect(LocalModel.feature('owner_hint')).toBe(false);
     LocalModel.applyPreset('hint');
