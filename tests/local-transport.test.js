@@ -31,6 +31,19 @@ describe('Qwen 4B transport', () => {
     expect(call).toMatchObject({ doneReason: 'stop', load_duration: 5, prompt_eval_count: 11, eval_count: 7, total_duration: 99 });
   });
 
+  test('the participant and the ping use the model chosen in the selector', async () => {
+    const nine = LocalModel.MODELS.find((item) => item.id && item.id !== LocalModel.MODEL).id;
+    try {
+      LocalModel.setModel(nine);
+      const fetchImpl = jest.fn(answer('Готово.'));
+      await make(fetchImpl).runWave([request()]);
+      expect(JSON.parse(fetchImpl.mock.calls[0][1].body).model).toBe(nine);
+      const pingFetch = jest.fn(answer('', 'load'));
+      await LocalModel.ping({ fetchImpl: pingFetch, prepare: noPrepare });
+      expect(JSON.parse(pingFetch.mock.calls[0][1].body).model).toBe(nine);
+    } finally { LocalModel.setModel(''); }
+  });
+
   test('done_reason length is an unfinished answer: PARTIAL, no delivery tag', async () => {
     const transport = make(answer('Оборванный отв', 'length'), MessageDelivery);
     const [reply] = Object.values(await transport.runWave([request()]));

@@ -7346,6 +7346,11 @@ document.addEventListener('click', (event) => {
                     showNotification('Basic: у участника «Qwen 4B» не бывает входных файлов. Прогон не начат.', 'warn');
                     return false;
                 }
+                await window.LocalModel.loadChoice();
+                if (!window.LocalModel.enabled()) {
+                    showNotification('Basic: в схеме есть «Qwen 4B», а в списке локальной модели выбрано «without LLM». Выберите модель и повторите; прогон не начат.', 'warn');
+                    return false;
+                }
                 const ready = await window.LocalModel.ping();
                 if (!ready.ok) {
                     showNotification(`Basic: локальная модель недоступна (${window.LocalModel.unavailableText(ready.problem)}). Запустите Ollama и повторите; прогон не начат.`, 'warn');

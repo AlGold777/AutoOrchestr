@@ -1,5 +1,11 @@
 # CHANGELOG — Project
 
+### 2026-11-21 — Список «Local model»: без модели участник «Qwen 4B» не работает, выбранная модель работает у участника, версия 2.81.1077
+
+- «without LLM» — локальной модели нет: схема с участником «Qwen 4B» не стартует, уведомление просит выбрать модель (`results.js`, перед `LocalModel.ping`).
+- Участник и проверка Ollama используют модель из списка (4B или 9B), а не всегда `qwen3.5:4b-mlx` (`disput/local-model.js`: `modelId()` в `ping` и `bodyOf`). Тест: `tests/local-transport.test.js`.
+- Имя участника осталось «Qwen 4B» и при выборе 9B.
+
 ### 2026-11-21 — Участник «Qwen Local» переименован в «Qwen 4B», версия 2.81.1076
 
 - Имя участника раунда Basic — «Qwen 4B» (`NAME` в `disput/local-model.js`, кнопка в `pipeline_panel.html`, сообщения в `results.js`, документы). Участник всегда работает на `qwen3.5:4b-mlx`. Схемы со старым именем «Qwen Local» не открываются как участник. Имя папки-копии «AutoOrchestr Qwen Local» не менялось.

@@ -413,7 +413,8 @@ ${page.text || ''}
   };
 
   // «Qwen 4B» as a participant of a Basic round (the transport). The page sends such a participant here by HTTP instead of a model
-  // tab. The model is always MODEL: the choice of the selector above is for hints and watching only.
+  // tab. The model is the one chosen in the selector above; with «without LLM» chosen there is no local model and a run with this
+  // participant does not start (the page checks enabled()).
   const NAME = 'Qwen 4B';
   const KEEP_ALIVE = '15m';
   const TEMPERATURE = 0.2;
@@ -429,7 +430,7 @@ ${page.text || ''}
 
   const UNAVAILABLE_TEXT = Object.freeze({
     service_off: 'Ollama не отвечает на 127.0.0.1:11434',
-    model_missing: `в Ollama нет модели ${MODEL}`,
+    model_missing: 'в Ollama нет модели',
     http_error: 'Ollama вернула ошибку',
     rule_failed: 'не удалось открыть доступ к Ollama',
     timeout: 'модель не успела ответить'
@@ -439,7 +440,7 @@ ${page.text || ''}
   // The check at the start of a run, and the warm-up: an empty chat call loads the model and keeps it for KEEP_ALIVE.
   const ping = async ({ signal = null, fetchImpl, prepare = allowOwnOrigin } = {}) => {
     try { await prepare(); } catch (error) { return { ok: false, problem: { kind: 'rule_failed', detail: error?.message || '' } }; }
-    const answer = await post({ model: MODEL, stream: false, think: false, keep_alive: KEEP_ALIVE, messages: [] }, { signal, fetchImpl, timeoutMs: PING_TIMEOUT_MS });
+    const answer = await post({ model: modelId(), stream: false, think: false, keep_alive: KEEP_ALIVE, messages: [] }, { signal, fetchImpl, timeoutMs: PING_TIMEOUT_MS });
     if (answer.problem) return { ok: false, problem: answer.problem };
     return { ok: true };
   };
@@ -467,7 +468,7 @@ ${page.text || ''}
       return {
         numPredict,
         body: {
-          model: MODEL, stream: false, think: false, keep_alive: KEEP_ALIVE,
+          model: modelId(), stream: false, think: false, keep_alive: KEEP_ALIVE,
           messages: [...historyOf(request), { role: 'user', content: String(request.prompt || '') }],
           ...(request.format ? { format: request.format } : {}),
           options: { temperature: TEMPERATURE, num_ctx: NUM_CTX, num_predict: numPredict }
