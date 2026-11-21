@@ -23,7 +23,9 @@
     try { root.chrome?.storage?.local?.set({ [CHOICE_KEY]: selected }); } catch (_) { /* the choice lives until the page closes */ }
     return selected;
   };
+  // The checkboxes are read before the model is set: with a model chosen, feature() never answers from the defaults.
   const loadChoice = async () => {
+    await loadFeatures();
     try {
       const data = await root.chrome?.storage?.local?.get(CHOICE_KEY);
       const id = data?.[CHOICE_KEY];
@@ -34,6 +36,78 @@
   try {
     root.chrome?.storage?.onChanged?.addListener((changes, area) => {
       if (area === 'local' && changes[CHOICE_KEY]) selected = MODELS.some((item) => item.id === changes[CHOICE_KEY].newValue) ? changes[CHOICE_KEY].newValue : '';
+    });
+  } catch (_) { /* no storage events here */ }
+  // Functions of the local model. Each one has its own checkbox for each model; a mode (Light...) sets the checkboxes by level.
+  // The level is the influence of the function: log < hint < heavy < act. A new function is off by default.
+  const FEATURES_KEY = 'localModelFeatures';
+  const LEVELS = Object.freeze([
+    { id: 'log', label: 'Light' },
+    { id: 'hint', label: 'Middle' },
+    { id: 'heavy', label: 'High' },
+    { id: 'act', label: 'Extra High' }
+  ]);
+  const FEATURES = Object.freeze([
+    { id: 'stall_watch', label: 'Наблюдение за зависшими вкладками', group: 'Наблюдение за вкладками', level: 'log', defaultOn: true },
+    { id: 'failure_look', label: 'Разбор вкладки, не давшей ответа', group: 'Наблюдение за вкладками', level: 'hint', defaultOn: true },
+    { id: 'owner_hint', label: 'Подсказка владельцу: принять или вернуть', group: 'Подсказки владельцу', level: 'hint', defaultOn: true }
+  ].map((item) => Object.freeze(item)));
+  let featureChoice = {};
+  const cleanFeatures = (value) => {
+    const out = {};
+    if (!value || typeof value !== 'object') return out;
+    MODELS.filter((item) => item.id).forEach((model) => {
+      const own = value[model.id];
+      if (!own || typeof own !== 'object') return;
+      out[model.id] = {};
+      FEATURES.forEach((item) => { if (typeof own[item.id] === 'boolean') out[model.id][item.id] = own[item.id]; });
+    });
+    return out;
+  };
+  const featureState = (id = modelId()) => {
+    const own = featureChoice[id] || {};
+    return Object.fromEntries(FEATURES.map((item) => [item.id, typeof own[item.id] === 'boolean' ? own[item.id] : item.defaultOn]));
+  };
+  const feature = (id) => enabled() && FEATURES.some((item) => item.id === id) && featureState(modelId())[id] === true;
+  const saveFeatures = () => {
+    try { root.chrome?.storage?.local?.set({ [FEATURES_KEY]: featureChoice }); } catch (_) { /* the choice lives until the page closes */ }
+  };
+  const setFeature = (id, on, model = modelId()) => {
+    if (!FEATURES.some((item) => item.id === id) || !MODELS.some((item) => item.id && item.id === model)) return false;
+    featureChoice = { ...featureChoice, [model]: { ...featureState(model), [id]: Boolean(on) } };
+    saveFeatures();
+    return true;
+  };
+  const presetState = (level) => {
+    const rank = LEVELS.findIndex((item) => item.id === level);
+    return Object.fromEntries(FEATURES.map((item) => [item.id, LEVELS.findIndex((l) => l.id === item.level) <= rank]));
+  };
+  // Modes that have at least one function of their own level.
+  const shownLevels = () => LEVELS.filter((level) => FEATURES.some((item) => item.level === level.id));
+  const applyPreset = (level, model = modelId()) => {
+    if (!LEVELS.some((item) => item.id === level) || !MODELS.some((item) => item.id && item.id === model)) return false;
+    featureChoice = { ...featureChoice, [model]: presetState(level) };
+    saveFeatures();
+    return true;
+  };
+  const presetOf = (model = modelId()) => {
+    const state = featureState(model);
+    const found = shownLevels().find((level) => {
+      const wanted = presetState(level.id);
+      return FEATURES.every((item) => wanted[item.id] === state[item.id]);
+    });
+    return found ? found.id : 'custom';
+  };
+  const loadFeatures = async () => {
+    try {
+      const data = await root.chrome?.storage?.local?.get(FEATURES_KEY);
+      featureChoice = cleanFeatures(data?.[FEATURES_KEY]);
+    } catch (_) { featureChoice = {}; }
+    return featureChoice;
+  };
+  try {
+    root.chrome?.storage?.onChanged?.addListener((changes, area) => {
+      if (area === 'local' && changes[FEATURES_KEY]) featureChoice = cleanFeatures(changes[FEATURES_KEY].newValue);
     });
   } catch (_) { /* no storage events here */ }
   const TIMEOUT_MS = 120000;
@@ -203,33 +277,68 @@ ${file.text}`));
   const TIMING_KEYS = Object.freeze(['load_duration', 'prompt_eval_count', 'eval_count', 'total_duration']);
   const timingsOf = (data) => Object.fromEntries(TIMING_KEYS.filter((key) => Number.isFinite(data?.[key])).map((key) => [key, data[key]]));
 
+  // One queue for the page: the model is resident and answers one request at a time. The round participant (and ping) goes first,
+  // then the hint for the owner, then the watching of tabs; the same priority goes in the order of arrival.
+  const PRIORITY = Object.freeze({ participant: 0, owner_hint: 1, observation: 2 });
+  const waiting = [];
+  let running = false;
+  let order = 0;
+  const pump = () => {
+    if (running || !waiting.length) return;
+    waiting.sort((a, b) => a.rank - b.rank || a.order - b.order);
+    const next = waiting.shift();
+    running = true;
+    next.go(() => { running = false; pump(); });
+  };
+  // Gives the turn (a function that frees it) or null when the signal was cancelled before the turn came.
+  const takeTurn = (priority, signal) => new Promise((resolve) => {
+    if (signal?.aborted) { resolve(null); return; }
+    const item = { rank: PRIORITY[priority] ?? PRIORITY.observation, order: order += 1 };
+    const onAbort = () => {
+      const at = waiting.indexOf(item);
+      if (at >= 0) { waiting.splice(at, 1); resolve(null); }
+    };
+    item.go = (release) => { signal?.removeEventListener?.('abort', onAbort); resolve(release); };
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+    waiting.push(item);
+    pump();
+  });
+
   // A request to the service. Gives the text of the reply or a problem; a request cancelled by the owner is neither.
-  const post = async (body, { signal, fetchImpl = (...args) => root.fetch(...args), timeoutMs = TIMEOUT_MS }) => {
-    const limit = withTimeout(signal, timeoutMs);
+  // The time limit starts when the call leaves the queue.
+  const post = async (body, { signal, fetchImpl = (...args) => root.fetch(...args), timeoutMs = TIMEOUT_MS, priority = 'observation' } = {}) => {
+    const release = await takeTurn(priority, signal);
+    if (!release) return {};
     try {
-      const response = await fetchImpl(`${ENDPOINT}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: limit.signal
-      });
-      if (response.status === 404) return { problem: { kind: 'model_missing', detail: body.model || modelId() } };
-      if (!response.ok) return { problem: { kind: 'http_error', detail: `HTTP ${response.status}` } };
-      const data = await response.json();
-      const content = data?.message?.content;
-      return { content: typeof content === 'string' ? stripThinking(content) : content, doneReason: String(data?.done_reason || ''), timings: timingsOf(data) };
-    } catch (error) {
-      if (limit.timedOut) return { problem: { kind: 'timeout', detail: `${Math.round(timeoutMs / 1000)} с` } };
       if (signal?.aborted) return {};
-      return { problem: { kind: 'service_off', detail: ENDPOINT } };
+      const limit = withTimeout(signal, timeoutMs);
+      try {
+        const response = await fetchImpl(`${ENDPOINT}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: limit.signal
+        });
+        if (response.status === 404) return { problem: { kind: 'model_missing', detail: body.model || modelId() } };
+        if (!response.ok) return { problem: { kind: 'http_error', detail: `HTTP ${response.status}` } };
+        const data = await response.json();
+        const content = data?.message?.content;
+        return { content: typeof content === 'string' ? stripThinking(content) : content, doneReason: String(data?.done_reason || ''), timings: timingsOf(data) };
+      } catch (error) {
+        if (limit.timedOut) return { problem: { kind: 'timeout', detail: `${Math.round(timeoutMs / 1000)} с` } };
+        if (signal?.aborted) return {};
+        return { problem: { kind: 'service_off', detail: ENDPOINT } };
+      } finally {
+        limit.done();
+      }
     } finally {
-      limit.done();
+      release();
     }
   };
 
   // Never throws: without the service the owner window simply has no hint. What went wrong goes to the log of the Local LLM tab.
-  const suggest = async (text, { signal = null, fetchImpl, context = '', log = addLog } = {}) => {
-    const answer = await post(buildRequest(text, context), { signal, fetchImpl });
+  const suggest = async (text, { signal = null, fetchImpl, context = '', log = addLog, priority = 'owner_hint' } = {}) => {
+    const answer = await post(buildRequest(text, context), { signal, fetchImpl, priority });
     if (answer.problem) { log(answer.problem.kind, answer.problem.detail); return null; }
     if (answer.content === undefined) return null;
     const result = reviewReply(answer.content, text);
@@ -314,7 +423,7 @@ ${page.text || ''}
     try { await prepare(); } catch (error) { log('rule_failed', error?.message || ''); return null; }
     let context = '';
     try { context = String((await loadState()).system || '').trim(); } catch (_) { /* the observation goes without the instruction */ }
-    const answer = await post(buildObservationRequest(page, reason, context), { signal, fetchImpl });
+    const answer = await post(buildObservationRequest(page, reason, context), { signal, fetchImpl, priority: 'observation' });
     if (answer.problem) { log(answer.problem.kind, answer.problem.detail); return null; }
     if (answer.content === undefined) return null;
     const modelled = checkObservation(answer.content, page);
@@ -440,7 +549,7 @@ ${page.text || ''}
   // The check at the start of a run, and the warm-up: an empty chat call loads the model and keeps it for KEEP_ALIVE.
   const ping = async ({ signal = null, fetchImpl, prepare = allowOwnOrigin } = {}) => {
     try { await prepare(); } catch (error) { return { ok: false, problem: { kind: 'rule_failed', detail: error?.message || '' } }; }
-    const answer = await post({ model: modelId(), stream: false, think: false, keep_alive: KEEP_ALIVE, messages: [] }, { signal, fetchImpl, timeoutMs: PING_TIMEOUT_MS });
+    const answer = await post({ model: modelId(), stream: false, think: false, keep_alive: KEEP_ALIVE, messages: [] }, { signal, fetchImpl, timeoutMs: PING_TIMEOUT_MS, priority: 'participant' });
     if (answer.problem) return { ok: false, problem: answer.problem };
     return { ok: true };
   };
@@ -495,7 +604,7 @@ ${page.text || ''}
       const wrapped = delivery?.prepare?.({ prompt, promptsByModel: { [model]: prompt }, models: [model], batchId, requestIds: { [model]: requestId }, instructionsByModel: { [model]: '' } });
       const token = String(wrapped?.[model] || '').match(TOKEN_RE)?.[1] || '';
       const { body } = bodyOf(request);
-      const answer = await post(body, { signal, fetchImpl, timeoutMs: PARTICIPANT_TIMEOUT_MS });
+      const answer = await post(body, { signal, fetchImpl, timeoutMs: PARTICIPANT_TIMEOUT_MS, priority: 'participant' });
       const base = { sentPrompt: prompt, transportRequestId: requestId, attribution: '', answered: false };
       const finish = (status, reason, extra = {}) => ({ ...base, text: '', status, completion: COMPLETION[status] || '', reason, ...extra });
       if (answer.problem) {
@@ -544,7 +653,7 @@ ${page.text || ''}
     return { check, run, runWave, hasHistory: (participantId) => (histories.get(participantId) || []).length > 0, history: (participantId) => (histories.get(participantId) || []).slice(), reset: () => histories.clear() };
   };
 
-  const api = Object.freeze({ MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf, NAME, NUM_CTX, isLocal, ping, unavailableText, numPredictOf, fits, stripThinking, createTransport });
+  const api = Object.freeze({ FEATURES, LEVELS, FEATURES_KEY, feature, featureState, setFeature, applyPreset, presetOf, loadFeatures, PRIORITY, post, MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf, NAME, NUM_CTX, isLocal, ping, unavailableText, numPredictOf, fits, stripThinking, createTransport });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

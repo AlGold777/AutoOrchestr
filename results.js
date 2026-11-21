@@ -7544,7 +7544,7 @@ document.addEventListener('click', (event) => {
                 window.BasicCardVerdict.mark(debateModelCards, entry, reasonText);
             };
             // A tab that shows no change for several minutes is looked at by the local model. Observation only.
-            const stallWatch = window.LocalModel ? window.LocalModel.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId, enabled: () => window.LocalModel.enabled() }) : null;
+            const stallWatch = window.LocalModel ? window.LocalModel.createStallWatch({ tabOf: (id) => chatBindings[id]?.tabId, enabled: () => window.LocalModel.feature('stall_watch') }) : null;
             stallWatch?.start();
             const recordAttempt = (entry) => {
                 stallWatch?.note(entry);
@@ -7970,7 +7970,7 @@ document.addEventListener('click', (event) => {
                     askOwner: askCustomOwner,
                     decide: (request) => {
                         // Observation only: the local model looks at each tab that gave no answer and its lines are a hint in the window; the window does not wait for them.
-                        const hint = window.LocalModel?.enabled()
+                        const hint = window.LocalModel?.feature('failure_look')
                             ? Promise.all((request.failed || []).map((id) => window.LocalModel.observeTab({ tabId: chatBindings[id]?.tabId, participant: id, reason: request.reasons?.[id] || '' })
                                 .then((result) => (result ? window.LocalModel.observationLine(id, result) : null))
                                 .catch(() => null)))
@@ -7985,7 +7985,7 @@ document.addEventListener('click', (event) => {
                         const folderName = document ? await documentsFolderName() : '';
                         const hintControl = new AbortController();
                         const answer = await askChoiceDialog({
-                            hint: window.LocalModel?.enabled() ? window.LocalModel.ownerHint(input, { signal: hintControl.signal }) : null,
+                            hint: window.LocalModel?.feature('owner_hint') ? window.LocalModel.ownerHint(input, { signal: hintControl.signal }) : null,
                             title: `Ответ User: ${stepTitleOf(stepRef)}`,
                             message: [window.StageCard.ownerAskMessage({ task, goal, input, output, reason, detail, reasonText: reason ? (window.CustomEngine?.REASON_TEXT?.[reason] || reason) : '' }), waitSinceText()].filter(Boolean).join('\n'),
                             textInput: document ? null : { label: 'Ответ User', required: true },
