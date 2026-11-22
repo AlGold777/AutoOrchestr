@@ -2,6 +2,7 @@
 // current request and writes to the Log and to a line in the card. It presses nothing; sending and acceptance of answers do not depend on it.
 //  - main_stall_watch: a tab with no progress is looked at once (createStallWatch), until the model has a final answer.
 //  - main_failure_look: a model that ended with an error, a timeout or an empty answer: its tab is looked at once, the line is in the card.
+//  - main_answer_label: a final answer with text gets one label per model and request (refusal, cut off, not to the question); the quote is checked in the answer.
 (function initLocalModelMain(root) {
   'use strict';
 
@@ -9,6 +10,9 @@
     if (!api || !doc) return null;
     const current = new Set(); // models of the current request of the page
     const looked = new Set(); // models whose tab was already looked at for this request
+    const labelled = new Set(); // models whose answer was already labelled for this request
+    let prompt = '';
+    let serial = 0; // grows with every new request and every stop: a late result of an older one is dropped
     let tabs = {};
     let watch = null;
     const onPage = () => !doc.body?.classList.contains('pipeline-page');
@@ -34,7 +38,7 @@
         node.title = text;
       });
     };
-    const clearLine = (name) => { looked.delete(name); setLine(name, ''); };
+    const clearLine = (name) => { looked.delete(name); labelled.delete(name); setLine(name, ''); };
 
     const stopWatch = () => { watch?.stop(); watch = null; };
     const finish = (name) => {
@@ -44,10 +48,16 @@
     };
 
     // A new request of the page: the old lines go away, the watch covers the models of this request only.
-    const begin = (names) => {
+    const begin = (names, text = '') => {
       if (!onPage()) return;
+      serial += 1;
+      prompt = String(text ?? '');
       stopWatch();
+      // All lines and marks of the earlier requests go, also after a Stop that already emptied the current set.
       Array.from(current).forEach(clearLine);
+      doc.querySelectorAll('.local-model-look').forEach((node) => node.remove());
+      looked.clear();
+      labelled.clear();
       current.clear();
       (names || []).forEach((name) => { if (name) current.add(String(name)); });
       if (!current.size || !api.enabled?.()) return;
@@ -56,17 +66,18 @@
       watch.start();
     };
     // Stop or the end of the request: a late status of its models looks at nothing.
-    const stop = () => { stopWatch(); current.clear(); };
+    const stop = () => { serial += 1; stopWatch(); current.clear(); };
 
     const look = async (name, reason) => {
       if (!onPage() || !current.has(name) || looked.has(name) || !api.feature('main_failure_look')) return;
       const tabId = tabs[name];
       if (!tabId) return;
       looked.add(name);
+      const mine = serial;
       try {
         const result = await api.observeTab({ tabId, participant: name, reason });
         // The card may have been cleared or a new request started while the model was looking.
-        if (result && current.has(name) && looked.has(name)) setLine(name, api.observationLine(name, result));
+        if (result && mine === serial && current.has(name) && looked.has(name)) setLine(name, api.observationLine(name, result));
       } catch (_) { /* observation never breaks the page */ }
     };
 
@@ -76,13 +87,23 @@
       const next = status(value);
       if (isFinal(next)) finish(name);
       if (isFailure(next)) void look(name, `статус ${next}`);
-      else if (isFinal(next)) setLine(name, '');
     };
-    // A final answer without text.
+    // A final answer: without text the tab is looked at, with text the answer is labelled.
+    const label = async (name, text) => {
+      if (labelled.has(name) || !api.feature('main_answer_label')) return;
+      labelled.add(name);
+      const mine = serial;
+      try {
+        const result = await api.labelAnswer({ prompt, answer: text, participant: name });
+        // The card may have been cleared while the model was reading the answer.
+        if (result && mine === serial && current.has(name) && labelled.has(name)) setLine(name, api.answerLabelLine(name, result));
+      } catch (_) { /* the label never breaks the page */ }
+    };
     const noteAnswer = (name, text) => {
       if (!onPage() || !current.has(name)) return;
       finish(name);
       if (!String(text ?? '').trim()) void look(name, 'пустой ответ');
+      else void label(name, String(text));
     };
     // The tabs of the models come from the global state broadcast of the background part.
     const setTabs = (state) => {

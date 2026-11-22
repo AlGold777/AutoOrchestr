@@ -25607,6 +25607,12 @@ function checkCompareButtonState() {
                 return;
             }
 
+            // Secrets in the text: a code check, no model. Cancel keeps the text in the field.
+            const secretsFound = window.SecretCheck?.find(finalPrompt) || [];
+            if (secretsFound.length && !window.confirm(`В тексте запроса похоже на: ${secretsFound.join(', ')}. Он уйдёт во все выбранные модели. Отправить?`)) {
+                return;
+            }
+
             const forceNewTabs = newPagesCheckbox ? newPagesCheckbox.checked : true;
             const useApiFallback = apiModeCheckbox ? apiModeCheckbox.checked : true;
             // Record which Generation Wait Profile this run uses (for the telemetry export).
@@ -25630,7 +25636,7 @@ function checkCompareButtonState() {
             // previous transport cannot repaint or complete this model's card.
             replaceCurrentMainRequestIds(transportRequestIds);
             // Local model: the watch of the tabs covers the models of this request (main page only; observation only).
-            window.LocalModelMain?.begin(selectedLLMs);
+            window.LocalModelMain?.begin(selectedLLMs, finalPrompt);
             selectedLLMs.forEach((name) => {
                 clearModelStatusMemory(name);
                 updateModelStatusUI(name, 'INITIALIZING', { reset: true, force: true });

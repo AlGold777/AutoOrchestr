@@ -39,7 +39,7 @@
     });
   } catch (_) { /* no storage events here */ }
   // Functions of the local model. Each one has its own checkbox for each model; a mode (Light...) sets the checkboxes by level.
-  // The level is the influence of the function: log < hint < heavy < act. A new function is off by default.
+  // The level is the influence of the function: log < hint < heavy < act. A function that needs a stronger model is off by default.
   const FEATURES_KEY = 'localModelFeatures';
   const LEVELS = Object.freeze([
     { id: 'log', label: 'Light' },
@@ -52,7 +52,8 @@
     { id: 'failure_look', page: 'pipeline', label: 'Разбор вкладки, не давшей ответа', group: 'Наблюдение за вкладками', level: 'hint', defaultOn: true },
     { id: 'owner_hint', page: 'pipeline', label: 'Подсказка владельцу: принять или вернуть', group: 'Подсказки владельцу', level: 'hint', defaultOn: true },
     { id: 'main_stall_watch', page: 'main', label: 'Наблюдение за зависшими вкладками', group: 'Наблюдение за вкладками', level: 'log', defaultOn: true },
-    { id: 'main_failure_look', page: 'main', label: 'Разбор вкладки, не давшей ответа', group: 'Наблюдение за вкладками', level: 'hint', defaultOn: true }
+    { id: 'main_failure_look', page: 'main', label: 'Разбор вкладки, не давшей ответа', group: 'Наблюдение за вкладками', level: 'hint', defaultOn: true },
+    { id: 'main_answer_label', page: 'main', label: 'Метка ответа: отказ, обрыв, не по вопросу', group: 'Ответы моделей', level: 'hint', defaultOn: true }
   ].map((item) => Object.freeze(item)));
   let featureChoice = {};
   const cleanFeatures = (value) => {
@@ -349,6 +350,73 @@ ${file.text}`));
     const result = reviewReply(answer.content, text);
     if (result.problem) log(result.problem.kind, result.problem.detail);
     return result.suggestion || null;
+  };
+
+  // A label of an answer of a model on the main page: refusal, cut off, not to the question. The app checks one thing: the quote is in the answer.
+  const ANSWER_LABELS = Object.freeze({
+    ok: 'обычный ответ на вопрос',
+    refusal: 'модель отказалась отвечать или ответила, что не может',
+    cut_off: 'ответ оборван на полуслове или явно не закончен',
+    off_topic: 'ответ не на заданный вопрос (в том числе только пересказ вопроса)',
+    unclear: 'не понятно'
+  });
+  const ANSWER_LABEL_TEXT = Object.freeze({ refusal: 'похоже на отказ', cut_off: 'похоже, ответ оборван', off_topic: 'похоже, ответ не на вопрос' });
+  const ANSWER_ASK_CHARS = 1000;
+  const ANSWER_FULL_CHARS = 4000;
+  const ANSWER_PART_CHARS = 2000;
+  const answerSent = (answer) => {
+    const text = String(answer ?? '');
+    return text.length > ANSWER_FULL_CHARS ? `${text.slice(0, ANSWER_PART_CHARS)}\n…\n${text.slice(-ANSWER_PART_CHARS)}` : text;
+  };
+  const buildAnswerLabelPrompt = (prompt, answer) => `Ты проверяешь ответ чат-модели на вопрос пользователя. Ты только подсказываешь, решает человек.
+Выбери ровно одно значение label:
+${Object.entries(ANSWER_LABELS).map(([key, text]) => `${key} — ${text};`).join('\n')}
+quote — короткая дословная фраза из ОТВЕТА (до 200 символов), на которой основан вывод. Для ok и unclear — пустая строка.
+Вопрос:
+${String(prompt ?? '').slice(0, ANSWER_ASK_CHARS)}
+Ответ:
+${answerSent(answer)}
+Ответь JSON.`;
+  const buildAnswerLabelRequest = (prompt, answer, context = '') => ({
+    model: modelId(),
+    stream: false,
+    think: false,
+    keep_alive: '10m',
+    messages: [...(context ? [{ role: 'system', content: context }] : []), { role: 'user', content: buildAnswerLabelPrompt(prompt, answer) }],
+    format: {
+      type: 'object',
+      properties: { label: { type: 'string', enum: Object.keys(ANSWER_LABELS) }, quote: { type: 'string' } },
+      required: ['label', 'quote']
+    },
+    options: { temperature: 0, num_ctx: 8192, num_predict: 160 }
+  });
+  // ok and unclear give nothing; any other label stays only with a quote that is word for word in the answer the model got.
+  const checkAnswerLabel = (raw, answer) => {
+    let reply;
+    try { reply = JSON.parse(raw); } catch (_) { return { problem: { kind: 'bad_reply', detail: String(raw ?? '').slice(0, 200) } }; }
+    if (!reply || !Object.prototype.hasOwnProperty.call(ANSWER_LABELS, reply.label)) return { problem: { kind: 'bad_reply', detail: String(raw ?? '').slice(0, 200) } };
+    if (reply.label === 'ok' || reply.label === 'unclear') return {};
+    const quote = String(reply.quote == null ? '' : reply.quote).trim().replace(/^[«"„]+|[»"“]+$/g, '').trim();
+    const parts = quote.split(/\.{3,}|…/).map(squeeze).filter(Boolean);
+    const source = squeeze(answerSent(answer));
+    if (quote.length < MIN_QUOTE_CHARS || !parts.length || !parts.every((part) => source.includes(part))) {
+      return { problem: { kind: 'quote_rejected', detail: quote.slice(0, 200) } };
+    }
+    return { result: { label: reply.label, quote: quote.slice(0, 200) } };
+  };
+  const answerLabelLine = (participant, result) => `${participant}: ${ANSWER_LABEL_TEXT[result.label] || result.label}. «${result.quote}»`;
+  // Never throws: the result is {label, quote} or null; problems go to the log.
+  const labelAnswer = async ({ prompt, answer, participant = '' } = {}, { fetchImpl, signal = null, log = addLog } = {}) => {
+    try {
+      let context = '';
+      try { context = contextOf(await loadState()); } catch (_) { /* the label goes without the owner's context */ }
+      const reply = await post(buildAnswerLabelRequest(prompt, answer, context), { signal, fetchImpl, priority: 'owner_hint' });
+      if (reply.problem) { log(reply.problem.kind, `${participant}: ${reply.problem.detail}`); return null; }
+      if (reply.content === undefined) return null;
+      const checked = checkAnswerLabel(reply.content, answer);
+      if (checked.problem) { log(checked.problem.kind, `${participant}: ${checked.problem.detail}`); return null; }
+      return checked.result || null;
+    } catch (_) { return null; }
   };
 
   // Runs inside the tab of a model: only reads the page.
@@ -658,7 +726,7 @@ ${page.text || ''}
     return { check, run, runWave, hasHistory: (participantId) => (histories.get(participantId) || []).length > 0, history: (participantId) => (histories.get(participantId) || []).slice(), reset: () => histories.clear() };
   };
 
-  const api = Object.freeze({ FEATURES, PAGES, pageFeatures, shownLevels, LEVELS, FEATURES_KEY, feature, featureState, setFeature, applyPreset, presetOf, loadFeatures, PRIORITY, post, MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf, NAME, NUM_CTX, isLocal, ping, unavailableText, numPredictOf, fits, stripThinking, createTransport });
+  const api = Object.freeze({ FEATURES, PAGES, pageFeatures, shownLevels, LEVELS, FEATURES_KEY, feature, featureState, setFeature, applyPreset, presetOf, loadFeatures, PRIORITY, post, MODEL, MODELS, modelId, enabled, modelChoice, CHOICE_KEY, setModel, loadChoice, ENDPOINT, STATE_KEY, LOG_LABELS, buildPrompt, buildRequest, parseReply, reviewReply, suggest, ownerHint, hintLine, allowOwnOrigin, SITUATIONS, buildObservationRequest, checkObservation, ANSWER_LABELS, buildAnswerLabelRequest, checkAnswerLabel, labelAnswer, answerLabelLine, observationLine, observeTab, createStallWatch, loadState, updateState, addLog, contextOf, NAME, NUM_CTX, isLocal, ping, unavailableText, numPredictOf, fits, stripThinking, createTransport });
   root.LocalModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

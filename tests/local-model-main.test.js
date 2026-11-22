@@ -9,7 +9,7 @@ const Contract = require('../shared/status-contract');
 const flush = async () => { for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve)); };
 const M4 = 'qwen3.5:4b-mlx';
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-const mainIds = ['main_stall_watch', 'main_failure_look'];
+const mainIds = ['main_stall_watch', 'main_failure_look', 'main_answer_label'];
 const pipelineIds = ['stall_watch', 'failure_look', 'owner_hint'];
 
 const panel = (name) => `<div class="llm-panel" id="panel-${name.toLowerCase()}"><div class="llm-header"><span class="llm-title">${name}</span>
@@ -27,7 +27,7 @@ describe('registry by page', () => {
   });
   afterEach(() => { delete window.chrome; });
 
-  test('every function has a page; the main page has two, the pipeline three', () => {
+  test('every function has a page; the main page has three, the pipeline three', () => {
     expect(LocalModel.pageFeatures('main').map((item) => item.id)).toEqual(mainIds);
     expect(LocalModel.pageFeatures('pipeline').map((item) => item.id)).toEqual(pipelineIds);
     expect(LocalModel.FEATURES.every((item) => ['main', 'pipeline'].includes(item.page))).toBe(true);
@@ -38,11 +38,11 @@ describe('registry by page', () => {
     expect(LocalModel.presetOf(M4, 'main')).toBe('hint');
     expect(LocalModel.presetOf(M4, 'pipeline')).toBe('hint');
     LocalModel.applyPreset('log', M4, 'main');
-    expect(LocalModel.featureState(M4)).toEqual({ stall_watch: true, failure_look: true, owner_hint: true, main_stall_watch: true, main_failure_look: false });
+    expect(LocalModel.featureState(M4)).toEqual({ stall_watch: true, failure_look: true, owner_hint: true, main_stall_watch: true, main_failure_look: false, main_answer_label: false });
     expect(LocalModel.presetOf(M4, 'main')).toBe('log');
     expect(LocalModel.presetOf(M4, 'pipeline')).toBe('hint');
     LocalModel.applyPreset('log', M4, 'pipeline');
-    expect(LocalModel.featureState(M4)).toMatchObject({ stall_watch: true, failure_look: false, owner_hint: false, main_failure_look: false });
+    expect(LocalModel.featureState(M4)).toMatchObject({ stall_watch: true, failure_look: false, owner_hint: false, main_failure_look: false, main_answer_label: false });
     LocalModel.applyPreset('hint', M4, 'main');
     expect(LocalModel.featureState(M4)).toMatchObject({ main_failure_look: true, failure_look: false });
   });
@@ -87,6 +87,8 @@ describe('main page: watching and the look at a failed tab', () => {
       feature: jest.fn(() => true),
       observeTab: jest.fn(async () => ({ situation: 'blocked', button: '', note: '' })),
       observationLine: jest.fn((name) => `${name}: смотрю`),
+      labelAnswer: jest.fn(async () => ({ label: 'refusal', quote: 'не могу ответить' })),
+      answerLabelLine: jest.fn((name, result) => `${name}: ${result.label}`),
       createStallWatch: jest.fn(() => ({ note: jest.fn(), start: jest.fn(), stop: jest.fn(), waitingCount: jest.fn(() => 1) }))
     };
     main = create({ api: model, doc: document, contract: Contract });
@@ -149,6 +151,102 @@ describe('main page: watching and the look at a failed tab', () => {
     await flush();
     document.getElementById('clear-all-btn').click();
     expect(document.querySelectorAll('.local-model-look')).toHaveLength(0);
+  });
+
+  test('a refusal with a checked quote is shown; nothing for ok or a made-up quote', async () => {
+    model.labelAnswer.mockResolvedValueOnce({ label: 'refusal', quote: 'не могу ответить' });
+    main.begin(names, 'вопрос');
+    main.noteAnswer('GPT', 'Извините, не могу ответить на это.');
+    await flush();
+    expect(model.labelAnswer).toHaveBeenCalledWith({ prompt: 'вопрос', answer: 'Извините, не могу ответить на это.', participant: 'GPT' });
+    expect(line('GPT').textContent).toBe('GPT: refusal');
+    model.labelAnswer.mockResolvedValueOnce(null);
+    main.noteAnswer('Claude', 'Обычный ответ.');
+    await flush();
+    expect(line('Claude')).toBeNull();
+  });
+
+  test('the label function is off: labelAnswer is not called; one call per model per request', async () => {
+    model.feature.mockImplementation((id) => id !== 'main_answer_label');
+    main.begin(names, 'q');
+    main.noteAnswer('GPT', 'text');
+    await flush();
+    expect(model.labelAnswer).not.toHaveBeenCalled();
+    model.feature.mockImplementation(() => true);
+    main.begin(names, 'q');
+    main.noteAnswer('GPT', 'text');
+    main.noteAnswer('GPT', 'text again');
+    await flush();
+    expect(model.labelAnswer).toHaveBeenCalledTimes(1);
+    main.begin(names, 'q2');
+    main.noteAnswer('GPT', 'text');
+    await flush();
+    expect(model.labelAnswer).toHaveBeenCalledTimes(2);
+  });
+
+  test('a late label or look of an older request is not shown after a new begin or a stop', async () => {
+    let release;
+    model.labelAnswer.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    main.begin(names, 'q');
+    main.noteAnswer('GPT', 'text');
+    main.begin(names, 'q2');
+    release({ label: 'refusal', quote: 'x' });
+    await flush();
+    expect(line('GPT')).toBeNull();
+    model.labelAnswer.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    main.noteAnswer('GPT', 'text');
+    main.stop();
+    release({ label: 'refusal', quote: 'x' });
+    await flush();
+    expect(line('GPT')).toBeNull();
+    model.observeTab.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    main.begin(names, 'q3');
+    main.noteStatus('Claude', 'ERROR');
+    main.begin(names, 'q4');
+    release({ situation: 'blocked', button: '', note: '' });
+    await flush();
+    expect(line('Claude')).toBeNull();
+    model.observeTab.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    main.noteStatus('Claude', 'ERROR');
+    main.stop();
+    release({ situation: 'blocked', button: '', note: '' });
+    await flush();
+    expect(line('Claude')).toBeNull();
+  });
+
+  test('after Stop a new request labels and looks again, and the old lines go', async () => {
+    model.labelAnswer.mockResolvedValue({ label: 'refusal', quote: 'x' });
+    main.begin(names, 'q');
+    main.noteAnswer('GPT', 'text');
+    main.noteStatus('Claude', 'ERROR');
+    await flush();
+    main.stop();
+    main.begin(names, 'q2');
+    expect(document.querySelectorAll('.local-model-look')).toHaveLength(0);
+    main.noteAnswer('GPT', 'text');
+    main.noteStatus('Claude', 'ERROR');
+    await flush();
+    expect(model.labelAnswer).toHaveBeenCalledTimes(2);
+    expect(model.observeTab).toHaveBeenCalledTimes(2);
+  });
+
+  test('a label that arrives after the card was cleared is not shown', async () => {
+    let release;
+    model.labelAnswer.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    main.begin(names, 'q');
+    main.noteAnswer('GPT', 'text');
+    document.querySelector('#panel-gpt .panel-clear-response-btn').click();
+    release({ label: 'refusal', quote: 'x' });
+    await flush();
+    expect(line('GPT')).toBeNull();
+  });
+
+  test('a success status after the label does not erase the line', async () => {
+    main.begin(names, 'q');
+    main.noteAnswer('GPT', 'text');
+    await flush();
+    main.noteStatus('GPT', 'SUCCESS');
+    expect(line('GPT')).not.toBeNull();
   });
 
   test('a function that is off reads nothing and calls no model', async () => {
@@ -215,7 +313,7 @@ describe('wiring', () => {
 
   test('results.js hooks: start of a request, statuses, final answers, tabs of the broadcast', () => {
     const source = read('results.js');
-    expect(source).toContain('window.LocalModelMain?.begin(selectedLLMs)');
+    expect(source).toContain('window.LocalModelMain?.begin(selectedLLMs, finalPrompt)');
     expect(source).toContain('window.LocalModelMain?.noteStatus(normalizedName, normalizedStatus)');
     expect(source).toContain('window.LocalModelMain.noteAnswer(message.llmName, finalText)');
     expect(source).toContain('window.LocalModelMain?.setTabs(message.state || {})');
