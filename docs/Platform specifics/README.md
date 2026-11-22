@@ -8,7 +8,7 @@
 |---|---|
 | [environment.md](environment.md) | Среда: macOS и Chrome (блокировка экрана, скрытые вкладки, перезагрузка расширения, лимиты) |
 | `chatgpt.md`, `claude.md`, `gemini.md`, `deepseek.md`, `perplexity.md`, `qwen.md`, `kimi.md`, `grok.md`, `lechat.md`, `zai.md` | По одному файлу на провайдера |
-| [local-model.md](local-model.md) | Локальная модель (Ollama, Qwen 3.5 4B/9B): что умеет сейчас, что ждёт более сильных моделей, чего не делаем |
+| [Локальные модели](../local_models/README.md) | Ollama, Qwen 3.5 4B/9B — отдельная папка `docs/local_models` |
 
 Единый реестр открытых проблем — `docs/Agents/basic-issues-registry.md`. Здесь описано поведение платформы; дефект движка записывается в реестр со ссылкой на нужный файл отсюда.
 
