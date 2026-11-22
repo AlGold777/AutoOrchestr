@@ -1,0 +1,5 @@
+/* Поле ввода на странице pipeline той же ширины, что холст: рамку рисует .moderator-input, в закрытом состоянии она была на 22px уже холста.
+   Проверено в живой вкладке: холст и поле — 948px, левый край совпадает. С открытой лентой ответов правило не действует. */
+.pipeline-page .prompt-container.prompt-sandwich.debate-composer:not(.has-debate-feed) .moderator-input {
+    width: min(calc(var(--center-max-width) - 32px), calc(100cqw - 32px));
+}
