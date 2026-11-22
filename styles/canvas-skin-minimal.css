@@ -1,0 +1,174 @@
+/* Скин холста pipeline «Минимализм» (макет AutoOrchestr-simple: точечная сетка, светлые карточки, тёмный чекбокс, мятная карточка USER, мягкие линии).
+   Включается атрибутом html[data-canvas-skin="minimal"]; без него действует классический вид. Только цвета, шрифты, радиусы и тени: размеры блоков и связи не меняются. */
+
+[data-canvas-skin="minimal"] .pipeline-canvas {
+    background-color: #fbfcfd;
+    background-image: radial-gradient(#cbd5e1 1.05px, transparent 1.05px);
+    background-size: 18px 18px;
+    background-attachment: local;
+    border: 1px solid rgba(15, 23, 42, 0.07);
+    border-radius: 18px;
+    box-shadow: 0 2px 12px -2px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
+}
+
+/* Подписи колонок: R1, R2, In */
+[data-canvas-skin="minimal"] .round-badge,
+[data-canvas-skin="minimal"] .entry-badge {
+    width: auto;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    color: #94a3b8;
+}
+
+/* Карточка модели */
+[data-canvas-skin="minimal"] .model-block {
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 12px;
+    box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+    transition: transform 0.15s, border-color 0.2s, opacity 0.2s, box-shadow 0.2s;
+}
+[data-canvas-skin="minimal"] .model-block:hover {
+    border-color: rgba(37, 99, 235, 0.35);
+    box-shadow: 0 5px 14px -4px rgba(15, 23, 42, 0.07);
+    transform: translateY(-1px);
+}
+[data-canvas-skin="minimal"] .model-block.active {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.09);
+}
+[data-canvas-skin="minimal"] .model-block.inactive {
+    background: rgba(255, 255, 255, 0.72);
+    border-color: rgba(15, 23, 42, 0.09);
+    opacity: 0.44;
+}
+/* До запуска карточка выглядит как обычная (в классическом виде она полупрозрачная). */
+[data-canvas-skin="minimal"] .pipeline-flow .model-block.pipeline-run-pending {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.09);
+}
+
+[data-canvas-skin="minimal"] .model-name {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #0f172a;
+}
+[data-canvas-skin="minimal"] .model-block.inactive .model-name { color: #0f172a; }
+[data-canvas-skin="minimal"] .model-role-label,
+[data-canvas-skin="minimal"] .model-block.inactive .model-role-label {
+    font-size: 11.5px;
+    color: #475569;
+}
+
+[data-canvas-skin="minimal"] .status-indicator {
+    width: 7px;
+    height: 7px;
+}
+
+/* Чекбокс: тёмный квадрат с белой галочкой */
+[data-canvas-skin="minimal"] .model-checkbox {
+    -webkit-appearance: none;
+    appearance: none;
+    display: inline-grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 4px;
+    background: transparent;
+}
+[data-canvas-skin="minimal"] .model-checkbox:checked {
+    background: #0f172a;
+    border-color: #0f172a;
+}
+[data-canvas-skin="minimal"] .model-checkbox:checked::after {
+    content: "✓";
+    color: #ffffff;
+    font-size: 9.5px;
+    line-height: 1;
+}
+
+/* Карточка пользователя (USER) */
+[data-canvas-skin="minimal"] .pipeline-control-title {
+    width: auto;
+    height: auto;
+    padding: 2px 10px;
+    border-radius: 99px;
+    background: #dcfce7;
+    color: #15803d;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+[data-canvas-skin="minimal"] .pipeline-control-step[data-control-kind="owner"] .pipeline-control-card {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+    color: #166534;
+}
+[data-canvas-skin="minimal"] .control-card-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #15803d;
+}
+[data-canvas-skin="minimal"] .control-card-role {
+    font-size: 11.5px;
+    color: #166534;
+    opacity: 0.85;
+}
+
+/* Связи: тонкие светлые линии */
+[data-canvas-skin="minimal"] .connector-line,
+[data-canvas-skin="minimal"] .merge-line,
+[data-canvas-skin="minimal"] .connector-line.active,
+[data-canvas-skin="minimal"] .merge-line.active {
+    stroke: #cbd5e1;
+    stroke-width: 1.5;
+}
+[data-canvas-skin="minimal"] .arrow-head,
+[data-canvas-skin="minimal"] .arrow-head.active {
+    fill: #cbd5e1;
+}
+[data-canvas-skin="minimal"] .connector-line.inactive,
+[data-canvas-skin="minimal"] .arrow-head.inactive {
+    opacity: 0.28;
+}
+
+/* Шапка холста: тихие кнопки без фона и рамок, фон шапки без голубой подложки */
+[data-canvas-skin="minimal"] .pipeline-panel .panel-header {
+    background: transparent;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+}
+[data-canvas-skin="minimal"] .pipeline-panel .panel-title {
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+}
+[data-canvas-skin="minimal"] .pipeline-panel .panel-header .btn {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+    transition: background 0.15s, color 0.15s;
+}
+[data-canvas-skin="minimal"] .pipeline-panel .panel-header .btn:hover:not(:disabled) {
+    background: rgba(15, 23, 42, 0.055);
+    color: #0f172a;
+    opacity: 1;
+}
+[data-canvas-skin="minimal"] .pipeline-panel .panel-header .btn-icon {
+    width: 30px;
+    height: 30px;
+}
+[data-canvas-skin="minimal"] .pipeline-panel .panel-header .btn[aria-pressed="true"] {
+    background: rgba(15, 23, 42, 0.07);
+    color: #0f172a;
+}

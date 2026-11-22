@@ -8959,6 +8959,26 @@ document.addEventListener('click', (event) => {
             try { localStorage.setItem(ARROWS_HIDDEN_KEY, arrowsHidden ? '1' : '0'); } catch (_) {}
         });
 
+        // Скины холста: атрибут на <html> включает styles/canvas-skin-minimal.css; без него классический вид.
+        const CANVAS_SKIN_KEY = 'pipelineCanvasSkin';
+        const CANVAS_SKINS = [{ id: 'classic', label: 'Классический' }, { id: 'minimal', label: 'Минимализм' }];
+        const applyCanvasSkin = (id) => {
+            const skin = CANVAS_SKINS.find((item) => item.id === id) || CANVAS_SKINS[0];
+            if (skin.id === 'classic') document.documentElement.removeAttribute('data-canvas-skin');
+            else document.documentElement.setAttribute('data-canvas-skin', skin.id);
+            document.getElementById('pipeline-skin-toggle')?.setAttribute('title', `Оформление холста: ${skin.label}`);
+            return skin.id;
+        };
+        let canvasSkin = 'classic';
+        try { canvasSkin = localStorage.getItem(CANVAS_SKIN_KEY) || 'classic'; } catch (_) {}
+        canvasSkin = applyCanvasSkin(canvasSkin);
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest?.('#pipeline-skin-toggle')) return;
+            const index = CANVAS_SKINS.findIndex((item) => item.id === canvasSkin);
+            canvasSkin = applyCanvasSkin(CANVAS_SKINS[(index + 1) % CANVAS_SKINS.length].id);
+            try { localStorage.setItem(CANVAS_SKIN_KEY, canvasSkin); } catch (_) {}
+        });
+
         const syncPipelineChromeControls = () => {
             const activeName = String(pipelineStore.active || getPipelineHeaderName()).trim();
             const custom = !!activeName && !isDefaultPipelineName(activeName);
