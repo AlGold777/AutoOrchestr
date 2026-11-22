@@ -1,0 +1,249 @@
+/* Скин окна Devtools (телеметрия и остальные вкладки) из макета Cortex-mockup-light (1).html.
+   Токены и правила перенесены из блока styles/redesign.css макета и ограничены #api-keys-modal,
+   чтобы не менять остальные экраны. */
+
+#api-keys-modal {
+    --ink: #0e1116;
+    --ink-2: #3a414d;
+    --muted: #7a8291;
+    --faint: #a8afbc;
+    --line: #e8eaef;
+    --line-strong: #d6dae2;
+    --canvas: #f7f8fa;
+    --surface: #ffffff;
+    --wash: #f1f3f6;
+    --accent: #3d5afe;
+    --accent-soft: #eef1ff;
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 18px;
+    --r-xl: 24px;
+    --shadow-1: 0 1px 2px rgba(14, 17, 22, .04);
+    --shadow-3: 0 2px 4px rgba(14, 17, 22, .04), 0 24px 56px -20px rgba(14, 17, 22, .22);
+    --font-family: "Inter", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--font-family);
+    font-size: 14px;
+}
+
+/* Затемнение фона и размытие за окном */
+#api-keys-modal.modal {
+    background: rgba(14, 17, 22, .18);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+/* Белое окно */
+#api-keys-modal .modal-container,
+#api-keys-modal .modal-content {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-3);
+}
+
+#api-keys-modal .modal-container > .modal-content {
+    border: none;
+    box-shadow: none;
+}
+
+#api-keys-modal .modal-content {
+    padding: 28px 28px 24px;
+}
+
+#api-keys-modal .modal-buttons {
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+#api-keys-modal .modal .close,
+#api-keys-modal .modal-container .close {
+    top: 14px;
+    right: 14px;
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+    color: var(--muted);
+    border-radius: var(--r-sm);
+    transition: background .15s, color .15s;
+}
+
+#api-keys-modal .modal .close:hover {
+    background: var(--wash);
+    color: var(--ink);
+}
+
+#api-keys-modal h2,
+#api-keys-modal h3 {
+    color: var(--ink);
+    letter-spacing: -0.015em;
+    font-weight: 650;
+}
+
+#api-keys-modal :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--r-sm);
+}
+
+#api-keys-modal select,
+#api-keys-modal .devtools-select {
+    color: var(--ink-2);
+    background-color: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+}
+
+#api-keys-modal input[type="text"],
+#api-keys-modal input[type="password"],
+#api-keys-modal textarea,
+#api-keys-modal .modal-text-input {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
+    transition: border-color .15s, box-shadow .15s;
+}
+
+#api-keys-modal input:focus,
+#api-keys-modal textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(61, 90, 254, .1);
+}
+
+#api-keys-modal .modal-button,
+#api-keys-modal .btn {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-weight: 500;
+    transition: background .15s, border-color .15s;
+}
+
+#api-keys-modal .modal-button:hover,
+#api-keys-modal .btn:hover {
+    background: var(--wash);
+    border-color: var(--ink-2);
+}
+
+#api-keys-modal .help-text,
+#api-keys-modal .info-box,
+#api-keys-modal .devtools-meta {
+    color: var(--muted);
+}
+
+#api-keys-modal .info-box {
+    background: var(--wash);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+}
+
+/* Карточки, заголовки, вкладки */
+#api-keys-modal .devtools-card,
+#api-keys-modal .telemetry-card,
+#api-keys-modal .selectors0-card,
+#api-keys-modal .diag-smart-section {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: none;
+    color: var(--ink);
+}
+
+#api-keys-modal .devtools-card-header,
+#api-keys-modal .selectors-header,
+#api-keys-modal .telemetry-summary {
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+#api-keys-modal .devtools-tablist {
+    background: var(--wash);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 2px;
+}
+
+#api-keys-modal .devtools-tab {
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    font-weight: 500;
+    font-size: 13.5px;
+    padding: 8px 14px;
+    box-shadow: none;
+    transition: color .15s, background .15s, box-shadow .15s;
+}
+
+#api-keys-modal .devtools-tab:hover {
+    color: var(--ink);
+}
+
+#api-keys-modal .devtools-tab.is-active {
+    color: var(--ink);
+    background: var(--surface);
+    box-shadow: 0 0 0 1px var(--line), var(--shadow-1);
+}
+
+#api-keys-modal .devtools-tab:focus {
+    box-shadow: 0 0 0 2px rgba(61, 90, 254, .25);
+}
+
+#api-keys-modal .devtools-scrollbox,
+#api-keys-modal .selectors0-main,
+#api-keys-modal .diagnostics-log-wrapper {
+    background: var(--canvas);
+    border-color: var(--line);
+    border-radius: var(--r-md);
+}
+
+#api-keys-modal table th {
+    background: var(--canvas);
+    color: var(--muted);
+    font-weight: 500;
+    border-color: var(--line);
+}
+
+#api-keys-modal table td {
+    border-color: var(--line);
+    color: var(--ink-2);
+}
+
+/* Кнопки панели инструментов */
+#api-keys-modal .devtools-pill-btn,
+#api-keys-modal .diag-icon-btn {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    font-weight: 500;
+    transition: background .15s, border-color .15s, color .15s;
+}
+
+#api-keys-modal .devtools-pill-btn:hover {
+    background: var(--wash);
+    border-color: var(--ink-2);
+}
+
+#api-keys-modal .devtools-toolbar button,
+#api-keys-modal .selectors0-btn {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    font-weight: 500;
+    box-shadow: none;
+}
+
+#api-keys-modal .devtools-toolbar button:hover,
+#api-keys-modal .selectors0-btn:hover {
+    background: var(--wash);
+    box-shadow: none;
+    transform: none;
+}
