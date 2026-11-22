@@ -140,10 +140,36 @@
     opacity: 0.28;
 }
 
-/* Шапка холста: тихие кнопки без фона и рамок, фон шапки без голубой подложки */
+/* Шапка холста лежит на площади холста (как в макете): та же ячейка сетки, прозрачный фон, холст получает отступ сверху под шапку.
+   Пустые места шапки пропускают щелчки к холсту (перетаскивание схемы). */
+[data-canvas-skin="minimal"] .pipeline-panel:not(.is-popout) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+}
+[data-canvas-skin="minimal"] .pipeline-panel:not(.is-popout) .panel-header,
+[data-canvas-skin="minimal"] .pipeline-panel:not(.is-popout) .pipeline-canvas {
+    grid-row: 1;
+    grid-column: 1;
+}
+[data-canvas-skin="minimal"] .pipeline-panel:not(.is-popout) .panel-header {
+    z-index: 6;
+    margin-top: 0;
+    padding: 8px 20px 0;
+    align-self: start;
+    background: transparent;
+    border-bottom: none;
+    pointer-events: none;
+}
+[data-canvas-skin="minimal"] .pipeline-panel:not(.is-popout) .panel-header > * {
+    pointer-events: auto;
+}
+[data-canvas-skin="minimal"] .pipeline-panel:not(.is-popout) .pipeline-canvas {
+    padding-top: 54px;
+}
 [data-canvas-skin="minimal"] .pipeline-panel .panel-header {
     background: transparent;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+    border-bottom: none;
 }
 [data-canvas-skin="minimal"] .pipeline-panel .panel-title {
     font-weight: 600;
