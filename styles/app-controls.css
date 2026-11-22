@@ -76,14 +76,9 @@
 
 .sidebar-toggle-icon-note {
     display: block;
-    width: 16px;
+    width: 18px;
     height: 18px;
     color: #00000078;
-}
-
-.sidebar-toggle-icon-note path,
-.sidebar-toggle-icon-note line {
-    vector-effect: non-scaling-stroke;
 }
 
 .pipeline-panel-toggle-compare-icon {
