@@ -81,17 +81,411 @@
     margin-bottom: -10px;
     margin-top: -5px;
     padding-left: 30px;
-}
+}/* Окно телеметрии — полный CSS из Cortex-mockup-light (1).html */
+
 
 #telemetry-tabpanel .telemetry-logs-card .diagnostics-panel {
     gap: 12px;
 }
+
+
 
 #telemetry-tabpanel .telemetry-logs-card .diagnostics-header {
     margin: 0;
     padding-left: 0;
     justify-content: flex-end;
 }
+
+
+
+#telemetry-tabpanel .devtools-card-grid,
+#disput-tabpanel .devtools-card-grid {
+    grid-template-columns: 1fr;
+    margin-top: 12px;
+}
+
+
+
+#telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header,
+#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header {
+    cursor: pointer;
+}
+
+
+
+#telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2,
+#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2 {
+    position: relative;
+    padding-right: 24px;
+}
+
+
+
+#telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after,
+#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after {
+    content: '▼';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    transition: transform 0.2s ease;
+}
+
+
+
+#telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after,
+#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after {
+    transform: translateY(-50%) rotate(-90deg);
+}
+
+
+
+#telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body,
+#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body {
+    display: none;
+}
+
+
+
+/* Telemetry timeline (Devtools modal) */
+.telemetry-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: "IBM Plex Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+
+
+#telemetry-tabpanel .devtools-toolbar-actions,
+#disput-tabpanel .devtools-toolbar-actions {
+    display: grid;
+    margin: 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 18px;
+    width: 100%;
+    grid-column: 1 / -1;
+}
+
+
+
+#telemetry-tabpanel .devtools-toolbar,
+#disput-tabpanel .devtools-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #ffffff;
+    grid-template-columns: 1fr;
+}
+
+
+
+#telemetry-tabpanel .telemetry-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+}
+
+
+
+#telemetry-tabpanel .telemetry-actions,
+#disput-tabpanel .telemetry-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: 35px;
+    justify-self: end;
+}
+
+
+
+#telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn,
+#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn {
+    margin-top: 0;
+    padding: 2px 6px;
+    font-size: 16px;
+    line-height: 1;
+    border: none;
+    background: transparent;
+    color: #0e1116;
+    box-shadow: none;
+}
+
+
+
+#telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover,
+#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover {
+    box-shadow: none;
+}
+
+
+
+#telemetry-tabpanel .devtools-toolbar-actions .devtools-select {
+    background: transparent;
+    border: none;
+    font-size: 16px;
+    border-radius: 0;
+    color: #0e1116;
+    box-shadow: none;
+    min-width: 120px !important;
+    padding: 6px 6px 4px;
+}
+
+
+
+#telemetry-tabpanel .telemetry-only-problems-label,
+#disput-tabpanel .disput-only-problems-label {
+    margin-left: 15px;
+}
+
+
+
+#telemetry-platform-select {
+    min-width: 132px !important;
+}
+
+
+
+#telemetry-type-select {
+    min-width: 108px !important;
+}
+
+
+
+#telemetry-preset-select {
+    min-width: 126px !important;
+}
+
+
+
+.telemetry-row {
+    display: grid;
+    grid-template-columns: 70px 90px 90px 140px minmax(0, 1fr);
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    background: #f7f8fa;
+    border: 1px solid #e8eaef;
+}
+
+
+
+.telemetry-time {
+    color: #7a8291;
+    font-variant-numeric: tabular-nums;
+}
+
+
+
+.telemetry-platform {
+    color: #0e1116;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11px;
+}
+
+
+
+.telemetry-type {
+    color: #3d5afe;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11px;
+}
+
+
+
+.telemetry-details {
+    color: #0e1116;
+    word-break: break-word;
+}
+
+
+
+.telemetry-dispatch {
+    color: #7a8291;
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+}
+
+
+
+.telemetry-row.is-warning {
+    border-color: #f59e0b;
+    background: #fff7ed;
+}
+
+
+
+.telemetry-row.is-error {
+    border-color: #ef4444;
+    background: #fef2f2;
+}
+
+
+
+.telemetry-row.is-success {
+    border-color: #10b981;
+    background: #ecfdf5;
+}
+
+
+
+.telemetry-card .devtools-meta {
+    color: #7a8291;
+    font-size: 12px;
+    margin-left: auto;
+}
+
+
+
+/* Telemetry summary (Devtools modal) */
+.telemetry-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: "IBM Plex Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+
+
+.telemetry-summary-row {
+    display: grid;
+    grid-template-columns: 90px 70px 70px 160px minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: #f7f8fa;
+    border: 1px solid #e8eaef;
+}
+
+
+
+.telemetry-summary-time {
+    color: #7a8291;
+    font-variant-numeric: tabular-nums;
+}
+
+
+
+.telemetry-summary-platform {
+    color: #0e1116;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11px;
+}
+
+
+
+.telemetry-summary-status {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+
+
+.telemetry-summary-phase {
+    color: #3d5afe;
+    font-variant-numeric: tabular-nums;
+}
+
+
+
+.telemetry-summary-reason {
+    color: #0e1116;
+    word-break: break-word;
+}
+
+
+
+.telemetry-summary-trail {
+    color: #3a414d;
+    font-size: 11px;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+
+
+.telemetry-summary-row.is-warning {
+    border-color: #f59e0b;
+    background: #fff7ed;
+}
+
+
+
+.telemetry-summary-row.is-error {
+    border-color: #ef4444;
+    background: #fef2f2;
+}
+
+
+
+.telemetry-summary-row.is-success {
+    border-color: #10b981;
+    background: #ecfdf5;
+}
+
+
+
+.telemetry-rounds-table-wrapper {
+    overflow-x: auto;
+    width: 100%;
+}
+
+
+
+.telemetry-rounds-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "IBM Plex Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+
+
+.telemetry-rounds-table th,
+.telemetry-rounds-table td {
+    border: 1px solid #e8eaef;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+
+
+.telemetry-rounds-table th {
+    background: #e0e7ff;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+
+
+.telemetry-rounds-table td {
+    min-width: 110px;
+}
+
+
+#disput-tabpanel .telemetry-actions {
+    justify-self: end;
+    margin-right: 0;
+}
+
+
 
 .diagnostics-log-wrapper.is-hidden {
     display: none;
@@ -543,122 +937,9 @@
     gap: 12px;
 }
 
-#telemetry-tabpanel .devtools-card-grid,
-#disput-tabpanel .devtools-card-grid {
-    grid-template-columns: 1fr;
-    margin-top: 12px;
-}
-
-#telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header,
-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header {
-    cursor: pointer;
-}
-
-#telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2,
-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2 {
-    position: relative;
-    padding-right: 24px;
-}
-
-#telemetry-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after,
-#disput-tabpanel .devtools-card[data-collapsible] .devtools-card-header h2::after {
-    content: '▼';
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 12px;
-    transition: transform 0.2s ease;
-}
-
-#telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after,
-#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-header h2::after {
-    transform: translateY(-50%) rotate(-90deg);
-}
-
-#telemetry-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body,
-#disput-tabpanel .devtools-card[data-collapsible].is-collapsed .devtools-card-body {
-    display: none;
-}
-
 .devtools-card h2 {
     margin: 0;
     font-size: 16px;
-}
-
-/* Telemetry timeline (Devtools modal) */
-.telemetry-timeline {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    font-family: "IBM Plex Mono", "Courier New", monospace;
-    font-size: 12px;
-    line-height: 1.4;
-}
-
-#telemetry-tabpanel .devtools-toolbar-actions,
-#disput-tabpanel .devtools-toolbar-actions {
-    display: grid;
-    margin: 10px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    column-gap: 18px;
-    width: 100%;
-    grid-column: 1 / -1;
-}
-
-#telemetry-tabpanel .devtools-toolbar,
-#disput-tabpanel .devtools-toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background: #ffffff;
-    grid-template-columns: 1fr;
-}
-
-#telemetry-tabpanel .telemetry-filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 18px;
-    min-width: 0;
-}
-
-#telemetry-tabpanel .telemetry-actions,
-#disput-tabpanel .telemetry-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-right: 35px;
-    justify-self: end;
-}
-
-#telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn,
-#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn {
-    margin-top: 0;
-    padding: 2px 6px;
-    font-size: 16px;
-    line-height: 1;
-    border: none;
-    background: transparent;
-    color: #0f172a;
-    box-shadow: none;
-}
-
-#telemetry-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover,
-#disput-tabpanel .devtools-toolbar-actions .devtools-pill-btn:hover {
-    box-shadow: none;
-}
-
-#telemetry-tabpanel .devtools-toolbar-actions .devtools-select {
-    background: transparent;
-    border: none;
-    font-size: 16px;
-    border-radius: 0;
-    color: #0f172a;
-    box-shadow: none;
-    min-width: 120px !important;
-    padding: 6px 6px 4px;
 }
 
 #disput-tabpanel .disput-trace-filters .devtools-select,
@@ -667,188 +948,6 @@
     border: none;
     outline: none;
     box-shadow: none;
-}
-
-#telemetry-tabpanel .telemetry-only-problems-label,
-#disput-tabpanel .disput-only-problems-label {
-    margin-left: 15px;
-}
-
-#telemetry-platform-select {
-    min-width: 132px !important;
-}
-
-#telemetry-type-select {
-    min-width: 108px !important;
-}
-
-#telemetry-preset-select {
-    min-width: 126px !important;
-}
-
-.telemetry-row {
-    display: grid;
-    grid-template-columns: 70px 90px 90px 140px minmax(0, 1fr);
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 10px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-}
-
-.telemetry-time {
-    color: #64748b;
-    font-variant-numeric: tabular-nums;
-}
-
-.telemetry-platform {
-    color: #0f172a;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 11px;
-}
-
-.telemetry-type {
-    color: #2563eb;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 11px;
-}
-
-.telemetry-details {
-    color: #0f172a;
-    word-break: break-word;
-}
-
-.telemetry-dispatch {
-    color: #64748b;
-    font-variant-numeric: tabular-nums;
-    font-size: 11px;
-    letter-spacing: 0.02em;
-}
-
-.telemetry-row.is-warning {
-    border-color: #f59e0b;
-    background: #fff7ed;
-}
-
-.telemetry-row.is-error {
-    border-color: #ef4444;
-    background: #fef2f2;
-}
-
-.telemetry-row.is-success {
-    border-color: #10b981;
-    background: #ecfdf5;
-}
-
-.telemetry-card .devtools-meta {
-    color: #64748b;
-    font-size: 12px;
-    margin-left: auto;
-}
-
-/* Telemetry summary (Devtools modal) */
-.telemetry-summary {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    font-family: "IBM Plex Mono", "Courier New", monospace;
-    font-size: 12px;
-    line-height: 1.4;
-}
-
-.telemetry-summary-row {
-    display: grid;
-    grid-template-columns: 90px 70px 70px 160px minmax(0, 1fr) minmax(0, 1.2fr);
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-}
-
-.telemetry-summary-time {
-    color: #64748b;
-    font-variant-numeric: tabular-nums;
-}
-
-.telemetry-summary-platform {
-    color: #0f172a;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-size: 11px;
-}
-
-.telemetry-summary-status {
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.telemetry-summary-phase {
-    color: #2563eb;
-    font-variant-numeric: tabular-nums;
-}
-
-.telemetry-summary-reason {
-    color: #0f172a;
-    word-break: break-word;
-}
-
-.telemetry-summary-trail {
-    color: #475569;
-    font-size: 11px;
-    line-height: 1.35;
-    word-break: break-word;
-}
-
-.telemetry-summary-row.is-warning {
-    border-color: #f59e0b;
-    background: #fff7ed;
-}
-
-.telemetry-summary-row.is-error {
-    border-color: #ef4444;
-    background: #fef2f2;
-}
-
-.telemetry-summary-row.is-success {
-    border-color: #10b981;
-    background: #ecfdf5;
-}
-
-.telemetry-rounds-table-wrapper {
-    overflow-x: auto;
-    width: 100%;
-}
-
-.telemetry-rounds-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: "IBM Plex Mono", "Courier New", monospace;
-    font-size: 12px;
-    line-height: 1.4;
-}
-
-.telemetry-rounds-table th,
-.telemetry-rounds-table td {
-    border: 1px solid #e2e8f0;
-    padding: 6px 8px;
-    text-align: left;
-    vertical-align: middle;
-}
-
-.telemetry-rounds-table th {
-    background: #e0e7ff;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-
-.telemetry-rounds-table td {
-    min-width: 110px;
 }
 
 .round-model {
@@ -1381,10 +1480,6 @@
     width: auto;
     margin: 10px 20px;
     gap: 18px;
-}
-#disput-tabpanel .telemetry-actions {
-    justify-self: end;
-    margin-right: 0;
 }
 #disput-tabpanel .disput-only-problems-label {
     margin-left: 0;
