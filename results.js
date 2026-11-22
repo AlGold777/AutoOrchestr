@@ -4723,7 +4723,7 @@ document.addEventListener('click', (event) => {
             const allTargetIndices = [...targetIndices, ...inactiveTargetIndices];
             if (allTargetIndices.length === 0) {
                 clearNode(svg);
-                if (entryPoint) entryPoint.style.marginTop = '26px';
+                if (entryPoint) entryPoint.style.marginTop = '14px';
                 return;
             }
 
@@ -4740,9 +4740,9 @@ document.addEventListener('click', (event) => {
                 if (entryWrapper) {
                     const entryTargetYs = allTargetIndices.map((i) => getBlockCenterYRelativeTo(targetStack, i, entryWrapper));
                     const entryMidY = (Math.min(...entryTargetYs) + Math.max(...entryTargetYs)) / 2;
-                    entryPoint.style.marginTop = `${entryMidY - 9}px`;
+                    entryPoint.style.marginTop = `${entryMidY - 21}px`;
                 } else {
-                    entryPoint.style.marginTop = `${targetMidY - 9}px`;
+                    entryPoint.style.marginTop = `${targetMidY - 21}px`;
                 }
             }
 
