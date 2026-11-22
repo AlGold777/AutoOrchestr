@@ -264,6 +264,7 @@ body.is-resizing {
     background-attachment: local, local, scroll, scroll;
     flex: 1 1 auto;
     cursor: grab;
+    margin-bottom: 5px;
 }
 
 .pipeline-canvas.is-panning {
@@ -297,11 +298,11 @@ body.is-resizing {
    pulse), pipeline-link-done (permanent orange). Before the run everything is pending (gray). */
 .pipeline-flow .model-block.pipeline-run-pending {
     border-color: #4870838f;
-    background: #e9f2ff3d;
+    background: #ffffff3d;
 }
 
 .pipeline-flow .model-block.pipeline-run-pending .model-name {
-    color: #64748b;
+    color: #0f172a;
 }
 
 .pipeline-flow .model-block.pipeline-run-done {
@@ -614,7 +615,7 @@ body.is-resizing {
 }
 .model-role-label {
     min-width: 0;
-    margin-left: 7px;
+    margin-left: 1px;
     text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -641,11 +642,11 @@ body.is-resizing {
 }
 
 .model-checkbox {
-    width: 13px;
-    height: 13px;
+    width: 12px;
+    height: 12px;
     flex: 0 0 13px;
     margin: 0;
-    accent-color: var(--pipeline-blue);
+    accent-color: #0481bf;
     cursor: pointer;
 }
 
@@ -657,13 +658,13 @@ body.is-resizing {
 .model-name {
     min-width: 0;
     flex: 1 1 auto;
-    margin-left: 7px;
+    margin-left: 1px;
     text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 400;
     color: #77869d;
 }
 
@@ -1480,7 +1481,7 @@ body.is-resizing {
 /* The owner card: a green frame (higher specificity than the dashed rule above). */
 .pipeline-control-step[data-control-kind="owner"] .pipeline-control-card {
     border: 1px solid #16a34a;
-    background: #f0fdf4;
+    background: #f0fdf4b8;
     color: #54687e;
 }
 
