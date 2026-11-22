@@ -93,6 +93,7 @@
 | Пресет | `presetId: 'CUSTOM'`, `runner: 'custom'`, `isCustomEnginePipeline()` |
 | Роль «Custom» в списке ролей | `CUSTOM_ROLE_ID = 'custom'` — **роль** (текст раунда), а не движок |
 | Рабочие копии настроек на странице | `customCardSettings`, `customRoundSettings`, `customPipelineDefaults` (Map по имени pipeline) |
+| Что открыто при старте страницы | Шаблон Default: один раунд, модели GPT и Claude (`BUILTIN_PIPELINE_DEFINITIONS` в `disput/pipeline-presets.js`, выбор — `initPipelineList` в `results.js`) |
 
 ## Что где на странице
 

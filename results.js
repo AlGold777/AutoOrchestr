@@ -4396,6 +4396,8 @@ document.addEventListener('click', (event) => {
                 const availableModels = getAllPipelineModelNames();
                 const selectedModels = definition.selectAllModels
                     ? availableModels
+                    : Array.isArray(definition.defaultModels) && definition.defaultModels.length
+                        ? availableModels.filter((model) => definition.defaultModels.includes(model))
                     : definition.defaultModelCount
                         ? availableModels.slice(0, Math.max(1, Number(definition.defaultModelCount) || 1))
                         : [];
@@ -9871,9 +9873,8 @@ document.addEventListener('click', (event) => {
             if (isPageReloadNavigation()) pipelineStore.draftPlans = {};
             ensureDefaultPipelinePresets();
             await seedBuiltinSchemas();
-            // A preset is an explicit execution choice. Starting the Disput page
-            // in manual mode must not silently opt the moderator into Universal.
-            pipelineStore.active = '';
+            // The page starts on the built-in Default pipeline (one round, GPT and Claude).
+            pipelineStore.active = getDefaultPipelinePresetNames()[0] || '';
             const domNames = getPipelineNamesFromDom()
                 .filter((name) => !LEGACY_EXAMPLE_PIPELINE_NAMES.includes(name));
             if (!pipelineStore.order.length) {

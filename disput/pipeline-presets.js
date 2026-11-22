@@ -32,7 +32,7 @@
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
     // The one built-in template; the others (Polishing, Delta, Test, Research, Architecture) were removed.
-    Object.freeze({ name: 'Default', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '2', defaultModelCount: 0, roles: ['participant'] }),
+    Object.freeze({ name: 'Default', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '1', defaultModelCount: 0, defaultModels: Object.freeze(['GPT', 'Claude']), roles: ['participant'] }),
   ]);
 
   // Basic schemas seeded into the list on the first start (results.js, initPipelineList). Not presets and not

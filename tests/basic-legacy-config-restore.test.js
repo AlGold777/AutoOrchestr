@@ -24,6 +24,8 @@ describe('Basic legacy pipeline restore', () => {
       protocol: { type: 'universal', presetId: 'CUSTOM', selectedModels: [], roundLimit: '2', runPolicy: 'auto' },
       modelStacks: {}
     };
+    // The page starts on Default (GPT, Claude): a fresh canvas is an empty pipeline.
+    document.getElementById('pipeline-add-btn').click();
     debug.clearCustomSessionForTest();
     debug.setPipelineStoreForTest({ active: pipelineName, pipelines: { [pipelineName]: legacy }, order: [pipelineName] });
     debug.applyPipelineConfig(legacy);

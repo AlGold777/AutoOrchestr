@@ -5629,7 +5629,7 @@ describe('Pipeline debate favorites view', () => {
     document.getElementById('pipeline-add-btn').click();
     document.querySelector('.pipeline-item[data-name="Default"]').click();
 
-    expect(roundLimit.value).toBe('2');
+    expect(roundLimit.value).toBe('1');
   });
 
   test('no model is selected by default', () => {
@@ -6126,6 +6126,11 @@ describe('Pipeline canvas run state (engine-derived)', () => {
     renderDebateDom();
     document.body.classList.add('pipeline-page');
     await loadResultsScript();
+    // Default starts with one round: a second round is added before the models are placed.
+    document.getElementById('pipeline-add-btn').click();
+    const runStateRounds = document.getElementById('debate-round-limit-select');
+    runStateRounds.value = '2';
+    runStateRounds.dispatchEvent(new Event('change', { bubbles: true }));
     // Round 1 and 2 get a model each; round 3 is added so the link into a pending stage exists.
     document.getElementById('r1-models').innerHTML = '<div class="model-block active"><span class="model-name">GPT</span></div>';
     document.getElementById('r2-models').innerHTML = '<div class="model-block active"><span class="model-name">Claude</span></div>';
