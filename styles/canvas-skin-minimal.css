@@ -123,17 +123,19 @@
     opacity: 0.85;
 }
 
-/* Связи: тонкие светлые линии */
+/* Связи: тонкие кривые серо-синего цвета, как в образце pipeline-canvas (#94A3B8, 1.6px), без наконечников. */
 [data-canvas-skin="minimal"] .connector-line,
 [data-canvas-skin="minimal"] .merge-line,
 [data-canvas-skin="minimal"] .connector-line.active,
+[data-canvas-skin="minimal"] .connector-line.brain-flow,
 [data-canvas-skin="minimal"] .merge-line.active {
-    stroke: #cbd5e1;
-    stroke-width: 1.5;
+    stroke: #94a3b8;
+    stroke-width: 1.6;
+    stroke-linecap: round;
 }
 [data-canvas-skin="minimal"] .arrow-head,
 [data-canvas-skin="minimal"] .arrow-head.active {
-    fill: #cbd5e1;
+    fill: #94a3b8;
 }
 [data-canvas-skin="minimal"] .connector-line.inactive,
 [data-canvas-skin="minimal"] .arrow-head.inactive {

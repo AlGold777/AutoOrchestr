@@ -4772,16 +4772,13 @@ document.addEventListener('click', (event) => {
             const activePath = targetIndices.length > 0;
             const connectorClass = activePath ? colorClass : 'inactive';
             if (curvedLines()) {
-                const hubX = W / 2;
-                html += `<line x1="0" y1="${targetMidY}" x2="${hubX}" y2="${targetMidY}" class="connector-line ${connectorClass}${activePath ? ' flow-anim' : ''}"/>`;
-                html += artifactJunctionMarkup([[0, targetMidY], [hubX, targetMidY], [W, targetMidY]]);
+                // As in the sample: one smooth curve from the start button to each block, no arrow heads.
+                html += artifactJunctionMarkup([[0, targetMidY], [W, targetMidY]]);
                 targetIndices.map((i) => getBlockCenterYRelativeTo(targetStack, i, svg)).forEach((y) => {
-                    html += curveMarkup(hubX, targetMidY, W - 6, y, `connector-line ${colorClass} flow-anim`);
-                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head ${colorClass}"/>`;
+                    html += curveMarkup(0, targetMidY, W - 2, y, `connector-line ${colorClass} flow-anim`);
                 });
                 inactiveTargetIndices.map((i) => getBlockCenterYRelativeTo(targetStack, i, svg)).forEach((y) => {
-                    html += curveMarkup(hubX, targetMidY, W - 6, y, 'connector-line inactive');
-                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head inactive"/>`;
+                    html += curveMarkup(0, targetMidY, W - 2, y, 'connector-line inactive');
                 });
                 setSvgContent(svg, html);
                 return;
@@ -4867,23 +4864,24 @@ document.addEventListener('click', (event) => {
             const targetMidY = (targetMinY + targetMaxY) / 2;
 
             if (curvedLines()) {
-                const hubX = W / 2;
-                const hubY = (sourceMidY + targetMidY) / 2;
-                activeSourceYs.forEach((y) => {
-                    html += curveMarkup(0, y, hubX, hubY, `connector-line ${colorClass}${activePath ? ' flow-anim' : ''}`);
-                });
-                inactiveSourceYs.forEach((y) => {
-                    html += curveMarkup(0, y, hubX, hubY, 'connector-line inactive');
-                });
-                html += artifactJunctionMarkup([[0, sourceMidY], [hubX, hubY], [W, targetMidY]]);
-                activeTargetYs.forEach((y) => {
-                    html += curveMarkup(hubX, hubY, W - 6, y, `connector-line ${activePath ? colorClass : 'inactive'}${activePath ? ' flow-anim' : ''}`);
-                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head ${activePath ? colorClass : 'inactive'}"/>`;
-                });
-                inactiveTargetYs.forEach((y) => {
-                    html += curveMarkup(hubX, hubY, W - 6, y, 'connector-line inactive');
-                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head inactive"/>`;
-                });
+                // As in the sample: one smooth curve from each source to each target when one side is a single card; with many
+                // cards on both sides the curves meet in one point in the middle. No arrow heads.
+                const sources = [...activeSourceYs.map((y) => ({ y, active: true })), ...inactiveSourceYs.map((y) => ({ y, active: false }))];
+                const targets = [...activeTargetYs.map((y) => ({ y, active: true })), ...inactiveTargetYs.map((y) => ({ y, active: false }))];
+                const classesOf = (active) => (active && activePath ? `connector-line ${colorClass} flow-anim` : 'connector-line inactive');
+                const endX = W - 2;
+                if (sources.length === 1 || targets.length === 1) {
+                    sources.forEach((source) => targets.forEach((target) => {
+                        html += curveMarkup(0, source.y, endX, target.y, classesOf(source.active && target.active));
+                    }));
+                    html += artifactJunctionMarkup([[0, sourceMidY], [endX, targetMidY]]);
+                } else {
+                    const hubX = W / 2;
+                    const hubY = (sourceMidY + targetMidY) / 2;
+                    sources.forEach((source) => { html += curveMarkup(0, source.y, hubX, hubY, classesOf(source.active)); });
+                    targets.forEach((target) => { html += curveMarkup(hubX, hubY, endX, target.y, classesOf(target.active)); });
+                    html += artifactJunctionMarkup([[0, sourceMidY], [hubX, hubY], [W, targetMidY]]);
+                }
                 setSvgContent(svg, html);
                 return;
             }
@@ -5104,7 +5102,7 @@ document.addEventListener('click', (event) => {
                     html += `<path d="M${start.x} ${start.y} H${turnX} V${endY} H${endX}" class="connector-line brain-flow"/>`;
                 }
             });
-            if (html) html += `<polygon points="${endX - 6},${endY - 4} ${endX},${endY} ${endX - 6},${endY + 4}" class="arrow-head brain-flow"/>`;
+            if (html && !curvedLines()) html += `<polygon points="${endX - 6},${endY - 4} ${endX},${endY} ${endX - 6},${endY + 4}" class="arrow-head brain-flow"/>`;
             svg.innerHTML = html;
         };
         const syncControlColumns = () => {
