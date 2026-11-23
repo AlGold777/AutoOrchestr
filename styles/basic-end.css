@@ -1,6 +1,12 @@
 /* Basic: the End column of the canvas and the End window (basic-windows.md «Колонка End и окно End»).
    The window is light whatever the page theme is: its colors are set here, not taken from the theme. */
 
+/* The End column is as narrow as the In column (a round button), so the last link is as long as the others. */
+.pipeline-flow .stage-column.pipeline-end-column {
+    width: 45px;
+    flex: 0 0 45px;
+}
+
 /* The lines from the sources cross the columns between them: the svg must not clip them. */
 .pipeline-end-link svg {
     overflow: visible;
