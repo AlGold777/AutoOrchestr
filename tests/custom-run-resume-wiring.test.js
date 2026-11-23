@@ -117,7 +117,7 @@ describe('T08: повтор схемы на странице', () => {
   });
 
   test('every pass is an ordinary run with new chats (forceNewTabs), and the run takes its own record', () => {
-    expect(results).toContain('await runCustomFromPage({ task: passTask(pass, carried, passesLeft(requestsUsed)), forceNewTabs: true });');
+    expect(results).toMatch(/await runCustomFromPage\(\{ task: passTask\(pass, carried, passesLeft\(requestsUsed\)\), forceNewTabs: true,\s+deferEnd: \(data\) => \{ pendingEnd = data; \} \}\);/);
     expect(results).toContain('forceNewTabs: forceNewTabs || (newPagesCheckbox ? newPagesCheckbox.checked : true),');
   });
 
@@ -147,7 +147,8 @@ describe('T03: запись прогона на диск и строка цеп�
 
   test('the autosave runs after the final save of the record and after the end notice (a failed save stays visible), and keeps its result', () => {
     expect(results).toContain('const autosaveRun = async () => {');
-    expect(results).toMatch(/showNotification\(basicRunNotice\(stopText[^\n]*\n\s*\/\/[^\n]*\n\s*lastBasicAutosave = await autosaveRun\(\);/);
+    // The end notice is skipped when the End window replaces it, and the autosave is skipped for a run that ended before its window.
+    expect(results).toMatch(/showNotification\(basicRunNotice\(stopText[^\n]*\n\s*\/\/[^\n]*\n\s*if \(!runEndedEarly\) \{\n\s*lastBasicAutosave = await autosaveRun\(\);/);
     expect(results).toMatch(/if \(record\) \{ window\.CustomRunRecord\.finishRun\(record, \{ stopReason: 'error' \}\); await saveRecord\(true\); \}\s*lastBasicAutosave = await autosaveRun\(\);/);
     expect(results).toContain('let lastBasicAutosave = null;');
   });

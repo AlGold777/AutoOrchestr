@@ -51,12 +51,13 @@
           document: 'r1' }),
         Object.freeze({ ref: 'r2', kind: 'round', models: Object.freeze([Object.freeze({ name: 'DeepSeek' })]), input: 'previous',
           task: 'Тебе передан заполненный пользователем опросник (вопрос — ответ). Перечисли по пунктам, какие ответы ты получил, и в двух предложениях скажи, что понял о задаче пользователя.' })
-      ])
+      ]),
+      end: Object.freeze({ from: Object.freeze(['r2']) })
     })
   });
 
   // Revision of each built-in schema. A higher revision replaces the copy already seeded into the list (results.js, seedBuiltinSchemas).
-  const BUILTIN_SCHEMA_REVISIONS = Object.freeze({ user_doc: 2 });
+  const BUILTIN_SCHEMA_REVISIONS = Object.freeze({ user_doc: 3 });
 
   const PRESET_BY_ID =Object.freeze(Object.fromEntries(PIPELINE_PRESETS.map((preset) => [preset.id, preset])));
   function getPipelinePreset(presetId) { return PRESET_BY_ID[presetId] || PRESET_BY_ID[DEFAULT_PRESET_ID]; }

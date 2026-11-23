@@ -138,7 +138,7 @@ describe('Basic schema: a synthesis is a round of one model with a role', () => 
     expect(canvas.errors).toEqual([]);
     expect(canvas.rounds.map((item) => [item.ref, item.participantIds])).toEqual([['r1', ['A', 'B']], ['r2', ['C']]]);
     expect(canvas.stacks['r2-models'].items.filter((item) => item.send)).toEqual([{ name: 'C', id: 'C', input: true, send: true, role: 'interaction_meta_synthesis' }]);
-    expect(Object.keys(canvas).sort()).toEqual(['controls', 'errors', 'roundCounter', 'rounds', 'selectedModels', 'stacks']);
+    expect(Object.keys(canvas).sort()).toEqual(['controls', 'end', 'errors', 'roundCounter', 'rounds', 'selectedModels', 'stacks']);
   });
 
   test('the engine runs it linearly; the result is the accepted answers of the last round', async () => {

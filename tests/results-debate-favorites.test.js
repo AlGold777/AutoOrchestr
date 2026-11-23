@@ -388,6 +388,8 @@ async function loadResultsScript(seededPipelineStore = null) {
   window.eval(fs.readFileSync(path.join(__dirname, '..', 'results', 'choice-dialog.js'), 'utf8'));
   const script = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
   window.eval(script);
+  // A Basic run ends in its End window: the test closes it as the owner would (tests/helpers/end-window.js).
+  require('./helpers/end-window').closeEndWindowsAsOwner();
   // Basic's personal-request review is a real choice dialog in the page. Keep the
   // library in this harness and accept only that review dialog so existing fake
   // transport tests can continue to exercise the request after inspecting its copy.
@@ -5860,6 +5862,75 @@ describe('Pipeline debate favorites view', () => {
           expect(runRecords(folder)).toHaveLength(3);
           expect(folder.files.get('chain.txt').trim().split('\n')).toHaveLength(3);
         } finally { cleanup(); }
+      }, 30000);
+
+      test('check End: a 3-pass repeat opens its End window once, after pass 3 (passes 1 and 2 do not open one)', async () => {
+        // The End window is built by the stage card module (the page loads it too).
+        require('../results/stage-card');
+        const { folder, starts, cleanup } = await setup('T08 end once', repeatSchema(repeatOf()));
+        // Each window that appears: how many passes had started and how many run records were saved at that moment.
+        const opened = [];
+        const watch = new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach((node) => {
+          if (node.matches?.('.basic-end-window')) opened.push({ passes: passesOf(starts).length, records: runRecords(folder).length });
+        })));
+        watch.observe(document.body, { childList: true });
+        try {
+          await start();
+          for (let i = 0; i < 300 && opened.length === 0; i += 1) await delay(10);
+          await delay(50);
+          expect(passesOf(starts)).toHaveLength(3);
+          expect(opened).toEqual([{ passes: 3, records: 3 }]);
+        } finally { watch.disconnect(); cleanup(); }
+      }, 30000);
+
+      test('check Save: a round of two models saves two documents, one after the other, each under its own name (the participant label)', async () => {
+        require('../results/stage-card');
+        const schema = { schemaVersion: 2, origin: 'user', description: 'Save T', run: { policy: 'auto' }, steps: [{ ref: 'r1', kind: 'round',
+          task: 'Общее задание шага.', output: { document: 'read', artifacts: [{ id: 'map', name: 'Карта', pointer: '' }] },
+          models: [{ id: 'gpt', name: 'GPT', label: 'Критик' }, { id: 'claude', name: 'Claude', label: 'Аналитик' }] }] };
+        const { folder, cleanup } = await setup('T save names', schema);
+        // The window stays open for the test: it presses Save and then Close itself.
+        document.endWindowsStayOpen = true;
+        const running = start(TASK);
+        try {
+          let windowEl = null;
+          for (let i = 0; i < 300 && !windowEl; i += 1) { await delay(10); windowEl = document.querySelector('.basic-end-window'); }
+          expect(windowEl).not.toBeNull();
+          expect(windowEl.querySelectorAll('section.basic-end-item')).toHaveLength(2);
+          await delay(50);
+          const before = folder.write.mock.calls.length;
+          windowEl.querySelector('.basic-end-save').click();
+          for (let i = 0; i < 300 && folder.write.mock.calls.length < before + 2; i += 1) await delay(10);
+          const names = folder.write.mock.calls.slice(before).map(([args]) => args.name);
+          expect(names).toHaveLength(2);
+          expect(names[0]).toContain('Критик');
+          expect(names[1]).toContain('Аналитик');
+          expect(new Set(names).size).toBe(2);
+          windowEl.querySelector('.basic-end-close').click();
+          await running;
+        } finally { document.endWindowsStayOpen = false; cleanup(); }
+      }, 30000);
+
+      test('check notice: a 3-pass repeat shows the run notice after passes 1 and 2 only; the last pass opens its End window and no notice', async () => {
+        require('../results/stage-card');
+        const { cleanup } = await setup('T08 notices', repeatSchema(repeatOf()));
+        const box = document.getElementById('notification-message');
+        const messages = [];
+        const watchNotices = new MutationObserver(() => messages.push(box.textContent));
+        watchNotices.observe(box, { childList: true, characterData: true, subtree: true });
+        const opened = [];
+        const watchWindows = new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach((node) => {
+          if (node.matches?.('.basic-end-window')) opened.push(node.querySelector('.basic-end-title').textContent);
+        })));
+        watchWindows.observe(document.body, { childList: true });
+        try {
+          await start();
+          await delay(50);
+          const passNotice = 'Basic: все шаги пройдены.';
+          expect(messages.filter((text) => text === passNotice)).toHaveLength(2);
+          expect(opened).toHaveLength(1);
+          expect(opened[0]).toBe(passNotice);
+        } finally { watchNotices.disconnect(); watchWindows.disconnect(); cleanup(); }
       }, 30000);
 
       test('check 2: the answer of pass 2 starts with a mark: pass 3 is not started, the notice names the reason, the record of pass 2 is saved', async () => {

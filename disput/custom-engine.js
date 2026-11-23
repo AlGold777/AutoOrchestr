@@ -458,7 +458,7 @@
   async function run({
     task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
-    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, stopMarks = [], onNoAnswer = 'ask', putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null,
+    send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, stopMarks = [], onNoAnswer = 'ask', putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null, provideEnd = null, end = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
     signal = null, onEvent = null, onRequest = null, onResponse = null
   }) {
@@ -516,6 +516,11 @@
     let inFlight = []; // the participants whose request is being sent now: unknown after a reload until their answer is judged
     let chatBindings = {}; // participantId → { modelName, stepRef, visit, transportRequestId }: the chat of each participant (kept on resume)
     let openOwner = null; // the owner interaction that is open now (a decision, an owner step, an ASK): kept on a stop
+    // The snapshot of a run that stopped, kept while its End window is open: the windows' checkpoints keep it, with only pendingOwner changed.
+    let windowFrozen = null;
+    // The End mark of the snapshot: false until the End window has been shown and closed (or End is not owed). A snapshot without the
+    // mark is an older one: its run is finished, and no window opens on its resume.
+    let endShown = false;
     let resumePendingOwner = null;
     let stopDetail = '';
     // The plan as the run sees it: a report shows what was intended, not only what happened.
@@ -549,7 +554,7 @@
           : { active: false, stepRef: step ? step.ref : null, visit: step ? (state.visits[refKey(step)] || 0) : 0, phase, valid: true,
             accepted: [], pending: [], outcome: {}, owner: null },
         results: finished.map(savedEntry),
-        ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner, chatBindings
+        ownerAnswers, artifacts: registry.entries, pendingOwner: openOwner, chatBindings, endShown
       }));
     }
     // The checkpoint (8.2) is awaited before the next external action. A failed save is not swallowed: the run stops with
@@ -559,7 +564,7 @@
       if ('pendingOwner' in extra) openOwner = extra.pendingOwner;
       const step = plan[pos];
       try {
-        await checkpoint(liveState(phase, extra));
+        await checkpoint(windowFrozen ? { ...windowFrozen, pendingOwner: openOwner } : liveState(phase, extra));
       } catch (error) {
         throw new EngineError('checkpoint_failed', `${step ? `шаг «${step.ref}»` : 'конец прогона'} · ${phase}`, `состояние не сохранено: ${error?.message || error}`);
       }
@@ -568,7 +573,7 @@
     // Waiting for the owner (a decision, an [[ASK]] answer) ends on Stop: the run is cancelled with
     // what was collected, also when the owner's dialog itself rejects with AbortError.
     async function ownerWait(start, waitMeta = {}) {
-      if (aborted()) throw new StopRun('cancelled');
+      if (aborted() && !waitMeta.evenIfStopped) throw new StopRun('cancelled');
       const waitId = String(waitMeta.waitId || `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
       const kind = String(waitMeta.kind || 'decision');
       const stepRef = waitMeta.stepRef ?? (plan[pos]?.ref || null);
@@ -579,7 +584,7 @@
         resumePendingOwner = null;
       }
       await emit('custom_wait_start', { waitId, waitKind: kind, kind, stepRef, visit, startedAt, ...(resumedFrom ? { resumedFrom } : {}) });
-      await checkpointNow(kind === 'asks' ? 'asks' : 'decision', { pendingOwner: { kind, stepRef, visit, waitId } });
+      await checkpointNow(kind === 'asks' ? 'asks' : kind === 'end' ? 'end' : 'decision', { pendingOwner: { kind, stepRef, visit, waitId, ...(waitMeta.pendingFields || {}) } });
       let onAbort = null;
       let outcome = null;
       const stopped = new Promise((resolve, reject) => {
@@ -1197,6 +1202,48 @@
       }
     }
 
+    // The End window (Basic «Шаг End»): its sources are the run's `end` (ready, by BasicSchema.endSources); without it the last
+    // round with accepted answers. A source gives one item per accepted answer: the document of that answer (the last valid
+    // version of its line, a revision by the owner included) when there is one, else the cleaned answer. `artifact` names one document.
+    function endSourcesNow() {
+      if (Array.isArray(end)) return end;
+      const last = results.slice().reverse().find((item) => item.step.kind === 'round' && acceptedOf(item).length > 0);
+      return last ? [{ step: last.step.ref }] : [];
+    }
+    // The human name of a participant in the End window: its label in the schema, else the provider name, else its id.
+    function participantLabelOf(stepRef, participantId) {
+      const raw = (Array.isArray(steps) ? steps : []).find((item) => item && item.ref === stepRef);
+      const model = (raw?.models || []).find((item) => item && typeof item === 'object' && (item.id ?? item.name) === participantId);
+      if (typeof model?.label === 'string' && model.label.trim()) return model.label.trim();
+      if (typeof model?.name === 'string' && model.name.trim()) return model.name;
+      // A version the owner wrote (an edit of a document) is the User's.
+      return participantId === OWNER_PARTICIPANT ? 'User' : participantId;
+    }
+    function endItems() {
+      const documents = Artifacts.finalDocuments(steps, registry.entries);
+      const items = [];
+      endSourcesNow().forEach((source) => {
+        const entry = currentOf(source.step);
+        if (!entry) return;
+        acceptedOf(entry).filter((answer) => !source.participant || answer.participant === source.participant).forEach((answer) => {
+          const heads = source.artifact
+            ? registry.entries.filter((item) => item.id === source.artifact).map((item) => Artifacts.latest(registry, item.lineage))
+            : documents;
+          const lines = new Map(heads.filter(Boolean).map((head) => [Artifacts.lineKey(head.lineage), head]));
+          const own = [...lines.values()].filter((head) => (head.lineage.step === entry.step.ref || head.source.step === entry.step.ref)
+            && (head.lineage.participant === answer.participant || head.source.participant === answer.participant));
+          if (own.length) {
+            own.forEach((head) => items.push({ step: entry.step.ref, participant: answer.participant, label: participantLabelOf(entry.step.ref, answer.participant), title: head.name || stepLabel(entry.step),
+              version: registry.entries.filter((item) => Artifacts.lineKey(item.lineage) === Artifacts.lineKey(head.lineage)).length,
+              text: contentOf(restoredText(head.content.answerRef, `документ «${head.name || head.id}»`), head.content.pointer, `шаг «${entry.step.ref}»`) }));
+          } else if (!source.artifact) {
+            items.push({ step: entry.step.ref, participant: answer.participant, label: participantLabelOf(entry.step.ref, answer.participant), title: stepLabel(entry.step), version: entry.visit, text: Output.cleanAnswer(answer.text) });
+          }
+        });
+      });
+      return items;
+    }
+
     // The step in progress: on Stop its accepted answers are kept like those of finished steps.
     let current = null;
     let pos = 0; // the pointer (pc): the position of the step the run is at
@@ -1245,9 +1292,25 @@
       if (saved.pendingOwner && typeof saved.pendingOwner === 'object') {
         resumePendingOwner = { ...saved.pendingOwner };
       }
+      endShown = saved.endShown === true;
       const at = saved.pc == null ? -1 : pointAt(saved.pc);
       if (saved.pc != null && at < 0) throw new EngineError('resume_mismatch', `шаг «${saved.pc}»`, 'шага сохранённого состояния нет в схеме продолжения');
       pos = at < 0 ? plan.length : at;
+      // An open End window (pendingOwner kind end): no step runs; the snapshot, its pointer included, stays as it was saved,
+      // and the stop reason of the run is the one the window was opened with.
+      if (resumePendingOwner?.kind === 'end') {
+        windowFrozen = { ...JSON.parse(JSON.stringify(saved)), pendingOwner: null };
+        pos = plan.length;
+        // The step that was in progress at the stop keeps its accepted answers for the window's items (as after a live stop).
+        const stopped = saved.current;
+        if (stopped && stopped.active && at >= 0 && stopped.stepRef === saved.pc) {
+          const entry = { step: plan[at], visit: stopped.visit, outcome: restoredOutcome(stopped.outcome), skipped: false, valid: stopped.valid !== false };
+          if (stopped.owner) entry.owner = restoredOwner(stopped.owner);
+          if (acceptedOf(entry).length || entry.owner) results.push(entry);
+        }
+        stopReason = resumePendingOwner.stopReason || stopReason;
+        stopDetail = resumePendingOwner.stopDetail || stopDetail;
+      }
       const cur = saved.current;
       if (cur && cur.active && at >= 0 && cur.stepRef === saved.pc) {
         const unsent = new Set([
@@ -1360,8 +1423,11 @@
       }
     }
 
+    let endOwed = false; // the End window opens after the steps (Basic «Шаг End»)
     try {
       if (resume) restoreRun(resume);
+      // A finished run (no step left) gets its End window on resume only when the snapshot says the End was not shown yet.
+      endOwed = typeof provideEnd === 'function' && (!(resume && pos >= plan.length) || resumePendingOwner?.kind === 'end' || resume.endShown === false);
       while (pos < plan.length) {
         const step = plan[pos];
         const key = refKey(step);
@@ -1499,7 +1565,34 @@
     }
 
     if (aborted() && stopReason === 'steps_done') stopReason = 'cancelled';
-    await checkpointNow('done');
+    if (endOwed) {
+      // The window opens at any stop reason; Stop only closes it and the reason stays. Its state has no step in progress: the
+      // pointer and the current step are put back before the closing checkpoint, so a stopped run stays resumable.
+      // The snapshot as it stood at the stop (pointer, current step, accepted answers): the window keeps it and the closing checkpoint restores it.
+      if (!windowFrozen) windowFrozen = JSON.parse(JSON.stringify(liveState('done')));
+      const stoppedAt = pos;
+      const stoppedCurrent = current;
+      const items = endItems();
+      pos = plan.length;
+      current = null;
+      try {
+        await ownerWait(() => provideEnd({ items, stopReason, stopDetail }), { waitId: `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          kind: 'end', stepRef: null, outcomeOf: () => 'closed', evenIfStopped: true, pendingFields: { stopReason, stopDetail } });
+      } catch (error) {
+        if (!(error instanceof StopRun)) throw error;
+      } finally {
+        pos = stoppedAt;
+        current = stoppedCurrent;
+      }
+      endShown = true;
+      windowFrozen.endShown = true;
+      await checkpointNow('done', { pendingOwner: null });
+      windowFrozen = null;
+    } else {
+      // No window is owed (no provideEnd, or the End was shown before): the End is settled for this snapshot.
+      endShown = true;
+      await checkpointNow('done');
+    }
     emit('custom_end', { stopReason, stopDetail, steps: results.length });
     return {
       steps: results.map((entry) => ({ index: entry.step.index, ref: entry.step.ref, kind: entry.step.kind, label: stepLabel(entry.step), visit: entry.visit, valid: entry.valid, skipped: entry.skipped, outcome: entry.outcome, ...(entry.owner?.file ? { file: entry.owner.file } : {}) })),

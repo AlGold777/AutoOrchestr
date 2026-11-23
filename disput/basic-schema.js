@@ -5,7 +5,8 @@
 // validate() runs before the first request. Rules: docs/Pipeline scenarios/basic-developer.md,
 // field reference and how to write a schema: docs/Pipeline scenarios/basic-schema-guide.md.
 //
-// Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, comment?, defaults?, steps }
+// Schema: { schemaVersion, origin: 'builtin' | 'user', basedOn?, description?, comment?, defaults?, steps, end? }
+//   end: { from: [sources] } — what the End window shows at the end of a run (the form of a step input); none = the last round's answer. endSources() gives the list the run takes
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
 //   comment: the text the model wrote around the schema JSON (kept when the schema is pasted); shown under the description, never read by the engine
 //   run: { policy?: 'auto' | 'manual', maxWords?, strictLength?, stopMarks?, onNoAnswer?, repeat? } — the run policy, the shared answer limit, the strict length check, the stop marks, the step without all answers ('ask' | 'skip') and the repeat of the schema
@@ -318,7 +319,7 @@
     else if (!SUPPORTED_VERSIONS.includes(schema.schemaVersion)) fail('schemaVersion', `версия формата ${schema.schemaVersion} не поддерживается`);
     oneOf(schema.origin, ORIGINS, 'origin', 'происхождение');
     if (schema.basedOn != null) text(schema.basedOn, 'basedOn');
-    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'description', 'comment', 'run', 'defaults', 'spec', 'steps'], '');
+    unknownKeys(schema, ['schemaVersion', 'origin', 'basedOn', 'description', 'comment', 'run', 'defaults', 'spec', 'steps', 'end'], '');
     if ('description' in schema) text(schema.description, 'description');
     if ('comment' in schema) text(schema.comment, 'comment');
     if ('spec' in schema) {
@@ -668,6 +669,36 @@
         range('carryMaxChars', 100, 50000, false);
       }
     }
+    // end (5.11): its sources have the form of a step input, read after every step (index = the number of steps).
+    // A source is a round with an enabled model (and an enabled participant); a User step gives no end.
+    if (schema.end !== undefined) {
+      const end = schema.end;
+      if (!isObject(end)) fail('end', 'ожидается объект');
+      else {
+        unknownKeys(end, ['from'], 'end');
+        if (!Array.isArray(end.from) || !end.from.length) fail('end.from', 'ожидается непустой список источников');
+        else {
+          const addresses = new Set();
+          end.from.forEach((source, at) => {
+            const path = `end.from[${at}]`;
+            if (isObject(source) && 'required' in source) fail(`${path}.required`, 'в итоге поле required не нужно');
+            if (isObject(source) && isObject(source.artifact) && 'version' in source && source.version !== 'latest') fail(`${path}.version`, 'итог берёт последнюю версию документа: version: "latest"');
+            const address = checkSource(source, path, contextAt(steps.length));
+            if (!address) return;
+            if (addresses.has(address)) fail(path, 'источник повторяется');
+            addresses.add(address);
+            const named = isObject(source) && isObject(source.artifact) ? source.artifact : source;
+            const ref = typeof source === 'string' ? source : named.step;
+            const participant = typeof source === 'string' ? undefined : named.participant;
+            const step = steps[positions.get(ref)];
+            const models = Array.isArray(step.models) ? step.models.filter(isObject) : [];
+            if (step.kind !== 'round') fail(path, 'итог берётся из раунда: шаг User итога не даёт');
+            else if (!models.some((model) => model.enabled !== false)) fail(path, `раунд «${ref}» выключен: в нём нет включённой модели`);
+            else if (participant !== undefined && !models.some((model) => idOf(model) === participant && model.enabled !== false)) fail(`${path}.participant`, `участник «${participant}» выключен`);
+          });
+        }
+      }
+    }
     errors.push(...executabilityErrors(schema.steps));
     return errors;
   }
@@ -752,7 +783,7 @@
     // A model is selected when a stack of some round shows it.
     const shownNames = new Set(Object.values(stacks).flatMap((stack) => stack.items.map((item) => item.name)));
     const selectedModels = models.filter((name) => shownNames.has(name));
-    return { errors, roundCounter: rounds.length, selectedModels, stacks, controls,
+    return { errors, roundCounter: rounds.length, selectedModels, stacks, controls, end: { sources: endSources(schema) },
       rounds: rounds.map((step, index) => ({ ref: `r${index + 1}`, participantIds: enabledOf(step).map(idOf), roles: Object.fromEntries(enabledOf(step).map((model) => [idOf(model), model.role || null])) })) };
   }
 
@@ -765,6 +796,22 @@
     onNoAnswer: schema.run?.onNoAnswer === 'skip' ? 'skip' : 'ask',
     repeat: isObject(schema.run?.repeat) ? clone(schema.run.repeat) : null
   });
+
+  // The sources of the End window (5.11): { step } (a round), { step, participant } or { step, participant, artifact: id }.
+  // No `end` (or no `from` list): the last round with an enabled model. `end.from: []` gives no source. Assumes a valid schema.
+  function endSources(schema) {
+    const steps = isObject(schema) && Array.isArray(schema.steps) ? schema.steps : [];
+    if (!isObject(schema?.end) || !Array.isArray(schema.end.from)) {
+      const last = steps.filter((step) => isObject(step) && step.kind === 'round' && runnable(step)).pop();
+      return last ? [{ step: last.ref }] : [];
+    }
+    return schema.end.from.flatMap((source) => {
+      if (typeof source === 'string') return [{ step: source }];
+      if (!isObject(source)) return [];
+      if (isObject(source.artifact)) return [{ step: source.artifact.step, participant: source.artifact.participant, artifact: source.artifact.id }];
+      return [{ step: source.step, ...('participant' in source ? { participant: source.participant } : {}) }];
+    });
+  }
 
   // Remarks about a valid schema that do not block it (the author decides): [{ path, message }]. Three patterns that lose
   // the author's intent silently: a participant's own task replaces the step's task; an owner answer that no later step
@@ -828,7 +875,7 @@
 
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, toSettings, toCanvas, validate, warnings, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, endSources, toSettings, toCanvas, validate, warnings, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

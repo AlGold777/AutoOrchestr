@@ -3474,7 +3474,7 @@ document.addEventListener('click', (event) => {
         const pipelineList = pipelinePanel.querySelector('.pipeline-list');
         const pipelineListHeader = pipelineList ? pipelineList.querySelector('.pipeline-list-header') : null;
         const PIPELINE_STORAGE_KEY = 'llmComparatorPipelines';
-        const PIPELINE_STORE_VERSION = 9;
+        const PIPELINE_STORE_VERSION = 10;
         const pipelineStore = {
             version: PIPELINE_STORE_VERSION,
             pipelines: {},
@@ -3553,6 +3553,20 @@ document.addEventListener('click', (event) => {
             dropTemplate('Basic', 'Default');
             return next;
         };
+        // Store version 10: the End step of a Basic schema is written explicitly (5.11). Each stored schema without `end` gets
+        // the default, the last round with an enabled model, as `end.from`. Schemas with `end`, legacy records and drafts stay as they are.
+        const migrateBasicEnd = (value) => {
+            const from = Number(value.version) || 0;
+            if (from >= 10) return value;
+            const next = JSON.parse(JSON.stringify(value));
+            Object.values(next.pipelines && typeof next.pipelines === 'object' ? next.pipelines : {}).forEach((record) => {
+                const schema = record?.schema;
+                if (!schema || typeof schema !== 'object' || 'end' in schema) return;
+                const sources = window.BasicSchema?.endSources?.(schema) || [];
+                if (sources.length) schema.end = { from: [sources[0].step] };
+            });
+            return next;
+        };
         const normalizePipelineStore = (input) => {
             const base = {
                 version: PIPELINE_STORE_VERSION,
@@ -3569,7 +3583,7 @@ document.addEventListener('click', (event) => {
                 draftPlans: {}
             };
             if (!input || typeof input !== 'object') return base;
-            const value = migrateBasicTemplateName(input);
+            const value = migrateBasicEnd(migrateBasicTemplateName(input));
             const pipelines = value.pipelines && typeof value.pipelines === 'object' ? value.pipelines : {};
             const order = Array.isArray(value.order)
                 ? value.order.filter((name) => typeof name === 'string' && name.trim())
@@ -4957,9 +4971,90 @@ document.addEventListener('click', (event) => {
                 card.style.overflowY = 'hidden';
             });
         };
+        // The End column (basic-windows.md «Колонка End и окно End»): one, at the end of the flow, paired with In. Its lines
+        // come from the sources of the End step (toCanvas(...).end.sources). The lines are drawn after the layout (drawEndLinks).
+        let endLinkPlan = null;
+        const endSourcesOnCanvas = () => {
+            try {
+                const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true });
+                // toCanvas gives no End part for a schema with errors (the canvas shows them instead): the sources are then read from the schema.
+                const canvas = window.BasicSchema.toCanvas(schema, {
+                    models: getAllPipelineModelNames(),
+                    isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id)),
+                    allowDraft: true
+                });
+                return canvas.end?.sources || window.BasicSchema.endSources(schema);
+            } catch (_) { return []; }
+        };
+        const buildEndColumn = () => {
+            const flow = pipelinePanel.querySelector('.pipeline-flow');
+            if (!flow) return null;
+            const sources = endSourcesOnCanvas();
+            const group = document.createElement('div');
+            group.className = 'connector-group pipeline-end-link';
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'connector-svg');
+            svg.id = 'svg-end-links';
+            group.append(svg);
+            const column = document.createElement('div');
+            column.className = 'stage-column pipeline-end-column';
+            column.dataset.endSources = String(sources.length);
+            const header = document.createElement('div');
+            header.className = 'stage-header-row';
+            const label = document.createElement('div');
+            label.className = 'stage-label';
+            const badge = document.createElement('span');
+            badge.className = 'end-badge';
+            badge.textContent = 'End';
+            label.append(badge);
+            header.append(label);
+            const stack = document.createElement('div');
+            stack.className = 'model-stack';
+            stack.id = 'end-models';
+            const card = document.createElement('div');
+            card.className = 'pipeline-control-card pipeline-end-card';
+            const name = document.createElement('span');
+            name.className = 'control-card-name';
+            name.textContent = 'Итог прогона';
+            const from = document.createElement('span');
+            from.className = 'control-card-role';
+            const labelOf = (ref) => (/^r\d+$/.test(ref) ? ref.toUpperCase() : ref);
+            from.textContent = sources.length ? `из ${sources.map((item) => labelOf(item.step)).join(', ')}` : 'нет источников';
+            card.append(name, from);
+            stack.append(card);
+            column.append(header, stack);
+            flow.append(group, column);
+            return { svg, card, sources };
+        };
+        // Lines from each source (a round, or a participant of it) to the End card. The End column is the last one, so the
+        // lines cross the columns between: the svg is not clipped (see .pipeline-end-link svg).
+        const drawEndLinks = () => {
+            if (!endLinkPlan?.svg?.isConnected) return;
+            const { svg, card, sources } = endLinkPlan;
+            const svgRect = svg.getBoundingClientRect();
+            const cardRect = card.getBoundingClientRect();
+            const endX = cardRect.left - svgRect.left - 2;
+            const endY = cardRect.top + (cardRect.height / 2) - svgRect.top;
+            let html = '';
+            sources.forEach((source) => {
+                const stack = document.getElementById(`${source.step}-models`);
+                if (!stack) return;
+                const block = source.participant
+                    ? Array.from(stack.querySelectorAll('.model-block')).find((node) => modelBlockId(node) === source.participant)
+                    : null;
+                const rect = (block || stack).getBoundingClientRect();
+                const startX = rect.right - svgRect.left;
+                const startY = rect.top + (rect.height / 2) - svgRect.top;
+                const dx = (endX - startX) / 2;
+                html += `<path d="M${startX} ${startY} C${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}" class="connector-line brain-flow"/>`;
+            });
+            if (html) html += `<polygon points="${endX - 6},${endY - 4} ${endX},${endY} ${endX - 6},${endY + 4}" class="arrow-head brain-flow"/>`;
+            svg.innerHTML = html;
+        };
         const syncControlColumns = () => {
             if (!pipelinePanel) return [];
-            pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link').forEach((node) => node.remove());
+            pipelinePanel.querySelectorAll('.pipeline-control-step, .pipeline-control-link, .pipeline-end-column, .pipeline-end-link').forEach((node) => node.remove());
+            endLinkPlan = buildEndColumn();
             const editable = !pipelineRunActive;
             const entries = getCustomControls();
             const byAfter = new Map(entries.map((item) => [item.after, item]));
@@ -5296,6 +5391,7 @@ document.addEventListener('click', (event) => {
             syncDocumentFrames({ syncCanvas: false });
             updatePipelineLayout();
             drawControlColumnLinks(controlLinks);
+            drawEndLinks();
             syncCustomRoleOption();
             pipelinePanel.querySelectorAll('.model-block').forEach((block) => {
                 PipelineRuntime?.syncRoleLabel?.(block);
@@ -6829,6 +6925,8 @@ document.addEventListener('click', (event) => {
             });
             return { schemaVersion, origin: 'user', ...(forSave && basedOn ? { basedOn } : {}),
                 ...(sourceSchema && 'spec' in sourceSchema ? { spec: JSON.parse(JSON.stringify(sourceSchema.spec)) } : {}),
+                // The sources of the End step come from the source schema, as the spec does (the canvas does not show them as fields).
+                ...(sourceSchema && 'end' in sourceSchema ? { end: JSON.parse(JSON.stringify(sourceSchema.end)) } : {}),
                 ...(sourceSchema && typeof sourceSchema.description === 'string' ? { description: sourceSchema.description } : {}),
                 ...(sourceSchema && typeof sourceSchema.comment === 'string' ? { comment: sourceSchema.comment } : {}),
                 ...(Object.keys(runValue).length ? { run: runValue } : {}),
@@ -7315,7 +7413,72 @@ document.addEventListener('click', (event) => {
             participant_binding_failed: 'не удалось сохранить привязку чата участника. Запрос не отправлен.',
             participant_api_unsupported: 'для чата участника API-режим не поддержан: выключите API-режим и запустите снова. Запрос не отправлен.'
         };
-        const runCustomFromPage = async ({ task, resumeRecord = null, forceNewTabs = false }) => {
+        // The End window (basic-windows.md «Окно End»): one window for the run. It sends nothing to the models. It resolves when
+        // the window closes: the owner's «Закрыть» or Escape, Stop, or the start of a new run (closeOpenEndWindow).
+        // The window that is open now: the start of a new run closes it (runCustomFromPage). Stop does not close it: the Stop
+        // button is not active after the run has ended.
+        let closeOpenEndWindow = null;
+        // The file name of each document of the End window: its title and its participant; a number when two names are still equal.
+        const endDocumentNames = (items) => {
+            const seen = new Map();
+            return items.map((item) => {
+                const base = [item.title || item.step || 'Документ', item.label || item.participant].filter(Boolean).join(' · ');
+                const count = (seen.get(base) || 0) + 1;
+                seen.set(base, count);
+                return count === 1 ? base : `${base} (${count})`;
+            });
+        };
+        const openEndWindow = ({ title, items, folderName, copyState, startedAt, pipeline, runId }) => new Promise((resolve) => {
+            let dialog = null;
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                if (closeOpenEndWindow === finish) closeOpenEndWindow = null;
+                if (dialog?.open) dialog.close?.();
+                dialog?.remove();
+                resolve();
+            };
+            closeOpenEndWindow = finish;
+            dialog = window.StageCard.buildEndWindow(document, {
+                title,
+                items,
+                folderName,
+                onCopy: async (item, button) => {
+                    try { await navigator.clipboard.writeText(String(item.text ?? '')); flashButtonFeedback(button, 'success'); } catch (_) { flashButtonFeedback(button, 'error'); }
+                },
+                onSave: async (button) => {
+                    // Every document goes to the run's folder through the same copy as an approved document (saveDocumentCopy),
+                    // one after another: each file has its own name (endDocumentNames) and no write can overwrite another.
+                    const names = endDocumentNames(items);
+                    for (let index = 0; index < items.length; index += 1) {
+                        const text = String(items[index].text ?? '');
+                        if (!text.trim()) continue;
+                        // eslint-disable-next-line no-await-in-loop
+                        await saveDocumentCopy({ stepRef: items[index].step, document: { name: names[index], kind: 'read' },
+                            answer: text, startedAt, pipeline, runId }, copyState);
+                    }
+                    flashButtonFeedback(button, 'success');
+                },
+                onPick: pickDocumentsFolder,
+                onClose: finish
+            });
+            dialog.addEventListener('close', finish);
+            document.body.append(dialog);
+            if (typeof dialog.showModal === 'function') dialog.showModal();
+            else dialog.setAttribute('open', '');
+        });
+        // The End window of one run: the title is the reason of its stop, the documents are its items (see provideEnd).
+        const showEndWindow = async ({ items, stopReason, stopDetail, copyState, startedAt, pipeline, runId }) => {
+            const folderName = await documentsFolderName();
+            await openEndWindow({
+                title: basicRunNotice(window.CustomEngine?.STOP_TEXT?.[stopReason] || stopReason, items.length, stopDetail),
+                items, folderName, copyState, startedAt, pipeline, runId
+            });
+        };
+        const runCustomFromPage = async ({ task, resumeRecord = null, forceNewTabs = false, deferEnd = null }) => {
+            // A new run closes the End window of the previous one (its run is already over, see endRunEarly).
+            closeOpenEndWindow?.();
             const engine = window.CustomEngine;
             const built = resumeRecord ? builtFromRecord(resumeRecord) : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
             // A schema that cannot be run stops here with the place of the error; nothing is sent.
@@ -7403,6 +7566,31 @@ document.addEventListener('click', (event) => {
             };
             const runContext = activePipelineRunContext;
             const documentCopyState = { warned: documentsAccessNoticed };
+            // The End window replaces the end notice of the run: the reason is its title.
+            let endWindowShown = false;
+            // The run's own end (its lock, its controller, its progress, its record) is done before the End window opens, not
+            // when the window closes: a new run can start while the window is open. The rest of the end is skipped then (runEndedEarly).
+            let runEndedEarly = false;
+            const endRunEarly = async (stopReason) => {
+                if (runEndedEarly) return;
+                runEndedEarly = true;
+                stallWatch?.stop();
+                clearPromptAttachments();
+                if (customAbortController === runAbort) customAbortController = null;
+                if (activePipelineRunContext === runContext) activePipelineRunContext = null;
+                pipelineRunActive = false;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
+                finishCustomRunProgress(stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED', stopReason);
+                if (record) {
+                    window.CustomRunRecord.finishRun(record, { stopReason });
+                    await saveRecord(true);
+                    syncDocumentFrames();
+                }
+                lastBasicAutosave = await autosaveRun();
+                if (stopReason !== 'steps_done') offerResumeLine(record);
+            };
             const signal = customAbortController.signal;
             // The text of the composer before the run took it: it comes back if the run produces nothing.
             let composerBackup = '';
@@ -8005,6 +8193,28 @@ document.addEventListener('click', (event) => {
                         }
                         return answer;
                     },
+                    // The sources of the End step (BasicSchema.endSources): the documents or answers the End window shows.
+                    end: window.BasicSchema.endSources(built.schema),
+                    // The End step: the run is over, its final documents are shown in one window until the owner closes it.
+                    provideEnd: async ({ items = [], stopReason, stopDetail = '' }) => {
+                        // Without the window module the end notice stays: the run is not stopped by a missing window.
+                        if (!window.StageCard?.buildEndWindow) return;
+                        const endData = { items, stopReason, stopDetail, copyState: documentCopyState,
+                            startedAt: runContext.startedAt, pipeline: customPipelineName(), runId: runContext.pipelineRunId };
+                        // A pass of a repeat that goes on hands its End to the repeat (runBasicRepeat opens it once, after the last pass).
+                        // Such a pass keeps its end notice, as before.
+                        if (deferEnd) {
+                            // The end notice is not shown here: the repeat shows it only when it goes on after this pass.
+                            endWindowShown = true;
+                            await endRunEarly(stopReason);
+                            deferEnd({ ...endData, notice: { text: basicRunNotice(engine.STOP_TEXT[stopReason] || stopReason, items.length, stopDetail),
+                                kind: stopReason === 'steps_done' ? 'info' : 'warn' } });
+                            return;
+                        }
+                        endWindowShown = true;
+                        await endRunEarly(stopReason);
+                        await showEndWindow(endData);
+                    },
                     // The request whose sending is not confirmed: send it again, or skip it for this attempt only.
                     resolveUnknown: ({ stepRef, items, choices = ['resend', 'skip'] }) => askChoiceDialog({
                         title: 'Неизвестный запрос',
@@ -8084,7 +8294,8 @@ document.addEventListener('click', (event) => {
                     }
                 });
                 const stopText = engine.STOP_TEXT[result.stopReason] || result.stopReason;
-                finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED', result.stopReason);
+                // A run that ended before its End window (endRunEarly) has its progress, lock and canvas already released.
+                if (!runEndedEarly) finishCustomRunProgress(result.stopReason === 'steps_done' ? 'COMPLETED' : 'CANCELLED', result.stopReason);
                 if (record) {
                     // The registry and the state of the run at its end: what a later resume needs (8.2).
                     const CustomRecord = window.CustomRunRecord;
@@ -8101,7 +8312,7 @@ document.addEventListener('click', (event) => {
                     await saveRecord(true);
                     syncDocumentFrames();
                 }
-                markStaleBasicCards(result.steps);
+                if (!runEndedEarly) markStaleBasicCards(result.steps);
                 const artifacts = result.artifacts || [];
                 // The copy of each document on disk ends with its last version: a model may revise it after the owner approved it.
                 void (async () => {
@@ -8117,11 +8328,13 @@ document.addEventListener('click', (event) => {
                 }
                 // The answers of the last step are already in the feed as the cards of that step: no second card repeats
                 // them. The reason of the end is the notification; with no accepted answer at all it says so.
-                if (!['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);
-                showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
+                if (!runEndedEarly && !['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);
+                if (!endWindowShown) showNotification(basicRunNotice(stopText, result.answers.length, result.stopDetail), result.stopReason === 'steps_done' ? 'info' : 'warn');
                 // After the end notice: the notice window holds one text, and a failed save must stay visible.
-                lastBasicAutosave = await autosaveRun();
-                if (result.stopReason !== 'steps_done') offerResumeLine(record);
+                if (!runEndedEarly) {
+                    lastBasicAutosave = await autosaveRun();
+                    if (result.stopReason !== 'steps_done') offerResumeLine(record);
+                }
                 return result.stopReason !== 'cancelled';
             } catch (err) {
                 console.error('[RESULTS] Custom run failed', err);
@@ -8136,16 +8349,18 @@ document.addEventListener('click', (event) => {
                 return false;
             } finally {
                 stallWatch?.stop();
-                // Stop while a pause dialog was open: close it, the run is over.
-                if (customDecisionOpen) { customDecisionOpen = false; cancelConfirmBtn?.click?.(); }
-                if (pendingOwnerAsks?.resolve) { const pending = pendingOwnerAsks; pendingOwnerAsks = null; ownerAskDialog?.close?.(); pending.resolve([]); }
-                clearPromptAttachments();
-                pipelineRunActive = false;
-                customAbortController = null;
-                activePipelineRunContext = null;
-                setPipelineEditingEnabled(true);
-                setPipelineRunUi(false);
-                updateDebateButtonsUi();
+                if (!runEndedEarly) {
+                    // Stop while a pause dialog was open: close it, the run is over.
+                    if (customDecisionOpen) { customDecisionOpen = false; cancelConfirmBtn?.click?.(); }
+                    if (pendingOwnerAsks?.resolve) { const pending = pendingOwnerAsks; pendingOwnerAsks = null; ownerAskDialog?.close?.(); pending.resolve([]); }
+                    clearPromptAttachments();
+                    pipelineRunActive = false;
+                    customAbortController = null;
+                    activePipelineRunContext = null;
+                    setPipelineEditingEnabled(true);
+                    setPipelineRunUi(false);
+                    updateDebateButtonsUi();
+                }
             }
         };
         // An explicitly edited request can omit the task or incoming answers by design. Show every
@@ -8220,6 +8435,8 @@ document.addEventListener('click', (event) => {
             let carried = '';
             let requestsUsed = 0;
             let finished = 0;
+            // The End of the last pass that ran (runCustomFromPage deferEnd): the window opens once, when the repeat exits.
+            let pendingEnd = null;
             try {
                 try {
                     if (getDebateRunPolicy() !== 'auto') { stopNotice('повтор идёт только при политике auto'); return false; }
@@ -8265,9 +8482,12 @@ document.addEventListener('click', (event) => {
                 if (!confirmed || basicRepeatStop) { if (!basicRepeatStop) stopNotice('повтор не запущен: запуск отменён'); return false; }
                 for (;;) {
                     if (basicRepeatStop) { stopNotice('повтор остановлен User'); return finished > 0; }
+                    // The next pass starts: the end notice of the pass before shows now. Its End does not open (only the last one does).
+                    if (pendingEnd) { showNotification(pendingEnd.notice.text, pendingEnd.notice.kind); pendingEnd = null; }
                     latestBasicRunRecord = null;
                     lastBasicAutosave = null;
-                    await runCustomFromPage({ task: passTask(pass, carried, passesLeft(requestsUsed)), forceNewTabs: true });
+                    await runCustomFromPage({ task: passTask(pass, carried, passesLeft(requestsUsed)), forceNewTabs: true,
+                        deferEnd: (data) => { pendingEnd = data; } });
                     pipelineRunActive = true;
                     setPipelineRunUi(true);
                     const exported = latestBasicRunRecord ? window.CustomRunRecord.exportRun(latestBasicRunRecord) : null;
@@ -8308,6 +8528,8 @@ document.addEventListener('click', (event) => {
                 pipelineRunActive = false;
                 setPipelineRunUi(false);
                 updateDebateButtonsUi();
+                // The repeat is over: its End window opens now, once (not awaited: the repeat does not wait for the window).
+                if (pendingEnd) { const end = pendingEnd; pendingEnd = null; void showEndWindow(end); }
             }
         };
         const startDebateFromPage = async () => {

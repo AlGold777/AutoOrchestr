@@ -609,8 +609,54 @@
     return '';
   }
 
+  // The window of the End step (basic-windows.md «Окно End»): one dialog. Its title is the reason of the stop, then one section
+  // per document (title, version, text, its own copy button). Buttons: the folder row, «Сохранить» (all documents) and «Закрыть».
+  // The window does not send anything: the callbacks come from the page (results.js openEndWindow).
+  function buildEndWindow(doc, { title = '', items = [], folderName = '', onCopy = null, onSave = null, onPick = null, onClose = null } = {}) {
+    const dialog = el(doc, 'dialog', 'basic-end-window');
+    dialog.append(el(doc, 'h2', 'basic-end-title', String(title)));
+    items.forEach((item) => {
+      const section = el(doc, 'section', 'basic-end-item');
+      const head = el(doc, 'div', 'basic-end-item-head');
+      // The step label and the participant's name: the documents of a multi-model round tell apart by the participant.
+      head.append(el(doc, 'h3', 'basic-end-item-title', [item.title || item.step, item.label || item.participant].filter(Boolean).join(' · ')));
+      if (item.version !== undefined && item.version !== null && item.version !== '') {
+        head.append(el(doc, 'span', 'basic-end-item-version', `версия ${item.version}`));
+      }
+      const copy = el(doc, 'button', 'basic-end-copy', 'Копировать');
+      copy.type = 'button';
+      copy.setAttribute('aria-label', `Копировать: ${item.title || item.step || 'документ'}`);
+      copy.addEventListener('click', () => { if (typeof onCopy === 'function') onCopy(item, copy); });
+      head.append(copy);
+      section.append(head, el(doc, 'pre', 'basic-end-text', String(item.text ?? '')));
+      dialog.append(section);
+    });
+    const actions = el(doc, 'div', 'basic-end-actions');
+    const folder = el(doc, 'div', 'basic-end-folder');
+    const pick = el(doc, 'button', 'basic-end-folder-pick', 'Папка документов');
+    pick.type = 'button';
+    const folderLabel = el(doc, 'span', 'basic-end-folder-name', folderName || 'не выбрана');
+    pick.addEventListener('click', async () => {
+      try {
+        const picked = typeof onPick === 'function' ? await onPick() : null;
+        if (picked) folderLabel.textContent = picked;
+      } catch (_) { /* the window keeps the folder it had */ }
+    });
+    folder.append(pick, folderLabel);
+    const save = el(doc, 'button', 'basic-end-save', 'Сохранить');
+    save.type = 'button';
+    save.disabled = !items.length;
+    save.addEventListener('click', () => { if (typeof onSave === 'function') onSave(save); });
+    const close = el(doc, 'button', 'basic-end-close', 'Закрыть');
+    close.type = 'button';
+    close.addEventListener('click', () => { if (typeof onClose === 'function') onClose(); });
+    actions.append(folder, save, close);
+    dialog.append(actions);
+    return dialog;
+  }
+
   const api = Object.freeze({ buildModel, render, stepsAfterToggle, stepRequiredAfterToggle, outputAfterEdit, STATUS, feed,
-    controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage });
+    controlSummary, ownerWindowModel, ownerAfterEdit, renderOwnerWindow, renderAddControl, ownerAskMessage, buildEndWindow });
   root.StageCard = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

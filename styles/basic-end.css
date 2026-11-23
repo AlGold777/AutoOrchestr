@@ -1,0 +1,169 @@
+/* Basic: the End column of the canvas and the End window (basic-windows.md «Колонка End и окно End»).
+   The window is light whatever the page theme is: its colors are set here, not taken from the theme. */
+
+.end-badge {
+    color: #2563ebc7;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 55px;
+    height: 24px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* The lines from the sources cross the columns between them: the svg must not clip them. */
+.pipeline-end-link svg {
+    overflow: visible;
+}
+
+.pipeline-end-link path.connector-line {
+    fill: none;
+}
+
+.pipeline-end-card {
+    cursor: default;
+}
+
+.basic-end-window {
+    box-sizing: border-box;
+    color-scheme: light;
+    width: min(760px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    margin: 16px auto;
+    padding: 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    overflow: auto;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.basic-end-window::backdrop {
+    background: rgba(15, 23, 42, 0.35);
+}
+
+.basic-end-title {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.basic-end-item {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.basic-end-item-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.basic-end-item-title {
+    flex: 1 1 auto;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.basic-end-item-version {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.basic-end-text {
+    margin: 8px 0 0;
+    max-height: 40vh;
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #0f172a;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.basic-end-window button {
+    min-height: 32px;
+    padding: 4px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+    cursor: pointer;
+}
+
+.basic-end-window button:hover:not(:disabled) {
+    background: #f1f5f9;
+}
+
+.basic-end-window button:disabled {
+    color: #94a3b8;
+    cursor: default;
+}
+
+.basic-end-window button:focus-visible {
+    outline: 2px solid #86b9aa;
+    outline-offset: 2px;
+}
+
+.basic-end-save {
+    border-color: #0f172a;
+    background: #0f172a;
+    color: #ffffff;
+}
+
+.basic-end-save:hover:not(:disabled) {
+    background: #1e293b;
+}
+
+.basic-end-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.basic-end-folder {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+}
+
+.basic-end-folder-name {
+    color: #475569;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.basic-end-actions > .basic-end-save,
+.basic-end-actions > .basic-end-close {
+    margin-left: auto;
+}
+
+@media (max-width: 480px) {
+    .basic-end-window {
+        width: calc(100vw - 32px);
+        padding: 12px;
+    }
+
+    .basic-end-actions > .basic-end-save,
+    .basic-end-actions > .basic-end-close {
+        margin-left: 0;
+    }
+}
