@@ -4773,7 +4773,7 @@ document.addEventListener('click', (event) => {
             const connectorClass = activePath ? colorClass : 'inactive';
             if (curvedLines()) {
                 // A short horizontal trunk (the arrows of the artifacts land on it), then one smooth curve to each block; no arrow heads.
-                const curveStart = W - 18;
+                const curveStart = 10;
                 const endX = W - 2;
                 html += `<line x1="0" y1="${targetMidY}" x2="${curveStart}" y2="${targetMidY}" class="connector-line ${connectorClass}${activePath ? ' flow-anim' : ''}"/>`;
                 html += artifactJunctionMarkup([[0, targetMidY], [targetYs.length === 1 ? W : curveStart, targetMidY]]);
@@ -4875,14 +4875,18 @@ document.addEventListener('click', (event) => {
                 const classesOf = (active) => (active && activePath ? `connector-line ${colorClass} flow-anim` : 'connector-line inactive');
                 const trunkClasses = classesOf(true);
                 const curveEnd = W - 2;
-                const curveIn = 18;
-                const curveOut = W - 18;
+                // The trunk is short (10px): the curves take the rest of the width.
+                const trunkLen = 10;
+                const curveIn = sources.length > 1 && targets.length > 1 ? (W - trunkLen) / 2 : W - trunkLen;
+                const curveOut = sources.length > 1 && targets.length > 1 ? (W + trunkLen) / 2 : trunkLen;
                 if (sources.length === 1 && targets.length === 1 && Math.abs(sources[0].y - targets[0].y) > 0.5) {
                     html += curveMarkup(0, sources[0].y, curveEnd, targets[0].y, classesOf(sources[0].active && targets[0].active));
                     html += artifactJunctionMarkup([[0, sources[0].y], [curveEnd, targets[0].y]]);
                 } else {
                     const hubY = sources.length > 1 && targets.length > 1 ? (sourceMidY + targetMidY) / 2
                         : (sources.length > 1 ? targetMidY : sourceMidY);
+                    // Many sources, one target: the curves run up to the trunk, and the trunk reaches the target (the last 10px).
+                    // One source, many targets: the trunk leaves the source (the first 10px), and the curves follow.
                     const trunkFrom = sources.length > 1 ? curveIn : 0;
                     const trunkTo = targets.length > 1 ? curveOut : W;
                     if (sources.length > 1) sources.forEach((source) => { html += curveMarkup(0, source.y, curveIn, hubY, classesOf(source.active)); });
