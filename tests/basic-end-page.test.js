@@ -125,7 +125,8 @@ describe('Basic End column on the canvas', () => {
     await selectPipeline('Default');
     expect(document.querySelectorAll('.pipeline-end-column')).toHaveLength(1);
     expect(document.querySelector('.pipeline-end-card').dataset.endFrom).toBe('из R1');
-    expect(document.querySelectorAll('svg#svg-end-links path.connector-line')).toHaveLength(1);
+    // One line from each model of that round (Default has two): the lines meet before the End button.
+    expect(document.querySelectorAll('svg#svg-end-links path.connector-line')).toHaveLength(2);
 
     const name = 'End column empty canvas';
     // No round at all: a schema of one owner step (valid, runs by itself). The End column stays, with no source.
@@ -156,6 +157,9 @@ describe('Basic End column on the canvas', () => {
     const minimalEnd = document.querySelector('svg#svg-end-links path.connector-line').getAttribute('d');
     expect(minimalEnd).toMatch(/C/);
     expect(minimalEnd).not.toMatch(/H/);
+    // The last round (one model, Gemini) has one curve and a short trunk into End; a round of two models has two curves.
+    expect(document.querySelectorAll('svg#svg-end-links path.connector-line')).toHaveLength(1);
+    expect(document.querySelectorAll('svg#svg-end-links line.connector-line')).toHaveLength(1);
     expect(document.querySelectorAll('svg#svg-r1-r2 path.connector-line').length).toBeGreaterThan(0);
     // A short horizontal trunk stays between the curves: the arrows of the artifacts land on it.
     const trunks = document.querySelectorAll('svg#svg-r1-r2 line.connector-line');

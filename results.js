@@ -5086,11 +5086,17 @@ document.addEventListener('click', (event) => {
             sources.forEach((source) => {
                 const stack = document.getElementById(`${source.step}-models`);
                 if (!stack) return;
-                const block = source.participant
-                    ? Array.from(stack.querySelectorAll('.model-block')).find((node) => modelBlockId(node) === source.participant)
-                    : null;
-                const rect = (block || stack).getBoundingClientRect();
-                starts.push({ x: rect.right - svgRect.left, y: rect.top + (rect.height / 2) - svgRect.top });
+                const blocks = Array.from(stack.querySelectorAll('.model-block'));
+                // A participant: its block. A whole round: the blocks of the models that send in it (the stack when none does).
+                let from = source.participant ? blocks.filter((node) => modelBlockId(node) === source.participant) : [];
+                if (!from.length && !source.participant) {
+                    const sending = new Set(getModelSendIndices(`${source.step}-models`));
+                    from = Array.from(stack.children).filter((node, index) => sending.has(index) && node.classList.contains('model-block'));
+                }
+                (from.length ? from : [stack]).forEach((node) => {
+                    const rect = node.getBoundingClientRect();
+                    starts.push({ x: rect.right - svgRect.left, y: rect.top + (rect.height / 2) - svgRect.top });
+                });
             });
             // The round button stands at the middle of its sources, as the start button stands at the middle of the first round.
             // The position is computed, not read back from the page: the button's margin is animated in the page styles.
@@ -5110,8 +5116,10 @@ document.addEventListener('click', (event) => {
             let html = '';
             starts.forEach((start) => {
                 if (curvedLines()) {
-                    const dx = (endX - start.x) / 2;
-                    html += `<path d="M${start.x} ${start.y} C${start.x + dx} ${start.y}, ${endX - dx} ${endY}, ${endX} ${endY}" class="connector-line brain-flow"/>`;
+                    // As the links between the rounds: a curve into a short horizontal trunk (10px) that reaches the End button.
+                    const trunkX = Math.max(start.x, endX - 10);
+                    html += curveMarkup(start.x, start.y, trunkX, endY, 'connector-line brain-flow');
+                    html += `<line x1="${trunkX}" y1="${endY}" x2="${endX}" y2="${endY}" class="connector-line brain-flow"/>`;
                 } else {
                     const turnX = Math.max(start.x, endX - 15);
                     html += `<path d="M${start.x} ${start.y} H${turnX} V${endY} H${endX}" class="connector-line brain-flow"/>`;
