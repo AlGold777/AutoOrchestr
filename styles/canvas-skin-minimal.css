@@ -137,6 +137,12 @@
 [data-canvas-skin="minimal"] .arrow-head.active {
     fill: #94a3b8;
 }
+/* Состояние «ожидает» (pipeline.css) красит связи светлее и с прозрачностью: в новом оформлении они такого же цвета, как в образце. */
+[data-canvas-skin="minimal"] .pipeline-flow .connector-group.pipeline-link-pending .connector-line,
+[data-canvas-skin="minimal"] .pipeline-flow .connector-group.pipeline-link-pending .merge-line {
+    stroke: #94a3b8;
+    opacity: 1;
+}
 [data-canvas-skin="minimal"] .connector-line.inactive,
 [data-canvas-skin="minimal"] .arrow-head.inactive {
     opacity: 0.28;

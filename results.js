@@ -4772,13 +4772,16 @@ document.addEventListener('click', (event) => {
             const activePath = targetIndices.length > 0;
             const connectorClass = activePath ? colorClass : 'inactive';
             if (curvedLines()) {
-                // As in the sample: one smooth curve from the start button to each block, no arrow heads.
-                html += artifactJunctionMarkup([[0, targetMidY], [W, targetMidY]]);
+                // A short horizontal trunk (the arrows of the artifacts land on it), then one smooth curve to each block; no arrow heads.
+                const curveStart = W - 18;
+                const endX = W - 2;
+                html += `<line x1="0" y1="${targetMidY}" x2="${curveStart}" y2="${targetMidY}" class="connector-line ${connectorClass}${activePath ? ' flow-anim' : ''}"/>`;
+                html += artifactJunctionMarkup([[0, targetMidY], [targetYs.length === 1 ? W : curveStart, targetMidY]]);
                 targetIndices.map((i) => getBlockCenterYRelativeTo(targetStack, i, svg)).forEach((y) => {
-                    html += curveMarkup(0, targetMidY, W - 2, y, `connector-line ${colorClass} flow-anim`);
+                    html += curveMarkup(curveStart, targetMidY, endX, y, `connector-line ${colorClass} flow-anim`);
                 });
                 inactiveTargetIndices.map((i) => getBlockCenterYRelativeTo(targetStack, i, svg)).forEach((y) => {
-                    html += curveMarkup(0, targetMidY, W - 2, y, 'connector-line inactive');
+                    html += curveMarkup(curveStart, targetMidY, endX, y, 'connector-line inactive');
                 });
                 setSvgContent(svg, html);
                 return;
@@ -4864,23 +4867,28 @@ document.addEventListener('click', (event) => {
             const targetMidY = (targetMinY + targetMaxY) / 2;
 
             if (curvedLines()) {
-                // As in the sample: one smooth curve from each source to each target when one side is a single card; with many
-                // cards on both sides the curves meet in one point in the middle. No arrow heads.
+                // Smooth curves as in the sample, with a short horizontal trunk in the middle: the arrows of the artifacts land on it.
+                // Many sources curve into the trunk, the trunk curves out to many targets; a single card on a side keeps the trunk
+                // at its own height. No arrow heads.
                 const sources = [...activeSourceYs.map((y) => ({ y, active: true })), ...inactiveSourceYs.map((y) => ({ y, active: false }))];
                 const targets = [...activeTargetYs.map((y) => ({ y, active: true })), ...inactiveTargetYs.map((y) => ({ y, active: false }))];
                 const classesOf = (active) => (active && activePath ? `connector-line ${colorClass} flow-anim` : 'connector-line inactive');
-                const endX = W - 2;
-                if (sources.length === 1 || targets.length === 1) {
-                    sources.forEach((source) => targets.forEach((target) => {
-                        html += curveMarkup(0, source.y, endX, target.y, classesOf(source.active && target.active));
-                    }));
-                    html += artifactJunctionMarkup([[0, sourceMidY], [endX, targetMidY]]);
+                const trunkClasses = classesOf(true);
+                const curveEnd = W - 2;
+                const curveIn = 18;
+                const curveOut = W - 18;
+                if (sources.length === 1 && targets.length === 1 && Math.abs(sources[0].y - targets[0].y) > 0.5) {
+                    html += curveMarkup(0, sources[0].y, curveEnd, targets[0].y, classesOf(sources[0].active && targets[0].active));
+                    html += artifactJunctionMarkup([[0, sources[0].y], [curveEnd, targets[0].y]]);
                 } else {
-                    const hubX = W / 2;
-                    const hubY = (sourceMidY + targetMidY) / 2;
-                    sources.forEach((source) => { html += curveMarkup(0, source.y, hubX, hubY, classesOf(source.active)); });
-                    targets.forEach((target) => { html += curveMarkup(hubX, hubY, endX, target.y, classesOf(target.active)); });
-                    html += artifactJunctionMarkup([[0, sourceMidY], [hubX, hubY], [W, targetMidY]]);
+                    const hubY = sources.length > 1 && targets.length > 1 ? (sourceMidY + targetMidY) / 2
+                        : (sources.length > 1 ? targetMidY : sourceMidY);
+                    const trunkFrom = sources.length > 1 ? curveIn : 0;
+                    const trunkTo = targets.length > 1 ? curveOut : W;
+                    if (sources.length > 1) sources.forEach((source) => { html += curveMarkup(0, source.y, curveIn, hubY, classesOf(source.active)); });
+                    html += `<line x1="${trunkFrom}" y1="${hubY}" x2="${trunkTo}" y2="${hubY}" class="${trunkClasses}"/>`;
+                    if (targets.length > 1) targets.forEach((target) => { html += curveMarkup(curveOut, hubY, curveEnd, target.y, classesOf(target.active)); });
+                    html += artifactJunctionMarkup([[trunkFrom, hubY], [trunkTo, hubY]]);
                 }
                 setSvgContent(svg, html);
                 return;
@@ -5041,8 +5049,11 @@ document.addEventListener('click', (event) => {
             column.className = 'stage-column pipeline-end-column';
             column.dataset.endSources = String(sources.length);
             // The column looks like the In column: an empty label row (as high as the round badges) and a round button.
+            const header = document.createElement('div');
+            header.className = 'stage-header-row';
             const label = document.createElement('div');
             label.className = 'stage-label';
+            header.append(label);
             const wrapper = document.createElement('div');
             wrapper.className = 'entry-wrapper end-wrapper';
             wrapper.id = 'end-models';
@@ -5054,7 +5065,7 @@ document.addEventListener('click', (event) => {
             card.dataset.endFrom = fromText;
             setCanvasTooltip(card, 'Итог прогона', fromText);
             wrapper.append(card);
-            column.append(label, wrapper);
+            column.append(header, wrapper);
             flow.append(group, column);
             return { svg, card, sources };
         };
@@ -8773,7 +8784,7 @@ document.addEventListener('click', (event) => {
                         <svg class="connector-svg" id="svg-r1-r2"></svg>
                     </div>
                     <div class="stage-column" id="round2" data-round="2">
-                        <div class="stage-label"><span class="round-badge">R2</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden>×</button></div>
+                        <div class="stage-header-row"><div class="stage-label"><span class="round-badge">R2</span> <button type="button" class="pipeline-round-delete-btn" title="Delete round" aria-label="Delete round" hidden>×</button></div></div>
                         <div class="model-stack" id="r2-models">
                             ${judgeBlocksHtml}
                         </div>

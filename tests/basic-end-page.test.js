@@ -157,7 +157,16 @@ describe('Basic End column on the canvas', () => {
     expect(minimalEnd).toMatch(/C/);
     expect(minimalEnd).not.toMatch(/H/);
     expect(document.querySelectorAll('svg#svg-r1-r2 path.connector-line').length).toBeGreaterThan(0);
-    expect(document.querySelectorAll('svg#svg-r1-r2 line.connector-line').length).toBe(0);
+    // A short horizontal trunk stays between the curves: the arrows of the artifacts land on it.
+    const trunks = document.querySelectorAll('svg#svg-r1-r2 line.connector-line');
+    expect(trunks.length).toBe(1);
+    expect(trunks[0].getAttribute('y1')).toBe(trunks[0].getAttribute('y2'));
+    const junction = document.querySelector('svg#svg-r1-r2 [data-artifact-junction]');
+    expect(junction.getAttribute('cy')).toBe(trunks[0].getAttribute('y1'));
+    expect(Number(junction.getAttribute('cx'))).toBeGreaterThanOrEqual(Number(trunks[0].getAttribute('x1')));
+    expect(Number(junction.getAttribute('cx'))).toBeLessThanOrEqual(Number(trunks[0].getAttribute('x2')));
+    // The End column has a header row like the rounds, so its button stands level with the others.
+    expect(document.querySelector('.pipeline-end-column > .stage-header-row > .stage-label')).not.toBeNull();
     document.documentElement.removeAttribute('data-canvas-skin');
   });
 
