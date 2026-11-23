@@ -4725,6 +4725,13 @@ document.addEventListener('click', (event) => {
             return '';
         };
 
+        // The new (minimal) skin draws the links as smooth curves; the classic skin draws them as straight and right-angle lines.
+        const curvedLines = () => document.documentElement.getAttribute('data-canvas-skin') === 'minimal';
+        const curveMarkup = (x1, y1, x2, y2, classes) => {
+            const dx = (x2 - x1) / 2;
+            return `<path d="M${x1} ${y1} C${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}" fill="none" class="${classes}"/>`;
+        };
+
         const drawInputSplitConnector = (svgId, targetStackId, colorClass) => {
             const svg = document.getElementById(svgId);
             const entryPoint = document.getElementById('entryPoint');
@@ -4764,6 +4771,21 @@ document.addEventListener('click', (event) => {
 
             const activePath = targetIndices.length > 0;
             const connectorClass = activePath ? colorClass : 'inactive';
+            if (curvedLines()) {
+                const hubX = W / 2;
+                html += `<line x1="0" y1="${targetMidY}" x2="${hubX}" y2="${targetMidY}" class="connector-line ${connectorClass}${activePath ? ' flow-anim' : ''}"/>`;
+                html += artifactJunctionMarkup([[0, targetMidY], [hubX, targetMidY], [W, targetMidY]]);
+                targetIndices.map((i) => getBlockCenterYRelativeTo(targetStack, i, svg)).forEach((y) => {
+                    html += curveMarkup(hubX, targetMidY, W - 6, y, `connector-line ${colorClass} flow-anim`);
+                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head ${colorClass}"/>`;
+                });
+                inactiveTargetIndices.map((i) => getBlockCenterYRelativeTo(targetStack, i, svg)).forEach((y) => {
+                    html += curveMarkup(hubX, targetMidY, W - 6, y, 'connector-line inactive');
+                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head inactive"/>`;
+                });
+                setSvgContent(svg, html);
+                return;
+            }
             html += `<line x1="0" y1="${targetMidY}" x2="${splitX}" y2="${targetMidY}" class="connector-line ${connectorClass}${activePath ? ' flow-anim' : ''}"/>`;
             html += artifactJunctionMarkup([[0, targetMidY], [targetYs.length === 1 ? W : splitX, targetMidY]]);
 
@@ -4844,6 +4866,27 @@ document.addEventListener('click', (event) => {
             const sourceMidY = (sourceMinY + sourceMaxY) / 2;
             const targetMidY = (targetMinY + targetMaxY) / 2;
 
+            if (curvedLines()) {
+                const hubX = W / 2;
+                const hubY = (sourceMidY + targetMidY) / 2;
+                activeSourceYs.forEach((y) => {
+                    html += curveMarkup(0, y, hubX, hubY, `connector-line ${colorClass}${activePath ? ' flow-anim' : ''}`);
+                });
+                inactiveSourceYs.forEach((y) => {
+                    html += curveMarkup(0, y, hubX, hubY, 'connector-line inactive');
+                });
+                html += artifactJunctionMarkup([[0, sourceMidY], [hubX, hubY], [W, targetMidY]]);
+                activeTargetYs.forEach((y) => {
+                    html += curveMarkup(hubX, hubY, W - 6, y, `connector-line ${activePath ? colorClass : 'inactive'}${activePath ? ' flow-anim' : ''}`);
+                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head ${activePath ? colorClass : 'inactive'}"/>`;
+                });
+                inactiveTargetYs.forEach((y) => {
+                    html += curveMarkup(hubX, hubY, W - 6, y, 'connector-line inactive');
+                    html += `<polygon points="${W - 6},${y - 4} ${W},${y} ${W - 6},${y + 4}" class="arrow-head inactive"/>`;
+                });
+                setSvgContent(svg, html);
+                return;
+            }
             activeSourceYs.forEach((y) => {
                 html += `<line x1="0" y1="${y}" x2="${mergeX}" y2="${y}" class="connector-line ${colorClass}${activePath ? ' flow-anim' : ''}"/>`;
             });
@@ -5025,23 +5068,8 @@ document.addEventListener('click', (event) => {
             const svgRect = svg.getBoundingClientRect();
             const cardRect = card.getBoundingClientRect();
             const endX = cardRect.left - svgRect.left - 2;
-            // The round button stands at the middle of its sources, as the start button stands at the middle of the first round.
-            const wrapper = card.parentElement;
-            const entryHeight = document.getElementById('entryWrapper')?.style.height;
-            if (wrapper && entryHeight) wrapper.style.height = entryHeight;
-            const centers = sources.map((source) => {
-                const stack = document.getElementById(`${source.step}-models`);
-                if (!stack) return null;
-                const rect = stack.getBoundingClientRect();
-                return rect.top + (rect.height / 2);
-            }).filter((value) => value !== null);
-            if (wrapper && centers.length) {
-                const wrapperTop = wrapper.getBoundingClientRect().top;
-                const mid = centers.reduce((sum, value) => sum + value, 0) / centers.length;
-                card.style.marginTop = `${Math.max(0, Math.round(mid - wrapperTop - (cardRect.height / 2)))}px`;
-            }
-            const endY = card.getBoundingClientRect().top + (cardRect.height / 2) - svgRect.top;
-            let html = '';
+            // The start of each line: the right edge of the source (a participant block, or the stack of a round).
+            const starts = [];
             sources.forEach((source) => {
                 const stack = document.getElementById(`${source.step}-models`);
                 if (!stack) return;
@@ -5049,10 +5077,32 @@ document.addEventListener('click', (event) => {
                     ? Array.from(stack.querySelectorAll('.model-block')).find((node) => modelBlockId(node) === source.participant)
                     : null;
                 const rect = (block || stack).getBoundingClientRect();
-                const startX = rect.right - svgRect.left;
-                const startY = rect.top + (rect.height / 2) - svgRect.top;
-                const dx = (endX - startX) / 2;
-                html += `<path d="M${startX} ${startY} C${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}" class="connector-line brain-flow"/>`;
+                starts.push({ x: rect.right - svgRect.left, y: rect.top + (rect.height / 2) - svgRect.top });
+            });
+            // The round button stands at the middle of its sources, as the start button stands at the middle of the first round.
+            // The position is computed, not read back from the page: the button's margin is animated in the page styles.
+            const wrapper = card.parentElement;
+            const entryHeight = document.getElementById('entryWrapper')?.style.height;
+            if (wrapper && entryHeight) wrapper.style.height = entryHeight;
+            const radius = cardRect.height / 2;
+            let endY = radius + (wrapper ? wrapper.getBoundingClientRect().top - svgRect.top : 0);
+            if (starts.length && wrapper) {
+                const ys = starts.map((item) => item.y);
+                const mid = (Math.min(...ys) + Math.max(...ys)) / 2;
+                const wrapperTopInSvg = wrapper.getBoundingClientRect().top - svgRect.top;
+                const margin = Math.max(0, Math.round(mid - wrapperTopInSvg - radius));
+                card.style.marginTop = `${margin}px`;
+                endY = wrapperTopInSvg + margin + radius;
+            }
+            let html = '';
+            starts.forEach((start) => {
+                if (curvedLines()) {
+                    const dx = (endX - start.x) / 2;
+                    html += `<path d="M${start.x} ${start.y} C${start.x + dx} ${start.y}, ${endX - dx} ${endY}, ${endX} ${endY}" class="connector-line brain-flow"/>`;
+                } else {
+                    const turnX = Math.max(start.x, endX - 15);
+                    html += `<path d="M${start.x} ${start.y} H${turnX} V${endY} H${endX}" class="connector-line brain-flow"/>`;
+                }
             });
             if (html) html += `<polygon points="${endX - 6},${endY - 4} ${endX},${endY} ${endX - 6},${endY + 4}" class="arrow-head brain-flow"/>`;
             svg.innerHTML = html;
@@ -9207,6 +9257,8 @@ document.addEventListener('click', (event) => {
             const index = CANVAS_SKINS.findIndex((item) => item.id === canvasSkin);
             canvasSkin = applyCanvasSkin(CANVAS_SKINS[(index + 1) % CANVAS_SKINS.length].id);
             try { localStorage.setItem(CANVAS_SKIN_KEY, canvasSkin); } catch (_) {}
+            // The links are drawn as curves in the new skin and as straight lines in the classic one: draw them again.
+            updatePipelineAll({ deferFinalLayout: false });
         });
 
         const syncPipelineChromeControls = () => {

@@ -135,6 +135,32 @@ describe('Basic End column on the canvas', () => {
     expect(document.querySelector('.pipeline-end-card').dataset.endFrom).toBe('нет источников');
   });
 
+  test('lines: right angles in the classic skin, curves in the new one (links to End and between the rounds)', async () => {
+    const name = 'End lines by skin';
+    const schema = schemaV2([
+      round('r1', [{ id: 'claude-id', name: 'Claude' }, { id: 'gpt-id', name: 'GPT' }]),
+      round('r2', [{ id: 'gemini-id', name: 'Gemini' }])
+    ]);
+    expect(await debug().installBasicSchema(name, schema)).toEqual({ ok: true, errors: [] });
+
+    document.documentElement.removeAttribute('data-canvas-skin');
+    await selectPipeline(name);
+    const classicEnd = document.querySelector('svg#svg-end-links path.connector-line').getAttribute('d');
+    expect(classicEnd).toMatch(/H.*V.*H/);
+    expect(classicEnd).not.toMatch(/C/);
+    expect(document.querySelectorAll('svg#svg-r1-r2 line').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('svg#svg-r1-r2 path').length).toBe(0);
+
+    document.documentElement.setAttribute('data-canvas-skin', 'minimal');
+    await selectPipeline(name);
+    const minimalEnd = document.querySelector('svg#svg-end-links path.connector-line').getAttribute('d');
+    expect(minimalEnd).toMatch(/C/);
+    expect(minimalEnd).not.toMatch(/H/);
+    expect(document.querySelectorAll('svg#svg-r1-r2 path.connector-line').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('svg#svg-r1-r2 line.connector-line').length).toBe(0);
+    document.documentElement.removeAttribute('data-canvas-skin');
+  });
+
   test('the schema keeps the end field of its source, as it keeps spec', async () => {
     const name = 'End field kept';
     const schema = schemaV2([

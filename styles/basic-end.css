@@ -13,6 +13,7 @@
 .pipeline-end-card {
     /* The round button of the In column (.entry-point) with the word End; it is not a button: no hover reaction. */
     cursor: default;
+    transition: none;
     font-size: 12px;
     font-weight: 600;
 }
