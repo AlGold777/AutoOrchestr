@@ -4999,30 +4999,21 @@ document.addEventListener('click', (event) => {
             const column = document.createElement('div');
             column.className = 'stage-column pipeline-end-column';
             column.dataset.endSources = String(sources.length);
-            const header = document.createElement('div');
-            header.className = 'stage-header-row';
+            // The column looks like the In column: an empty label row (as high as the round badges) and a round button.
             const label = document.createElement('div');
             label.className = 'stage-label';
-            const badge = document.createElement('span');
-            badge.className = 'end-badge';
-            badge.textContent = 'End';
-            label.append(badge);
-            header.append(label);
-            const stack = document.createElement('div');
-            stack.className = 'model-stack';
-            stack.id = 'end-models';
+            const wrapper = document.createElement('div');
+            wrapper.className = 'entry-wrapper end-wrapper';
+            wrapper.id = 'end-models';
             const card = document.createElement('div');
-            card.className = 'pipeline-control-card pipeline-end-card';
-            const name = document.createElement('span');
-            name.className = 'control-card-name';
-            name.textContent = 'Итог прогона';
-            const from = document.createElement('span');
-            from.className = 'control-card-role';
+            card.className = 'entry-point pipeline-end-card';
+            card.textContent = 'End';
             const labelOf = (ref) => (/^r\d+$/.test(ref) ? ref.toUpperCase() : ref);
-            from.textContent = sources.length ? `из ${sources.map((item) => labelOf(item.step)).join(', ')}` : 'нет источников';
-            card.append(name, from);
-            stack.append(card);
-            column.append(header, stack);
+            const fromText = sources.length ? `из ${sources.map((item) => labelOf(item.step)).join(', ')}` : 'нет источников';
+            card.dataset.endFrom = fromText;
+            setCanvasTooltip(card, 'Итог прогона', fromText);
+            wrapper.append(card);
+            column.append(label, wrapper);
             flow.append(group, column);
             return { svg, card, sources };
         };
@@ -5034,7 +5025,22 @@ document.addEventListener('click', (event) => {
             const svgRect = svg.getBoundingClientRect();
             const cardRect = card.getBoundingClientRect();
             const endX = cardRect.left - svgRect.left - 2;
-            const endY = cardRect.top + (cardRect.height / 2) - svgRect.top;
+            // The round button stands at the middle of its sources, as the start button stands at the middle of the first round.
+            const wrapper = card.parentElement;
+            const entryHeight = document.getElementById('entryWrapper')?.style.height;
+            if (wrapper && entryHeight) wrapper.style.height = entryHeight;
+            const centers = sources.map((source) => {
+                const stack = document.getElementById(`${source.step}-models`);
+                if (!stack) return null;
+                const rect = stack.getBoundingClientRect();
+                return rect.top + (rect.height / 2);
+            }).filter((value) => value !== null);
+            if (wrapper && centers.length) {
+                const wrapperTop = wrapper.getBoundingClientRect().top;
+                const mid = centers.reduce((sum, value) => sum + value, 0) / centers.length;
+                card.style.marginTop = `${Math.max(0, Math.round(mid - wrapperTop - (cardRect.height / 2)))}px`;
+            }
+            const endY = card.getBoundingClientRect().top + (cardRect.height / 2) - svgRect.top;
             let html = '';
             sources.forEach((source) => {
                 const stack = document.getElementById(`${source.step}-models`);

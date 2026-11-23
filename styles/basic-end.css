@@ -1,19 +1,6 @@
 /* Basic: the End column of the canvas and the End window (basic-windows.md «Колонка End и окно End»).
    The window is light whatever the page theme is: its colors are set here, not taken from the theme. */
 
-.end-badge {
-    color: #2563ebc7;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    width: 55px;
-    height: 24px;
-    padding: 2px 5px;
-    border-radius: 4px;
-    font-size: 12px;
-}
-
 /* The lines from the sources cross the columns between them: the svg must not clip them. */
 .pipeline-end-link svg {
     overflow: visible;
@@ -24,7 +11,16 @@
 }
 
 .pipeline-end-card {
+    /* The round button of the In column (.entry-point) with the word End; it is not a button: no hover reaction. */
     cursor: default;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.pipeline-end-card:hover {
+    background: #ffffff;
+    color: #0f172a;
+    transform: none;
 }
 
 .basic-end-window {

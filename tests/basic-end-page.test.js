@@ -87,7 +87,7 @@ describe('Basic End column on the canvas', () => {
     expect(children[0].classList.contains('entry-column')).toBe(true);
     expect(children[children.length - 1]).toBe(ends[0]);
     expect(children.indexOf(document.getElementById('round2'))).toBeLessThan(children.indexOf(ends[0]));
-    expect(ends[0].querySelector('.end-badge').textContent).toBe('End');
+    expect(ends[0].querySelector('.pipeline-end-card').textContent).toBe('End');
     // The lines are drawn in the connector group right before the End column.
     expect(children[children.length - 2].querySelector('svg#svg-end-links')).not.toBeNull();
   });
@@ -103,7 +103,7 @@ describe('Basic End column on the canvas', () => {
     await selectPipeline(name);
 
     expect(document.querySelectorAll('.pipeline-end-column')).toHaveLength(1);
-    expect(document.querySelector('.pipeline-end-card .control-card-role').textContent).toBe('из R2');
+    expect(document.querySelector('.pipeline-end-card').dataset.endFrom).toBe('из R2');
   });
 
   test('lines come from the sources of the End step: one per source', async () => {
@@ -116,7 +116,7 @@ describe('Basic End column on the canvas', () => {
     await selectPipeline(name);
 
     expect(document.querySelectorAll('.pipeline-end-column')).toHaveLength(1);
-    expect(document.querySelector('.pipeline-end-card .control-card-role').textContent).toBe('из R1, R2');
+    expect(document.querySelector('.pipeline-end-card').dataset.endFrom).toBe('из R1, R2');
     expect(document.querySelectorAll('svg#svg-end-links path.connector-line')).toHaveLength(2);
   });
 
@@ -124,7 +124,7 @@ describe('Basic End column on the canvas', () => {
     // Default has a model in its last round: the End source is that round (the contract default), one line to End.
     await selectPipeline('Default');
     expect(document.querySelectorAll('.pipeline-end-column')).toHaveLength(1);
-    expect(document.querySelector('.pipeline-end-card .control-card-role').textContent).toBe('из R1');
+    expect(document.querySelector('.pipeline-end-card').dataset.endFrom).toBe('из R1');
     expect(document.querySelectorAll('svg#svg-end-links path.connector-line')).toHaveLength(1);
 
     const name = 'End column empty canvas';
@@ -132,7 +132,7 @@ describe('Basic End column on the canvas', () => {
     expect(await debug().installBasicSchema(name, schemaV2([{ ref: 'owner:check', kind: 'owner', models: [], task: 'Проверить' }]))).toEqual({ ok: true, errors: [] });
     await selectPipeline(name);
     expect(document.querySelectorAll('.pipeline-end-column')).toHaveLength(1);
-    expect(document.querySelector('.pipeline-end-card .control-card-role').textContent).toBe('нет источников');
+    expect(document.querySelector('.pipeline-end-card').dataset.endFrom).toBe('нет источников');
   });
 
   test('the schema keeps the end field of its source, as it keeps spec', async () => {
