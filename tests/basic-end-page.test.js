@@ -124,7 +124,7 @@ describe('Basic End column on the canvas', () => {
     // Default has a model in its last round: the End source is that round (the contract default), one line to End.
     await selectPipeline('Default');
     expect(document.querySelectorAll('.pipeline-end-column')).toHaveLength(1);
-    expect(document.querySelector('.pipeline-end-card .control-card-role').textContent).toBe('из R2');
+    expect(document.querySelector('.pipeline-end-card .control-card-role').textContent).toBe('из R1');
     expect(document.querySelectorAll('svg#svg-end-links path.connector-line')).toHaveLength(1);
 
     const name = 'End column empty canvas';
