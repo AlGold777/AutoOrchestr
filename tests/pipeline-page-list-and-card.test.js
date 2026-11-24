@@ -41,3 +41,22 @@ describe('pipeline list reorder', () => {
     expect(dragstart.slice(0, 400)).toContain('pipelineRunActive');
   });
 });
+
+describe('model card of the first round', () => {
+  test('поле «Задание раунда» есть у любого раунда; у R1 без входа наследуется только задание шага', () => {
+    expect(js).toContain(": [['task', 'Задание раунда'], ...disciplineRows];");
+    expect(js).not.toContain("step.input !== 'none' ? [['task', 'Задание раунда']]");
+    expect(js).toContain("step.input === 'none' ? (typeof step.task === 'string' ? step.task : '') : null");
+    expect(js).toContain("key === 'task' ? (noInputTask ?? inherited.task.value)");
+  });
+});
+
+describe('model block tooltip', () => {
+  test('подсказка блока — запрос из карточки: свой запрос или автоматическая сборка, та же, что в окне модели', () => {
+    expect(js).toContain('setCanvasTooltip(block, name, safeRead(() => customBlockRequestText(block), \'\') || model?.task);');
+    const text = js.slice(js.indexOf('const customBlockRequestText'), js.indexOf('const customBlockRequestText') + 400);
+    expect(text).toContain('promptTemplate');
+    expect(text).toContain('customBlockRequestPreview(block)?.template');
+    expect(js).toContain(': customBlockRequestPreview(block);');
+  });
+});

@@ -5285,7 +5285,8 @@ document.addEventListener('click', (event) => {
                 const name = String(block.dataset.model || block.querySelector('.model-name')?.textContent || '').trim();
                 const round = block.closest('.stage-column')?.dataset.round;
                 const model = (stepOf(`r${round}`)?.models || []).find((item) => item.name === name);
-                setCanvasTooltip(block, name, model?.task);
+                // The request as the model's card shows it; the personal task while the request cannot be built.
+                setCanvasTooltip(block, name, safeRead(() => customBlockRequestText(block), '') || model?.task);
             });
             pipelinePanel.querySelectorAll('.model-input-checkbox').forEach((box) => setCanvasTooltip(box, 'Участие в раунде', 'Флажок включает модель в раунд; снятый — модель в раунд не входит (в схеме enabled: false).'));
             pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
@@ -10244,6 +10245,28 @@ document.addEventListener('click', (event) => {
                 .map((prompt) => `<option value="${escapeHtml(prompt.id)}"${prompt.id === current ? ' selected' : ''}>${escapeHtml(prompt.label || prompt.id)}</option>`).join('');
         };
         const customBlockParticipantId = (block) => block.dataset.participantId || customBlockModel(block);
+        // The request of a model block as its card shows it: the automatic request of this participant in its step (the
+        // card's preview), or the participant's own request when one is saved. Shown by the block's tooltip.
+        const customBlockRequestPreview = (block) => {
+            const modelName = customBlockModel(block);
+            const participantId = customBlockParticipantId(block);
+            const ref = customBlockRef(block);
+            const steps = customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName, participantId });
+            const stepIndex = steps.findIndex((step) => step.ref === ref);
+            if (stepIndex < 0) return null;
+            const previewSteps = steps.map((item, index) => ({
+                ...item,
+                models: item.models
+                    .filter((model) => index !== stepIndex || (model.id || model.name) === participantId)
+                    .map((model) => ({ ...model, promptTemplate: null }))
+            }));
+            const preview = window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: previewSteps, stepIndex, modelName, participantId });
+            return { steps, stepIndex, previewSteps, preview, template: preview?.template || '' };
+        };
+        const customBlockRequestText = (block) => {
+            const own = getCustomCardSettings()[customBlockRef(block)]?.[customBlockParticipantId(block)]?.promptTemplate;
+            return typeof own === 'string' && own.trim() ? own : customBlockRequestPreview(block)?.template || '';
+        };
         // The fields of a participant the model card writes; Save of the card keeps every other field of the participant.
         const CARD_EDITED_FIELDS = Object.freeze(['label', 'settingsMode', 'promptTemplate', 'maxWords', 'files', 'task', 'discipline']);
         const sourceSchemaForParticipantEdit = () => {
@@ -10428,15 +10451,11 @@ document.addEventListener('click', (event) => {
             const modelName = pipelineDefaults ? '' : customBlockModel(block);
             const participantId = pipelineDefaults ? '' : customBlockParticipantId(block);
             const ref = pipelineDefaults ? '' : customBlockRef(block);
-            const steps = pipelineDefaults ? [] : customStepsFromPlan(draftPlanForCanvas(getActiveDraftPlan()), { ref, name: modelName, participantId });
-            const stepIndex = steps.findIndex((step) => step.ref === ref);
-            if (!pipelineDefaults && stepIndex < 0) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
+            const built = pipelineDefaults ? { steps: [], stepIndex: -1, previewSteps: [], template: '' } : customBlockRequestPreview(block);
+            if (!pipelineDefaults && !built) { showNotification('Шаг модели не найден в плане.', 'warn'); return; }
+            const { steps, stepIndex, previewSteps } = built;
             const step = steps[stepIndex];
-            const automaticSteps = steps.map((item) => ({ ...item, models: item.models.map((model) => ({ ...model, promptTemplate: null })) }));
-            const previewSteps = automaticSteps.map((item, index) => index === stepIndex
-                ? { ...item, models: item.models.filter((model) => (model.id || model.name) === participantId) }
-                : item);
-            const preview = pipelineDefaults ? null : window.CustomEngine.previewPrompt({ task: getModeratorDispatchText(), steps: previewSteps, stepIndex, modelName, participantId });
+            const preview = pipelineDefaults ? null : built.preview;
             const saved = pipelineDefaults ? getCustomPipelineDefaults() : getCustomCardSettings()[ref]?.[participantId] || {};
             const fileParticipantId = block?.dataset?.participantId || (basicSourceSchema.get(draftPlanStorageKey())?.steps || [])
                 .find((item) => item?.ref === ref)?.models?.find((item) => item.name === modelName)?.id || modelName;
@@ -10459,14 +10478,17 @@ document.addEventListener('click', (event) => {
             const disciplineRows = [['limit', 'Длина'], ['content', 'Требования к содержанию'], ['delivery', 'Доставка'], ['correction', 'Повторный запрос']];
             const rows = pipelineDefaults
                 ? [['roundTask', 'Задание раундов со входом (R2+)'], ...disciplineRows]
-                : [...(step.input !== 'none' ? [['task', 'Задание раунда']] : []), ...disciplineRows];
+                : [['task', 'Задание раунда'], ...disciplineRows];
+            // A round with no input (the first one) gets only a task written on the model or the step: the ▶ and Basic
+            // task for rounds with input does not reach it, so its inherited task is the step's own or nothing.
+            const noInputTask = !pipelineDefaults && step.input === 'none' ? (typeof step.task === 'string' ? step.task : '') : null;
             const isTask = (key) => ['task', 'roundTask'].includes(key);
             const fallbackFor = (key) => key === 'roundTask' ? CUSTOM_ROUND_TASK : defaults[key];
-            const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? inherited.task.value : inherited.discipline[key].value;
+            const inheritedValue = (key) => pipelineDefaults ? fallbackFor(key) : key === 'task' ? (noInputTask ?? inherited.task.value) : inherited.discipline[key].value;
             const rawValue = (key) => isTask(key) ? saved[key] : customDiscipline(saved.discipline)[key];
             const effectiveValue = (key) => pipelineDefaults
                 ? window.BasicSchema.pick([['pipeline', keepEmpty(rawValue(key), key)]], fallbackFor(key)).value
-                : key === 'task' ? resolved.task.value : resolved.discipline[key].value;
+                : key === 'task' ? (noInputTask !== null && resolved.task.source !== 'model' ? noInputTask : resolved.task.value) : resolved.discipline[key].value;
             const copyButton = (id, label) => `<button type="button" data-action="copy" data-copy-field="${id}" title="Копировать" aria-label="Копировать: ${label}"><i class="ti ti-copy" aria-hidden="true"></i></button>`;
             // ▶ «Особенности моделей»: one field per model on the canvas; the model card shows its own note read-only.
             const modelNotes = getCustomPipelineDefaults().modelNotes || {};

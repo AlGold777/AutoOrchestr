@@ -4381,7 +4381,8 @@ describe('Pipeline debate favorites view', () => {
 
           const claudeBlock = document.querySelector('.stage-column[data-round="1"] .model-block');
           expect(claudeBlock.dataset.tooltip).toBe('Claude');
-          expect(claudeBlock.dataset.tooltipDesc).toBe('Пиши коротко');
+          // The block shows its request as the model card does: the task inside the assembled request.
+          expect(claudeBlock.dataset.tooltipDesc).toContain('Задание:\nПиши коротко');
 
           const userCard = document.querySelector('.pipeline-control-card');
           expect(userCard.dataset.tooltip).toBe('User · owner:u · Проверка');
