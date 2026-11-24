@@ -103,7 +103,7 @@
                 : '';
             const inputAttrs = `${isActive ? ' checked' : ''} aria-label="Участие в раунде"`;
             const label = model.label || model.name;
-            const removeButton = participantControls && model.id !== model.name
+            const removeButton = participantControls
                 ? `<button type="button" class="model-participant-remove" data-participant-remove title="Убрать участника из этого раунда" aria-label="Убрать ${escapeHtml(label)} из раунда">×</button>`
                 : '';
             const participantTools = participantControls

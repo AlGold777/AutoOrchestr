@@ -10379,10 +10379,8 @@ document.addEventListener('click', (event) => {
             }
             const result = window.BasicSchema.addToRound(schema, ref, { name, like, newId: globalThis.crypto?.randomUUID?.() || '' });
             if (result.error) { showNotification(`Модель не добавлена: ${result.error}.`, 'error'); return; }
-            if (await applyParticipantSchemaEdit(result.schema)) {
-                const added = (result.schema.steps.find((step) => step.ref === ref)?.models || []).find((model) => model.id === result.id);
-                showNotification(`${added?.label || name} добавлен в R${round}.`, 'info');
-            }
+            // The new block on the canvas is the confirmation: a notice window would cover the canvas.
+            await applyParticipantSchemaEdit(result.schema);
         };
         // A participant keeps its ID, settings and place in every round; only its model (name) changes.
         const switchBasicParticipantModel = async (block) => {
@@ -10416,8 +10414,6 @@ document.addEventListener('click', (event) => {
         const removeBasicParticipantFromRound = async (block) => {
             if (pipelineRunActive || !window.BasicSchema || !block) return;
             const id = customBlockParticipantId(block);
-            const providerName = customBlockModel(block);
-            if (id === providerName) return;
             const ref = customBlockRef(block);
             const schema = sourceSchemaForParticipantEdit();
             const step = (schema.steps || []).find((item) => item.ref === ref);
