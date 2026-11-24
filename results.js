@@ -9184,6 +9184,8 @@ document.addEventListener('click', (event) => {
             item.className = `pipeline-item${active ? ' active' : ''}${disabled ? ' pipeline-item-disabled' : ''}`;
             item.dataset.name = fullName;
             item.dataset.pipelineKind = allowDelete ? 'custom' : 'preset';
+            // A schema of the owner can be dragged to another place in the list; templates stay first.
+            item.draggable = allowDelete;
             if (disabled) {
                 item.dataset.disabled = 'true';
                 item.setAttribute('aria-disabled', 'true');
@@ -11514,6 +11516,59 @@ document.addEventListener('click', (event) => {
                 return;
             }
             selectPipeline(item, { clearDebateFeed: true });
+        });
+        // Dragging a schema in the list: it lands before or after the schema under the cursor (the upper or lower half);
+        // dropped on a template, it goes right after it. Templates stay first (normalizePipelineOrder). The order is saved.
+        const movePipelineInOrder = (order, moved, target, after) => {
+            const rest = order.filter((name) => name !== moved);
+            const at = rest.indexOf(target);
+            if (at === -1 || moved === target) return order.slice();
+            rest.splice(after ? at + 1 : at, 0, moved);
+            return rest;
+        };
+        let draggedPipelineName = '';
+        const clearPipelineDropMark = () => pipelineItems?.querySelectorAll('.pipeline-item').forEach((el) => el.style.removeProperty('box-shadow'));
+        const pipelineDropPlace = (event) => {
+            const target = event.target.closest?.('.pipeline-item');
+            if (!target || !pipelineItems.contains(target) || !draggedPipelineName || target.dataset.name === draggedPipelineName) return null;
+            const box = target.getBoundingClientRect();
+            return { target, after: target.dataset.pipelineKind === 'preset' || event.clientY > box.top + box.height / 2 };
+        };
+        pipelineItems?.addEventListener('dragstart', (event) => {
+            const item = event.target.closest?.('.pipeline-item');
+            if (!item || item.dataset.pipelineKind !== 'custom' || item.classList.contains('is-editing') || pipelineRunActive) {
+                event.preventDefault();
+                return;
+            }
+            draggedPipelineName = item.dataset.name;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', draggedPipelineName);
+        });
+        pipelineItems?.addEventListener('dragover', (event) => {
+            const place = pipelineDropPlace(event);
+            clearPipelineDropMark();
+            if (!place) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            place.target.style.boxShadow = `inset 0 ${place.after ? -2 : 2}px 0 currentColor`;
+        });
+        pipelineItems?.addEventListener('dragleave', (event) => {
+            if (!pipelineItems.contains(event.relatedTarget)) clearPipelineDropMark();
+        });
+        pipelineItems?.addEventListener('dragend', () => {
+            draggedPipelineName = '';
+            clearPipelineDropMark();
+        });
+        pipelineItems?.addEventListener('drop', (event) => {
+            const place = pipelineDropPlace(event);
+            const moved = draggedPipelineName;
+            draggedPipelineName = '';
+            clearPipelineDropMark();
+            if (!place) return;
+            event.preventDefault();
+            pipelineStore.order = normalizePipelineOrder(movePipelineInOrder(normalizePipelineOrder(pipelineStore.order), moved, place.target.dataset.name, place.after));
+            renderPipelineList(pipelineStore.order, pipelineStore.active, pipelineStore.lastSaved);
+            persistPipelineStore();
         });
         await initPipelineList();
         setTimeout(() => syncPipelineRoundsToDebateLimit(), 0);
