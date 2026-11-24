@@ -5147,7 +5147,8 @@ describe('Pipeline debate favorites view', () => {
         const folder = { write: jest.fn(async () => { throw new Error('disk'); }), folderName: jest.fn(), pick: jest.fn(), ensureAccess: jest.fn() };
         const state = { warned: false };
         await withFolder(folder, async () => {
-          await expect(copy(state)).resolves.toBeUndefined();
+          // It never throws: the failed write comes back as its result (saveDocumentCopy gives { ok, reason }).
+          await expect(copy(state)).resolves.toMatchObject({ ok: false, reason: 'error' });
         });
         expect(notice()).toContain('не записан в папку');
         expect(state.warned).toBe(true);

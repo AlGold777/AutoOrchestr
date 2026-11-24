@@ -155,9 +155,13 @@
       out.input = Array.isArray(input) ? JSON.parse(JSON.stringify(input)) : input;
       out.models = (step.models || []).filter((model) => model.enabled !== false).map((model) => {
         const explicit = model.settingsMode === 'explicit';
+        const inherited = resolveFields(model, step.kind, { task: step.task }, defaults);
+        // An explicit participant inherits nothing, except the delivery mark and the correction request: they are never empty.
         const resolved = explicit
-          ? { task: { value: typeof model.task === 'string' ? model.task : '', source: 'model' }, discipline: Object.fromEntries(Object.keys(DEFAULTS.discipline).map((key) => [key, { value: typeof model.discipline?.[key] === 'string' ? model.discipline[key] : '', source: 'model' }])) }
-          : resolveFields(model, step.kind, { task: step.task }, defaults);
+          ? { task: { value: typeof model.task === 'string' ? model.task : '', source: 'model' }, discipline: Object.fromEntries(Object.keys(DEFAULTS.discipline).map((key) => [key,
+            NEVER_EMPTY.includes(key) && valueOf(key, model.discipline?.[key]) === undefined ? inherited.discipline[key]
+              : { value: typeof model.discipline?.[key] === 'string' ? model.discipline[key] : '', source: 'model' }])) }
+          : inherited;
         const lines = explicit ? [...(model.discipline?.lines || [])] : [...(defaults.discipline?.lines || []), ...(model.discipline?.lines || [])];
         // The input of the participant (when it has its own) decides whether an inherited task is dropped, as the step input does.
         const own = explicit ? ('input' in model ? model.input : 'none') : ('input' in model ? model.input : input);
@@ -516,6 +520,8 @@
       if ('chat' in step) oneOf(step.chat, CHAT_MODES, `${path}.chat`, 'чат шага');
       if (typeof step.ref !== 'string' || !step.ref) fail(`${path}.ref`, 'ref шага не указан');
       else if (refs.has(step.ref)) fail(`${path}.ref`, `ref «${step.ref}» повторяется`);
+      // A ref is a key of the settings by step (toSettings): a name of Object.prototype would write into every object.
+      else if (step.ref in Object.prototype) fail(`${path}.ref`, `ref «${step.ref}» недопустим`);
       else refs.add(step.ref);
       oneOf(step.kind, KINDS, `${path}.kind`, 'тип шага');
       if (CONTROL_KINDS.includes(step.kind) && typeof step.ref === 'string' && !new RegExp(`^${step.kind}:[A-Za-z0-9_-]+$`).test(step.ref)) fail(`${path}.ref`, CONTROL_REF[step.kind]);
@@ -623,7 +629,10 @@
       if (!isObject(step) || step.kind !== 'round' || !Array.isArray(step.models)) return;
       step.models.forEach((model, modelIndex) => {
         if (!isObject(model) || model.enabled === false || typeof model.request !== 'string' || !model.request.trim()) return;
-        const spec = Object.hasOwn(model, 'input') ? model.input : (Object.hasOwn(step, 'input') ? step.input : defaultInputOf(steps, index));
+        // An explicit participant without its own input takes none (assemble), whatever the step has.
+        const spec = Object.hasOwn(model, 'input') ? model.input
+          : model.settingsMode === 'explicit' ? 'none'
+            : (Object.hasOwn(step, 'input') ? step.input : defaultInputOf(steps, index));
         if (hasPossibleInput(spec, index) && !model.request.includes('{вход}')) {
           fail(`steps[${index}].models[${modelIndex}].request`, 'есть возможный вход из более раннего шага, но в запросе нет {вход}');
         }
@@ -934,11 +943,14 @@
       }
       step.models.push(entry);
     }
-    const profile = source ? clone(Object.fromEntries(PROFILE_FIELDS.filter((field) => field in source).map((field) => [field, source[field]]))) : {};
-    PROFILE_FIELDS.forEach((field) => { delete entry[field]; });
+    // A chosen participant gives its settings; without one, a switched-off participant switched on keeps its own.
+    if (source) {
+      const profile = clone(Object.fromEntries(PROFILE_FIELDS.filter((field) => field in source).map((field) => [field, source[field]])));
+      PROFILE_FIELDS.forEach((field) => { delete entry[field]; });
+      Object.assign(entry, profile);
+    }
     delete entry.enabled;
     delete entry.onCanvas;
-    Object.assign(entry, profile);
     return { schema: next, id: entry.id };
   }
 

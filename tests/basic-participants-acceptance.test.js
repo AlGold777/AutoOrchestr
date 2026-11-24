@@ -83,7 +83,8 @@ describe('Basic participant identities: format compatibility', () => {
     expect(participant).toMatchObject({
       name: 'Claude', id: 'claude-blank', label: 'Claude 2', settingsMode: 'explicit',
       task: '', promptTemplate: null, maxWords: null, input: 'none',
-      discipline: { limit: '', content: '', delivery: '', correction: '' }
+      // The delivery mark and the correction request are never empty (NEVER_EMPTY): they come from the inherited layers.
+      discipline: { limit: '', content: '', delivery: 'INHERITED DELIVERY', correction: 'INHERITED CORRECTION' }
     });
     expect(participant).not.toHaveProperty('output');
     expect(participant.discipline.lines).toBeUndefined();

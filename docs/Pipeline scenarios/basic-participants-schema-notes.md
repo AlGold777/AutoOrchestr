@@ -6,7 +6,7 @@ Working contract for implementation of multiple participants backed by one provi
 
 - `schemaVersion: 1` retains the existing contract: a missing participant `id` means `id === name`; unknown participant keys remain errors; existing inheritance/default behavior is unchanged.
 - `schemaVersion: 2` accepts `id`, `label`, and `settingsMode`. Every participant entry must carry a nonempty stable `id`; `name` remains the provider key used by transport and cannot change for a given ID anywhere in one schema. `label` is optional, nonempty when present, and falls back to `name` for display. A participant keeps one label across its schema entries, and labels are unique per provider.
-- `settingsMode: "explicit"` applies to one participant in one round. Missing task, input, discipline strings, output, and maxWords resolve empty/absent rather than inheriting round, pipeline, or Basic participant defaults. Missing input resolves to `none`. The launch task and transport's delivery/size safeguards remain outside this profile.
+- `settingsMode: "explicit"` applies to one participant in one round. Missing task, input, discipline strings (except `delivery` and `correction`, which are never empty and inherit), output, and maxWords resolve empty/absent rather than inheriting round, pipeline, or Basic participant defaults. Missing input resolves to `none`. The launch task and transport's delivery/size safeguards remain outside this profile.
 - `SCHEMA_VERSION` is 2 and `[1, 2]` remains supported. Do not mass-convert stored v1 schemas. Any new fields require v2; an old reader must reject v2 instead of dropping identity.
 
 Example:

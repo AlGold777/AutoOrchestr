@@ -88,6 +88,8 @@
     });
   }
 
+  // The runs whose input files are kept for a resume (putRun): the newest ones.
+  const KEEP_RUN_SNAPSHOTS = 10;
   function createStore({ indexedDB = root.indexedDB } = {}) {
     if (!indexedDB) throw new Error('IndexedDB недоступна: невозможно сохранить вложенный файл');
     const opened = new Promise((resolve, reject) => {
@@ -153,7 +155,19 @@
         if (typeof runId !== 'string' || !runId.trim()) throw new Error('ID запуска должен быть непустым текстом');
         if (!isObject(payloadMap)) throw new Error('Снимок файлов запуска должен быть объектом');
         const snapshot = JSON.parse(JSON.stringify(payloadMap));
-        await transaction('readwrite', (store) => store.put({ runId, payloadMap: snapshot }, ['run', runId]));
+        await transaction('readwrite', (store) => {
+          store.put({ runId, payloadMap: snapshot, savedAt: Date.now() }, ['run', runId]);
+          // Only the newest runs keep their files (a resume reads them); the older snapshots are removed, else the base grows without end.
+          const range = typeof indexedDB.cmp === 'function' && root.IDBKeyRange ? root.IDBKeyRange.bound(['run', ''], ['run', '\uffff']) : null;
+          if (!range || typeof store.openCursor !== 'function') return;
+          const runs = [];
+          const request = store.openCursor(range);
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (cursor) { runs.push({ key: cursor.primaryKey, savedAt: Number(cursor.value?.savedAt) || 0 }); cursor.continue(); return; }
+            runs.sort((left, right) => right.savedAt - left.savedAt).slice(KEEP_RUN_SNAPSHOTS).forEach((run) => store.delete(run.key));
+          };
+        });
       },
       async getRun(runId) {
         if (typeof runId !== 'string' || !runId.trim()) throw new Error('ID запуска должен быть непустым текстом');

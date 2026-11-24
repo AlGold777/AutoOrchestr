@@ -7312,9 +7312,11 @@ document.addEventListener('click', (event) => {
             }).catch(() => {});
         };
         // Writes the answer of a document into the folder; it never throws. One notice per run for a failure.
+        // Gives the result of the write ({ ok, reason }); no folder chosen is { ok: false, reason: 'none' }.
         const saveDocumentCopy = async ({ stepRef, document, answer, startedAt, pipeline, runId }, state) => {
             const folder = window.DocumentsFolder?.instance;
-            if (!folder || typeof answer !== 'string' || !document) return;
+            if (!folder) return { ok: false, reason: 'none' };
+            if (typeof answer !== 'string' || !document) return { ok: false, reason: 'empty' };
             let result;
             try {
                 result = await folder.write({ pipeline, startedAt, runId, name: document.name || stepRef, kind: document.kind, text: answer });
@@ -7325,6 +7327,7 @@ document.addEventListener('click', (event) => {
                 state.warned = true;
                 showNotification(`Документ «${document.name || stepRef}» не записан в папку: ${result.reason === 'denied' ? 'нет доступа к папке (подтвердите при следующем запуске ▶)' : (result.message || 'ошибка записи')}. Прогон продолжается.`, 'warn');
             }
+            return result;
         };
         const askCustomOwner = (asks, { label }) => new Promise((resolve) => {
             if (!ownerAskDialog || !window.OwnerAsk) { resolve([]); return; }
@@ -7444,12 +7447,12 @@ document.addEventListener('click', (event) => {
             });
         };
         // After a reload the feed is empty, but the latest run of the active pipeline may still be resumable: its line comes back.
-        // Only a stopped run (not a finished one) offers it, the same as at the end of the run.
+        // Only a stopped run (not a finished one) offers it, the same as at the end of the run; a run cut by a reload has no stop reason yet.
         const offerStoredResumeLine = async () => {
             if (!customRunStore || pipelineRunActive) return;
             try {
                 const record = await customRunStore.latest(customPipelineName());
-                if (record?.startedAt >= workingSessionStartedAt && record.stopReason && record.stopReason !== 'steps_done') offerResumeLine(record);
+                if (record?.startedAt >= workingSessionStartedAt && record.stopReason !== 'steps_done') offerResumeLine(record);
             } catch (error) {
                 console.warn('[RESULTS] Resume line not restored', error);
             }
@@ -7529,14 +7532,20 @@ document.addEventListener('click', (event) => {
                     // Every document goes to the run's folder through the same copy as an approved document (saveDocumentCopy),
                     // one after another: each file has its own name (endDocumentNames) and no write can overwrite another.
                     const names = endDocumentNames(items);
+                    let written = 0;
+                    let notWritten = 0;
+                    let noFolder = false;
                     for (let index = 0; index < items.length; index += 1) {
                         const text = String(items[index].text ?? '');
                         if (!text.trim()) continue;
                         // eslint-disable-next-line no-await-in-loop
-                        await saveDocumentCopy({ stepRef: items[index].step, document: { name: names[index], kind: 'read' },
+                        const result = await saveDocumentCopy({ stepRef: items[index].step, document: { name: names[index], kind: 'read' },
                             answer: text, startedAt, pipeline, runId }, copyState);
+                        if (result?.ok) written += 1;
+                        else { notWritten += 1; if (result?.reason === 'none') noFolder = true; }
                     }
-                    flashButtonFeedback(button, 'success');
+                    if (noFolder) showNotification('Документы не сохранены: папка документов не выбрана. Нажмите «Папка документов» и сохраните снова.', 'warn');
+                    flashButtonFeedback(button, written && !notWritten ? 'success' : 'error');
                 },
                 onPick: pickDocumentsFolder,
                 onClose: finish
@@ -7587,16 +7596,19 @@ document.addEventListener('click', (event) => {
             if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name)))) {
                 if (steps.some((step) => (step.models || []).some((model) => isLocalName(model.name) && model.files?.length))) {
                     showNotification('Basic: у участника «Qwen 4B» не бывает входных файлов. Прогон не начат.', 'warn');
+                    releaseAbort();
                     return false;
                 }
-                await window.LocalModel.loadChoice();
+                try { await window.LocalModel.loadChoice(); } catch (error) { releaseAbort(); throw error; }
                 if (!window.LocalModel.enabled()) {
                     showNotification('Basic: в схеме есть «Qwen 4B», а в списке локальной модели выбрано «without LLM». Выберите модель и повторите; прогон не начат.', 'warn');
+                    releaseAbort();
                     return false;
                 }
-                const ready = await window.LocalModel.ping();
+                const ready = await window.LocalModel.ping().catch((error) => ({ ok: false, problem: String(error?.message || error) }));
                 if (!ready.ok) {
                     showNotification(`Basic: локальная модель недоступна (${window.LocalModel.unavailableText(ready.problem)}). Запустите Ollama и повторите; прогон не начат.`, 'warn');
+                    releaseAbort();
                     return false;
                 }
             }

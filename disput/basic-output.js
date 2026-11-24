@@ -102,7 +102,8 @@
     if (!output) return { ok: true };
     const answer = String(raw == null ? '' : raw);
     if (output.strictLength === true && Number.isSafeInteger(limit)) {
-      const count = countWords(answer);
+      // The marks [[DOC: id]] … [[/DOC]] are not words of the answer.
+      const count = countWords(stripDocumentMarks(answer));
       if (count > limit) return { ok: false, reason: 'too_long', detail: `(${count} из ${limit} слов)` };
     }
     let value;
