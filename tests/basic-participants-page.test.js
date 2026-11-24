@@ -419,6 +419,6 @@ describe('Basic participant page integration', () => {
     await H.delay(20);
 
     expect(debug().getPipelineStoreSnapshot().pipelines[name].schema).toEqual(before);
-    expect(document.getElementById('notification-message').textContent).toMatch(/claude-review|answer|steps\[1\]/i);
+    expect(document.getElementById('notification-message').textContent).toBe('Claude нельзя убрать из R1: по схеме его ответ берут R2.');
   });
 });

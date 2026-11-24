@@ -10422,7 +10422,21 @@ document.addEventListener('click', (event) => {
             upgradeParticipantSchemaForCanvas(schema);
             const prospectiveErrors = window.BasicSchema.validate(schema).filter((error) => !(error.path === 'steps' && /нет исполнимого шага/.test(error.message)));
             if (prospectiveErrors.length) {
-                showNotification(`Участник не удалён: ${window.BasicSchema.describeErrors(prospectiveErrors)}`, 'warn');
+                // An error the schema did not have before comes from the removal: the step at its path reads this participant.
+                const before = new Set(window.BasicSchema.validate(sourceSchemaForParticipantEdit()).map((error) => `${error.path}|${error.message}`));
+                const readers = [];
+                const other = prospectiveErrors.filter((error) => {
+                    const at = /^steps\[(\d+)\]/.exec(error.path || '');
+                    if (!at || before.has(`${error.path}|${error.message}`)) return true;
+                    const reader = schema.steps[Number(at[1])];
+                    const name = reader?.kind === 'round' ? String(reader.ref).toUpperCase() : `шаг User «${reader?.title || reader?.ref}»`;
+                    if (!readers.includes(name)) readers.push(name);
+                    return false;
+                });
+                const label = block.dataset.participantLabelValue || customBlockModel(block);
+                showNotification(other.length
+                    ? `Участник не удалён: ${window.BasicSchema.describeErrors(other)}`
+                    : `${label} нельзя убрать из ${String(ref).toUpperCase()}: по схеме его ответ берут ${readers.join(', ')}.`, 'warn');
                 return;
             }
             const stillDeclared = (schema.steps || []).some((item) => (item.models || []).some((model) => (model.id || model.name) === id));
