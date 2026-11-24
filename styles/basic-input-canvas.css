@@ -111,3 +111,34 @@ button.basic-input-canvas-chip {
     color: #fff; background: #dc2626; font: 14px/16px sans-serif; cursor: pointer;
 }
 .basic-input-file-delete[hidden] { display: none; }
+
+/* «+» at the number of a round: adds a model to the round (Basic pipeline of its own). Shown on hover, as the round's «×». */
+.stage-header-row .pipeline-round-add-model-btn {
+    position: absolute;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    border: 0;
+    padding: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #0481bf;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.pipeline-panel.has-custom-pipeline .stage-column[data-round] .stage-label:hover .pipeline-round-add-model-btn,
+.pipeline-panel.has-custom-pipeline .stage-column[data-round] .stage-label:focus-within .pipeline-round-add-model-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.pipeline-round-add-model-btn:hover,
+.pipeline-round-add-model-btn:focus-visible {
+    background: rgba(4, 129, 191, 0.12);
+}

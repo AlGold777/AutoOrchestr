@@ -873,9 +873,78 @@
     return out;
   }
 
+  // The personal settings of a participant in a round: what it is asked and how. A model added to a round takes them from
+  // the participant whose assignment it shares; the rest of the entry (name, id, label, Send) is its own.
+  const PROFILE_FIELDS = Object.freeze(['settingsMode', 'role', 'request', 'maxWords', 'task', 'discipline', 'input', 'output', 'files']);
+  const stringOr = (value, fallback) => (typeof value === 'string' ? value : fallback);
+
+  // The assignments of a round: its enabled participants grouped by what they are asked (own request, task, role).
+  // [{ id, ids, labels, request, task, role }] in the order of the schema; `id` is the first participant of the group.
+  // `task` is the participant's own task, or the round's when it has none (an explicit participant without one has '').
+  function roundAssignments(schema, ref) {
+    const step = (schema?.steps || []).find((item) => isObject(item) && item.ref === ref && item.kind === 'round');
+    const groups = new Map();
+    (step?.models || []).filter((model) => isObject(model) && model.enabled !== false).forEach((model) => {
+      const request = stringOr(model.request, '').trim();
+      const task = stringOr(model.task, model.settingsMode === 'explicit' ? '' : stringOr(step.task, '')).trim();
+      const role = stringOr(model.role, '');
+      const key = JSON.stringify([request, request ? '' : task, role]);
+      const group = groups.get(key) || { id: idOf(model), ids: [], labels: [], request, task, role };
+      group.ids.push(idOf(model));
+      group.labels.push(String(model.label || model.name));
+      groups.set(key, group);
+    });
+    return [...groups.values()];
+  }
+
+  // Adds the model `name` to the round `ref`, with Send on. `like` is the id of a participant of that round: the new one gets
+  // its personal settings (the same assignment); without it the new one inherits the round's. Who joins: a switched-off
+  // participant of that model in this round; else, when the round has no participant of that model, the model's participant
+  // of another round; else a new participant (`newId`, label «Model N»). Returns { schema, id } (a new schema) or { error }.
+  function addToRound(schema, ref, { name, like = null, newId = '' } = {}) {
+    const next = clone(schema);
+    if (!Array.isArray(next.steps)) next.steps = [];
+    let step = next.steps.find((item) => isObject(item) && item.ref === ref && item.kind === 'round');
+    if (!step) {
+      step = { ref, kind: 'round', models: [] };
+      const number = Number(String(ref).slice(1));
+      const after = next.steps.findIndex((item) => isObject(item) && item.kind === 'round' && Number(String(item.ref).slice(1)) > number);
+      next.steps.splice(after < 0 ? next.steps.length : after, 0, step);
+    }
+    if (!Array.isArray(step.models)) step.models = [];
+    const source = like == null ? null : step.models.find((model) => isObject(model) && idOf(model) === like);
+    if (like != null && !source) return { error: `в ${ref} нет участника «${like}»` };
+    // Format 2 holds participants by id: every entry gets one (the model name for the old entries).
+    next.schemaVersion = 2;
+    next.steps.forEach((item) => (isObject(item) && Array.isArray(item.models) ? item.models : []).forEach((model) => {
+      if (isObject(model) && !model.id) model.id = model.name;
+    }));
+    const all = next.steps.flatMap((item) => (isObject(item) && Array.isArray(item.models) ? item.models : []));
+    let entry = step.models.find((model) => model.name === name && model.enabled === false);
+    if (!entry) {
+      const elsewhere = step.models.some((model) => model.name === name) ? null : all.find((model) => model.name === name);
+      if (elsewhere) entry = { id: elsewhere.id, name, ...(elsewhere.label ? { label: elsewhere.label } : {}) };
+      else if (!all.some((model) => model.name === name)) entry = { id: name, name };
+      else {
+        if (!newId) return { error: 'нет ID нового участника' };
+        const labels = new Set(all.filter((model) => model.name === name).map((model) => String(model.label || model.name)));
+        let suffix = 2;
+        while (labels.has(`${name} ${suffix}`)) suffix += 1;
+        entry = { id: newId, name, label: `${name} ${suffix}` };
+      }
+      step.models.push(entry);
+    }
+    const profile = source ? clone(Object.fromEntries(PROFILE_FIELDS.filter((field) => field in source).map((field) => [field, source[field]]))) : {};
+    PROFILE_FIELDS.forEach((field) => { delete entry[field]; });
+    delete entry.enabled;
+    delete entry.onCanvas;
+    Object.assign(entry, profile);
+    return { schema: next, id: entry.id };
+  }
+
   const describeErrors = (errors) => errors.map((error) => (error.path ? `${error.path}: ${error.message}` : error.message)).join('; ');
 
-  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, endSources, toSettings, toCanvas, validate, warnings, describeErrors });
+  const api = Object.freeze({ SCHEMA_VERSION, SUPPORTED_VERSIONS, ORIGINS, DEFAULTS, pick, resolveFields, defaultInputOf, assemble, resolveRun, endSources, toSettings, toCanvas, validate, warnings, roundAssignments, addToRound, describeErrors });
   root.BasicSchema = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

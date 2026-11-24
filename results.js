@@ -6116,7 +6116,7 @@ document.addEventListener('click', (event) => {
             if (!pipelinePanel) return;
             const disabled = !enabled;
                 pipelinePanel
-                .querySelectorAll('.model-input-checkbox, .role-selector, .model-participant-add, .model-participant-remove, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
+                .querySelectorAll('.model-input-checkbox, .role-selector, .model-participant-add, .model-participant-remove, .pipeline-round-add-model-btn, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
                 .forEach((el) => {
                     el.disabled = disabled;
                 });
@@ -9326,6 +9326,20 @@ document.addEventListener('click', (event) => {
                 const isLastRound = round === roundCounter && roundCounter > 1;
                 deleteBtn.hidden = !(editable && isLastRound);
                 deleteBtn.disabled = !(editable && isLastRound);
+                // A Basic pipeline of its own (not Default, whose rounds follow the models chosen on top) adds a model to a round here.
+                let addModelBtn = label.querySelector('.pipeline-round-add-model-btn');
+                if (!addModelBtn) {
+                    addModelBtn = document.createElement('button');
+                    addModelBtn.type = 'button';
+                    addModelBtn.className = 'pipeline-round-add-model-btn';
+                    addModelBtn.title = 'Добавить модель в раунд';
+                    addModelBtn.setAttribute('aria-label', 'Добавить модель в раунд');
+                    addModelBtn.textContent = '+';
+                    label.insertBefore(addModelBtn, label.firstChild);
+                }
+                const canAddModel = editable && (custom || draft) && isCustomEnginePipeline() && !pipelineRunActive;
+                addModelBtn.hidden = !canAddModel;
+                addModelBtn.disabled = !canAddModel;
             });
         };
 
@@ -10304,6 +10318,49 @@ document.addEventListener('click', (event) => {
             }
             if (await applyParticipantSchemaEdit(schema)) showNotification(`${label} добавлен с выключенным Send.`, 'info');
         };
+        // «+» at the number of a round: a model joins this round with Send on. When the participants of the round are asked
+        // different things, the owner picks whose assignment the new model takes (it gets that participant's settings);
+        // with one assignment the new model takes it at once; an empty round gives it the round's task.
+        const shortText = (value, limit = 70) => {
+            const line = String(value || '').replace(/\s+/g, ' ').trim();
+            return line.length > limit ? `${line.slice(0, limit - 1)}…` : line;
+        };
+        const addModelToRound = async (round) => {
+            if (pipelineRunActive || !window.BasicSchema?.addToRound || !round) return;
+            const ref = `r${round}`;
+            const names = (PipelineRuntime?.MODELS || []).map((model) => model.name).filter(Boolean);
+            const schema = sourceSchemaForParticipantEdit();
+            const inRound = new Set(((schema.steps || []).find((step) => step.ref === ref && step.kind === 'round')?.models || [])
+                .filter((model) => model.enabled !== false).map((model) => model.name));
+            const name = await askChoiceDialog({
+                title: `Добавить модель в R${round}`,
+                choices: names.map((value) => ({ value, label: inRound.has(value) ? `${value} (ещё один участник)` : value })),
+                cancelText: 'Отмена'
+            });
+            if (!name) return;
+            const groups = window.BasicSchema.roundAssignments(schema, ref);
+            let like = groups.length === 1 ? groups[0].id : null;
+            if (groups.length > 1) {
+                const roleLabel = (id) => getRoleOptionPrompts().find((prompt) => prompt.id === id)?.label || id;
+                const choices = groups.map((group) => ({
+                    value: group.id,
+                    label: `Как у ${group.labels.join(', ')}: ${group.request ? 'личный запрос' : (shortText(group.task) || 'без задания')}${group.role ? ` · роль ${roleLabel(group.role)}` : ''}`
+                }));
+                like = await askChoiceDialog({
+                    title: `Задание для ${name} в R${round}`,
+                    message: 'Участники раунда получают разные задания. Новая модель берёт настройки выбранного участника; изменить их можно в её карточке.',
+                    choices,
+                    cancelText: 'Отмена'
+                });
+                if (!like) return;
+            }
+            const result = window.BasicSchema.addToRound(schema, ref, { name, like, newId: globalThis.crypto?.randomUUID?.() || '' });
+            if (result.error) { showNotification(`Модель не добавлена: ${result.error}.`, 'error'); return; }
+            if (await applyParticipantSchemaEdit(result.schema)) {
+                const added = (result.schema.steps.find((step) => step.ref === ref)?.models || []).find((model) => model.id === result.id);
+                showNotification(`${added?.label || name} добавлен в R${round}.`, 'info');
+            }
+        };
         // A participant keeps its ID, settings and place in every round; only its model (name) changes.
         const switchBasicParticipantModel = async (block) => {
             if (pipelineRunActive || !window.BasicSchema || !block) return;
@@ -10750,7 +10807,7 @@ document.addEventListener('click', (event) => {
             }
             const modelName = customBlockModel(block) || 'Model';
             const stageColumn = block.closest('.stage-column');
-            const stageLabel = stageColumn?.querySelector('.stage-label')?.textContent?.replace(/\s+/g, ' ').trim() || 'Pipeline block';
+            const stageLabel = (stageColumn?.querySelector('.stage-label .round-badge') || stageColumn?.querySelector('.stage-label'))?.textContent?.replace(/\s+/g, ' ').trim() || 'Pipeline block';
             const protocol = getPipelineProtocolConfig();
             const pipelineTitle = String(pipelineStore.active || getPipelineHeaderName()).trim();
             const roleSelector = block.querySelector('.role-selector');
@@ -11166,6 +11223,13 @@ document.addEventListener('click', (event) => {
         });
 
         pipelinePanel.addEventListener('click', (event) => {
+            const roundAdd = event.target?.closest?.('.pipeline-round-add-model-btn');
+            if (roundAdd && pipelinePanel.contains(roundAdd)) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (isCustomEnginePipeline()) void addModelToRound(Number(roundAdd.closest('.stage-column[data-round]')?.dataset.round || 0));
+                return;
+            }
             const participantAction = event.target?.closest?.('[data-participant-add], [data-participant-remove], [data-participant-switch]');
             if (participantAction && pipelinePanel.contains(participantAction)) {
                 event.preventDefault();
