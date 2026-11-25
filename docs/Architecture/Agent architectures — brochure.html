@@ -33,7 +33,7 @@
       <a class="sub" href="#gastown">Gas Town</a>
       <a class="sub" href="#superpowers">Superpowers</a>
       <a class="sub" href="#agentlab">Agent Laboratory</a>
-      <a href="#basic-json">Три схемы Basic JSON</a>
+      <a href="#basic-json">Basic JSON: ранние и финальные схемы</a>
       <div class="navgroup">Общие модели</div>
       <a href="#roles">Функциональные роли</a>
       <a href="#comparisons">Сравнение топологий</a>
@@ -228,6 +228,7 @@
     <section class="section" id="practical">
       <div class="section-kicker">Часть II · практические системы</div><h2>Три самостоятельных harness</h2>
       <p class="section-lead">В переписке их отдельно попросили нарисовать, не объединяя с системой пользователя. Все три схемы — концептуальные реконструкции опубликованных проектов; связи упрощены, основные имена ролей сохранены.</p>
+      <p>Краткие профили из ответа модели: Стив Йегге — инженер, работавший в Amazon и Google, автор Gas Town; Джесси Винсент — разработчик открытого ПО и бывший руководитель Perl 6, автор Superpowers; Самуэль Шмидгалл — исследователь Google DeepMind с докторской степенью, автор Agent Laboratory. В чате первые два проекта описаны как инженерные harness для разработки ПО, третий — как система для научных исследований.</p>
       <article class="scheme" id="gastown"><h3>5. Стив Йегге — Gas Town <span class="tag">параллельная иерархия</span></h3>
         <p>Управляющие агенты, исполнители, интеграция и отдельный контур наблюдения и восстановления поддерживают множество параллельных задач.</p>
         <div class="diagram"><pre class="mermaid">flowchart TD
@@ -416,8 +417,12 @@
       <div class="notice">Совместимость такой конкретной конфигурации с текущим AutoOrchestr/Basic отдельно не подтверждена. В более раннем сообщении было сказано, что несколько окон/участников могут запускаться в одном раунде, но это также было отмечено как непроверенное.</div>
     </section>
 
-    <section class="section" id="basic-json"><div class="section-kicker">Практический результат в той же переписке</div><h2>Три отдельные схемы Basic в JSON</h2>
-      <p>Позже модель подготовила три самостоятельных универсальных JSON-пайплайна для Basic по мотивам Gas Town, Superpowers и Agent Laboratory. По сообщению модели, в каждой схеме задействованы все десять поддерживаемых моделей, а запросы рассчитаны на любую задачу из поля постановки.</p>
+    <section class="section" id="basic-json"><div class="section-kicker">Практический результат в той же переписке</div><h2>Схемы Basic в JSON: черновой пакет и финальные три</h2>
+      <p>Сначала модель выдала пакет из семи схем для Basic. Позже по уточнению пользователя он был сужен до трёх универсальных схем и переработан: запросы должны подходить к произвольной задаче из поля постановки, а не требовать программирования или научных экспериментов.</p>
+      <h3>Первоначальный пакет из семи схем</h3>
+      <div class="table-wrap"><table class="matrix"><thead><tr><th>Схема</th><th>Раунды</th><th>Запросы</th></tr></thead><tbody><tr><td>Cogentic</td><td>8</td><td>17</td></tr><tr><td>Google AI Co-Scientist</td><td>6</td><td>15</td></tr><tr><td>Stanford Virtual Lab</td><td>7</td><td>18</td></tr><tr><td>Anthropic Research</td><td>7</td><td>16</td></tr><tr><td>Gas Town</td><td>7</td><td>20</td></tr><tr><td>Superpowers</td><td>9</td><td>20</td></tr><tr><td>Agent Laboratory</td><td>9</td><td>18</td></tr></tbody></table></div>
+      <h3>Финальные три универсальные схемы</h3>
+      <p>По сообщению модели, в каждой из финальных схем задействованы все десять поддерживаемых моделей, а персональные промпты рассчитаны на произвольную задачу.</p>
       <div class="table-wrap"><table class="matrix"><thead><tr><th>Файл из ответа</th><th>Раунды</th><th>Запросы</th></tr></thead><tbody><tr><td><code>Basic_Gas_Town.json</code></td><td>7</td><td>22</td></tr><tr><td><code>Basic_Superpowers.json</code></td><td>10</td><td>26</td></tr><tr><td><code>Basic_Agent_Laboratory.json</code></td><td>9</td><td>21</td></tr></tbody></table></div>
       <p>В ответе модель сообщила о повторной проверке синтаксиса JSON, контракта Basic Schema v1, участников, индивидуальных ролевых инструкций, универсального входа задачи, передачи инструкций и результатов между раундами, а также итогового ответа.</p>
       <div class="notice">Фактический импорт и запуск этих трёх JSON-схем в расширении в переписке не тестировались. Сами файлы доступны как вложения в <a href="https://chatgpt.com/c/6b06d370-3878-83ed-bb66-4a7f720ea5db">исходном чате</a>; здесь сохранены названия и результаты, сообщённые моделью.</div>
@@ -435,7 +440,7 @@
     F --&gt; A</pre></div>
       <div class="notice">Принцип из ответа: не бесконечный разговор между моделями, а итеративное построение графа знаний с независимыми контекстами, общей внешней памятью и проверкой каждого результата. Модель также уточнила, что опубликованные материалы не раскрывают полностью внутренние архитектуры компаний.</div>
       <div class="callout"><h3>Числа, которые модель приводила в разговоре</h3><p>Отдельно модель сообщила о математическом исследовании OpenAI с примерно 10&nbsp;000 агентами, продолжавшемся 88 часов и потребовавшем около 130 миллиардов выходных токенов; и об эксперименте Anthropic с одним управляющим и 999 исполнительными агентами, общей памятью в PostgreSQL, Git для результатов и Lean для математической проверки.</p><p class="small">Это воспроизведение конкретного ответа из переписки, а не отдельная проверка этих цифр в этой брошюре. Рядом модель подчёркивала, что полная внутренняя архитектура компаний не раскрыта, а её комбинированная схема — инженерная реконструкция.</p></div>
-      <p>В чате упоминались Math Proof Siege, открытый Anthropic упрощённый математический harness; Karpathy autoresearch; заметки Geoffrey Huntley и Pi; а также разбор Simon Willison о параллельных coding agents. Отдельные диаграммы для этих дополнительных материалов в том ответе не приводились.</p>
+      <p>В чате также приводились ссылки на <a href="https://github.com/anthropics/claude-plugins-official/blob/main/plugins/math-proof/agents/math-proof-worker.md">инструкцию Anthropic Math Proof Worker</a>, <a href="https://github.com/proofQED/QED">QED</a> и <a href="https://openai.com/index/navier-stokes-solution/">математическую работу OpenAI по Навье—Стоксу</a>. Позже модель упоминала Math Proof Siege, открытый Anthropic упрощённый математический harness; Karpathy autoresearch; заметки Geoffrey Huntley и Pi; а также разбор Simon Willison о параллельных coding agents. Отдельные Mermaid-диаграммы для этих дополнительных материалов в том ответе не приводились.</p>
     </section>
 
     <section class="section" id="dynamic-overview"><div class="section-kicker">Часть IV · концепция динамического пайплайна</div><h2>Исследование из последовательности циклов, число которых заранее неизвестно</h2>
@@ -717,7 +722,7 @@
     <section class="section" id="references"><div class="section-kicker">Приложение</div><h2>Источники и другие упоминания из чата</h2>
       <div class="sources"><a href="https://chatgpt.com/c/6b06d370-3878-83ed-bb66-4a7f720ea5db">Исходная переписка</a><a href="https://arxiv.org/abs/2609.40324">Cogentic</a><a href="https://research.google/blog/accelerating-scientific-breakthroughs-with-an-ai-co-scientist/">AI Co-Scientist</a><a href="https://www.nature.com/articles/s41586-025-09442-9">Virtual Lab</a><a href="https://www.anthropic.com/research/multi-agent-research-system">Anthropic Research</a><a href="https://github.com/steveyegge/gastown">Gas Town</a><a href="https://github.com/obra/superpowers">Superpowers</a><a href="https://agentlaboratory.github.io/">Agent Laboratory</a></div>
       <h3>Дополнительные кандидаты, названные моделью без отдельных Mermaid-схем</h3><ul><li><a href="https://github.com/karpathy/autoresearch">Andrej Karpathy — autoresearch</a></li><li><a href="https://ghuntley.com/">Geoffrey Huntley — агентная инженерия</a></li><li><a href="https://pi.dev/">Pi</a></li><li><a href="https://simonwillison.net/2025/Oct/5/parallel-coding-agents/">Simon Willison — Parallel coding agents</a></li><li>Anthropic Math Proof Siege — упрощённый математический harness, упомянутый в том ответе.</li></ul>
-      <p class="small">Авторские сведения, ссылки и описания приведены по содержанию исходного чата. Схемы шести систем — реконструкции на основании указанных материалов. Концепция динамического контура — модельное предложение по AutoOrchestr, нуждающееся в технической проверке.</p>
+      <p class="small">Авторские сведения, ссылки и описания приведены по содержанию исходного чата. Схемы семи систем — реконструкции на основании указанных материалов. Концепция динамического контура — модельное предложение по AutoOrchestr, нуждающееся в технической проверке.</p>
     </section>
     <footer>Тематическая брошюра по ответам модели в указанной переписке. Mermaid-блоки редактируемы: откройте исходный код схемы и меняйте текст диаграммы.</footer>
   </main>
