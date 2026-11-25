@@ -7263,7 +7263,7 @@ document.addEventListener('click', (event) => {
         const waitSinceText = () => (customWaitSince ? `Ожидает с ${new Date(customWaitSince).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : '');
         // The buttons are the choices the engine allows: «Продолжить» only at the threshold (the engine refuses it below),
         // below it «Пропустить шаг» and «Повторить».
-        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, details = {}, required = 0 }, hint = null) => {
+        const askCustomDecision = async ({ label, accepted, failed, choices, reasons, details = {}, required = 0, signal = null }, hint = null) => {
             // The reason with its detail: a usage limit names the reset time («лимит использования модели, сброс в 16:30»).
             const reasonWithDetail = (name) => {
                 const code = reasons[name];
@@ -7277,16 +7277,22 @@ document.addEventListener('click', (event) => {
                 : `${label}: нет принятых ответов (${failedText}). Что дальше?`;
             customDecisionOpen = true;
             // Without every answer the main button skips the participants without an answer: the accepted answers stay.
+            // «Wait» watches their pages for the chosen time; without a choice the engine closes the window itself.
             const answer = await showConfirm(message, {
                 hint,
-                confirmText: canContinue ? 'Продолжить' : 'Пропустить участника',
-                cancelText: 'Остановить прогон',
-                retryText: choices.includes('retry') ? (canContinue ? 'Повторить без ответа' : 'Повторить') : '',
-                skipStepText: !canContinue && choices.includes('skip') ? 'Пропустить шаг целиком' : ''
+                signal,
+                confirmText: canContinue ? 'Continue' : 'Skip member',
+                cancelText: 'Stop run',
+                retryText: choices.includes('retry') ? 'Repeat' : '',
+                waitText: choices.includes('wait') ? 'Wait' : ''
             });
             customDecisionOpen = false;
+            if (answer === 'closed') return 'closed';
+            if (answer?.wait) {
+                appendBasicRunLine(`${label}: жду ответ (${failed.join(', ')}) до ${answer.wait} мин`);
+                return { action: 'wait', minutes: answer.wait };
+            }
             if (answer === 'retry') return 'retry';
-            if (answer === 'skip_step') return 'skip';
             if (answer === true) return canContinue ? 'continue' : 'skip_participant';
             return 'stop';
         };
@@ -19460,7 +19466,6 @@ document.addEventListener('click', (event) => {
     const deleteConfirmBtn = document.getElementById('delete-confirm');
     const cancelConfirmBtn = document.getElementById('cancel-confirm');
     const retryConfirmBtn = document.getElementById('retry-confirm');
-    const skipStepConfirmBtn = document.getElementById('skip-step-confirm');
     const promptModal = document.getElementById('prompt-modal');
     const promptMessage = document.getElementById('prompt-message');
     const promptDialogInput = document.getElementById('prompt-dialog-input');
@@ -26574,6 +26579,7 @@ if (smartCompareButton) {
         });
     }
 
+    const CONFIRM_WAIT_MINUTES = [5, 10, 15, 20];
     function showConfirm(message, options = {}) {
         return new Promise((resolve) => {
             if (confirmModal && confirmMessage) {
@@ -26583,7 +26589,8 @@ if (smartCompareButton) {
                 const confirmText = String(options?.confirmText || 'Сохранить');
                 const cancelText = String(options?.cancelText || 'Отмена');
                 const retryText = String(options?.retryText || '').trim();
-                const skipStepText = String(options?.skipStepText || '').trim();
+                const waitText = String(options?.waitText || '').trim();
+                if (options?.signal?.aborted) { resolve('closed'); return; }
                 confirmMessage.textContent = message;
                 deleteConfirmBtn.textContent = confirmText;
                 deleteConfirmBtn.setAttribute('aria-label', confirmText);
@@ -26597,11 +26604,22 @@ if (smartCompareButton) {
                     retryConfirmBtn.classList.toggle('hidden', !retryText);
                     retryConfirmBtn.disabled = options?.retryDisabled === true;
                 }
-                if (skipStepConfirmBtn) {
-                    skipStepConfirmBtn.textContent = skipStepText;
-                    skipStepConfirmBtn.setAttribute('aria-label', skipStepText);
-                    skipStepConfirmBtn.hidden = !skipStepText;
-                    skipStepConfirmBtn.classList.toggle('hidden', !skipStepText);
+                // «Wait» stands last, with a vertical scale of the minutes to its right.
+                let waitBox = null;
+                confirmModal.querySelectorAll('.confirm-wait').forEach((node) => node.remove());
+                if (waitText) {
+                    waitBox = document.createElement('span');
+                    waitBox.className = 'confirm-wait';
+                    waitBox.style.cssText = 'display:inline-flex;align-items:stretch;gap:10px;';
+                    const scale = CONFIRM_WAIT_MINUTES.map((minutes) => `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;"><input type="radio" name="confirm-wait-minutes" value="${minutes}"${minutes === 20 ? ' checked' : ''}>${minutes} мин</label>`).join('');
+                    waitBox.innerHTML = `<button type="button" id="wait-confirm" class="modal-button"></button><span class="confirm-wait-scale" role="radiogroup" aria-label="Сколько ждать" style="display:flex;flex-direction:column;gap:2px;font-size:13px;text-align:left;">${scale}</span>`;
+                    waitBox.querySelector('#wait-confirm').textContent = waitText;
+                    deleteConfirmBtn.parentElement.appendChild(waitBox);
+                    // Four buttons and the scale need a wider window, and the labels stay on one line.
+                    const content = confirmModal.querySelector('.modal-content');
+                    content.style.setProperty('width', 'min(640px, calc(100vw - 32px))', 'important');
+                    content.style.setProperty('max-width', 'none', 'important');
+                    confirmModal.querySelectorAll('.modal-buttons button').forEach((button) => { button.style.whiteSpace = 'nowrap'; });
                 }
                 modalManager.show(confirmModal);
                 // The hint (a promise of lines) comes after the window opens: it does not hold the answer.
@@ -26629,19 +26647,32 @@ if (smartCompareButton) {
                     resolve('retry');
                 };
 
-                const onSkipStep = () => {
+                const onWait = () => {
+                    const minutes = Number(waitBox.querySelector('input[name="confirm-wait-minutes"]:checked')?.value) || 20;
                     modalManager.hide(confirmModal);
                     cleanupListeners();
-                    resolve('skip_step');
+                    resolve({ wait: minutes });
+                };
+
+                // The caller closes the window itself (the answer came, or the time is over).
+                const onAbortWindow = () => {
+                    if (!confirmOpen) return;
+                    modalManager.hide(confirmModal);
+                    cleanupListeners();
+                    resolve('closed');
                 };
 
                 const cleanupListeners = () => {
                     confirmOpen = false;
+                    options?.signal?.removeEventListener?.('abort', onAbortWindow);
+                    if (waitBox) {
+                        confirmModal.querySelector('.modal-content').style.cssText = '';
+                        confirmModal.querySelectorAll('.modal-buttons button').forEach((button) => { button.style.whiteSpace = ''; });
+                        waitBox.remove();
+                    }
                     deleteConfirmBtn.removeEventListener('click', onConfirm);
                     cancelConfirmBtn.removeEventListener('click', onCancel);
                     retryConfirmBtn?.removeEventListener('click', onRetry);
-                    skipStepConfirmBtn?.removeEventListener('click', onSkipStep);
-                    if (skipStepConfirmBtn) { skipStepConfirmBtn.hidden = true; skipStepConfirmBtn.classList.add('hidden'); }
                     deleteConfirmBtn.textContent = 'Сохранить';
                     deleteConfirmBtn.setAttribute('aria-label', 'Сохранить');
                     cancelConfirmBtn.textContent = 'Отмена';
@@ -26659,7 +26690,8 @@ if (smartCompareButton) {
                 deleteConfirmBtn.addEventListener('click', onConfirm, { once: true });
                 cancelConfirmBtn.addEventListener('click', onCancel, { once: true });
                 if (retryText && retryConfirmBtn) retryConfirmBtn.addEventListener('click', onRetry, { once: true });
-                if (skipStepText && skipStepConfirmBtn) skipStepConfirmBtn.addEventListener('click', onSkipStep, { once: true });
+                waitBox?.querySelector('#wait-confirm').addEventListener('click', onWait, { once: true });
+                options?.signal?.addEventListener?.('abort', onAbortWindow, { once: true });
             } else {
                 resolve(confirm(message));
             }

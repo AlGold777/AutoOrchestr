@@ -67,7 +67,7 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
 
   test('the run takes the limit of the schema, and the decision window offers «Продолжить» only where the engine allows it', () => {
     expect(results).toContain('runMaxWords: built.run.maxWords,');
-    expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Продолжить' : 'Пропустить участника'/);
+    expect(results).toMatch(/const canContinue = choices\.includes\('continue'\);[\s\S]*?confirmText: canContinue \? 'Continue' : 'Skip member'/);
   });
 
   test('B-8: без модулей приёма ответов страница не принимает всё молча (нет заглушки { ok: true })', () => {

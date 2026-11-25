@@ -199,6 +199,11 @@
   // Default technical check: non-empty text. The page passes the shared acceptance check.
   const defaultAccept = () => ({ ok: true, reason: '' });
 
+  // The owner window of an unfinished round: without a choice the run goes on after this time; while it is open, and after
+  // «Wait», the pages of the participants without an answer are read this often.
+  const DECISION_TIMEOUT_MS = 20 * 60 * 1000;
+  const WAIT_POLL_MS = 20 * 1000;
+
   // Why there is no text: the transport's status says whether it was sent (NO_SEND) or timed out; otherwise the model
   // answered without text (token only) or said nothing.
   function noAnswerReason(result) {
@@ -465,7 +470,8 @@
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, stopMarks = [], onNoAnswer = 'ask', putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null, provideEnd = null, end = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
-    signal = null, onEvent = null, onRequest = null, onResponse = null
+    signal = null, onEvent = null, onRequest = null, onResponse = null,
+    decisionTimeoutMs = DECISION_TIMEOUT_MS, waitPollMs = WAIT_POLL_MS
   }) {
     // The texts of the answers: the record gives the callbacks (putText → ref, getText(ref) → text); without them the run keeps
     // its own dictionary, which the result returns. An answer is put once, when it is accepted.
@@ -764,7 +770,7 @@
     // request's own user turn and takes an answer that ends with the token of any request of the round). Returns the answers found
     // on the page: participant id → a reply for the acceptance. The others are sent again by the caller. Every read is a journal
     // event (retry_reread_page: outcome accepted | resent).
-    async function rereadOwnTurns(models, step, tryNo) {
+    async function rereadOwnTurns(models, step, tryNo, { quiet = false } = {}) {
       const found = {};
       if (typeof reread !== 'function') return found;
       for (const model of models) {
@@ -783,10 +789,35 @@
           found[model.id] = { text: text(reply.text), status: reply.status || 'PARTIAL', completion: reply.completion || (reply.confirmed ? 'complete' : 'partial'),
             answered: true, transportRequestId: prev.transportRequestId || '', sentPrompt: prev.sentPrompt, attribution: 'reread', reason: reply.reason || '' };
         }
+        // A repeated read while waiting is not a journal event until it finds the answer.
+        if (quiet && !got) continue;
         await emit('retry_reread_page', { step: step.index, ref: step.ref, label: stepLabel(step), visit: activeVisit, model: model.name, participant: model.id,
           attempt: tryNo, outcome: got ? 'accepted' : 'resent', reason: reply?.reason || (prev ? null : 'no_sent_prompt') });
       }
       return found;
+    }
+
+    // Waits for the answers of the participants on their pages (reads only, nothing is sent) until all are found, the time
+    // is over or `stop` aborts. Fills `found` (participant id → reply) and resolves 'found' | 'timeout' | 'stopped'.
+    async function watchAnswers(step, models, tryNo, ms, stop, found) {
+      const deadline = Date.now() + ms;
+      const halted = () => Boolean(stop?.aborted) || aborted();
+      const pause = (delay) => new Promise((resolve) => {
+        const done = () => { clearTimeout(timer); stop?.removeEventListener?.('abort', done); signal?.removeEventListener?.('abort', done); resolve(); };
+        const timer = setTimeout(done, delay);
+        stop?.addEventListener?.('abort', done, { once: true });
+        signal?.addEventListener?.('abort', done, { once: true });
+      });
+      for (;;) {
+        const left = deadline - Date.now();
+        if (left <= 0) return 'timeout';
+        await pause(Math.min(waitPollMs, left));
+        if (halted()) return 'stopped';
+        const rest = models.filter((model) => !found[model.id]);
+        Object.assign(found, await rereadOwnTurns(rest, step, tryNo, { quiet: true }));
+        if (halted()) return 'stopped';
+        if (models.every((model) => found[model.id])) return 'found';
+      }
     }
 
     // Sends the participants with their prompts, then corrections; fills `outcome` by participant id. Every attempt
@@ -1509,13 +1540,58 @@
             }
             // Without every answer "continue" is not offered: the owner repeats, skips the participants without an answer
             // (the accepted answers stay), skips the whole step (it passes nothing on) or stops the step.
-            const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip_participant', 'skip', 'stop'];
+            const canWait = !enough && typeof reread === 'function';
+            const choices = enough ? ['continue', ...(failed.length ? ['retry'] : []), 'stop'] : ['retry', 'skip_participant', 'skip', 'stop', ...(canWait ? ['wait'] : [])];
             const waitId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-            const action = typeof decide === 'function'
-              ? await ownerWait(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
-                reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])),
-                details: Object.fromEntries(failed.map((id) => [id, outcome[id]?.detail || ''])) }), { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res) })
-              : null;
+            const failedModels = step.models.filter((model) => failed.includes(model.id));
+            const nextTry = Math.max(0, ...failed.map((id) => outcome[id]?.attempt || 0)) + 1;
+            const found = {};
+            // The answers found on the pages are judged like any reply; nothing is sent for them.
+            const takeFound = async () => {
+              const models = failedModels.filter((model) => found[model.id] && !outcome[model.id]?.ok);
+              if (!models.length) return;
+              prefetched = Object.fromEntries(models.map((model) => [model.id, found[model.id]]));
+              await execute(step, models, outcome, nextTry, { trigger: 'page_reread', triggerReason: 'user_wait' });
+            };
+            let action = null;
+            let auto = '';
+            if (typeof decide === 'function') {
+              const control = new AbortController();
+              let watched = null;
+              action = await ownerWait(() => {
+                const asked = Promise.resolve().then(() => decide({ step: step.index, label: stepLabel(step), accepted, failed, choices, last, required, approve,
+                  reasons: Object.fromEntries(failed.map((id) => [id, outcome[id]?.reason || ''])),
+                  details: Object.fromEntries(failed.map((id) => [id, outcome[id]?.detail || ''])),
+                  ...(canWait ? { signal: control.signal, timeoutMs: decisionTimeoutMs } : {}) }));
+                if (!canWait) return asked;
+                // The window stays open while the pages are watched: the answers or the time end it.
+                watched = watchAnswers(step, failedModels, nextTry, decisionTimeoutMs, control.signal, found);
+                return Promise.race([asked, watched.then((end) => {
+                  if (end === 'stopped') return asked;
+                  auto = end;
+                  return end === 'found' ? 'resume' : 'skip_participant';
+                })]).finally(() => control.abort());
+              }, { waitId, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (res) => (res === 'continue' ? 'approved' : res?.action || res) })
+                .finally(() => control.abort());
+              await watched;
+              // «Wait»: the pages are watched for the chosen time; without the answer the participant is skipped.
+              if (canWait && (action === 'wait' || action?.action === 'wait')) {
+                const minutes = Number(action?.minutes) > 0 ? Number(action.minutes) : decisionTimeoutMs / 60000;
+                emit('custom_decision', { step: step.index, action: 'wait', minutes });
+                auto = await ownerWait(() => watchAnswers(step, failedModels, nextTry, Math.min(minutes * 60000, decisionTimeoutMs), null, found),
+                  { waitId: `${waitId}_w`, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (end) => end });
+                action = auto === 'found' ? 'resume' : 'skip_participant';
+              }
+              await takeFound();
+              if (action === 'resume') { await checkpointNow('decision', { pendingOwner: null }); continue; }
+              // The skip decided by the time keeps the answers that came meanwhile.
+              if (auto && action === 'skip_participant') {
+                const now = step.models.filter((model) => outcome[model.id]?.ok).map((model) => model.id);
+                accepted.splice(0, accepted.length, ...now);
+                failed.splice(0, failed.length, ...step.models.map((model) => model.id).filter((id) => !now.includes(id)));
+                if (!failed.length) continue;
+              }
+            }
             // The fallback "the answers go on" holds only when every answer is accepted and no approval is asked.
             if (!choices.includes(action)) { if (enough && !approve) break; throw new StopRun('no_decision'); }
             // Skipping the participants without an answer goes on with the accepted answers; with none it is the whole step.
@@ -1525,7 +1601,7 @@
             if (skipParticipants) state.decisions[decidedKey] = 'continue';
             else if (effective === 'continue' || effective === 'skip') state.decisions[decidedKey] = effective;
             if (typeof decide === 'function') await checkpointNow('decision', { pendingOwner: null });
-            emit('custom_decision', { step: step.index, action });
+            emit('custom_decision', { step: step.index, action, ...(auto ? { auto: true, skipped: failed.slice() } : {}) });
             if (effective === 'continue' || skipParticipants) break;
             if (effective === 'stop') throw new StopRun('stopped');
             if (effective === 'skip') { entry.skipped = true; break; }
@@ -1646,7 +1722,7 @@
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : '') } };
   }
 
-  const api = Object.freeze({ TASK_FULL_MAX_CHARS, taskReminderOf, EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, findStopMark, run });
+  const api = Object.freeze({ DECISION_TIMEOUT_MS, WAIT_POLL_MS, TASK_FULL_MAX_CHARS, taskReminderOf, EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, findStopMark, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

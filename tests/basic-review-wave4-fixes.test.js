@@ -111,12 +111,16 @@ describe('A5: an incomplete round keeps its accepted answers when the owner skip
     expect(result.steps[0].skipped).toBe(true);
   });
 
-  test('the page offers the whole-step skip as a separate button, not the main one', () => {
-    const html = fs.readFileSync(path.join(__dirname, '..', 'result_new.html'), 'utf8');
-    expect(html).toContain('id="skip-step-confirm"');
+  test('the window offers Stop run, Repeat, Skip member and Wait; there is no whole-step button', () => {
     const results = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
-    expect(results).toContain("confirmText: canContinue ? 'Продолжить' : 'Пропустить участника'");
-    expect(results).toContain("skipStepText: !canContinue && choices.includes('skip') ? 'Пропустить шаг целиком' : ''");
+    expect(results).toContain("confirmText: canContinue ? 'Continue' : 'Skip member'");
+    expect(results).toContain("cancelText: 'Stop run'");
+    expect(results).toContain("retryText: choices.includes('retry') ? 'Repeat' : ''");
+    expect(results).toContain("waitText: choices.includes('wait') ? 'Wait' : ''");
+    expect(results).toContain('const CONFIRM_WAIT_MINUTES = [5, 10, 15, 20];');
+    for (const page of ['result_new.html', 'pipeline_panel.html']) {
+      expect(fs.readFileSync(path.join(__dirname, '..', page), 'utf8')).not.toContain('skip-step-confirm');
+    }
   });
 });
 
