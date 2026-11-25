@@ -5272,7 +5272,8 @@ document.addEventListener('click', (event) => {
         };
         const setModelTooltip = (block) => {
             const name = String(block.dataset.model || block.querySelector('.model-name')?.textContent || '').trim();
-            setCanvasTooltip(block, name, modelTooltipText(block.dataset.cardRequest));
+            const round = block.closest('.stage-column')?.dataset.round;
+            setCanvasTooltip(block, name && round ? `${name} - R${round}` : name, modelTooltipText(block.dataset.cardRequest));
         };
         // The task is typed or its short description is given: the ▶ and model tooltips follow it.
         const updateTaskTooltips = () => {

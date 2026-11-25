@@ -54,7 +54,7 @@ describe('model card of the first round', () => {
 describe('model block tooltip', () => {
   test('подсказка блока — запрос из карточки: свой запрос или автоматическая сборка, та же, что в окне модели', () => {
     expect(js).toContain('block.dataset.cardRequest = safeRead(() => customBlockRequestText(block), \'\') || model?.task || \'\';');
-    expect(js).toContain('setCanvasTooltip(block, name, modelTooltipText(block.dataset.cardRequest));');
+    expect(js).toContain('setCanvasTooltip(block, name && round ? `${name} - R${round}` : name, modelTooltipText(block.dataset.cardRequest));');
     const text = js.slice(js.indexOf('const customBlockRequestText'), js.indexOf('const customBlockRequestText') + 400);
     expect(text).toContain('promptTemplate');
     expect(text).toContain('customBlockRequestPreview(block)?.template');
