@@ -5902,9 +5902,17 @@ document.addEventListener('click', (event) => {
         const DISPUT_RESPONSE_LIMIT_LEGACY_MARKER = '[DISPUT_RESPONSE_LIMIT]';
         const RESPONSE_LIMIT_LINE = /\[(?:DISPUT_)?RESPONSE_LIMIT\][^\n]*(?:\n|$)/g;
         const DISPUT_RESPONSE_LIMIT_TEMPLATE = '[RESPONSE_LIMIT] Ответ — не более {слов} слов. Сосредоточься на ясной концепции и ключевых идеях; убери повторы, длинные пересказы и второстепенные детали.';
-        const getDebateMaxWords = () => window.DebatePromptCatalog?.normalizeMaxWords?.(
-            document.getElementById('debate-length-select')?.value
-        ) ?? DEFAULT_DISPUT_MAX_WORDS;
+        // A page without the length control (result_new.html) takes the limit of the pipeline's schema, so the cards, the run
+        // and Save keep it.
+        const getDebateMaxWords = () => {
+            const select = document.getElementById('debate-length-select');
+            const value = select ? select.value : basicSourceSchema.get(draftPlanStorageKey())?.run?.maxWords;
+            return window.DebatePromptCatalog?.normalizeMaxWords?.(value) ?? DEFAULT_DISPUT_MAX_WORDS;
+        };
+        // The limits the length control offers a schema; null on a page without it: BasicSchema.validate has checked the value.
+        const getDebateRunWords = () => (document.getElementById('debate-length-select')
+            ? getDebateLengthOptions().map((option) => Number(option.value)).filter(Number.isSafeInteger)
+            : null);
         const ensureDisputResponseLimit = (value, maxWords = getDebateMaxWords()) => {
             const source = String(value || '').trim();
             if (!source || source.includes(DISPUT_RESPONSE_LIMIT_MARKER) || source.includes(DISPUT_RESPONSE_LIMIT_LEGACY_MARKER)) return source;
@@ -9032,7 +9040,7 @@ document.addEventListener('click', (event) => {
                 ? window.BasicSchema.toCanvas(incomingSchema, {
                     models: getAllPipelineModelNames(),
                     isRole: (value) => Boolean(resolveJudgePromptId(value)),
-                    runWords: Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => Number(option.value)).filter(Number.isSafeInteger),
+                    runWords: getDebateRunWords(),
                     allowDraft: true
                 })
                 : null;
@@ -9918,14 +9926,13 @@ document.addEventListener('click', (event) => {
             const canvas = window.BasicSchema.toCanvas(schema, {
                 models: getAllPipelineModelNames(),
                 isRole: (id) => id === CUSTOM_ROLE_ID || Boolean(getJudgePromptById(id)),
-                runWords: Array.from(document.getElementById('debate-length-select')?.options || []).map((option) => Number(option.value)).filter(Number.isFinite)
+                runWords: getDebateRunWords()
             });
             if (canvas.errors.length) return { ok: false, errors: canvas.errors };
             const run = window.BasicSchema.resolveRun(schema);
             const base = clonePipelineConfig(buildDefaultPipelinePresets().Default);
             delete base.disabled;
             delete base.disabledReason;
-            const lengthSelect = document.getElementById('debate-length-select');
             const plan = window.DebateDraftPlan.createCanvasPlan({
                 planId: `canvas-${String(name).replace(/[^a-z0-9_-]+/gi, '-')}`, revision: 0,
                 rounds: canvas.rounds.map((round, index) => ({
@@ -9939,7 +9946,7 @@ document.addEventListener('click', (event) => {
                 version: 3,
                 // The page grows or cuts the rounds to the round limit after loading: it is the number of the schema's rounds.
                 protocol: { ...base.protocol, runPolicy: run.policy, selectedModels: canvas.selectedModels, roundLimit: String(Math.max(1, canvas.roundCounter)),
-                    ...(lengthSelect && Array.from(lengthSelect.options).some((option) => option.value === String(run.maxWords)) ? { length: String(run.maxWords) } : {}) },
+                    length: String(run.maxWords) },
                 draftPlan: plan,
                 roundCounter: canvas.roundCounter,
                 modelStacks: canvas.stacks,
