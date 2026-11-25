@@ -20,12 +20,21 @@ const extractor = new Function(`${sliceFunction(src, 'extractLatestAssistantSnap
 const words = (w, n) => `<p>${(`${w} `).repeat(n)}</p>`;
 const turn = (inner) => `<div class="group/final-text"><div class="prose" data-renderer="lm">${inner}</div></div>`;
 
-test('the last turn without a token loses to the earlier turn with the delivery token', () => {
-  document.body.innerHTML = turn(`${words('TABLEANSWER', 120)}<p>[[AO-5vj2cj]]</p>`) + turn(words('DUPLICATEREPLY', 120));
+test('a short last turn without a token loses to the earlier turn with the delivery token', () => {
+  document.body.innerHTML = turn(`${words('TABLEANSWER', 120)}<p>[[AO-5vj2cj]]</p>`) + turn(words('DUPLICATEREPLY', 20));
   const out = extractor('Perplexity', 80, { manualLatestRecovery: true });
   expect(out.ok).toBe(true);
   expect(out.text).toContain('TABLEANSWER');
   expect(out.text).not.toContain('DUPLICATEREPLY');
+});
+
+// 800 characters and more is an answer of its own (the owner went on with the chat by hand).
+test('a long last turn without a token is the answer even after a tokened one', () => {
+  document.body.innerHTML = turn(`${words('TABLEANSWER', 120)}<p>[[AO-5vj2cj]]</p>`) + turn(words('HANDWRITTEN', 120));
+  const out = extractor('Perplexity', 80, { manualLatestRecovery: true });
+  expect(out.ok).toBe(true);
+  expect(out.text).toContain('HANDWRITTEN');
+  expect(out.text).not.toContain('TABLEANSWER');
 });
 
 test('without any token the last turn is still the answer', () => {

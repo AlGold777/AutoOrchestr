@@ -26,6 +26,10 @@ beforeEach(() => {
   document.getElementById('debate-session-clear-btn').click();
 });
 
+// The page gets a pause between messages. Without it the deferred work of every test (timers, observer records of a
+// large card) stays in memory until the whole file ends, and the file runs out of heap.
+afterEach(() => H.delay(200));
+
 // What the page really holds for an answer: its rich html and the flat text each path derives from it.
 function answerOf(fixture) {
   const holder = document.createElement('div');

@@ -13,7 +13,7 @@ describe('Basic page binds the engine to the run record (8.2, 8.3)', () => {
 
   test('the checkpoint writes the registry and the snapshot, and waits for the write (a failed write stops the run)', () => {
     expect(results).toContain('...(record && customRunStore ? { checkpoint: checkpointRecord } : {}),');
-    expect(results).toMatch(/const checkpointRecord = \(state\) => \{[\s\S]*?setArtifacts\(record, state\.artifacts\);[\s\S]*?setSnapshot\(record[\s\S]*?return writeRecord\(\);\s*\};/);
+    expect(results).toMatch(/const checkpointRecord = \(state\) => \{[\s\S]*?const versions = \(state\.artifacts \|\| \[\]\)\.map\([\s\S]*?setArtifacts\(record, versions\);[\s\S]*?setSnapshot\(record[\s\S]*?return writeRecord\(\);\s*\};/);
   });
 
   test('writes of the record go one after another, debounced ones too', () => {

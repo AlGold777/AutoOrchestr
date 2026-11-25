@@ -14,6 +14,8 @@ afterEach(() => {
   delete window.ResponseLifecycleDetector;
   delete window.UnifiedAnswerPipeline;
   delete window.kimiContentScriptLoaded;
+  delete window.DataTransfer;
+  delete window.ClipboardEvent;
 });
 
 test.each([true, false])('baseline and authority acknowledgements overlap but both must succeed (%s)', async authorityOk => {
@@ -71,6 +73,9 @@ test('Kimi sends a complete wrapped prompt when the editor removes its envelope 
     return Promise.resolve({});
   };
   window.ResponseLifecycleDetector = { captureTurnAnchor: () => 0, startResponseLifecycleTracking: async () => ({ok:true}) };
+  // jsdom has no clipboard classes. This editor ignores the paste event, so the shared insertion path takes over.
+  window.DataTransfer = class { setData() {} };
+  window.ClipboardEvent = class extends Event {};
   load('../content-scripts/content-utils');
   window.UnifiedAnswerPipeline = class { async execute() { return {success:true, answer:'2', answerHtml:'<p>2</p>'}; } };
   document.body.innerHTML = '<div class="chat-input-editor" contenteditable="true"></div><div class="send-button-container"></div>';

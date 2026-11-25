@@ -35,9 +35,9 @@ describe('Basic card feed cover deck', () => {
     root.appendChild(card(''));
     const cover = PipelineCardCover.create(root);
     cover.refresh();
-    // Two answer cards: travel is one step (92% of the 500px height), not three steps as with the run lines counted.
+    // Two answer cards: travel is one step (62% of the 500px height), not three steps as with the run lines counted.
     expect(root.classList.contains('pipeline-cover-host')).toBe(true);
-    expect(root.style.getPropertyValue('--pipeline-cover-travel')).toBe(`${500 * 0.92}px`);
+    expect(root.style.getPropertyValue('--pipeline-cover-travel')).toBe(`${500 * 0.62}px`);
     const marked = [...root.children].filter((el) => el.classList.contains('pipeline-cover-card'));
     expect(marked.length).toBe(2);
     expect(marked.some((el) => el.classList.contains('basic-run-line'))).toBe(false);

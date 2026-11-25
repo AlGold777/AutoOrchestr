@@ -189,7 +189,7 @@ describe('the moderator input is emptied once the message is sent', () => {
     expect(block).toContain('composerBackup = getModeratorDispatchText();');
     // The text comes back when the run throws (not on abort) or ends with no answer for a reason other than the owner's stop.
     expect(block).toContain("if (err?.name !== 'AbortError') restoreModeratorComposer(composerBackup);");
-    expect(block).toContain("if (!['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);");
+    expect(block).toContain("if (!runEndedEarly && !['steps_done', 'cancelled', 'stopped'].includes(result.stopReason) && !result.answers.length) restoreModeratorComposer(composerBackup);");
     expect(source).toContain('function restoreModeratorComposer(text) {');
     expect(source).toContain("pastedTextComposer.getText().trim()) return;");
     // The manual moderator dispatch already clears its input.

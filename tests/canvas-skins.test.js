@@ -31,6 +31,15 @@ describe('Скины холста pipeline', () => {
 
   test('скин не меняет размеры блоков и связей', () => {
     expect(skinCss).not.toMatch(/--pipeline-block-(width|height)/);
-    expect(skinCss).not.toMatch(/\.connector-(group|svg)/);
+    // Связи скин только красит: свойства размеров и положения в их правилах запрещены.
+    const paintOnly = ['stroke', 'stroke-width', 'stroke-linecap', 'fill', 'opacity'];
+    const linkRules = skinCss.replace(/\/\*[\s\S]*?\*\//g, '').split('}')
+      .map((rule) => rule.split('{'))
+      .filter(([selector, body]) => body && /\.(connector-|merge-line|arrow-head)/.test(selector));
+    expect(linkRules.length).toBeGreaterThan(0);
+    linkRules.forEach(([, body]) => {
+      body.split(';').map((line) => line.split(':')[0].trim()).filter(Boolean)
+        .forEach((property) => expect(paintOnly).toContain(property));
+    });
   });
 });

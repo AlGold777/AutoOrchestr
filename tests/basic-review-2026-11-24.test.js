@@ -46,7 +46,7 @@ describe('Basic review 2026-11-24', () => {
     const store = {
       put(record, key) { values.set(JSON.stringify(key), record); },
       delete(key) { values.delete(JSON.stringify(key)); },
-      openCursor() {
+      openCursor(done) {
         const request = {};
         const keys = [...values.keys()].map((key) => JSON.parse(key)).filter((key) => Array.isArray(key) && key[0] === 'run');
         let at = 0;
@@ -54,14 +54,15 @@ describe('Basic review 2026-11-24', () => {
           const key = keys[at];
           request.result = key ? { primaryKey: key, value: values.get(JSON.stringify(key)), continue: () => { at += 1; step(); } } : null;
           request.onsuccess();
+          if (!key) done();
         }, 0);
         step();
         return request;
       }
     };
     const db = { objectStoreNames: { contains: () => true }, transaction() {
-      const tx = { objectStore: () => store };
-      setTimeout(() => tx.oncomplete?.(), 20);
+      // As in IndexedDB, the transaction completes after its last request: a fixed delay lost that race under load.
+      const tx = { objectStore: () => ({ ...store, openCursor: () => store.openCursor(() => tx.oncomplete()) }) };
       return tx;
     } };
     const indexedDB = { cmp: () => 0, open: () => { const request = {}; setTimeout(() => { request.result = db; request.onupgradeneeded?.({ oldVersion: 2 }); request.onsuccess?.(); }, 0); return request; } };

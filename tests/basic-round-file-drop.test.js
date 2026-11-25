@@ -148,10 +148,12 @@ describe('Basic round file drop integration', () => {
     ]);
   });
 
-  test('the round hover guide follows pointer, and clears on scroll and resize', () => {
+  test('the round guide appears only while files are dragged, and clears on scroll and resize', () => {
     const h = makeDropPanel();
     const target = document.querySelector('#connector-between-rounds');
     target.dispatchEvent(dragEvent('pointermove', [], { x: 275, y: 80 }));
+    expect(h.panel.querySelector('.pipeline-round-territory')).toBeNull();
+    target.dispatchEvent(dragEvent('dragover', [], { x: 275, y: 80 }));
     const guide = h.panel.querySelector('.pipeline-round-territory');
     expect(guide).not.toBeNull();
     expect(guide.style.left).toBe('125px');
@@ -160,7 +162,7 @@ describe('Basic round file drop integration', () => {
 
     h.canvas.dispatchEvent(new Event('scroll'));
     expect(h.panel.querySelector('.pipeline-round-territory')).toBeNull();
-    target.dispatchEvent(dragEvent('pointermove', [], { x: 285, y: 80 }));
+    target.dispatchEvent(dragEvent('dragover', [], { x: 285, y: 80 }));
     expect(h.panel.querySelector('.pipeline-round-territory')).not.toBeNull();
     window.dispatchEvent(new Event('resize'));
     expect(h.panel.querySelector('.pipeline-round-territory')).toBeNull();
