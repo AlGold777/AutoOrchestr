@@ -216,8 +216,12 @@ const registerTabListeners = () => {
         let path = '';
         try { path = new URL(tab.url).pathname; } catch (_) { return; }
         if (/\/(login|signin|sign-in|auth)(\/|$)/i.test(path)) return;
-        if (!binding.initialUrl) { binding.initialUrl = tab.url; changed = true; }
-        else if (tab.url !== binding.initialUrl && binding.chatUrl !== tab.url) { binding.chatUrl = tab.url; changed = true; }
+        // A participant that has a conversation keeps it: another conversation or the start page opened in its tab is not
+        // its chat. The next request of the participant then restores the saved address instead of writing there.
+        const own = participantConversationId(binding.chatUrl);
+        if (own && participantConversationId(tab.url) !== own) return;
+        if (!own && !binding.initialUrl) { binding.initialUrl = tab.url; changed = true; }
+        else if ((own || tab.url !== binding.initialUrl) && binding.chatUrl !== tab.url) { binding.chatUrl = tab.url; changed = true; }
       });
     });
     if (changed) void persistParticipantTabMap().catch(() => {});
@@ -292,6 +296,17 @@ const participantTabMap = {};
 const PARTICIPANT_TAB_MAP_KEY = 'llmParticipantTabMap';
 
 const participantRunKey = (runId) => String(runId || '');
+
+// The id of the conversation in a chat address (`/c/<id>`, `/chat/<id>`, `/search/<id>`, …); '' when the address names none:
+// a start page, or a temporary address that the site replaces with the final one (`/search/new/<id>`, `/c/WEB:<id>`).
+const CHAT_ID_PREFIXES = new Set(['c', 'chat', 's', 'search', 'session', 'app', 'conversation']);
+function participantConversationId(url) {
+  let parts;
+  try { parts = new URL(url).pathname.split('/').filter(Boolean); } catch (_) { return ''; }
+  const id = parts[parts.length - 1] || '';
+  if (parts.includes('new') || !CHAT_ID_PREFIXES.has(parts[parts.length - 2])) return '';
+  return id.length >= 8 && /\d/.test(id) && !/^WEB(:|%3A)/i.test(id) ? id : '';
+}
 
 function participantChatOf(runId, participantId) {
   const entry = participantTabMap[participantRunKey(runId)]?.[String(participantId || '')];
@@ -1272,7 +1287,8 @@ async function continueParticipantChat(llmName, visit, bound, prompt, attachment
     if (!readiness?.ok) return lost(readiness?.reason || 'tab_not_ready');
     await prepareTabForUse(bound.tabId, llmName);
   }
-  return sendToParticipantChat(llmName, bound.tabId, visit, prompt, attachments, options, 'participant_continue');
+  // The address saved with the chat stays with the binding, also when the binding is rebuilt from the page's snapshot.
+  return sendToParticipantChat(llmName, bound.tabId, { ...visit, chatUrl: bound.chatUrl || '' }, prompt, attachments, options, 'participant_continue');
 }
 
 async function restoreParticipantChat(llmName, visit, bound) {

@@ -2761,6 +2761,14 @@ document.addEventListener('click', (event) => {
     }
 
     let pipelineRunActive = false;
+    // The engine of a run lives in this page: leaving, reloading or closing it ends the run, so the browser asks first.
+    window.addEventListener('beforeunload', (event) => {
+        if (!pipelineRunActive) return;
+        // The owner may stay: the view state is then saved again on the next leave.
+        crossViewNavigationSaved = false;
+        event.preventDefault();
+        event.returnValue = '';
+    });
     const debateApprovalBridge = {
         resolve: null
     };

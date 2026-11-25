@@ -200,7 +200,7 @@ function createTabManagerSandbox({
   vm.createContext(context);
   vm.runInContext(TAB_MANAGER_SOURCE, context, { filename: 'background/tab-manager.js' });
 
-  return { context, telemetry };
+  return { context, telemetry, listeners };
 }
 
 describe('tab-manager session scoping', () => {
@@ -877,3 +877,78 @@ describe('Read-only check of an unconfirmed participant request (N04)', () => {
     expect(JSON.stringify(context.participantChatBindingsOf('run-1'))).toBe(before);
   });
 });
+
+describe('a participant keeps its conversation when another page is opened in its tab', () => {
+  const id = (n) => `6af17606-1890-83eb-8bba-159dcfa1478${n}`;
+  const own = `https://chatgpt.com/c/${id(0)}`;
+
+  async function sandbox(binding) {
+    const tab = { id: 2001, url: binding.chatUrl || binding.initialUrl, windowId: 7, index: 0, status: 'complete' };
+    const { context, listeners } = createTabManagerSandbox({ queryTabs: [tab] });
+    await context.bindParticipantChat('run-1', 'A', 'GPT', 2001, binding);
+    const open = async (url) => {
+      tab.url = url;
+      listeners.tabUpdated.forEach((listener) => listener(2001, { url }, { ...tab }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return context.participantChatOf('run-1', 'A').chatUrl;
+    };
+    return { context, open };
+  }
+
+  test('the address the site gives a new chat is saved; another chat and the start page are not', async () => {
+    const { open } = await sandbox({ initialUrl: 'https://chatgpt.com/' });
+    expect(await open(own)).toBe(own);
+    expect(await open(`https://chatgpt.com/c/${id(1)}`)).toBe(own);
+    expect(await open('https://chatgpt.com/')).toBe(own);
+    expect(await open(`${own}?model=auto`)).toBe(`${own}?model=auto`);
+  });
+
+  test('an open chat taken as it is stays the chat of the participant', async () => {
+    const { open } = await sandbox({ initialUrl: own, chatUrl: own });
+    expect(await open(`https://chatgpt.com/c/${id(1)}`)).toBe(own);
+  });
+
+  test.each([
+    ['https://www.perplexity.ai/', 'https://www.perplexity.ai/search/new/1cb9dc42-7032-4a61-bf02-1b6dd5352202', 'https://www.perplexity.ai/search/adb37191-80af-46ab-ba71-c9cebd6663a0'],
+    ['https://chatgpt.com/', `https://chatgpt.com/c/WEB:${id(2)}`, own]
+  ])('a temporary address of %s is replaced by the final one', async (start, temporary, final) => {
+    const { context } = createTabManagerSandbox({});
+    expect(context.participantConversationId(temporary)).toBe('');
+    expect(context.participantConversationId(final)).not.toBe('');
+    expect(context.participantConversationId(start)).toBe('');
+  });
+
+  test.each([
+    'https://claude.ai/chat/0cd2b8ad-4843-4ab3-a3a2-12434419e9d5',
+    'https://chat.deepseek.com/a/chat/s/cfcb2c56-80c1-4f32-94f8-59411ea7fe24',
+    'https://gemini.google.com/app/1cd8196f87cf435e',
+    'https://www.perplexity.ai/session/777411ea-6f5d-45ae-9962-7a4c5799c6a7',
+    'https://chat.qwen.ai/c/9a5eeee6-9413-45dc-b5e6-bfe6ce77f391'
+  ])('%s names a conversation', (url) => {
+    const { context } = createTabManagerSandbox({});
+    expect(context.participantConversationId(url)).not.toBe('');
+  });
+
+  test('the next request opens the saved chat again and does not write into the other one', async () => {
+    const { context, open } = await sandbox({ initialUrl: 'https://chatgpt.com/' });
+    await open(own);
+    await open(`https://chatgpt.com/c/${id(1)}`);
+    context.ensureTabReadyForDispatch = jest.fn(async () => ({ ok: true }));
+    context.chrome.tabs.create = jest.fn((options, cb) => cb({ id: 901, url: options.url, windowId: 7, status: 'complete' }));
+    context.chrome.tabs.get = (tabId, cb) => cb({ id: tabId, url: tabId === 901 ? own : `https://chatgpt.com/c/${id(1)}`, windowId: 7, status: 'complete' });
+    const result = await context.openParticipantChat('GPT', { runId: 'run-1', participantId: 'A', newChat: false, requestId: 'r2', stageAttemptId: 'a2' }, 'next', []);
+    expect(result).toEqual(expect.objectContaining({ ok: true, tabId: 901 }));
+    expect(context.dispatchPromptToTab.mock.calls.map((call) => call[1])).toEqual([901]);
+    expect(context.participantChatOf('run-1', 'A').chatUrl).toBe(own);
+  });
+
+  test('a binding rebuilt from the page snapshot keeps the saved address', async () => {
+    const tab = { id: 2001, url: own, windowId: 7, index: 0, status: 'complete' };
+    const { context } = createTabManagerSandbox({ queryTabs: [tab] });
+    context.ensureTabReadyForDispatch = jest.fn(async () => ({ ok: true }));
+    const binding = { modelName: 'GPT', tabId: 2001, chatUrl: own };
+    await context.openParticipantChat('GPT', { runId: 'run-1', participantId: 'A', newChat: false, strict: true, binding }, 'next', []);
+    expect(context.participantChatOf('run-1', 'A').chatUrl).toBe(own);
+  });
+});
+

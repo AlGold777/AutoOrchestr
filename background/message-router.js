@@ -1977,6 +1977,8 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     lastHealthCheckReportAtByTabId.delete(tabId);
     let cleanupReason = null;
     let llmTabClosed = false;
+    // Read before the handlers below can finish the session.
+    const pipelineRunId = jobState?.session?.pipelineRunId || null;
     
     //-- 4.4. Cleanup при закрытии вкладок --//
     const mappedLlmName = TabMapManager.getNameByTabId(tabId);
@@ -2054,8 +2056,10 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
         cleanupReason = cleanupReason || 'results_tab_closed';
     }
 
+    // Only a closed model tab can leave a request without tabs; any other tab says nothing about the run. A pipeline run
+    // goes on even then: the closed model has its error, and the next request of a participant reopens its chat.
     const remainingLlms = Math.max(0, TabMapManager.entries().length - (llmTabClosed ? 1 : 0));
-    if (!remainingLlms) {
+    if (llmTabClosed && !remainingLlms && !pipelineRunId) {
         cleanupReason = cleanupReason || 'no_llm_tabs';
     }
 
