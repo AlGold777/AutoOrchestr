@@ -90,9 +90,11 @@ describe('подключение к отправке', () => {
     expect(dispatch).toContain("type: 'platform_mode_not_set'");
   });
 
-  test('Qwen is set to Qwen4-Max-Preview, not to the older default (owner rule 2026-11-15)', () => {
+  test('Qwen is set to Qwen4-Max (the site renamed Qwen4-Max-Preview, 2026-11-25), not to the older default', () => {
     const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'content-scripts', 'platform-mode-setter.js'), 'utf8');
-    expect(source).toContain("pillStep('Qwen4-Max-Preview', () => document.querySelector('.wms-trigger'), /qwen4-max-preview/i, '[role=\"option\"]', /^qwen4-max-preview/i)");
+    expect(source).toContain("pillStep('Qwen4-Max', () => document.querySelector('.wms-trigger'), /qwen4-max/i, '[role=\"option\"]', /^qwen4-max/i)");
+    expect(/^qwen4-max/i.test('Qwen4-MaxУстановить по умолчаниюФлагманская модель')).toBe(true);
+    expect(/^qwen4-max/i.test('Qwen3.8-MaxУстановить по умолчанию')).toBe(false);
     expect(source).not.toMatch(/qwen3\\\.8-max/i);
   });
 });

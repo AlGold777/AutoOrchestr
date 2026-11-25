@@ -111,7 +111,8 @@
       /sonnet 5\.5/i, () => document.querySelector('[role="menuitemradio"][data-model-id="claude-sonnet-5-5"]'), null, arrowOpen)],
     'chat.deepseek.com': [deepseekToggle('DeepThink', true), deepseekToggle('Search', false)],
     'chat.qwen.ai': [
-      pillStep('Qwen4-Max-Preview', () => document.querySelector('.wms-trigger'), /qwen4-max-preview/i, '[role="option"]', /^qwen4-max-preview/i),
+      // The site renamed Qwen4-Max-Preview to Qwen4-Max (seen 2026-11-25: the menu offers Qwen3.7-Plus, Qwen4-Max, Qwen3.8-Max).
+      pillStep('Qwen4-Max', () => document.querySelector('.wms-trigger'), /qwen4-max/i, '[role="option"]', /^qwen4-max/i),
       pillStep('thinking on', qwenThinkingLabel, /мышлен|think/i, '[role="menu"] [role="menuitem"]', /^(мышлени|think)/i)
     ],
     'www.perplexity.ai': perplexity,
