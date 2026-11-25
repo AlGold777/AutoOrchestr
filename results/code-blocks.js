@@ -373,15 +373,19 @@
     doc.addEventListener('click', onActionClick, true);
 
     // The pre of an old saved card, of a path that sets html directly, of a later growth of the answer.
-    const decorateIn = (node) => {
-      if (!node || node.nodeType !== 1) return;
-      const owners = [];
-      if (node.matches && node.matches(containerSelector)) owners.push(node);
-      else if (node.closest && node.closest(containerSelector)) owners.push(node.closest(containerSelector));
-      if (node.querySelectorAll) node.querySelectorAll(containerSelector).forEach((el) => owners.push(el));
+    // Many added nodes usually belong to one container: every container is decorated once per batch.
+    // Decorating it once per node made an answer with many code blocks cost blocks × nodes.
+    const decorateIn = (nodes) => {
+      const owners = new Set();
+      nodes.forEach((node) => {
+        if (!node || node.nodeType !== 1) return;
+        const own = node.closest ? node.closest(containerSelector) : null;
+        if (own) owners.add(own);
+        if (node.querySelectorAll) node.querySelectorAll(containerSelector).forEach((el) => owners.add(el));
+      });
       owners.forEach(decorate);
     };
-    decorateIn(doc.body || doc.documentElement);
+    decorateIn([doc.body || doc.documentElement]);
     let observer = null;
     if (observe && win.MutationObserver) {
       let queued = false;
@@ -394,7 +398,7 @@
           queued = false;
           const nodes = Array.from(pending);
           pending.clear();
-          nodes.forEach(decorateIn);
+          decorateIn(nodes);
         }, 0);
       });
       observer.observe(doc.body || doc.documentElement, { childList: true, subtree: true });

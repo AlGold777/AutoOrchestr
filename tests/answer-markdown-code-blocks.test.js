@@ -77,6 +77,17 @@ describe('decorateCodeBlocks', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(out.querySelectorAll('.code-block-copy')).toHaveLength(1);
   });
+
+  test('many nodes added to one card are one pass over that card, not one per node', async () => {
+    const out = card('');
+    window.ResultsCodeBlocks.install(document);
+    const scan = jest.spyOn(out, 'querySelectorAll');
+    for (let i = 0; i < 30; i += 1) out.insertAdjacentHTML('beforeend', block);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // One pass for the added blocks and one for the wrappers that pass created.
+    expect(scan.mock.calls.filter(([selector]) => selector === 'pre').length).toBeLessThanOrEqual(2);
+    expect(out.querySelectorAll('.code-block-copy')).toHaveLength(30);
+  });
 });
 
 describe('Copy button', () => {
