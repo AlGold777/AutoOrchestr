@@ -4,295 +4,722 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Архитектуры многоагентных систем — брошюра</title>
+  <title>Архитектуры агентов — полный обзор ответов</title>
   <style>
-    :root {
-      --ink: #17212b;
-      --muted: #647383;
-      --paper: #f4f6f7;
-      --card: #fff;
-      --line: #d9e0e5;
-      --blue: #dcecff;
-      --blue-ink: #174778;
-      --teal: #d9f2ec;
-      --teal-ink: #145849;
-      --amber: #fff0ce;
-      --amber-ink: #765214;
-      --violet: #eee5ff;
-      --violet-ink: #503681;
-      --rose: #ffe4e1;
-      --rose-ink: #813d39;
-      --shadow: 0 18px 48px rgba(29, 47, 63, .08);
-    }
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      background: var(--paper);
-      color: var(--ink);
-      font: 16px/1.58 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    a { color: #1765a4; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-    a:hover { color: #0e4778; }
-    .cover {
-      min-height: 420px;
-      padding: 68px 24px 58px;
-      color: #f5f8fb;
-      background: radial-gradient(circle at 83% 18%, #4679a7 0, transparent 28%), linear-gradient(128deg, #102131, #1b3e57 67%, #28586a);
-    }
-    .cover-inner, main, footer { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
-    .eyebrow { color: #a8c8df; font-size: .76rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
-    h1 { max-width: 760px; margin: 18px 0 14px; font-size: clamp(2.35rem, 6vw, 4.5rem); line-height: 1.02; letter-spacing: -.045em; }
-    .cover p { max-width: 700px; margin: 0; color: #d3e1ea; font-size: 1.13rem; }
-    .cover-meta { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 30px; }
-    .pill { padding: 6px 11px; border: 1px solid rgba(220,238,250,.3); border-radius: 99px; color: #e1edf4; font-size: .83rem; }
-    main { padding: 34px 0 72px; }
-    .intro, .section, .scheme, .matrix-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
-    .intro { padding: 26px 30px; margin-bottom: 26px; }
-    .intro h2, .section h2 { margin: 0 0 10px; font-size: 1.45rem; letter-spacing: -.02em; }
-    .intro p { margin: 0; color: var(--muted); }
-    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 34px; }
-    nav a { padding: 7px 11px; border: 1px solid var(--line); border-radius: 99px; background: #fff; color: #355066; font-size: .85rem; text-decoration: none; }
-    .section { padding: 28px; margin: 26px 0; }
-    .section-kicker { margin-bottom: 5px; color: #557189; font-size: .76rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
-    .section-lead { max-width: 780px; margin: 0; color: var(--muted); }
-    .scheme { padding: 22px; margin: 20px 0; box-shadow: none; scroll-margin-top: 18px; }
-    .scheme-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-    .scheme h3 { margin: 0; font-size: 1.2rem; line-height: 1.25; }
-    .tag { flex: 0 0 auto; padding: 5px 9px; border-radius: 99px; background: #edf2f5; color: #4a6071; font-size: .72rem; font-weight: 750; }
-    .scheme p { margin: 8px 0 0; color: var(--muted); }
-    .principle { padding-left: 13px; border-left: 3px solid #84aac3; color: #445a6b !important; }
-    .diagram { margin: 20px 0 14px; padding: 20px; border-radius: 14px; background: #f6f9fb; border: 1px solid #e5ebef; }
-    .flow { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: 8px; }
-    .node {
-      display: grid; place-items: center; min-width: 132px; max-width: 205px; min-height: 60px;
-      padding: 10px 13px; border: 1px solid #b7cbd9; border-radius: 12px; background: var(--blue); color: var(--blue-ink);
-      font-size: .9rem; font-weight: 760; text-align: center;
-    }
-    .node small { display: block; margin-top: 3px; color: inherit; font-size: .74rem; font-weight: 500; opacity: .82; }
-    .node.teal { background: var(--teal); border-color: #a7d5ca; color: var(--teal-ink); }
-    .node.amber { background: var(--amber); border-color: #ead49f; color: var(--amber-ink); }
-    .node.violet { background: var(--violet); border-color: #c9b8ef; color: var(--violet-ink); }
-    .node.rose { background: var(--rose); border-color: #edbfba; color: var(--rose-ink); }
-    .arrow { display: grid; place-items: center; min-width: 24px; color: #8095a4; font-size: 1.35rem; font-weight: 500; }
-    .stack { display: grid; gap: 8px; }
-    .diagram-note { margin: 13px 0 0 !important; color: #6c7f8c !important; font-size: .84rem; text-align: center; }
-    .sources { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; font-size: .86rem; }
-    .sources a { padding: 5px 9px; border-radius: 8px; background: #edf5fa; text-decoration: none; }
-    .quote { margin: 14px 0 0; padding: 12px 15px; border-left: 3px solid #d4b76b; background: #fffaf0; color: #645436; font-size: .91rem; }
-    .matrix-wrap { overflow: hidden; margin: 22px 0; }
-    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { background: #f4f8fa; color: #536778; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
-    tr:last-child td { border-bottom: 0; }
-    .roles { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-top: 16px; }
-    .role { padding: 13px; border-radius: 12px; background: #f5f8fa; border: 1px solid #e4ebef; }
-    .role b { display: block; margin-bottom: 4px; color: #31546d; }
-    .role span { color: #687b88; font-size: .85rem; }
-    .footnote { color: #647383; font-size: .9rem; }
-    footer { padding: 20px 0 42px; color: #778692; font-size: .82rem; }
-    @media (max-width: 720px) {
-      .cover { min-height: auto; padding: 48px 20px; }
-      .cover-inner, main, footer { width: min(100% - 28px, 1080px); }
-      .intro, .section { padding: 20px; border-radius: 15px; }
-      .scheme { padding: 17px; }
-      .scheme-head { display: block; }
-      .tag { display: inline-block; margin-top: 10px; }
-      .diagram { padding: 14px 10px; }
-      .flow { flex-direction: column; align-items: center; }
-      .node { width: min(100%, 310px); max-width: 310px; }
-      .arrow { transform: rotate(90deg); height: 20px; }
-      .roles { grid-template-columns: repeat(2, minmax(0,1fr)); }
-      .matrix-wrap { overflow-x: auto; }
-      table { min-width: 620px; }
-    }
-    @media print {
-      :root { --paper: #fff; }
-      body { background: #fff; font-size: 11pt; }
-      .cover { min-height: 0; padding: 36px 30px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      .cover-inner, main, footer { width: 100%; }
-      main { padding: 18px 0; }
-      nav { display: none; }
-      .intro, .section, .scheme, .matrix-wrap { box-shadow: none; break-inside: avoid; }
-      .section { break-before: page; }
-      .scheme { break-inside: avoid; }
-      .diagram, .node, .quote, th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-      a { color: inherit; }
-    }
+    :root{--ink:#17212b;--muted:#607180;--paper:#f3f6f8;--card:#fff;--line:#dce4e9;--nav:#132838;--accent:#27658a;--shadow:0 12px 34px #1b35420c}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.62 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:#17649a;text-underline-offset:3px}a:hover{color:#0d456b}
+    .sidebar{position:fixed;inset:0 auto 0 0;width:276px;padding:27px 18px;background:var(--nav);color:#e9f1f6;overflow:auto}.brand{font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#91b4c9;font-weight:800}.sidebar h2{font-size:1.22rem;margin:7px 0 21px}.sidebar nav{display:grid;gap:3px}.sidebar nav a{padding:8px 10px;color:#d5e2eb;border-radius:8px;text-decoration:none;font-size:.91rem;line-height:1.35}.sidebar nav a:hover,.sidebar nav a:focus{background:#ffffff16;color:#fff}.sidebar .sub{padding-left:23px;font-size:.84rem;color:#bdd0dd}.sidebar .navgroup{padding:14px 10px 4px;color:#83a6bb;text-transform:uppercase;font-size:.69rem;letter-spacing:.1em;font-weight:800}
+    main{margin-left:276px;max-width:1150px;padding:40px clamp(20px,5vw,72px) 80px}.cover{padding:35px 38px;border-radius:24px;background:linear-gradient(130deg,#173448,#286480);color:#f4f8fb;box-shadow:var(--shadow)}.eyebrow{font-size:.74rem;letter-spacing:.15em;text-transform:uppercase;color:#b3d1e2;font-weight:800}.cover h1{font-size:clamp(2.2rem,5vw,4rem);line-height:1.03;letter-spacing:-.04em;margin:12px 0 16px;max-width:850px}.cover p{max-width:800px;color:#dce9f0;margin:0}.pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.pill{border:1px solid #ffffff50;border-radius:30px;padding:5px 10px;font-size:.8rem}
+    .intro,.section,.scheme,.callout,.matrix{background:var(--card);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.intro{padding:22px 26px;margin:20px 0}.intro h2,.section h2{margin:0 0 8px;font-size:1.45rem}.intro p,.section-lead{margin:0;color:var(--muted)}.section{padding:27px;margin:24px 0;scroll-margin-top:20px}.section-kicker{font-size:.73rem;letter-spacing:.14em;text-transform:uppercase;color:#607b8d;font-weight:800}.section-lead{max-width:850px;margin-bottom:16px}.scheme{padding:21px;margin:17px 0;box-shadow:none;scroll-margin-top:18px}.scheme h3{margin:0;font-size:1.13rem;line-height:1.3}.scheme p{color:#506272;margin:10px 0}.tag{display:inline-block;margin-left:7px;padding:3px 9px;border-radius:20px;background:#edf3f6;color:#496274;font-size:.72rem;font-weight:750;vertical-align:middle}.notice{padding:12px 15px;background:#f2f7fa;border-left:3px solid #6b9ab4;border-radius:5px;color:#496170;font-size:.9rem;margin:13px 0}.diagram{border:1px solid #e2eaf0;border-radius:12px;background:#f8fafb;padding:16px;margin:14px 0;overflow:auto}.mermaid{min-width:620px;text-align:center}.source{margin:10px 0 0}.source summary{color:#557080;font-size:.84rem;cursor:pointer}.source pre{padding:12px;border:1px solid #e5eaee;border-radius:9px;background:#f7f8f9;color:#23333f;overflow:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;margin:18px 0}.matrix{box-shadow:none;border:0;border-radius:0;min-width:620px;width:100%;border-collapse:collapse}.matrix th,.matrix td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}.matrix th{background:#f2f6f8;color:#4e6677;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em}.matrix tr:last-child td{border:0}.rolegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.role{padding:12px;border:1px solid var(--line);border-radius:10px;background:#fafcfd}.role b{display:block;color:#315a73}.role span{font-size:.88rem;color:var(--muted)}.callout{padding:18px 21px;margin:15px 0}.callout h3{margin:0 0 8px;font-size:1.05rem}.callout p{margin:7px 0;color:#516474}.sources{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;font-size:.86rem}.sources a{padding:5px 9px;border-radius:7px;background:#edf5fa;text-decoration:none}.small{font-size:.86rem;color:var(--muted)}footer{margin:28px 0 0;color:#6c7e8a;font-size:.83rem}
+    @media(max-width:850px){.sidebar{position:relative;width:auto;inset:auto;max-height:42vh;padding:17px 16px}.sidebar h2{margin:4px 0 9px}.sidebar nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:2px}.sidebar .navgroup{grid-column:1/-1}.sidebar .sub{padding-left:10px}main{margin:0;padding:18px 14px 44px}.cover{padding:27px 22px;border-radius:17px}.intro,.section{padding:19px}.scheme{padding:16px}.rolegrid{grid-template-columns:1fr}.mermaid{min-width:540px}}
+    @media print{body{background:#fff;font-size:10.5pt}.sidebar{display:none}main{margin:0;max-width:none;padding:0}.cover{border-radius:0;box-shadow:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}.intro,.section,.scheme,.callout,.matrix{box-shadow:none}.section{break-before:page}.scheme{break-inside:avoid}.diagram{print-color-adjust:exact;-webkit-print-color-adjust:exact}.source{display:none}a{color:inherit}}
   </style>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({startOnLoad:true,securityLevel:'strict',theme:'neutral',flowchart:{htmlLabels:true,curve:'basis'},sequence:{showSequenceNumbers:true}});
+  </script>
 </head>
 <body>
-  <header class="cover">
-    <div class="cover-inner">
-      <div class="eyebrow">Сводка переписки · архитектура агентов</div>
-      <h1>Многоагентные системы: семь архитектур и одна ролевая схема</h1>
-      <p>Собранные из чата варианты исследовательских и инженерных систем. Каждая схема показана отдельно, с исходным принципом, характером связей и ссылками, которые были приведены в ответах.</p>
-      <div class="cover-meta"><span class="pill">4 исследовательские архитектуры</span><span class="pill">3 инженерные системы</span><span class="pill">1 функциональная ролевая схема</span></div>
-    </div>
-  </header>
-
-  <main>
-    <section class="intro">
-      <h2>Как читать эту брошюру</h2>
-      <p>В переписке часть диаграмм была обозначена моделью как концептуальные реконструкции публикаций, а не как точные внутренние схемы систем. Ниже такие места явно помечены. Потоки на рисунках передают описанный в ответах принцип работы; они не утверждают, что все реализации используют именно эти технические блоки.</p>
-    </section>
-    <nav aria-label="Содержание">
-      <a href="#research">Исследовательские системы</a>
-      <a href="#engineering">Инженерные системы</a>
+  <aside class="sidebar">
+    <div class="brand">Брошюра · полный обзор</div><h2>Содержание</h2>
+    <nav aria-label="Оглавление">
+      <a href="#start">О брошюре</a>
+      <div class="navgroup">Опубликованные архитектуры</div>
+      <a class="sub" href="#cogentic">Google Research · Cogentic</a>
+      <a class="sub" href="#coscientist">Google · AI Co-Scientist</a>
+      <a class="sub" href="#virtuallab">Stanford · Virtual Lab</a>
+      <a class="sub" href="#anthropic">Anthropic · Research</a>
+      <div class="navgroup">Практические системы</div>
+      <a class="sub" href="#gastown">Gas Town</a>
+      <a class="sub" href="#superpowers">Superpowers</a>
+      <a class="sub" href="#agentlab">Agent Laboratory</a>
+      <a href="#basic-json">Три схемы Basic JSON</a>
+      <div class="navgroup">Общие модели</div>
       <a href="#roles">Функциональные роли</a>
-      <a href="#other">Другие упоминания</a>
+      <a href="#comparisons">Сравнение топологий</a>
+      <a href="#model-agent">Модель, агент и роль</a>
+      <a href="#approach">Дивергенция → проверка → синтез</a>
+      <div class="navgroup">Динамический контур для Basic</div>
+      <a class="sub" href="#dynamic-overview">Концептуальная схема</a>
+      <a class="sub" href="#pipeline-sequence">Последовательность циклов</a>
+      <a class="sub" href="#basic-architecture">Архитектура и компоненты</a>
+      <a class="sub" href="#research-state">Состояние исследования</a>
+      <a class="sub" href="#state-machine">Автомат состояний</a>
+      <a class="sub" href="#protocol">Протокол управления</a>
+      <a class="sub" href="#integration">Связь с AutoOrchestr</a>
+      <a href="#references">Источники и дополнительные упоминания</a>
     </nav>
+  </aside>
+  <main>
+    <header class="cover" id="start">
+      <div class="eyebrow">Переписка «Обсуждение компаний»</div>
+      <h1>Многоагентные архитектуры и исследовательские пайплайны</h1>
+      <p>Полное тематическое собрание ответов модели о опубликованных и практических системах, функциональных ролях, различии модели и агента, а также концепции динамического управления последовательными Basic-пайплайнами.</p>
+      <div class="pills"><span class="pill">7 отдельных систем</span><span class="pill">15 Mermaid-схем</span><span class="pill">слева — оглавление</span></div>
+    </header>
+    <section class="intro">
+      <h2>Как читать схемы</h2>
+      <p>Все диаграммы в этом HTML — настоящие Mermaid-блоки, которые браузер строит из текста Mermaid. Нажмите «Исходный код Mermaid» под схемой, чтобы раскрыть код. В чате схемы для Cogentic, AI Co-Scientist, Virtual Lab, Anthropic, Gas Town, Superpowers и Agent Laboratory были названы функциональными реконструкциями опубликованных описаний: это не точные внутренние диаграммы компаний. Архитектура динамического контура для Basic — проектная концепция, а не подтверждённая реализация.</p>
+      <p class="small">Для рендеринга схем при открытии HTML нужен доступ к CDN Mermaid. Если сеть недоступна, исходный код каждой диаграммы всё равно остаётся внутри HTML и раскрывается ниже схемы.</p>
+    </section>
 
-    <section class="section" id="research">
-      <div class="section-kicker">Часть I</div>
-      <h2>Исследовательские архитектуры</h2>
-      <p class="section-lead">Четыре отдельные схемы из ответа модели: итеративный поиск, эволюция гипотез, междисциплинарная лаборатория и иерархический параллельный поиск.</p>
-
-      <article class="scheme" id="cogentic">
-        <div class="scheme-head"><h3>1. Google Research — Cogentic</h3><span class="tag">Итеративная</span></div>
-        <p class="principle"><b>Принцип из ответа:</b> поиск идёт циклами, проверенные промежуточные результаты накапливаются, а стратегия адаптируется по ходу работы.</p>
-        <div class="diagram" role="img" aria-label="Схема Cogentic: задача поступает в управляющий цикл поиска, агенты исследуют направления, проверенные результаты сохраняются, стратегия обновляется">
-          <div class="flow"><div class="node">Исследовательская задача</div><div class="arrow">→</div><div class="node violet">Контроллер поиска<small>выбирает следующее направление</small></div></div>
-          <div class="flow" style="margin-top:9px"><div class="node teal">Агент поиска A</div><div class="node teal">Агент поиска B</div><div class="node teal">Агент поиска N</div></div>
-          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div></div>
-          <div class="flow"><div class="node amber">Проверка свидетельств</div><div class="arrow">→</div><div class="node">Хранилище проверенных результатов</div><div class="arrow">→</div><div class="node violet">Обновление стратегии ↺</div></div>
-          <p class="diagram-note">Цикл возвращает накопленные результаты в контроллер следующего шага.</p>
-        </div>
-        <p>В том же ответе модель выделила особенность системы так: развивается не только найденное решение, но и сам процесс поиска.</p>
-        <div class="sources"><a href="https://arxiv.org/abs/2609.40324">Первоисточник Cogentic · arXiv</a></div>
+    <section class="section" id="published">
+      <div class="section-kicker">Часть I · опубликованные исследовательские системы</div><h2>Четыре разные логики поиска</h2>
+      <p class="section-lead">В исходном ответе были отдельно представлены четыре функциональные реконструкции по материалам Google Research, Google, Stanford и Anthropic. Отличие — в том, как система распределяет работу и улучшает знания.</p>
+      <article class="scheme" id="cogentic"><h3>1. Google Research — Cogentic <span class="tag">итеративная</span></h3>
+        <p><b>Принцип:</b> итеративный поиск с накоплением проверенных промежуточных результатов и адаптацией стратегии. Система совершенствует и решение, и сам процесс поиска.</p>
+        <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Исходная задача] --&gt; O[Оркестратор]
+    O --&gt; L[Исследователь литературы]
+    O --&gt; S[Конструкторы контекста]
+    L --&gt; S
+    S --&gt; P1[Исследователь 1]
+    S --&gt; P2[Исследователь 2]
+    S --&gt; PN[Исследователь N]
+    P1 &amp; P2 &amp; PN --&gt; V[Верификаторы]
+    P1 &amp; P2 &amp; PN --&gt; C[Сравнительный верификатор]
+    V &amp; C --&gt; R[(История попыток и ошибок)]
+    V &amp; C --&gt; A[Аудитор промежуточных результатов]
+    A --&gt; VV[Повторная верификация]
+    VV --&gt; K[(Проверенные знания)]
+    K --&gt; S
+    R --&gt; S
+    R --&gt; T[Стратегический советник]
+    T --&gt;|Коррекция стратегии и инструкций| O
+    V &amp; C --&gt; D{Решение подтверждено?}
+    D --&gt;|Нет| O
+    D --&gt;|Да| B[Выбор лучшего доказательства]
+    B --&gt; W[Автор итогового документа]
+    W --&gt; F[Финальный аудит]
+    F --&gt; Z[Результат]</pre></div>
+        <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Исходная задача] --&gt; O[Оркестратор]
+    O --&gt; L[Исследователь литературы]
+    O --&gt; S[Конструкторы контекста]
+    L --&gt; S
+    S --&gt; P1[Исследователь 1]
+    S --&gt; P2[Исследователь 2]
+    S --&gt; PN[Исследователь N]
+    P1 &amp; P2 &amp; PN --&gt; V[Верификаторы]
+    P1 &amp; P2 &amp; PN --&gt; C[Сравнительный верификатор]
+    V &amp; C --&gt; R[(История попыток и ошибок)]
+    V &amp; C --&gt; A[Аудитор промежуточных результатов]
+    A --&gt; VV[Повторная верификация]
+    VV --&gt; K[(Проверенные знания)]
+    K --&gt; S
+    R --&gt; S
+    R --&gt; T[Стратегический советник]
+    T --&gt;|Коррекция стратегии и инструкций| O
+    V &amp; C --&gt; D{Решение подтверждено?}
+    D --&gt;|Нет| O
+    D --&gt;|Да| B[Выбор лучшего доказательства]
+    B --&gt; W[Автор итогового документа]
+    W --&gt; F[Финальный аудит]
+    F --&gt; Z[Результат]</pre></details>
+        <div class="sources"><a href="https://arxiv.org/abs/2609.40324">Cogentic · arXiv</a></div>
       </article>
 
-      <article class="scheme" id="co-scientist">
-        <div class="scheme-head"><h3>2. Google — AI Co-Scientist</h3><span class="tag">Эволюционная</span></div>
-        <p class="principle"><b>Принцип из ответа:</b> гипотезы конкурируют, комбинируются и улучшаются на протяжении нескольких поколений, при этом сохраняется разнообразие идей.</p>
-        <div class="diagram" role="img" aria-label="Схема AI Co-Scientist: идеи генерируются, проходят конкурентную оценку, комбинируются и уточняются итерациями">
-          <div class="flow"><div class="node">Научный вопрос</div><div class="arrow">→</div><div class="node teal">Поколение гипотез</div><div class="arrow">→</div><div class="node amber">Конкурентная оценка</div></div>
-          <div class="flow" style="margin-top:9px"><div class="node violet">Отбор сильных идей</div><div class="arrow">→</div><div class="node">Комбинация и критика</div><div class="arrow">→</div><div class="node teal">Следующее поколение ↺</div></div>
-          <p class="diagram-note">Несколько циклов уточнения → лучшие гипотезы для исследователя.</p>
-        </div>
+      <article class="scheme" id="coscientist"><h3>2. Google — AI Co-Scientist <span class="tag">эволюционная</span></h3>
+        <p><b>Принцип:</b> гипотезы эволюционируют через конкурентный отбор при сохранении разнообразия. Идеи конкурируют, комбинируются и совершенствуются в нескольких поколениях.</p>
+        <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Исследовательская задача] --&gt; O[Супервизор]
+    O --&gt; G[Генератор гипотез]
+    G --&gt; R[Критик]
+    R --&gt; K[(Банк гипотез)]
+    K --&gt; P[Агент семантического сходства]
+    K --&gt; T[Ранжировщик]
+    P --&gt; T
+    T --&gt; B[Турнир гипотез]
+    B --&gt; E[Эволюционный агент]
+    E --&gt;|Комбинирование и улучшение идей| R
+    B --&gt; M[Метарецензент]
+    M --&gt;|Рекомендации| G
+    M --&gt; E
+    B --&gt; F[Лучшие гипотезы]</pre></div>
+        <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Исследовательская задача] --&gt; O[Супервизор]
+    O --&gt; G[Генератор гипотез]
+    G --&gt; R[Критик]
+    R --&gt; K[(Банк гипотез)]
+    K --&gt; P[Агент семантического сходства]
+    K --&gt; T[Ранжировщик]
+    P --&gt; T
+    T --&gt; B[Турнир гипотез]
+    B --&gt; E[Эволюционный агент]
+    E --&gt;|Комбинирование и улучшение идей| R
+    B --&gt; M[Метарецензент]
+    M --&gt;|Рекомендации| G
+    M --&gt; E
+    B --&gt; F[Лучшие гипотезы]</pre></details>
         <div class="sources"><a href="https://research.google/blog/accelerating-scientific-breakthroughs-with-an-ai-co-scientist/">Google Research · AI Co-Scientist</a></div>
       </article>
 
-      <article class="scheme" id="virtual-lab">
-        <div class="scheme-head"><h3>3. Stanford — Virtual Lab</h3><span class="tag">Коллегиальная</span></div>
-        <p class="principle"><b>Принцип из ответа:</b> агенты моделируют междисциплинарный исследовательский коллектив; состав и специализация команды зависят от задачи.</p>
-        <div class="diagram" role="img" aria-label="Схема Virtual Lab: собирается междисциплинарная команда агентов, которая обсуждает задачу, критикует гипотезы и интегрирует результат">
-          <div class="flow"><div class="node">Задача исследования</div><div class="arrow">→</div><div class="node violet">Подбор состава лаборатории</div></div>
-          <div class="flow" style="margin-top:9px"><div class="node teal">Специалист A</div><div class="node teal">Специалист B</div><div class="node teal">Специалист C</div><div class="node teal">Критик / рецензент</div></div>
-          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div></div>
-          <div class="flow"><div class="node amber">Междисциплинарное обсуждение</div><div class="arrow">→</div><div class="node">Интегрированный план и результат</div></div>
-        </div>
+      <article class="scheme" id="virtuallab"><h3>3. Stanford — Virtual Lab <span class="tag">коллегиальная</span></h3>
+        <p><b>Принцип:</b> моделирование междисциплинарного научного коллектива. Состав и специализация команды определяются характером исследовательской задачи.</p>
+        <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Человек-исследователь] --&gt; P[Научный руководитель]
+    P --&gt; T[Формирование команды]
+    T --&gt; A[Специалист дисциплины 1]
+    T --&gt; B[Специалист дисциплины 2]
+    T --&gt; C[Специалист дисциплины N]
+    A &amp; B &amp; C --&gt; M[Коллективное обсуждение]
+    M --&gt; K[Научный критик]
+    K --&gt; P
+    P --&gt; D[Индивидуальные задания]
+    D --&gt; A &amp; B &amp; C
+    M --&gt; S[Синтез результатов руководителем]
+    S --&gt; U
+    S --&gt; F[Итоговое решение]</pre></div>
+        <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Человек-исследователь] --&gt; P[Научный руководитель]
+    P --&gt; T[Формирование команды]
+    T --&gt; A[Специалист дисциплины 1]
+    T --&gt; B[Специалист дисциплины 2]
+    T --&gt; C[Специалист дисциплины N]
+    A &amp; B &amp; C --&gt; M[Коллективное обсуждение]
+    M --&gt; K[Научный критик]
+    K --&gt; P
+    P --&gt; D[Индивидуальные задания]
+    D --&gt; A &amp; B &amp; C
+    M --&gt; S[Синтез результатов руководителем]
+    S --&gt; U
+    S --&gt; F[Итоговое решение]</pre></details>
         <div class="sources"><a href="https://www.nature.com/articles/s41586-025-09442-9">Nature · Virtual Lab</a><a href="https://github.com/zou-group/virtual-lab">Исходный код</a></div>
       </article>
 
-      <article class="scheme" id="anthropic">
-        <div class="scheme-head"><h3>4. Anthropic — Multi-Agent Research</h3><span class="tag">Иерархическая</span></div>
-        <p class="principle"><b>Принцип из ответа:</b> ведущий агент разбивает тему на направления и управляет независимыми параллельными исследованиями.</p>
-        <div class="diagram" role="img" aria-label="Схема Anthropic Multi-Agent Research: ведущий агент декомпозирует вопрос, параллельные агенты ищут, затем ведущий объединяет результаты и решает, нужны ли итерации">
-          <div class="flow"><div class="node">Сложный вопрос</div><div class="arrow">→</div><div class="node violet">Ведущий агент<small>декомпозиция и план</small></div></div>
-          <div class="flow" style="margin-top:9px"><div class="node teal">Исследователь 1</div><div class="node teal">Исследователь 2</div><div class="node teal">Исследователь N</div></div>
-          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div></div>
-          <div class="flow"><div class="node amber">Синтез находок</div><div class="arrow">→</div><div class="node">Отчёт</div></div>
-          <p class="diagram-note">Ведущий меняет количество исполнителей, направления и число итераций по мере необходимости.</p>
-        </div>
+      <article class="scheme" id="anthropic"><h3>4. Anthropic — Multi-Agent Research <span class="tag">иерархическая</span></h3>
+        <p><b>Принцип:</b> ведущий агент управляет независимыми параллельными исследованиями и динамически определяет количество исполнителей, направления поиска и дополнительные итерации.</p>
+        <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Исходный запрос] --&gt; O[Ведущий исследователь]
+    O --&gt; M[(Постоянная память)]
+    O --&gt; P[Декомпозиция задачи]
+    P --&gt; A[Исследователь 1]
+    P --&gt; B[Исследователь 2]
+    P --&gt; C[Исследователь N]
+    A --&gt; S1[Поиск и анализ источников]
+    B --&gt; S2[Поиск и анализ источников]
+    C --&gt; S3[Поиск и анализ источников]
+    S1 &amp; S2 &amp; S3 --&gt; O
+    O --&gt; D{Достаточно информации?}
+    D --&gt;|Нет| P
+    D --&gt;|Да| F[Синтез результатов]
+    F --&gt; V[Агент атрибуции источников]
+    V --&gt; R[Итоговый отчёт]</pre></div>
+        <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Исходный запрос] --&gt; O[Ведущий исследователь]
+    O --&gt; M[(Постоянная память)]
+    O --&gt; P[Декомпозиция задачи]
+    P --&gt; A[Исследователь 1]
+    P --&gt; B[Исследователь 2]
+    P --&gt; C[Исследователь N]
+    A --&gt; S1[Поиск и анализ источников]
+    B --&gt; S2[Поиск и анализ источников]
+    C --&gt; S3[Поиск и анализ источников]
+    S1 &amp; S2 &amp; S3 --&gt; O
+    O --&gt; D{Достаточно информации?}
+    D --&gt;|Нет| P
+    D --&gt;|Да| F[Синтез результатов]
+    F --&gt; V[Агент атрибуции источников]
+    V --&gt; R[Итоговый отчёт]</pre></details>
         <div class="sources"><a href="https://www.anthropic.com/research/multi-agent-research-system">Anthropic Engineering · Multi-Agent Research</a></div>
       </article>
-
-      <div class="matrix-wrap">
-        <table>
-          <thead><tr><th>Система</th><th>Топология</th><th>Как развивается результат</th></tr></thead>
-          <tbody>
-            <tr><td>Cogentic</td><td>Итеративная</td><td>Накопление проверенных знаний и адаптация поиска</td></tr>
-            <tr><td>AI Co-Scientist</td><td>Эволюционная</td><td>Конкуренция и развитие гипотез</td></tr>
-            <tr><td>Virtual Lab</td><td>Коллегиальная</td><td>Междисциплинарное обсуждение</td></tr>
-            <tr><td>Anthropic Research</td><td>Иерархическая</td><td>Декомпозиция и параллельный поиск</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="footnote">В исходном ответе все четыре диаграммы названы функциональными реконструкциями на основании публикаций; технические детали реализации намеренно опущены.</p>
     </section>
 
-    <section class="section" id="engineering">
-      <div class="section-kicker">Часть II</div>
-      <h2>Инженерные системы и авторские harness</h2>
-      <p class="section-lead">В переписке обсуждались реальные открытые системы. Модель отдельно подчеркнула: здесь доступны исходный код, промпты и логика взаимодействия, а приведённые ниже схемы — упрощённые концептуальные представления.</p>
-
-      <article class="scheme" id="gastown">
-        <div class="scheme-head"><h3>5. Стив Йегге — Gas Town</h3><span class="tag">Параллельная иерархия</span></div>
-        <p class="principle"><b>Топология из ответа:</b> иерархическая многоагентная система с параллельным исполнением и независимым контуром надзора. Есть управляющие роли, исполнители, наблюдатели, восстановление и интеграция результатов.</p>
-        <div class="diagram" role="img" aria-label="Схема Gas Town: управляющий слой раздаёт задачи параллельным исполнителям, интегратор собирает результаты, независимый надзор контролирует систему и восстановление">
-          <div class="flow"><div class="node">Цель / задача</div><div class="arrow">→</div><div class="node violet">Управляющий агент</div></div>
-          <div class="flow" style="margin-top:9px"><div class="node teal">Исполнитель A</div><div class="node teal">Исполнитель B</div><div class="node teal">Исполнитель N</div></div>
-          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div><span class="arrow" aria-hidden="true">&nbsp;</span><div class="arrow">↓</div></div>
-          <div class="flow"><div class="node">Интеграция результатов</div><div class="arrow">→</div><div class="node amber">Независимый надзор<small>наблюдение · восстановление</small></div></div>
-          <p class="diagram-note">Надзорный контур следит за работоспособностью самой многоагентной системы.</p>
-        </div>
-        <div class="sources"><a href="https://yegge.ai/essays/welcome-to-gas-town/">Стив Йегге · Welcome to Gas Town</a><a href="https://github.com/steveyegge/gastown">Исходный код</a></div>
+    <section class="section" id="practical">
+      <div class="section-kicker">Часть II · практические системы</div><h2>Три самостоятельных harness</h2>
+      <p class="section-lead">В переписке их отдельно попросили нарисовать, не объединяя с системой пользователя. Все три схемы — концептуальные реконструкции опубликованных проектов; связи упрощены, основные имена ролей сохранены.</p>
+      <article class="scheme" id="gastown"><h3>5. Стив Йегге — Gas Town <span class="tag">параллельная иерархия</span></h3>
+        <p>Управляющие агенты, исполнители, интеграция и отдельный контур наблюдения и восстановления поддерживают множество параллельных задач.</p>
+        <div class="diagram"><pre class="mermaid">flowchart TD
+    H[Overseer — человек] --&gt; M[Mayor — главный координатор]
+    H --&gt; C[Crew — постоянные исполнители]
+    M --&gt; B[(Beads — реестр задач)]
+    B --&gt; P1[Polecat 1]
+    B --&gt; P2[Polecat 2]
+    B --&gt; PN[Polecat N]
+    P1 &amp; P2 &amp; PN --&gt; Q[Очередь интеграции]
+    Q --&gt; R[Refinery — интегратор]
+    R --&gt; F[Основная ветка проекта]
+    D[Deacon — системный надзор] --&gt; W[Witness — наблюдатель]
+    D --&gt; G[Dogs — техническое обслуживание]
+    W --&gt;|Контроль и восстановление| P1 &amp; P2 &amp; PN
+    W --&gt; R
+    C --&gt; Q
+    F --&gt;|Завершение задач| M</pre></div>
+        <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    H[Overseer — человек] --&gt; M[Mayor — главный координатор]
+    H --&gt; C[Crew — постоянные исполнители]
+    M --&gt; B[(Beads — реестр задач)]
+    B --&gt; P1[Polecat 1]
+    B --&gt; P2[Polecat 2]
+    B --&gt; PN[Polecat N]
+    P1 &amp; P2 &amp; PN --&gt; Q[Очередь интеграции]
+    Q --&gt; R[Refinery — интегратор]
+    R --&gt; F[Основная ветка проекта]
+    D[Deacon — системный надзор] --&gt; W[Witness — наблюдатель]
+    D --&gt; G[Dogs — техническое обслуживание]
+    W --&gt;|Контроль и восстановление| P1 &amp; P2 &amp; PN
+    W --&gt; R
+    C --&gt; Q
+    F --&gt;|Завершение задач| M</pre></details>
+        <p class="small">Смысловой акцент ответа: отдельные агенты обслуживают работоспособность самой системы.</p><div class="sources"><a href="https://yegge.ai/essays/welcome-to-gas-town/">Описание автора</a><a href="https://github.com/steveyegge/gastown">Исходный код Gas Town</a></div>
       </article>
-
-      <article class="scheme" id="superpowers">
-        <div class="scheme-head"><h3>6. Джесси Винсент — Superpowers</h3><span class="tag">Последовательная проверка</span></div>
-        <p class="principle"><b>Топология из ответа:</b> последовательное выполнение задач с двухступенчатой проверкой и возвратом на доработку. Для каждой задачи у исполнителя изолированный контекст.</p>
-        <div class="diagram" role="img" aria-label="Схема Superpowers: постановка и планирование задачи, реализация в изолированном контексте, две независимые проверки, при замечаниях возврат к реализации">
-          <div class="flow"><div class="node">Задача</div><div class="arrow">→</div><div class="node violet">План и декомпозиция</div><div class="arrow">→</div><div class="node teal">Исполнитель<small>изолированный контекст</small></div></div>
-          <div class="flow" style="margin-top:9px"><div class="node amber">Проверка требований</div><div class="arrow">→</div><div class="node amber">Проверка качества</div><div class="arrow">→</div><div class="node">Готово</div></div>
-          <p class="diagram-note">Замечания с любого этапа проверки возвращают задачу исполнителю на доработку ↺.</p>
-        </div>
-        <div class="sources"><a href="https://github.com/obra/superpowers">Superpowers · исходный код и инструкции</a></div>
+      <article class="scheme" id="superpowers"><h3>6. Джесси Винсент — Superpowers <span class="tag">последовательная проверка</span></h3>
+        <p>Работа идёт через план и отдельные задачи, с новым агентом-исполнителем в изолированном контексте, двумя независимыми проверками и возвратом на исправление.</p>
+        <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Пользователь] --&gt; O[Управляющий агент]
+    O --&gt; B[Обсуждение и проектирование]
+    B --&gt; P[План реализации]
+    P --&gt; T[Очередная задача]
+    T --&gt; I[Новый агент-исполнитель]
+    I --&gt; S[Ревью соответствия требованиям]
+    S --&gt; D{Требования выполнены?}
+    D --&gt;|Нет| I
+    D --&gt;|Да| C[Ревью качества кода]
+    C --&gt; Q{Качество достаточное?}
+    Q --&gt;|Нет| I
+    Q --&gt;|Да| M{Остались задачи?}
+    M --&gt;|Да| T
+    M --&gt;|Нет| R[Итоговый ревьюер]
+    R --&gt; F[Готовое решение]</pre></div>
+        <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Пользователь] --&gt; O[Управляющий агент]
+    O --&gt; B[Обсуждение и проектирование]
+    B --&gt; P[План реализации]
+    P --&gt; T[Очередная задача]
+    T --&gt; I[Новый агент-исполнитель]
+    I --&gt; S[Ревью соответствия требованиям]
+    S --&gt; D{Требования выполнены?}
+    D --&gt;|Нет| I
+    D --&gt;|Да| C[Ревью качества кода]
+    C --&gt; Q{Качество достаточное?}
+    Q --&gt;|Нет| I
+    Q --&gt;|Да| M{Остались задачи?}
+    M --&gt;|Да| T
+    M --&gt;|Нет| R[Итоговый ревьюер]
+    R --&gt; F[Готовое решение]</pre></details>
+        <p class="small">В чате были разделены две проверки: соответствие требованиям и качество результата.</p><div class="sources"><a href="https://github.com/obra/superpowers">Исходный код и инструкции</a></div>
       </article>
-
-      <article class="scheme" id="agent-lab">
-        <div class="scheme-head"><h3>7. Самуэль Шмидгалл — Agent Laboratory</h3><span class="tag">Научный цикл</span></div>
-        <p class="principle"><b>Топология из ответа:</b> виртуальная научная лаборатория с последовательными исследовательскими стадиями и итеративными экспериментами.</p>
-        <div class="diagram" role="img" aria-label="Схема Agent Laboratory: поиск литературы, гипотеза, план эксперимента, реальное выполнение вычислений, анализ результатов и научный текст">
-          <div class="flow"><div class="node">Поиск литературы</div><div class="arrow">→</div><div class="node teal">Гипотеза</div><div class="arrow">→</div><div class="node violet">Дизайн эксперимента</div></div>
-          <div class="flow" style="margin-top:9px"><div class="node amber">Запуск вычислений / эксперимента</div><div class="arrow">→</div><div class="node">Анализ результатов</div><div class="arrow">→</div><div class="node teal">Научный отчёт</div></div>
-          <p class="diagram-note">Результаты эксперимента возвращаются в уточнение гипотезы и следующий цикл.</p>
-        </div>
-        <p>Модель противопоставила эту систему простому обмену текстовыми выводами: в цикле есть вычислительные эксперименты и оценка их результатов.</p>
-        <div class="sources"><a href="https://agentlaboratory.github.io/">Agent Laboratory · публикация и проект</a></div>
+      <article class="scheme" id="agentlab"><h3>7. Самуэль Шмидгалл — Agent Laboratory <span class="tag">научный цикл</span></h3>
+        <p>Виртуальная лаборатория проходит исследовательские стадии, проводит вычислительные эксперименты, оценивает результаты и готовит публикацию.</p>
+        <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Человек — исследователь] --&gt; H[Исследовательская идея]
+    subgraph L[Обзор литературы]
+        H --&gt; P[PhD — исследователь]
+        P &lt;--&gt; A[(Научные публикации)]
+        P --&gt; S[Обзор литературы]
+    end
+    subgraph E[Экспериментальная стадия]
+        S --&gt; PD[Postdoc — планирование]
+        PD &lt;--&gt; P2[PhD — разработка эксперимента]
+        P2 --&gt; PL[План исследования]
+        PL --&gt; SW[Software Engineer]
+        PL --&gt; ML[ML Engineer]
+        SW &amp; ML --&gt; D[Подготовка данных]
+        D --&gt; X[MLE-Solver — экспериментатор]
+        X --&gt; V[Оценка результатов]
+        V --&gt;|Улучшение эксперимента| X
+    end
+    subgraph R[Подготовка публикации]
+        V --&gt; I[PhD — интерпретация результатов]
+        I &lt;--&gt; PR[Professor — научный руководитель]
+        PR --&gt; PS[Paper-Solver — автор статьи]
+        PS --&gt; RV[Рецензенты]
+        RV --&gt;|Замечания| PS
+    end
+    RV --&gt; F[Научный отчёт]
+    V --&gt; C[Программный код]</pre></div>
+        <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Человек — исследователь] --&gt; H[Исследовательская идея]
+    subgraph L[Обзор литературы]
+        H --&gt; P[PhD — исследователь]
+        P &lt;--&gt; A[(Научные публикации)]
+        P --&gt; S[Обзор литературы]
+    end
+    subgraph E[Экспериментальная стадия]
+        S --&gt; PD[Postdoc — планирование]
+        PD &lt;--&gt; P2[PhD — разработка эксперимента]
+        P2 --&gt; PL[План исследования]
+        PL --&gt; SW[Software Engineer]
+        PL --&gt; ML[ML Engineer]
+        SW &amp; ML --&gt; D[Подготовка данных]
+        D --&gt; X[MLE-Solver — экспериментатор]
+        X --&gt; V[Оценка результатов]
+        V --&gt;|Улучшение эксперимента| X
+    end
+    subgraph R[Подготовка публикации]
+        V --&gt; I[PhD — интерпретация результатов]
+        I &lt;--&gt; PR[Professor — научный руководитель]
+        PR --&gt; PS[Paper-Solver — автор статьи]
+        PS --&gt; RV[Рецензенты]
+        RV --&gt;|Замечания| PS
+    end
+    RV --&gt; F[Научный отчёт]
+    V --&gt; C[Программный код]</pre></details>
+        <p class="small">Смысловой акцент: вычислительный эксперимент и его оценка, а не только обмен текстовыми выводами.</p><div class="sources"><a href="https://agentlaboratory.github.io/">Публикация и проект</a></div>
       </article>
-
-      <div class="quote">«Первые две системы ориентированы преимущественно на разработку ПО, а третья — непосредственно на научные исследования» — пояснение модели в чате.</div>
     </section>
 
     <section class="section" id="roles">
-      <div class="section-kicker">Часть III</div>
-      <h2>Функциональная ролевая схема</h2>
-      <p class="section-lead">Ранее в чате была сформулирована общая схема из восьми функций. На вопрос, взята ли она непосредственно из Google Research, модель обещала уточнить источники; далее в переписке она была обозначена как функциональная схема, а не как официальные названия команд конкретной системы.</p>
-      <div class="diagram" role="img" aria-label="Восемь ролей: оркестратор, стратегический советник, генератор гипотез, исследователь, критик, аудитор, синтезатор, конструктор промптов">
-        <div class="flow"><div class="node violet">Оркестратор<small>ресурсы и цикл работы</small></div><div class="arrow">→</div><div class="node">Стратегический советник<small>выбирает направление</small></div></div>
-        <div class="flow" style="margin-top:9px"><div class="node teal">Генератор гипотез</div><div class="arrow">→</div><div class="node teal">Исследователь</div><div class="arrow">→</div><div class="node amber">Критик</div></div>
-        <div class="flow" style="margin-top:9px"><div class="node amber">Аудитор<small>извлекает пользу из неудач</small></div><div class="arrow">→</div><div class="node">Синтезатор<small>объединяет находки</small></div><div class="arrow">→</div><div class="node violet">Конструктор промптов<small>готовит следующий пакет заданий</small></div></div>
-        <p class="diagram-note">Подготовленные задания возвращаются оркестратору; роли — функциональные, связи можно адаптировать под процесс.</p>
-      </div>
-      <div class="roles">
-        <div class="role"><b>Оркестратор</b><span>Управляет ресурсами и ходом работы.</span></div>
-        <div class="role"><b>Стратегический советник</b><span>Подсказывает, куда двигаться дальше.</span></div>
+      <div class="section-kicker">Часть III · функциональная декомпозиция</div><h2>Восемь ролей исследовательского harness</h2>
+      <p class="section-lead">Ответ модели перечислил роли как функциональные названия, а не официальные должности или точную внутреннюю схему Google, OpenAI либо Anthropic.</p>
+      <div class="rolegrid">
+        <div class="role"><b>Оркестратор</b><span>Распределяет задачи, управляет очередями и вычислительными ресурсами.</span></div>
+        <div class="role"><b>Стратегический советник</b><span>Изучает историю поиска и выбирает, куда двигаться дальше.</span></div>
         <div class="role"><b>Генератор гипотез</b><span>Предлагает новые идеи и объяснения.</span></div>
-        <div class="role"><b>Исследователь</b><span>Развивает гипотезу до решения.</span></div>
-        <div class="role"><b>Критик</b><span>Ищет ошибки и слабые места.</span></div>
-        <div class="role"><b>Аудитор</b><span>Извлекает полезное из неудачных попыток.</span></div>
-        <div class="role"><b>Синтезатор</b><span>Объединяет результаты и находки.</span></div>
-        <div class="role"><b>Конструктор промптов</b><span>Готовит следующий пакет заданий.</span></div>
+        <div class="role"><b>Исследователь</b><span>Развивает конкретную гипотезу до полноценного решения.</span></div>
+        <div class="role"><b>Критик</b><span>Ищет логические ошибки, противоречия и контрпримеры.</span></div>
+        <div class="role"><b>Аудитор</b><span>Извлекает полезное даже из неудачных попыток.</span></div>
+        <div class="role"><b>Синтезатор</b><span>Объединяет независимые находки разных агентов.</span></div>
+        <div class="role"><b>Конструктор промптов</b><span>Готовит следующий пакет заданий по накопленным знаниям.</span></div>
       </div>
-      <div class="quote">В ответе модели: «Это функциональная схема, не внутренние названия конкретных команд».</div>
+      <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Задача] --&gt; O[Оркестратор]
+    O --&gt; S[Стратегический советник]
+    S --&gt; P[Конструктор промптов]
+    P --&gt; G[Генератор гипотез]
+    G --&gt; R[Исследователь]
+    R --&gt; C[Критик]
+    C --&gt; A[Аудитор]
+    A --&gt; Y[Синтезатор]
+    Y --&gt; S</pre></div>
+      <details class="source"><summary>Mermaid-представление списка ролей</summary><pre>flowchart TD
+    U[Задача] --&gt; O[Оркестратор]
+    O --&gt; S[Стратегический советник]
+    S --&gt; P[Конструктор промптов]
+    P --&gt; G[Генератор гипотез]
+    G --&gt; R[Исследователь]
+    R --&gt; C[Критик]
+    C --&gt; A[Аудитор]
+    A --&gt; Y[Синтезатор]
+    Y --&gt; S</pre></details>
+      <div class="notice"><b>Что взято из Google, а что было обобщением:</b> в ответе утверждалось, что оркестратор, стратегический советник, исследователи, верификаторы, аудиторы и подготовка контекста видны в описании Google Cogentic. Генератор гипотез, синтезатор и конструктор промптов как отдельные роли были названы инженерной декомпозицией модели. Восемь ролей в целом — пригодное концептуальное обобщение, не буквальная архитектура Google.</div>
+      <p>Важное различие: стратегический советник выбирает, <i>что исследовать</i>; оркестратор определяет, <i>как организовать исследование</i>.</p>
     </section>
 
-    <section class="section" id="other">
-      <div class="section-kicker">Приложение</div>
-      <h2>Другие авторы и материалы, упомянутые в чате</h2>
-      <p class="section-lead">Эти ссылки появились в ответе о разработчиках и агентной оркестрации. Для них в той части переписки отдельные схемы не были показаны.</p>
-      <ul>
-        <li><a href="https://github.com/karpathy/autoresearch">Andrej Karpathy — autoresearch</a></li>
-        <li><a href="https://ghuntley.com/">Geoffrey Huntley — заметки об агентной инженерии</a></li>
-        <li><a href="https://pi.dev/">Pi — агентная среда разработки</a></li>
-        <li><a href="https://simonwillison.net/2025/Oct/5/parallel-coding-agents/">Simon Willison — Parallel coding agents</a></li>
-      </ul>
-      <p class="footnote">Сводные ответы также отмечали, что Gas Town — harness для параллельных агентов с наблюдением и восстановлением; Superpowers — последовательность планирования, реализации и независимой проверки; Agent Laboratory — автоматизация научного цикла от литературы и эксперимента до публикации.</p>
-      <p class="footnote">Источник материала: <a href="https://chatgpt.com/c/6b06d370-3878-83ed-bb66-4a7f720ea5db">исходная переписка «Обсуждение компаний»</a>.</p>
+    <section class="section" id="comparisons"><div class="section-kicker">Сводка</div><h2>Сравнение топологий</h2>
+      <div class="table-wrap"><table class="matrix"><thead><tr><th>Система</th><th>Тип</th><th>Механизм развития</th><th>Сильный акцент из ответа</th></tr></thead><tbody>
+        <tr><td>Cogentic</td><td>Итеративная</td><td>Накопление проверенных знаний</td><td>Адаптация поиска</td></tr>
+        <tr><td>AI Co-Scientist</td><td>Эволюционная</td><td>Конкуренция и улучшение гипотез</td><td>Разнообразие идей</td></tr>
+        <tr><td>Virtual Lab</td><td>Коллегиальная</td><td>Междисциплинарное обсуждение</td><td>Подбор команды под задачу</td></tr>
+        <tr><td>Anthropic Research</td><td>Иерархическая</td><td>Декомпозиция и параллельный поиск</td><td>Динамическое число исполнителей</td></tr>
+        <tr><td>Gas Town</td><td>Параллельная иерархия</td><td>Исполнение, интеграция, надзор и восстановление</td><td>Harness сам себя обслуживает</td></tr>
+        <tr><td>Superpowers</td><td>Последовательная</td><td>План → задача → два независимых ревью</td><td>Изолированный исполнитель на задачу</td></tr>
+        <tr><td>Agent Laboratory</td><td>Стадийная исследовательская</td><td>Литература → эксперимент → анализ → публикация</td><td>Реальные вычислительные эксперименты</td></tr>
+      </tbody></table></div>
     </section>
+
+    <section class="section" id="model-agent"><div class="section-kicker">Термины и распределение</div><h2>Модель, агент и роль — разные вещи</h2>
+      <div class="callout"><p><b>Модель</b> — движок/провайдер, например GPT, Claude или Gemini.</p><p><b>Агент</b> — отдельный экземпляр работы со своим контекстом, инструкциями и состоянием.</p><p><b>Роль</b> — задача, которую выполняет агент: стратег, исследователь, критик, аудитор и т. д.</p></div>
+      <p>Одинаковая топология может быть реализована на однородных или разных моделях. Один агент не обязан означать отдельную модель; в рассмотренной конфигурации пользователь попросил считать схему «одна модель — один агент» и распределить роли между разными участниками.</p>
+      <p>В ответе был приведён лишь иллюстративный пример: Claude — стратегический советник, GPT — генератор гипотез, Gemini — исследователь, DeepSeek — критик, Grok — синтезатор. Роли можно менять между циклами в зависимости от задачи и результата. Это предложение распределения, а не проверенный рейтинг моделей.</p>
+      <div class="notice">Совместимость такой конкретной конфигурации с текущим AutoOrchestr/Basic отдельно не подтверждена. В более раннем сообщении было сказано, что несколько окон/участников могут запускаться в одном раунде, но это также было отмечено как непроверенное.</div>
+    </section>
+
+    <section class="section" id="basic-json"><div class="section-kicker">Практический результат в той же переписке</div><h2>Три отдельные схемы Basic в JSON</h2>
+      <p>Позже модель подготовила три самостоятельных универсальных JSON-пайплайна для Basic по мотивам Gas Town, Superpowers и Agent Laboratory. По сообщению модели, в каждой схеме задействованы все десять поддерживаемых моделей, а запросы рассчитаны на любую задачу из поля постановки.</p>
+      <div class="table-wrap"><table class="matrix"><thead><tr><th>Файл из ответа</th><th>Раунды</th><th>Запросы</th></tr></thead><tbody><tr><td><code>Basic_Gas_Town.json</code></td><td>7</td><td>22</td></tr><tr><td><code>Basic_Superpowers.json</code></td><td>10</td><td>26</td></tr><tr><td><code>Basic_Agent_Laboratory.json</code></td><td>9</td><td>21</td></tr></tbody></table></div>
+      <p>В ответе модель сообщила о повторной проверке синтаксиса JSON, контракта Basic Schema v1, участников, индивидуальных ролевых инструкций, универсального входа задачи, передачи инструкций и результатов между раундами, а также итогового ответа.</p>
+      <div class="notice">Фактический импорт и запуск этих трёх JSON-схем в расширении в переписке не тестировались. Сами файлы доступны как вложения в <a href="https://chatgpt.com/c/6b06d370-3878-83ed-bb66-4a7f720ea5db">исходном чате</a>; здесь сохранены названия и результаты, сообщённые моделью.</div>
+    </section>
+
+    <section class="section" id="approach"><div class="section-kicker">Общая логика, предложенная моделью</div><h2>От независимых идей к проверенному графу знаний</h2>
+      <p>В ответе о математических research-harness была предложена комбинация следующих механизмов:</p>
+      <ol><li><b>Дивергенция:</b> независимые агенты создают разные гипотезы и не подстраиваются друг под друга.</li><li><b>Атомизация:</b> каждая гипотеза раскладывается на проверяемые утверждения.</li><li><b>Верификация:</b> независимые агенты ищут ошибки и контрпримеры.</li><li><b>Конвергенция:</b> подтверждённые промежуточные результаты объединяются.</li><li><b>Перераспределение ресурсов:</b> больше усилий направляется на перспективные ветви.</li><li><b>Новая итерация:</b> следующий набор заданий строится по накопленным результатам.</li></ol>
+      <div class="diagram"><pre class="mermaid">flowchart LR
+    A[Независимые гипотезы] --&gt; B[Разбиение на утверждения]
+    B --&gt; C[Независимая проверка и контрпримеры]
+    C --&gt; D[Объединение подтверждённых знаний]
+    D --&gt; E[Перераспределение ресурсов]
+    E --&gt; F[Новые промпты и направления]
+    F --&gt; A</pre></div>
+      <div class="notice">Принцип из ответа: не бесконечный разговор между моделями, а итеративное построение графа знаний с независимыми контекстами, общей внешней памятью и проверкой каждого результата. Модель также уточнила, что опубликованные материалы не раскрывают полностью внутренние архитектуры компаний.</div>
+      <div class="callout"><h3>Числа, которые модель приводила в разговоре</h3><p>Отдельно модель сообщила о математическом исследовании OpenAI с примерно 10&nbsp;000 агентами, продолжавшемся 88 часов и потребовавшем около 130 миллиардов выходных токенов; и об эксперименте Anthropic с одним управляющим и 999 исполнительными агентами, общей памятью в PostgreSQL, Git для результатов и Lean для математической проверки.</p><p class="small">Это воспроизведение конкретного ответа из переписки, а не отдельная проверка этих цифр в этой брошюре. Рядом модель подчёркивала, что полная внутренняя архитектура компаний не раскрыта, а её комбинированная схема — инженерная реконструкция.</p></div>
+      <p>В чате упоминались Math Proof Siege, открытый Anthropic упрощённый математический harness; Karpathy autoresearch; заметки Geoffrey Huntley и Pi; а также разбор Simon Willison о параллельных coding agents. Отдельные диаграммы для этих дополнительных материалов в том ответе не приводились.</p>
+    </section>
+
+    <section class="section" id="dynamic-overview"><div class="section-kicker">Часть IV · концепция динамического пайплайна</div><h2>Исследование из последовательности циклов, число которых заранее неизвестно</h2>
+      <p class="section-lead">Это отдельная концептуальная система, сформулированная в чате по запросу пользователя. Basic остаётся исполнителем одного конечного цикла; отдельный управляющий контур решает, что запускать дальше.</p>
+      <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Исходная задача] --&gt; M[(Состояние исследования)]
+
+    subgraph CONTROL[Управляющий контур]
+        M --&gt; S[Стратегический советник]
+        S --&gt; P[Проектировщик пайплайна]
+        P --&gt; J[Формирование JSON-схемы Basic]
+        J --&gt; K[Валидация схемы]
+        K --&gt;|Ошибка| P
+    end
+
+    subgraph EXECUTION[Исполнительный контур]
+        K --&gt;|Схема корректна| B[Движок Basic]
+        B --&gt; R[Выполнение раундов]
+        R --&gt; F[Результат цикла]
+    end
+
+    F --&gt; A[Аудитор результатов]
+    A --&gt; N[Обновление состояния исследования]
+    N --&gt; M
+    N --&gt; E[Независимый оценщик]
+    E --&gt; D{Контроллер решений}
+
+    D --&gt;|Продолжить| P
+    D --&gt;|Изменить стратегию| S
+    D --&gt;|Решение найдено| V[Финальная верификация]
+    V --&gt;|Не подтверждено| S
+    V --&gt;|Подтверждено| Z[Итоговое решение]
+    D --&gt;|Ограничения исчерпаны| X[Промежуточный результат]</pre></div>
+      <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Исходная задача] --&gt; M[(Состояние исследования)]
+    subgraph CONTROL[Управляющий контур]
+        M --&gt; S[Стратегический советник]
+        S --&gt; P[Проектировщик пайплайна]
+        P --&gt; J[Формирование JSON-схемы Basic]
+        J --&gt; K[Валидация схемы]
+        K --&gt;|Ошибка| P
+    end
+    subgraph EXECUTION[Исполнительный контур]
+        K --&gt;|Схема корректна| B[Движок Basic]
+        B --&gt; R[Выполнение раундов]
+        R --&gt; F[Результат цикла]
+    end
+    F --&gt; A[Аудитор результатов]
+    A --&gt; N[Обновление состояния исследования]
+    N --&gt; M
+    N --&gt; E[Независимый оценщик]
+    E --&gt; D{Контроллер решений}
+    D --&gt;|Продолжить| P
+    D --&gt;|Изменить стратегию| S
+    D --&gt;|Решение найдено| V[Финальная верификация]
+    V --&gt;|Не подтверждено| S
+    V --&gt;|Подтверждено| Z[Итоговое решение]
+    D --&gt;|Ограничения исчерпаны| X[Промежуточный результат]</pre></details>
+      <h3>Что хранится между циклами</h3><ul><li>исходная задача и критерии решения;</li><li>подтверждённые результаты и ссылки на доказательства;</li><li>активные гипотезы и отвергнутые гипотезы с причинами;</li><li>нерешённые вопросы и противоречия;</li><li>история пайплайнов и стратегических решений;</li><li>затраченные вычислительные ресурсы.</li></ul>
+      <p>Новый пайплайн может менять число раундов и участников, распределение ролей, топологию, индивидуальные промпты и способы критики, проверки и синтеза. Решение о продолжении принимается по прогрессу; завершение требует независимой проверки либо достижения ограничений.</p>
+    </section>
+
+    <section class="section" id="pipeline-sequence"><div class="section-kicker">Динамическое формирование</div><h2>Каждый цикл — конечный; их последовательность открытая</h2>
+      <div class="diagram"><pre class="mermaid">flowchart LR
+    T[Задача] --&gt; P1[Pipeline 1]
+    P1 --&gt; S1[Состояние 1]
+    S1 --&gt; P2[Pipeline 2]
+    P2 --&gt; S2[Состояние 2]
+    S2 --&gt; P3[Pipeline 3]
+    P3 --&gt; S3[Состояние 3]
+    S3 --&gt; PN[Pipeline N]
+    PN --&gt; F[Решение]</pre></div>
+      <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart LR
+    T[Задача] --&gt; P1[Pipeline 1]
+    P1 --&gt; S1[Состояние 1]
+    S1 --&gt; P2[Pipeline 2]
+    P2 --&gt; S2[Состояние 2]
+    S2 --&gt; P3[Pipeline 3]
+    P3 --&gt; S3[Состояние 3]
+    S3 --&gt; PN[Pipeline N]
+    PN --&gt; F[Решение]</pre></details>
+      <div class="notice"><b>Пример из ответа — иллюстрация, не фиксированный сценарий:</b> дивергентный поиск (4 раунда), критический анализ (6), углублённое исследование (3), альтернативная стратегия (8), верификация (5). В реальной системе очередность и количество циклов заранее неизвестны.</div>
+    </section>
+
+    <section class="section" id="basic-architecture"><div class="section-kicker">Компонентная архитектура</div><h2>Три слоя и программный контроллер</h2>
+      <p>Управляющий слой выбирает стратегию, проектирует пайплайн и оценивает результат. Исполнительный слой — существующий Basic. Информационный слой хранит состояние вне контекстов отдельных моделей. Модели решают интеллектуальные задачи, код отвечает за надёжное исполнение и переходы.</p>
+      <div class="diagram"><pre class="mermaid">flowchart TD
+    U[Пользователь] --&gt; C
+    subgraph CONTROL[Управляющий слой]
+        C[Программный контроллер]
+        S[Стратегический советник]
+        P[Архитектор пайплайнов]
+        V[Валидатор JSON]
+        E[Оценщик прогресса]
+        A[Аудитор результатов]
+        F[Финальный верификатор]
+        C --&gt; S
+        S --&gt; P
+        P --&gt; V
+        V --&gt;|Ошибка| P
+        E --&gt; C
+    end
+    subgraph EXEC[Исполнительный слой]
+        B[Basic Engine]
+        R[Раунды и синтезы]
+        T[Транспортный слой]
+        B --&gt; R
+        R &lt;--&gt; T
+    end
+    subgraph DATA[Информационный слой]
+        M[(Состояние исследования)]
+        H[(История исполнения)]
+        K[(База знаний)]
+        L[(Реестр пайплайнов)]
+    end
+    V --&gt;|Корректный JSON| C
+    C --&gt; B
+    T &lt;--&gt; MODELS[Доступные LLM]
+    B --&gt; A
+    A --&gt; M
+    A --&gt; K
+    M --&gt; E
+    M --&gt; S
+    C &lt;--&gt; H
+    P --&gt; L
+    C --&gt;|Кандидат на решение| F
+    F --&gt;|Отклонено| C
+    F --&gt;|Подтверждено| RESULT[Итоговое решение]</pre></div>
+      <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    U[Пользователь] --&gt; C
+    subgraph CONTROL[Управляющий слой]
+        C[Программный контроллер]
+        S[Стратегический советник]
+        P[Архитектор пайплайнов]
+        V[Валидатор JSON]
+        E[Оценщик прогресса]
+        A[Аудитор результатов]
+        F[Финальный верификатор]
+        C --&gt; S
+        S --&gt; P
+        P --&gt; V
+        V --&gt;|Ошибка| P
+        E --&gt; C
+    end
+    subgraph EXEC[Исполнительный слой]
+        B[Basic Engine]
+        R[Раунды и синтезы]
+        T[Транспортный слой]
+        B --&gt; R
+        R &lt;--&gt; T
+    end
+    subgraph DATA[Информационный слой]
+        M[(Состояние исследования)]
+        H[(История исполнения)]
+        K[(База знаний)]
+        L[(Реестр пайплайнов)]
+    end
+    V --&gt;|Корректный JSON| C
+    C --&gt; B
+    T &lt;--&gt; MODELS[Доступные LLM]
+    B --&gt; A
+    A --&gt; M
+    A --&gt; K
+    M --&gt; E
+    M --&gt; S
+    C &lt;--&gt; H
+    P --&gt; L
+    C --&gt;|Кандидат на решение| F
+    F --&gt;|Отклонено| C
+    F --&gt;|Подтверждено| RESULT[Итоговое решение]</pre></details>
+      <div class="table-wrap"><table class="matrix"><thead><tr><th>Компонент</th><th>Тип в концепции</th><th>Ответственность</th></tr></thead><tbody>
+        <tr><td>Controller</td><td>Программный</td><td>Жизненный цикл исследования и переходы</td></tr><tr><td>Strategy Advisor</td><td>LLM</td><td>Выбор и изменение стратегии</td></tr><tr><td>Pipeline Architect</td><td>LLM</td><td>Генерация JSON-схемы Basic</td></tr><tr><td>Schema Validator</td><td>Программный</td><td>Проверка формата и допустимости схемы</td></tr><tr><td>Results Auditor</td><td>LLM</td><td>Извлечение результатов из ответов</td></tr><tr><td>State Manager</td><td>Программный</td><td>Сохранение и версионирование состояния</td></tr><tr><td>Progress Evaluator</td><td>LLM</td><td>Оценка прогресса и новых перспектив</td></tr><tr><td>Final Verifier</td><td>LLM + инструменты</td><td>Независимая проверка решения</td></tr><tr><td>Resource Manager</td><td>Программный</td><td>Контроль ресурсов и лимитов</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section class="section" id="research-state"><div class="section-kicker">Память системы</div><h2>Архитектура состояния исследования</h2>
+      <p>Состояние хранится независимо от контекстов моделей. Каждый существенный результат имеет уникальный идентификатор, источник, статус проверки и связь с предыдущими результатами. Это позволяет менять модели, чаты и продолжать работу после перезапуска.</p>
+      <div class="diagram"><pre class="mermaid">flowchart TD
+    S[(Research State)] --&gt; T[Исходная задача]
+    S --&gt; C[Критерии решения]
+    S --&gt; K[Подтверждённые знания]
+    S --&gt; H[Активные гипотезы]
+    S --&gt; R[Отвергнутые гипотезы]
+    S --&gt; E[Ошибки и противоречия]
+    S --&gt; Q[Нерешённые вопросы]
+    S --&gt; D[История решений]
+    S --&gt; P[История пайплайнов]
+    S --&gt; B[Состояние ресурсов]</pre></div>
+      <details class="source"><summary>Исходный код Mermaid</summary><pre>flowchart TD
+    S[(Research State)] --&gt; T[Исходная задача]
+    S --&gt; C[Критерии решения]
+    S --&gt; K[Подтверждённые знания]
+    S --&gt; H[Активные гипотезы]
+    S --&gt; R[Отвергнутые гипотезы]
+    S --&gt; E[Ошибки и противоречия]
+    S --&gt; Q[Нерешённые вопросы]
+    S --&gt; D[История решений]
+    S --&gt; P[История пайплайнов]
+    S --&gt; B[Состояние ресурсов]</pre></details>
+    </section>
+
+    <section class="section" id="state-machine"><div class="section-kicker">Автоматизация управления</div><h2>Автомат состояний</h2>
+      <p>После каждого успешного цикла сохраняется состояние. При сбое система должна восстановиться с последней согласованной версии. Если восстановление не удалось, исследование ставится на паузу, а не перезапускается с нуля.</p>
+      <div class="diagram"><pre class="mermaid">stateDiagram-v2
+    [*] --&gt; Initialize
+    Initialize --&gt; Strategy
+    Strategy --&gt; Design
+    Design --&gt; Validate
+    Validate --&gt; Design: Invalid schema
+    Validate --&gt; Execute: Valid schema
+    Execute --&gt; Recover: Execution failure
+    Recover --&gt; Execute: Retry
+    Recover --&gt; Paused: Recovery failed
+    Execute --&gt; Audit: Cycle completed
+    Audit --&gt; CommitState
+    CommitState --&gt; Evaluate
+    Evaluate --&gt; Design: Continue
+    Evaluate --&gt; Strategy: Change strategy
+    Evaluate --&gt; Verify: Candidate found
+    Verify --&gt; Strategy: Rejected
+    Verify --&gt; Completed: Confirmed
+    Evaluate --&gt; Paused: Budget exhausted
+    Paused --&gt; Strategy: Resume
+    Completed --&gt; [*]</pre></div>
+      <details class="source"><summary>Исходный код Mermaid</summary><pre>stateDiagram-v2
+    [*] --&gt; Initialize
+    Initialize --&gt; Strategy
+    Strategy --&gt; Design
+    Design --&gt; Validate
+    Validate --&gt; Design: Invalid schema
+    Validate --&gt; Execute: Valid schema
+    Execute --&gt; Recover: Execution failure
+    Recover --&gt; Execute: Retry
+    Recover --&gt; Paused: Recovery failed
+    Execute --&gt; Audit: Cycle completed
+    Audit --&gt; CommitState
+    CommitState --&gt; Evaluate
+    Evaluate --&gt; Design: Continue
+    Evaluate --&gt; Strategy: Change strategy
+    Evaluate --&gt; Verify: Candidate found
+    Verify --&gt; Strategy: Rejected
+    Verify --&gt; Completed: Confirmed
+    Evaluate --&gt; Paused: Budget exhausted
+    Paused --&gt; Strategy: Resume
+    Completed --&gt; [*]</pre></details>
+    </section>
+
+    <section class="section" id="protocol"><div class="section-kicker">Команды контроллера</div><h2>Протокол оценки и продолжения</h2>
+      <p>Оценщик возвращает структурированную команду, а контроллер проверяет её и исполняет. Команда <code>COMPLETE</code> сама по себе не завершает поиск без успешной финальной верификации.</p>
+      <div class="table-wrap"><table class="matrix"><thead><tr><th>Команда</th><th>Действие</th></tr></thead><tbody><tr><td>CONTINUE</td><td>Продолжить исследование</td></tr><tr><td>REPEAT_PIPELINE</td><td>Повторить существующий пайплайн с обновлённым состоянием</td></tr><tr><td>GENERATE_PIPELINE</td><td>Создать новую JSON-схему</td></tr><tr><td>CHANGE_STRATEGY</td><td>Пересмотреть направление</td></tr><tr><td>VERIFY</td><td>Запустить независимую проверку</td></tr><tr><td>COMPLETE</td><td>Запросить завершение после подтверждения</td></tr><tr><td>STOP</td><td>Остановить исследование</td></tr><tr><td>WAIT_OWNER</td><td>Запросить решение пользователя</td></tr></tbody></table></div>
+      <pre class="source">{
+  "decision": "CHANGE_STRATEGY",
+  "reason": "Текущий подход перестал давать новые результаты",
+  "stateVersion": 12,
+  "nextObjectives": [],
+  "unresolvedQuestions": [],
+  "evidenceRefs": []
+}</pre>
+      <h3>Требования надёжности из ответа</h3><ul><li>персистентное состояние с контролем версии и целостности;</li><li>защита от повторного исполнения завершённого цикла;</li><li>обнаружение стагнации и повторяющихся гипотез;</li><li>контроль роста контекста;</li><li>валидация каждой автоматически созданной схемы;</li><li>независимая проверка результатов;</li><li>остановка и возобновление после сбоя.</li></ul>
+    </section>
+
+    <section class="section" id="integration"><div class="section-kicker">Интеграция</div><h2>Концепция внешнего контроллера над Basic</h2>
+      <p>Ключевое архитектурное решение из ответа: создавать и исполнять заранее неограниченную последовательность конечных пайплайнов. Basic отвечает за исполнение конкретной JSON-схемы, управляющий контур — за развитие исследования и выбор следующего цикла.</p>
+      <div class="diagram"><pre class="mermaid">flowchart LR
+    CTRL[Новый управляющий слой<br/>Controller · Strategy · Pipeline Architect · State Manager]
+    BASIC[Существующий Basic Engine<br/>Исполнение раундов и синтезов]
+    TRANS[Существующий транспортный слой]
+    MODELS[GPT · Claude · Gemini · Grok<br/>DeepSeek · Qwen · Kimi · Z.ai<br/>Le Chat · Perplexity]
+    STATE[(Состояние исследования)]
+    CTRL --&gt;|JSON Schema| BASIC
+    BASIC --&gt;|Run Result| CTRL
+    BASIC --&gt; TRANS
+    TRANS &lt;--&gt; MODELS
+    CTRL &lt;--&gt; STATE</pre></div>
+      <p class="notice">Это самостоятельное проектное решение, не подтверждённая реализация. В ответах чата отмечалось: в изученном формате Basic Schema v1 условные переходы между схемами не предусмотрены; для бесконечного процесса нужен внешний контроллер или непосредственная поддержка циклов движком. Возможность интеграции без изменения Basic требует технического аудита его интерфейсов запуска, передачи состояния и получения результатов.</p>
+      <p>В том же разговоре уточнялось, что архитектурную возможность и фактическую реализацию Endless Pipeline нужно различать: наличие концепции не доказывает, что цикл уже реализован в текущей версии продукта.</p>
+    </section>
+
+    <section class="section" id="references"><div class="section-kicker">Приложение</div><h2>Источники и другие упоминания из чата</h2>
+      <div class="sources"><a href="https://chatgpt.com/c/6b06d370-3878-83ed-bb66-4a7f720ea5db">Исходная переписка</a><a href="https://arxiv.org/abs/2609.40324">Cogentic</a><a href="https://research.google/blog/accelerating-scientific-breakthroughs-with-an-ai-co-scientist/">AI Co-Scientist</a><a href="https://www.nature.com/articles/s41586-025-09442-9">Virtual Lab</a><a href="https://www.anthropic.com/research/multi-agent-research-system">Anthropic Research</a><a href="https://github.com/steveyegge/gastown">Gas Town</a><a href="https://github.com/obra/superpowers">Superpowers</a><a href="https://agentlaboratory.github.io/">Agent Laboratory</a></div>
+      <h3>Дополнительные кандидаты, названные моделью без отдельных Mermaid-схем</h3><ul><li><a href="https://github.com/karpathy/autoresearch">Andrej Karpathy — autoresearch</a></li><li><a href="https://ghuntley.com/">Geoffrey Huntley — агентная инженерия</a></li><li><a href="https://pi.dev/">Pi</a></li><li><a href="https://simonwillison.net/2025/Oct/5/parallel-coding-agents/">Simon Willison — Parallel coding agents</a></li><li>Anthropic Math Proof Siege — упрощённый математический harness, упомянутый в том ответе.</li></ul>
+      <p class="small">Авторские сведения, ссылки и описания приведены по содержанию исходного чата. Схемы шести систем — реконструкции на основании указанных материалов. Концепция динамического контура — модельное предложение по AutoOrchestr, нуждающееся в технической проверке.</p>
+    </section>
+    <footer>Тематическая брошюра по ответам модели в указанной переписке. Mermaid-блоки редактируемы: откройте исходный код схемы и меняйте текст диаграммы.</footer>
   </main>
-  <footer>Брошюра собрана по ответам из указанной переписки. Диаграммы перерисованы в самостоятельном HTML для удобного просмотра и печати.</footer>
 </body>
 </html>
