@@ -2563,7 +2563,7 @@ describe('Pipeline debate favorites view', () => {
       const built = h.debug.buildBasicRun(window.__pipelineDraftPlanForCanvas(window.__getActivePipelineDraftPlan()));
       expect(built.errors).toEqual([]);
       expect(built.schema.run).toEqual({ policy: 'auto', maxWords: 300 });
-      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat: null });
+      expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], repeat: null });
     } finally { h.cleanup(); }
   });
 
@@ -3232,7 +3232,7 @@ describe('Pipeline debate favorites view', () => {
         h.debug.applyPipelineConfig(record);
         expect(document.getElementById('debate-run-policy-select').value).toBe('auto');
         expect(document.getElementById('debate-length-select').value).toBe('700');
-        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat: null });
+        expect(h.debug.buildBasicRun(planOf()).run).toEqual({ policy: 'auto', maxWords: 700, strictLength: false, stopMarks: [], repeat: null });
       } finally { h.cleanup(); }
     }, 30000);
 
@@ -3422,7 +3422,7 @@ describe('Pipeline debate favorites view', () => {
           expect(saved.run).toEqual({ policy: 'auto', strictLength: true });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true, stopMarks: [], onNoAnswer: 'ask', repeat: null });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: true, stopMarks: [], repeat: null });
           const exported = h.debug.buildBasicExport();
           expect(exported.ok).toBe(true);
           expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', strictLength: true });
@@ -3446,14 +3446,14 @@ describe('Pipeline debate favorites view', () => {
           expect(saved.run).toEqual({ policy: 'auto', stopMarks: ['ТРЕВОГА:'] });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: ['ТРЕВОГА:'], onNoAnswer: 'ask', repeat: null });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: ['ТРЕВОГА:'], repeat: null });
           const exported = h.debug.buildBasicExport();
           expect(exported.ok).toBe(true);
           expect(JSON.parse(exported.text).run).toEqual({ policy: 'auto', stopMarks: ['ТРЕВОГА:'] });
         } finally { h.cleanup(); }
       });
 
-      test('run.onNoAnswer of the schema survives Save, Export and the run; the run hands it to the engine', async () => {
+      test('run.onNoAnswer of an older schema is dropped: Save, Export and the run do not carry it', async () => {
         const h = setupCustomInheritance('No answer host');
         try {
           const schema = { schemaVersion: 1, origin: 'user', run: { policy: 'auto', onNoAnswer: 'skip' }, steps: [
@@ -3463,11 +3463,11 @@ describe('Pipeline debate favorites view', () => {
           select('No answer');
           await settleCustomCard();
           const saved = h.debug.basicSchemaFromPage(planOf(), null, { forSave: true, basedOn: '' });
-          expect(saved.run).toEqual({ policy: 'auto', onNoAnswer: 'skip' });
+          expect(saved.run).toEqual({ policy: 'auto' });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'skip', repeat: null });
-          expect(JSON.parse(h.debug.buildBasicExport().text).run).toEqual({ policy: 'auto', onNoAnswer: 'skip' });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], repeat: null });
+          expect(JSON.parse(h.debug.buildBasicExport().text).run).toEqual({ policy: 'auto' });
         } finally { h.cleanup(); }
       });
 
@@ -3485,7 +3485,7 @@ describe('Pipeline debate favorites view', () => {
           expect(saved.run).toEqual({ policy: 'auto', repeat });
           const built = h.debug.buildBasicRun(planOf());
           expect(built.errors).toEqual([]);
-          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], onNoAnswer: 'ask', repeat });
+          expect(built.run).toEqual({ policy: 'auto', maxWords: 300, strictLength: false, stopMarks: [], repeat });
           expect(JSON.parse(h.debug.buildBasicExport().text).run).toEqual({ policy: 'auto', repeat });
         } finally { h.cleanup(); }
       });
@@ -5806,11 +5806,13 @@ describe('Pipeline debate favorites view', () => {
         });
         return starts;
       };
-      const setup = async (name, schema, { answer = docAnswer, onStart, folder = memoryFolder() } = {}) => {
+      const setup = async (name, schema, { answer = docAnswer, onStart, folder = memoryFolder(), skipNoAnswer = false } = {}) => {
         require('../disput/basic-run-chain');
         require('../disput/basic-repeat');
         window.BasicTelemetry = require('../shared/basic-telemetry');
         const h = setupCustomInheritance(name);
+        // «Настройки Basic»: the participant without an answer is skipped at once.
+        h.debug.saveBasicSettings({ skipNoAnswer });
         const realRecord = window.CustomRunRecord;
         const previousFolder = window.DocumentsFolder;
         expect((await h.debug.installBasicSchema(name, schema)).ok).toBe(true);
@@ -5947,9 +5949,9 @@ describe('Pipeline debate favorites view', () => {
         } finally { cleanup(); }
       }, 30000);
 
-      test('check 3: the only participant of a step gives no answer with onNoAnswer skip: the run stops, the next pass is not started, no owner window opens', async () => {
-        const { starts, cleanup } = await setup('T08 single no answer', repeatSchema(repeatOf(), { run: { onNoAnswer: 'skip' } }),
-          { answer: () => '' });
+      test('check 3: the only participant of a step gives no answer with «skip at once» on: the run stops, the next pass is not started, no owner window opens', async () => {
+        const { starts, cleanup } = await setup('T08 single no answer', repeatSchema(repeatOf()),
+          { skipNoAnswer: true, answer: () => '' });
         try {
           await start();
           expect(passesOf(starts)).toHaveLength(1);
@@ -5958,9 +5960,9 @@ describe('Pipeline debate favorites view', () => {
         } finally { cleanup(); }
       }, 30000);
 
-      test('check 4: one of two participants gives no answer with onNoAnswer skip: the pass goes to its end and the repeat continues', async () => {
-        const { starts, cleanup } = await setup('T08 partial no answer', repeatSchema(repeatOf({ maxPasses: 2 }), { models: ['GPT', 'Claude'], run: { onNoAnswer: 'skip' } }),
-          { answer: (model, pass) => (model === 'Claude' ? '' : docAnswer(model, pass)) });
+      test('check 4: one of two participants gives no answer with «skip at once» on: the pass goes to its end and the repeat continues', async () => {
+        const { starts, cleanup } = await setup('T08 partial no answer', repeatSchema(repeatOf({ maxPasses: 2 }), { models: ['GPT', 'Claude'] }),
+          { skipNoAnswer: true, answer: (model, pass) => (model === 'Claude' ? '' : docAnswer(model, pass)) });
         try {
           await start();
           expect(passesOf(starts)).toHaveLength(2);
@@ -6001,7 +6003,7 @@ describe('Pipeline debate favorites view', () => {
 
       test('check 8: the participant the carry names gives no answer: the step ends without that document, the next pass is not started, the notice says so', async () => {
         const { starts, cleanup } = await setup('T08 no carry', repeatSchema(repeatOf({ carry: { step: 'r1', participant: 'Claude', artifact: 'map' } }),
-          { models: ['GPT', 'Claude'], run: { onNoAnswer: 'skip' } }), { answer: (model, pass) => (model === 'Claude' ? '' : docAnswer(model, pass)) });
+          { models: ['GPT', 'Claude'] }), { skipNoAnswer: true, answer: (model, pass) => (model === 'Claude' ? '' : docAnswer(model, pass)) });
         try {
           await start();
           expect(passesOf(starts)).toHaveLength(1);

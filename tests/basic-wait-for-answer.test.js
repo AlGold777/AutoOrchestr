@@ -73,3 +73,16 @@ describe('Basic: waiting for the answer of an unfinished round', () => {
     expect(result.stopReason).toBe('stopped');
   });
 });
+
+describe('Basic page: «Настройки Basic» in ▶', () => {
+  const js = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
+  test('one setting for all pipelines in the extension storage; the run and the window take it', () => {
+    expect(js).toContain("const BASIC_SETTINGS_KEY = 'basicRunSettings';");
+    expect(js).toContain('Настройки Basic (общие для всех pipeline)');
+    expect(js).toContain("onNoAnswer: runSettings.skipNoAnswer ? 'skip' : 'ask',");
+    expect(js).toContain('decisionTimeoutMs: runSettings.waitMinutes * 60000,');
+    expect(js).toContain('!resumeRecord && runSettings.askTaskBrief &&');
+    expect(js).toContain('waitDefault: basicSettings.waitMinutes');
+    expect(js).toContain('${basicDescriptionBlock()}${basicSettingsBlock()}');
+  });
+});

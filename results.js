@@ -2761,6 +2761,8 @@ document.addEventListener('click', (event) => {
     }
 
     let pipelineRunActive = false;
+    // The minutes of the wait scale (the window of an unfinished round and «Настройки Basic»).
+    const CONFIRM_WAIT_MINUTES = [5, 10, 15, 20];
     // The engine of a run lives in this page: leaving, reloading or closing it ends the run, so the browser asks first.
     window.addEventListener('beforeunload', (event) => {
         if (!pipelineRunActive) return;
@@ -7048,17 +7050,50 @@ document.addEventListener('click', (event) => {
         // a participant's input, the specification text: spec and a step's title, goal, rules, quality) are kept from it on
         // Save and on Run; the control steps come from customControls.
         const basicSourceSchema = new Map();
-        // run.strictLength, run.stopMarks, run.onNoAnswer and run.repeat have no control in the ▶ window: the values the loaded schema holds go on with Save and with the run.
+        // run.strictLength, run.stopMarks and run.repeat have no control in the ▶ window: the values the loaded schema holds go on with Save and with the run.
         // A new run.* field goes here too, or Save and the run lose it.
         const basicKeptRunFields = () => {
             const source = basicSourceSchema.get(draftPlanStorageKey())?.run || {};
             return {
                 ...('strictLength' in source ? { strictLength: source.strictLength } : {}),
                 ...('stopMarks' in source ? { stopMarks: source.stopMarks } : {}),
-                ...('onNoAnswer' in source ? { onNoAnswer: source.onNoAnswer } : {}),
                 ...('repeat' in source ? { repeat: source.repeat } : {})
             };
         };
+        // The settings of Basic: one for all pipelines, kept in the extension storage, never in a schema (the ▶ block «Настройки Basic»).
+        const BASIC_SETTINGS_KEY = 'basicRunSettings';
+        const normalizeBasicSettings = (value) => ({
+            skipNoAnswer: value?.skipNoAnswer === true,
+            waitMinutes: CONFIRM_WAIT_MINUTES.includes(value?.waitMinutes) ? value.waitMinutes : 20,
+            askTaskBrief: value?.askTaskBrief !== false
+        });
+        let basicSettings = normalizeBasicSettings();
+        const loadBasicSettings = async () => {
+            try {
+                const stored = await chrome?.storage?.local?.get?.(BASIC_SETTINGS_KEY);
+                if (stored?.[BASIC_SETTINGS_KEY]) basicSettings = normalizeBasicSettings(stored[BASIC_SETTINGS_KEY]);
+            } catch (_) { /* the settings of the page stay */ }
+            return basicSettings;
+        };
+        const saveBasicSettings = (patch) => {
+            basicSettings = normalizeBasicSettings({ ...basicSettings, ...patch });
+            try { chrome?.storage?.local?.set?.({ [BASIC_SETTINGS_KEY]: basicSettings }); } catch (_) { /* kept for this page */ }
+        };
+        const basicSettingsBlock = () => `<div class="custom-card-marks basic-settings"><strong>Настройки Basic (общие для всех pipeline)</strong>
+            <label style="display:flex;gap:6px;align-items:center;margin:6px 0;"><input type="checkbox" data-basic-setting="skipNoAnswer"${basicSettings.skipNoAnswer ? ' checked' : ''}> Модель без ответа пропускать сразу, без окна</label>
+            <div class="basic-settings-wait" role="radiogroup" aria-label="Ждать без моего выбора" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0;"><span>Ждать без моего выбора:</span>${CONFIRM_WAIT_MINUTES.map((minutes) => `<label style="display:flex;gap:4px;align-items:center;"><input type="radio" name="basic-wait-minutes" data-basic-setting="waitMinutes" value="${minutes}"${basicSettings.waitMinutes === minutes ? ' checked' : ''}${basicSettings.skipNoAnswer ? ' disabled' : ''}>${minutes} мин</label>`).join('')}</div>
+            <label style="display:flex;gap:6px;align-items:center;margin:6px 0;"><input type="checkbox" data-basic-setting="askTaskBrief"${basicSettings.askTaskBrief ? ' checked' : ''}> Просить краткое описание длинной задачи перед запуском</label>
+            <div class="custom-card-note">Сохраняются сразу и действуют со следующего запуска. В схему не записываются.</div></div>`;
+        const bindBasicSettingsBlock = (root) => root.querySelectorAll('[data-basic-setting]').forEach((input) => input.addEventListener('change', () => {
+            const key = input.dataset.basicSetting;
+            saveBasicSettings({ [key]: key === 'waitMinutes' ? Number(input.value) : input.checked });
+            if (key === 'skipNoAnswer') root.querySelectorAll('[data-basic-setting="waitMinutes"]').forEach((radio) => { radio.disabled = input.checked; });
+        }));
+        void loadBasicSettings();
+        // The settings changed on another page of the extension are taken here at once.
+        chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+            if (area === 'local' && changes?.[BASIC_SETTINGS_KEY]) basicSettings = normalizeBasicSettings(changes[BASIC_SETTINGS_KEY].newValue);
+        });
         const basicRunForSave = () => {
             const explicit = basicRunExplicit.get(draftPlanStorageKey()) || {};
             const defaults = window.BasicSchema.DEFAULTS.run;
@@ -7292,7 +7327,8 @@ document.addEventListener('click', (event) => {
                 confirmText: canContinue ? 'Continue' : 'Skip member',
                 cancelText: 'Stop run',
                 retryText: choices.includes('retry') ? 'Repeat' : '',
-                waitText: choices.includes('wait') ? 'Wait' : ''
+                waitText: choices.includes('wait') ? 'Wait' : '',
+                waitDefault: basicSettings.waitMinutes
             });
             customDecisionOpen = false;
             if (answer === 'closed') return 'closed';
@@ -7617,7 +7653,8 @@ document.addEventListener('click', (event) => {
             // A long task goes to each chat once; the later requests of that chat carry the owner's short description instead.
             // It is asked before a new run only; a resumed run keeps the one of its record. Cancel = the run does not start.
             let taskBrief = String(resumeRecord?.taskBrief || '');
-            if (!resumeRecord && String(task || '').trim().length > (engine.TASK_FULL_MAX_CHARS || 1500)) {
+            const runSettings = basicSettings;
+            if (!resumeRecord && runSettings.askTaskBrief && String(task || '').trim().length > (engine.TASK_FULL_MAX_CHARS || 1500)) {
                 const answer = await showPrompt('Задача длинная: полностью она уйдёт в каждый чат один раз. Опишите её кратко (1–3 фразы) — это напоминание пойдёт в следующих запросах того же чата. Пусто — модели получат ссылку на первое сообщение чата.', lastTaskBrief.task === task ? lastTaskBrief.brief : '', { confirmText: 'Запустить' });
                 if (answer === null) return false;
                 taskBrief = String(answer).trim();
@@ -8276,8 +8313,9 @@ document.addEventListener('click', (event) => {
                     runStrictLength: built.run.strictLength,
                     // run.stopMarks: a mark at the start of a line of an accepted answer stops the run after its step.
                     stopMarks: built.run.stopMarks,
-                    // run.onNoAnswer: "skip" passes a step on without the question when some participants gave no answer.
-                    onNoAnswer: built.run.onNoAnswer,
+                    // «Настройки Basic»: skip a participant without an answer at once, or ask (and go on after the chosen time).
+                    onNoAnswer: runSettings.skipNoAnswer ? 'skip' : 'ask',
+                    decisionTimeoutMs: runSettings.waitMinutes * 60000,
                     // M-11: before a repeat the page is read again; the background takes the answer of the request's own turn (or says there is none).
                     reread: async (request) => {
                         const saved = chatBindings[request.participantId];
@@ -8787,6 +8825,7 @@ document.addEventListener('click', (event) => {
                 clearCustomSessionForTest: () => { customPipelineDefaults.clear(); customCardSettings.clear(); customRoundSettings.clear(); },
                 capturePipelineConfig,
                 installBasicSchema: (...args) => installBasicSchema(...args),
+                saveBasicSettings: (patch) => saveBasicSettings(patch),
                 basicRunNotice: (...args) => basicRunNotice(...args),
                 recordFromSchema: (...args) => recordFromSchema(...args),
                 describeSchemaErrors: (...args) => describeSchemaErrors(...args),
@@ -10581,7 +10620,7 @@ document.addEventListener('click', (event) => {
                     <div class="basic-input-files-slot"></div>
                 </div>`}
                 <div class="custom-card-body">
-                    ${pipelineDefaults ? `${basicTaskBlock()}${basicDescriptionBlock()}` : ''}
+                    ${pipelineDefaults ? `${basicTaskBlock()}${basicDescriptionBlock()}${basicSettingsBlock()}` : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -10614,6 +10653,7 @@ document.addEventListener('click', (event) => {
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
+            if (pipelineDefaults) bindBasicSettingsBlock(content);
             content.querySelectorAll('.custom-desc-toggle').forEach((toggle) => toggle.addEventListener('click', (event) => {
                 const box = event.currentTarget.closest('.custom-desc');
                 const full = box.classList.toggle('is-full');
@@ -26587,7 +26627,6 @@ if (smartCompareButton) {
         });
     }
 
-    const CONFIRM_WAIT_MINUTES = [5, 10, 15, 20];
     function showConfirm(message, options = {}) {
         return new Promise((resolve) => {
             if (confirmModal && confirmMessage) {
@@ -26619,7 +26658,7 @@ if (smartCompareButton) {
                     waitBox = document.createElement('span');
                     waitBox.className = 'confirm-wait';
                     waitBox.style.cssText = 'display:inline-flex;align-items:stretch;gap:10px;';
-                    const scale = CONFIRM_WAIT_MINUTES.map((minutes) => `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;"><input type="radio" name="confirm-wait-minutes" value="${minutes}"${minutes === 20 ? ' checked' : ''}>${minutes} мин</label>`).join('');
+                    const scale = CONFIRM_WAIT_MINUTES.map((minutes) => `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap;"><input type="radio" name="confirm-wait-minutes" value="${minutes}"${minutes === (CONFIRM_WAIT_MINUTES.includes(options.waitDefault) ? options.waitDefault : 20) ? ' checked' : ''}>${minutes} мин</label>`).join('');
                     waitBox.innerHTML = `<button type="button" id="wait-confirm" class="modal-button"></button><span class="confirm-wait-scale" role="radiogroup" aria-label="Сколько ждать" style="display:flex;flex-direction:column;gap:2px;font-size:13px;text-align:left;">${scale}</span>`;
                     waitBox.querySelector('#wait-confirm').textContent = waitText;
                     deleteConfirmBtn.parentElement.appendChild(waitBox);

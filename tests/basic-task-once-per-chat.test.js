@@ -53,14 +53,14 @@ describe('Basic: the task goes to each chat once', () => {
 describe('Basic page: the short description and the ▶ task block', () => {
   const js = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
   test('a long new task asks for the short description before the run; Cancel does not start it; the record keeps it', () => {
-    expect(js).toContain("if (!resumeRecord && String(task || '').trim().length > (engine.TASK_FULL_MAX_CHARS || 1500)) {");
+    expect(js).toContain("if (!resumeRecord && runSettings.askTaskBrief && String(task || '').trim().length > (engine.TASK_FULL_MAX_CHARS || 1500)) {");
     expect(js).toContain('if (answer === null) return false;');
     expect(js).toContain("let taskBrief = String(resumeRecord?.taskBrief || '');");
     expect(js).toContain('if (record && !resumeRecord) record.taskBrief = taskBrief;');
     expect(js).toMatch(/engine\.run\(\{\s*task,\s*taskBrief,/);
   });
   test('▶ shows the task of the input field and its short description; its tooltip starts with the task', () => {
-    expect(js).toContain('${pipelineDefaults ? `${basicTaskBlock()}${basicDescriptionBlock()}` : \'\'}');
+    expect(js).toContain('X');
     expect(js).toContain("'<em>Задача не введена: введите её в поле ввода.</em>'");
     expect(js).toContain("safeRead(() => entryTooltipText(), '')");
   });

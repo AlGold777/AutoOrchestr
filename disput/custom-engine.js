@@ -1578,7 +1578,7 @@
               if (canWait && (action === 'wait' || action?.action === 'wait')) {
                 const minutes = Number(action?.minutes) > 0 ? Number(action.minutes) : decisionTimeoutMs / 60000;
                 emit('custom_decision', { step: step.index, action: 'wait', minutes });
-                auto = await ownerWait(() => watchAnswers(step, failedModels, nextTry, Math.min(minutes * 60000, decisionTimeoutMs), null, found),
+                auto = await ownerWait(() => watchAnswers(step, failedModels, nextTry, Math.min(minutes * 60000, DECISION_TIMEOUT_MS), null, found),
                   { waitId: `${waitId}_w`, kind: 'decision', stepRef: step.ref, visit: entry.visit, outcomeOf: (end) => end });
                 action = auto === 'found' ? 'resume' : 'skip_participant';
               }

@@ -193,12 +193,13 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 ### Длинная задача: где код
 
 - `disput/custom-engine.js`: `TASK_FULL_MAX_CHARS` (1500), `taskReminderOf` (текст напоминания), `promptFor` — выбирает полную задачу или напоминание; параметр `run({ taskBrief })`. Решение принимается при сборке запроса: есть ли у участника чат этого прогона (`chatBindings`) и не открывает ли шаг новый чат (`chat: "new"`).
-- `results.js`: `runCustomFromPage` — окно «Задача длинная…» перед запуском; `lastTaskBrief` даёт предложить прежнее описание при повторном запуске. Описание пишется в `record.taskBrief`, продолжение берёт его из записи.
+- `results.js`: `runCustomFromPage` — окно «Задача длинная…» перед запуском (только если `askTaskBrief`); `lastTaskBrief` даёт предложить прежнее описание при повторном запуске. Описание пишется в `record.taskBrief`, продолжение берёт его из записи.
+- Настройки Basic (общие для всех pipeline): `results.js`, `BASIC_SETTINGS_KEY` (`basicRunSettings`, `chrome.storage.local`), `normalizeBasicSettings` (`skipNoAnswer`, `waitMinutes`, `askTaskBrief`), `loadBasicSettings`, `saveBasicSettings`, блок `basicSettingsBlock` и `bindBasicSettingsBlock` в окне ▶. `runCustomFromPage` берёт их в `runSettings` и передаёт движку `onNoAnswer` и `decisionTimeoutMs`. В схему не пишутся. Поле схемы `run.onNoAnswer` старое: `disput/basic-schema.js` (`resolveRun`) его не передаёт; опция движка `onNoAnswer` осталась и её задаёт страница.
 - Тесты: `tests/basic-task-once-per-chat.test.js`.
 
 ### Окно неполного раунда: где код
 
-- `disput/custom-engine.js`: `watchAnswers` (чтение страниц без ответа), `DECISION_TIMEOUT_MS` (20 минут), `WAIT_POLL_MS` (20 секунд), опции `run({ decisionTimeoutMs, waitPollMs })`, выбор `wait` в ветке решения.
+- `disput/custom-engine.js`: `watchAnswers` (чтение страниц без ответа), `DECISION_TIMEOUT_MS` (20 минут, значение по умолчанию; страница передаёт своё из «Ждать без моего выбора»), `WAIT_POLL_MS` (20 секунд), опции `run({ decisionTimeoutMs, waitPollMs })`, выбор `wait` в ветке решения. Кнопка «Wait» ограничена 20 минутами.
 - `results.js`: `askCustomDecision` (кнопки и текст окна), `showConfirm` (`waitText`, `signal`, шкала `CONFIRM_WAIT_MINUTES`).
 - Тесты: `tests/basic-wait-for-answer.test.js`.
 

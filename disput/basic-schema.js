@@ -9,7 +9,8 @@
 //   end: { from: [sources] } — what the End window shows at the end of a run (the form of a step input); none = the last round's answer. endSources() gives the list the run takes
 //   description: the presentation of the pipeline for the person who runs it (a long text); shown in the ▶ card, never read by the engine
 //   comment: the text the model wrote around the schema JSON (kept when the schema is pasted); shown under the description, never read by the engine
-//   run: { policy?: 'auto' | 'manual', maxWords?, strictLength?, stopMarks?, onNoAnswer?, repeat? } — the run policy, the shared answer limit, the strict length check, the stop marks, the step without all answers ('ask' | 'skip') and the repeat of the schema
+//   run: { policy?: 'auto' | 'manual', maxWords?, strictLength?, stopMarks?, repeat? } — the run policy, the shared answer limit, the strict length check, the stop marks and the repeat of the schema
+//     (run.onNoAnswer of older schemas is accepted and ignored: a step without all answers is a setting of Basic, not of a schema)
 //   defaults (the ▶ card): { roundTask?, discipline?, modelNotes?, roundPrompts? }
 //   spec: { purpose?, inputs?, result?, application?, readiness?, rules?, boundaries?, failure? } — the open pipeline's
 //     specification, text for the document only: the engine and the requests to models never read it (see SPEC_KEYS)
@@ -802,7 +803,6 @@
     maxWords: Number.isSafeInteger(schema.run?.maxWords) ? schema.run.maxWords : DEFAULTS.run.maxWords,
     strictLength: typeof schema.run?.strictLength === 'boolean' ? schema.run.strictLength : DEFAULTS.run.strictLength,
     stopMarks: Array.isArray(schema.run?.stopMarks) ? schema.run.stopMarks.slice() : [],
-    onNoAnswer: schema.run?.onNoAnswer === 'skip' ? 'skip' : 'ask',
     repeat: isObject(schema.run?.repeat) ? clone(schema.run.repeat) : null
   });
 
