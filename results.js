@@ -5260,6 +5260,25 @@ document.addEventListener('click', (event) => {
         const updateEntryTooltip = () => {
             try { setCanvasTooltip(pipelinePanel?.querySelector('#entryPoint'), '▶ Общие значения', entryTooltipText()); } catch (_) { /* the canvas is not built yet */ }
         };
+        // The tooltip of a model block: the task in short (the owner's short description, else the start of the task), then the
+        // block's request without the lines the run fills in ({задача}, {вход}) and the headings above them. Display only:
+        // the request sent to the model is not changed.
+        const FILLED_REQUEST_LINES = /(?:^[^\n]{0,60}:[ \t]*\n\s*)*^[ \t]*\{(?:задача|вход)\}[ \t]*(?:\n|$)/gm;
+        const modelTooltipText = (request) => {
+            const task = currentRunTask();
+            const short = taskBriefFor(task) || (task.length > 300 ? `${task.slice(0, 300)}…` : task);
+            const rest = String(request || '').replace(FILLED_REQUEST_LINES, '').replace(/\n{3,}/g, '\n\n').trim();
+            return [short || 'Задача не введена.', rest].filter(Boolean).join('\n\n');
+        };
+        const setModelTooltip = (block) => {
+            const name = String(block.dataset.model || block.querySelector('.model-name')?.textContent || '').trim();
+            setCanvasTooltip(block, name, modelTooltipText(block.dataset.cardRequest));
+        };
+        // The task is typed or its short description is given: the ▶ and model tooltips follow it.
+        const updateTaskTooltips = () => {
+            updateEntryTooltip();
+            try { pipelinePanel?.querySelectorAll('.model-block').forEach(setModelTooltip); } catch (_) { /* the canvas is not built yet */ }
+        };
         const setCanvasTooltip = (el, name, desc = '') => {
             const text = String(name || '').trim();
             if (!el || !text) return;
@@ -5310,7 +5329,8 @@ document.addEventListener('click', (event) => {
                 const round = block.closest('.stage-column')?.dataset.round;
                 const model = (stepOf(`r${round}`)?.models || []).find((item) => item.name === name);
                 // The request as the model's card shows it; the personal task while the request cannot be built.
-                setCanvasTooltip(block, name, safeRead(() => customBlockRequestText(block), '') || model?.task);
+                block.dataset.cardRequest = safeRead(() => customBlockRequestText(block), '') || model?.task || '';
+                setModelTooltip(block);
             });
             pipelinePanel.querySelectorAll('.model-input-checkbox').forEach((box) => setCanvasTooltip(box, 'Участие в раунде', 'Флажок включает модель в раунд; снятый — модель в раунд не входит (в схеме enabled: false).'));
             pipelinePanel.querySelectorAll('.pipeline-control-card').forEach((card) => {
@@ -7668,7 +7688,7 @@ document.addEventListener('click', (event) => {
                 taskBrief = String(answer).trim();
                 lastTaskBrief = { task, brief: taskBrief };
             }
-            updateEntryTooltip();
+            updateTaskTooltips();
             // The controller exists from here on: Stop while the input files are prepared aborts the run before its first request.
             const runAbort = new AbortController();
             customAbortController = runAbort;
@@ -11719,8 +11739,8 @@ document.addEventListener('click', (event) => {
             }
             selectPipeline(item, { clearDebateFeed: true });
         });
-        // The ▶ tooltip follows the task as it is typed.
-        document.getElementById('modTa')?.addEventListener('input', updateEntryTooltip);
+        // The ▶ and model tooltips follow the task as it is typed.
+        document.getElementById('modTa')?.addEventListener('input', updateTaskTooltips);
         // Dragging a schema in the list: it lands before or after the schema under the cursor (the upper or lower half);
         // dropped on a template, it goes right after it. Templates stay first (normalizePipelineOrder). The order is saved.
         const movePipelineInOrder = (order, moved, target, after) => {

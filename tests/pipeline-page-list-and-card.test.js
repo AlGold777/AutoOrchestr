@@ -53,10 +53,23 @@ describe('model card of the first round', () => {
 
 describe('model block tooltip', () => {
   test('подсказка блока — запрос из карточки: свой запрос или автоматическая сборка, та же, что в окне модели', () => {
-    expect(js).toContain('setCanvasTooltip(block, name, safeRead(() => customBlockRequestText(block), \'\') || model?.task);');
+    expect(js).toContain('block.dataset.cardRequest = safeRead(() => customBlockRequestText(block), \'\') || model?.task || \'\';');
+    expect(js).toContain('setCanvasTooltip(block, name, modelTooltipText(block.dataset.cardRequest));');
     const text = js.slice(js.indexOf('const customBlockRequestText'), js.indexOf('const customBlockRequestText') + 400);
     expect(text).toContain('promptTemplate');
     expect(text).toContain('customBlockRequestPreview(block)?.template');
     expect(js).toContain(': customBlockRequestPreview(block);');
+  });
+
+  test('в подсказке задача коротко и задание; строки {задача} и {вход} с их заголовками не показываются', () => {
+    const from = js.indexOf('const FILLED_REQUEST_LINES');
+    const source = js.slice(from, js.indexOf('const setModelTooltip', from));
+    // eslint-disable-next-line no-new-func
+    const build = (task, brief) => new Function('currentRunTask', 'taskBriefFor', `${source}; return modelTooltipText;`)(() => task, () => brief);
+    const request = 'Задача:\n{задача}\n\nОтветы выбранных источников:\n\nВход:\n{вход}\n\nЗадание:\nНапиши итог.\n\nФормат ответа:\nСписок.';
+    expect(build('Полная задача', 'Кратко о задаче')(request)).toBe('Кратко о задаче\n\nЗадание:\nНапиши итог.\n\nФормат ответа:\nСписок.');
+    expect(build('а'.repeat(400), '')('Задача:\n{задача}')).toBe(`${'а'.repeat(300)}…`);
+    expect(build('', '')('Ответы предыдущего шага:\n\nОтвет 1:\n{вход}\n\nЗадание:\nПроверь.')).toBe('Задача не введена.\n\nЗадание:\nПроверь.');
+    expect(build('Задача', '')('Ты — критик. Разбери {задача} по пунктам.')).toBe('Задача\n\nТы — критик. Разбери {задача} по пунктам.');
   });
 });
