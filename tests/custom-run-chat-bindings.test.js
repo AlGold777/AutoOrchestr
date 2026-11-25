@@ -136,7 +136,7 @@ describe('B01: Chat bindings preservation on stop/final snapshot (T07, 8.2)', ()
     // In checkpointRecord (line ~7026), chatBindings is explicitly preserved in state:
     expect(resultsSource).toContain('state: { ...state, chatBindings: { ...chatBindings } }');
     // On stop/finish (line ~7313), CustomRecord.setSnapshot must also preserve chatBindings:
-    const finishSnapshotSnippet = resultsSource.match(/CustomRecord\.setArtifacts\(record, result\.artifacts\);[\s\S]*?CustomRecord\.finishRun/)?.[0] || '';
+    const finishSnapshotSnippet = resultsSource.match(/CustomRecord\.setArtifacts\(record, [\s\S]*?CustomRecord\.finishRun/)?.[0] || '';
     expect(finishSnapshotSnippet).toContain('chatBindings');
   });
 
