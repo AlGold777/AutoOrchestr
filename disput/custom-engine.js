@@ -159,18 +159,23 @@
     return lines.length ? `Формат ответа:\n${lines.join('\n')}` : '';
   }
 
-  function buildPrompt({ task, step, model, input = [], inputMode = 'none', ownerAnswers = [], askInstruction = '', output = null }) {
+  // A long task goes to each chat of a participant once, in full; the next requests of that chat carry a reminder instead
+  // (the owner's short description, or a pointer to the first message). A task up to TASK_FULL_MAX_CHARS always goes in full.
+  const TASK_FULL_MAX_CHARS = 1500;
+  const taskReminderOf = (brief) => (text(brief) ? `Задача (кратко):\n${text(brief)}` : 'Задача — в первом сообщении этого чата.');
+
+  function buildPrompt({ task, step, model, input = [], inputMode = 'none', ownerAnswers = [], askInstruction = '', output = null, taskReminder = null }) {
     askInstruction = askOf(model, askInstruction);
     if (typeof model.promptTemplate === 'string' && model.promptTemplate.trim()) {
       // One pass: placeholders occurring inside model answers remain data, never instructions.
-      const values = { '{задача}': text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input) };
+      const values = { '{задача}': taskReminder ? taskReminder : text(task), '{вход}': inputMode === 'all' || inputMode === 'sources' ? labelled(input) : numbered(input) };
       const parts = [model.promptTemplate.replace(/\{задача\}|\{вход\}/g, (key) => values[key])];
       if (formatBlock(output)) parts.push(formatBlock(output));
       if (ownerAnswers.length) parts.push(`Ответы User на вопросы:\n${ownerAnswers.map((item) => `- ${item.question}: ${item.answer}`).join('\n')}`);
       if (askInstruction) parts.push(askInstruction);
       return parts.join('\n\n');
     }
-    const parts = [`Задача:\n${text(task)}`];
+    const parts = [taskReminder ? taskReminder : `Задача:\n${text(task)}`];
     if (input.length) {
       if (inputMode === 'sources') parts.push(`Ответы выбранных источников:\n\n${labelled(input)}`);
       else parts.push(inputMode === 'all'
@@ -456,7 +461,7 @@
   }
 
   async function run({
-    task, steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
+    task, taskBrief = '', steps = [], maxAttempts = DEFAULT_ATTEMPTS, semiAuto = false, maxPromptChars = Infinity,
     accept = defaultAccept, parseAsks = null, askOwner = null, askInstruction = '', decide = null,
     send = null, sendParticipants = null, reread = null, runMaxWords = null, runStrictLength = false, stopMarks = [], onNoAnswer = 'ask', putText: putCallback = null, getText: getCallback = null, provideOwnerResult = null, provideEnd = null, end = null,
     checkpoint = null, resolveUnknown = null, checkUnknown = null, resume = null, settleUnknown: optionsSettleUnknown = null,
@@ -738,8 +743,11 @@
       if (requestCheck.errors.length && model.requestInput !== 'lenient') {
         throw new EngineError('invalid_request', `шаг «${step.ref}» · модель «${model.name}»`, requestCheck.errors.join(' '));
       }
+      // The chat already holds the full task when the participant has a chat of this run and the step does not open a new one.
+      const chatHasTask = text(task).length > TASK_FULL_MAX_CHARS && Boolean(chatBindings[model.id]) && step.chat !== 'new';
       const prompt = buildPrompt({ task, step, model, input, inputMode: modeOf(spec),
-        ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model) });
+        ownerAnswers, askInstruction: semiAuto ? askInstruction : '', output: outputOf(step, model),
+        taskReminder: chatHasTask ? taskReminderOf(taskBrief) : null });
       if (prompt.length > maxPromptChars) throw new StopRun('context_full', overBudget(step, model, prompt.length));
       return { prompt, parts: partsFor(step, model, input, spec) };
     }
@@ -1638,7 +1646,7 @@
       instructions: { task: text(task), stepTask: model.task ?? step.task, extra: model.extra || '', askInstruction: askOf(model, semiAuto ? askInstruction : '') } };
   }
 
-  const api = Object.freeze({ EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, findStopMark, run });
+  const api = Object.freeze({ TASK_FULL_MAX_CHARS, taskReminderOf, EngineError, unexecutedOf, formatBlock, DEFAULT_ATTEMPTS, CORRECTION_TEMPLATE, STOP_TEXT, REASON_TEXT, resolveSetting, requestDiagnostics, PLACEHOLDER, TRANSPORT_LINES, buildPrompt, correctionPrompt, normalizeSteps, previewPrompt, findStopMark, run });
   root.CustomEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -5236,6 +5236,20 @@ document.addEventListener('click', (event) => {
 
         // Tooltips of the canvas: a name for each element and, where the schema has one, a description (ResultsTooltips shows both).
         // The elements are drawn again on each update, so each one is set and registered here (registration is idempotent).
+        // The short description the owner gave for a long task (kept while the task is the same, so a second start offers it).
+        let lastTaskBrief = { task: '', brief: '' };
+        const currentRunTask = () => String(getModeratorDispatchText() || '').trim();
+        const taskBriefFor = (task) => (lastTaskBrief.task === task ? lastTaskBrief.brief : '');
+        // ▶ tooltip: the start of the task in the input field, then the presentation of the schema.
+        const entryTooltipText = () => {
+            const task = currentRunTask();
+            const brief = taskBriefFor(task);
+            return [task ? `Задача: ${task.length > 300 ? `${task.slice(0, 300)}…` : task}` : 'Задача не введена.',
+                brief ? `Кратко: ${brief}` : '', basicDescription()].filter(Boolean).join('\n\n');
+        };
+        const updateEntryTooltip = () => {
+            try { setCanvasTooltip(pipelinePanel?.querySelector('#entryPoint'), '▶ Общие значения', entryTooltipText()); } catch (_) { /* the canvas is not built yet */ }
+        };
         const setCanvasTooltip = (el, name, desc = '') => {
             const text = String(name || '').trim();
             if (!el || !text) return;
@@ -5275,7 +5289,7 @@ document.addEventListener('click', (event) => {
             pipelinePanel.querySelectorAll('.entry-badge').forEach((badge) => setCanvasTooltip(badge, 'In'));
             // A failing text read must not cut the rest of the sync: the tooltip is left empty instead.
             const safeRead = (read, fallback) => { try { return read() ?? fallback; } catch (_) { return fallback; } };
-            setCanvasTooltip(pipelinePanel.querySelector('#entryPoint'), '▶ Общие значения', safeRead(() => basicDescription(), ''));
+            setCanvasTooltip(pipelinePanel.querySelector('#entryPoint'), '▶ Общие значения', safeRead(() => entryTooltipText(), ''));
             pipelinePanel.querySelectorAll('.stage-column[data-round] .round-badge').forEach((badge) => {
                 const round = badge.closest('.stage-column')?.dataset.round;
                 const step = stepOf(`r${round}`);
@@ -7586,6 +7600,16 @@ document.addEventListener('click', (event) => {
                 showNotification('Basic: не загружены модули приёма ответов (DebateResponseAcceptance, DebateStageMarkers). Перезагрузите страницу.', 'error');
                 return false;
             }
+            // A long task goes to each chat once; the later requests of that chat carry the owner's short description instead.
+            // It is asked before a new run only; a resumed run keeps the one of its record. Cancel = the run does not start.
+            let taskBrief = String(resumeRecord?.taskBrief || '');
+            if (!resumeRecord && String(task || '').trim().length > (engine.TASK_FULL_MAX_CHARS || 1500)) {
+                const answer = await showPrompt('Задача длинная: полностью она уйдёт в каждый чат один раз. Опишите её кратко (1–3 фразы) — это напоминание пойдёт в следующих запросах того же чата. Пусто — модели получат ссылку на первое сообщение чата.', lastTaskBrief.task === task ? lastTaskBrief.brief : '', { confirmText: 'Запустить' });
+                if (answer === null) return false;
+                taskBrief = String(answer).trim();
+                lastTaskBrief = { task, brief: taskBrief };
+            }
+            updateEntryTooltip();
             // The controller exists from here on: Stop while the input files are prepared aborts the run before its first request.
             const runAbort = new AbortController();
             customAbortController = runAbort;
@@ -7685,6 +7709,7 @@ document.addEventListener('click', (event) => {
             // The text of the composer before the run took it: it comes back if the run produces nothing.
             let composerBackup = '';
             const record = resumeRecord || window.CustomRunRecord?.createRun?.({ runId: runContext.pipelineRunId, pipelineName: customPipelineName(), task, steps }) || null;
+            if (record && !resumeRecord) record.taskBrief = taskBrief;
             if (record) {
                 record.finishedAt = null;
                 record.stopReason = '';
@@ -8226,6 +8251,7 @@ document.addEventListener('click', (event) => {
                 const budgetLimits = window.DebateContextBudget?.DEFAULT_LIMITS;
                 const result = await engine.run({
                     task,
+                    taskBrief,
                     steps,
                     semiAuto,
                     signal,
@@ -10467,6 +10493,13 @@ document.addEventListener('click', (event) => {
         const basicDescription = () => String(basicSourceSchema.get(draftPlanStorageKey())?.description || '').trim();
         // The model's comment (the text around the pasted schema) follows the description in the same block.
         const basicComment = () => String(basicSourceSchema.get(draftPlanStorageKey())?.comment || '').trim();
+        // ▶ «Задача»: the text of the input field as the run will send it, and the owner's short description of a long task.
+        const basicTaskBlock = () => {
+            const task = currentRunTask();
+            const brief = taskBriefFor(task);
+            return `<div class="custom-desc custom-task"><div class="custom-desc-head"><strong>Задача</strong><button type="button" class="custom-desc-toggle" aria-expanded="false" title="Развернуть на весь экран">⤢</button></div>
+            <div class="custom-desc-text">${task ? escapeHtml(task) : '<em>Задача не введена: введите её в поле ввода.</em>'}${brief ? `\n\nКратко:\n${escapeHtml(brief)}` : ''}</div></div>`;
+        };
         const basicDescriptionBlock = () => `<div class="custom-desc"><div class="custom-desc-head"><strong>Description</strong><button type="button" class="custom-desc-toggle" aria-expanded="false" title="Развернуть на весь экран">⤢</button></div>
             <div class="custom-desc-text">${basicDescription() ? escapeHtml(basicDescription()) : '<em>Описание не задано.</em>'}${basicComment() ? `\n\nКомментарий модели:\n${escapeHtml(basicComment())}` : ''}</div></div>`;
         const renderCustomBlockInspector = async (block, modal, { pipelineDefaults = false } = {}) => {
@@ -10534,7 +10567,7 @@ document.addEventListener('click', (event) => {
                     <div class="basic-input-files-slot"></div>
                 </div>`}
                 <div class="custom-card-body">
-                    ${pipelineDefaults ? basicDescriptionBlock() : ''}
+                    ${pipelineDefaults ? `${basicTaskBlock()}${basicDescriptionBlock()}` : ''}
                     ${pipelineDefaults ? '<p class="custom-card-note">Общие значения для всех шагов. Своё значение модели имеет приоритет; пустое поле наследует значение из кода.</p>' : `<div class="custom-card-field">
                         <div class="custom-card-head"><label for="custom-card-request">Запрос</label><span><code>{задача}</code> и <code>{вход}</code> подставляются при запуске. Изменённый текст используется только для этой модели в этом шаге.</span><span class="custom-card-actions">${copyButton('custom-card-request', 'Запрос')}</span></div>
                         <textarea id="custom-card-request" spellcheck="false"></textarea>
@@ -10567,13 +10600,13 @@ document.addEventListener('click', (event) => {
                     </div>` : ''}
                     ${pipelineDefaults ? '' : `<span id="custom-card-length-note" class="custom-card-sr-only">Пусто — общий предел pipeline (${general}).</span>`}
                 </div>`;
-            content.querySelector('.custom-desc-toggle')?.addEventListener('click', (event) => {
+            content.querySelectorAll('.custom-desc-toggle').forEach((toggle) => toggle.addEventListener('click', (event) => {
                 const box = event.currentTarget.closest('.custom-desc');
                 const full = box.classList.toggle('is-full');
                 event.currentTarget.setAttribute('aria-expanded', String(full));
                 event.currentTarget.textContent = full ? '✕' : '⤢';
                 event.currentTarget.title = full ? 'Свернуть' : 'Развернуть на весь экран';
-            });
+            }));
             const request = content.querySelector('#custom-card-request');
             const length = content.querySelector('#custom-card-length');
             const inputFilesSlot = content.querySelector('.basic-input-files-slot');
@@ -11625,6 +11658,8 @@ document.addEventListener('click', (event) => {
             }
             selectPipeline(item, { clearDebateFeed: true });
         });
+        // The ▶ tooltip follows the task as it is typed.
+        document.getElementById('modTa')?.addEventListener('input', updateEntryTooltip);
         // Dragging a schema in the list: it lands before or after the schema under the cursor (the upper or lower half);
         // dropped on a template, it goes right after it. Templates stay first (normalizePipelineOrder). The order is saved.
         const movePipelineInOrder = (order, moved, target, after) => {

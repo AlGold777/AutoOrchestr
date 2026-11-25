@@ -186,6 +186,12 @@ GPT подготавливает запрос через `ContentUtils.ensurePro
 - Встроенная схема `user_doc` (`disput/pipeline-presets.js`): явный `end`, ревизия 3.
 - Тесты: `tests/basic-end-schema.test.js` (проверка и `endSources`), `tests/basic-end-engine.test.js` (движок, ожидание, resume, остановка в середине шага), `tests/basic-end-page.test.js` (окно и колонка End на холсте), `tests/basic-end-store-migration.test.js` (миграция v10). Хелпер окна: `tests/helpers/end-window.js`.
 
+### Длинная задача: где код
+
+- `disput/custom-engine.js`: `TASK_FULL_MAX_CHARS` (1500), `taskReminderOf` (текст напоминания), `promptFor` — выбирает полную задачу или напоминание; параметр `run({ taskBrief })`. Решение принимается при сборке запроса: есть ли у участника чат этого прогона (`chatBindings`) и не открывает ли шаг новый чат (`chat: "new"`).
+- `results.js`: `runCustomFromPage` — окно «Задача длинная…» перед запуском; `lastTaskBrief` даёт предложить прежнее описание при повторном запуске. Описание пишется в `record.taskBrief`, продолжение берёт его из записи.
+- Тесты: `tests/basic-task-once-per-chat.test.js`.
+
 ## 2. Правила схемы и решения
 
 ### Наложение схемы на Basic

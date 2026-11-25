@@ -66,7 +66,7 @@ describe('Basic card feed cover deck', () => {
 describe('Basic canvas tooltips', () => {
   test('a failing description read does not cut the tooltip sync', () => {
     expect(results).toMatch(/const safeRead = \(read, fallback\) => \{ try \{ return read\(\) \?\? fallback; \} catch/);
-    expect(results).toMatch(/safeRead\(\(\) => basicDescription\(\), ''\)/);
+    expect(results).toMatch(/safeRead\(\(\) => entryTooltipText\(\), ''\)/);
     expect(results).toMatch(/safeRead\(\(\) => getCustomControls\(\)\.map/);
   });
 });
