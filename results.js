@@ -7079,7 +7079,7 @@ document.addEventListener('click', (event) => {
             basicSettings = normalizeBasicSettings({ ...basicSettings, ...patch });
             try { chrome?.storage?.local?.set?.({ [BASIC_SETTINGS_KEY]: basicSettings }); } catch (_) { /* kept for this page */ }
         };
-        const basicSettingsBlock = () => `<div class="custom-card-marks basic-settings"><strong>Настройки Basic (общие для всех pipeline)</strong>
+        const basicSettingsBlock = () => `<div class="custom-card-marks basic-settings" style="display:flex;flex-direction:column;align-items:flex-start;"><strong>Настройки Basic (общие для всех pipeline)</strong>
             <label style="display:flex;gap:6px;align-items:center;margin:6px 0;"><input type="checkbox" data-basic-setting="skipNoAnswer"${basicSettings.skipNoAnswer ? ' checked' : ''}> Модель без ответа пропускать сразу, без окна</label>
             <div class="basic-settings-wait" role="radiogroup" aria-label="Ждать без моего выбора" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0;"><span>Ждать без моего выбора:</span>${CONFIRM_WAIT_MINUTES.map((minutes) => `<label style="display:flex;gap:4px;align-items:center;"><input type="radio" name="basic-wait-minutes" data-basic-setting="waitMinutes" value="${minutes}"${basicSettings.waitMinutes === minutes ? ' checked' : ''}${basicSettings.skipNoAnswer ? ' disabled' : ''}>${minutes} мин</label>`).join('')}</div>
             <label style="display:flex;gap:6px;align-items:center;margin:6px 0;"><input type="checkbox" data-basic-setting="askTaskBrief"${basicSettings.askTaskBrief ? ' checked' : ''}> Просить краткое описание длинной задачи перед запуском</label>
