@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Архитектуры многоагентных систем — брошюра</title>
+  <style>
+    :root {
+      --ink: #17212b;
+      --muted: #647383;
+      --paper: #f4f6f7;
+      --card: #fff;
+      --line: #d9e0e5;
+      --blue: #dcecff;
+      --blue-ink: #174778;
+      --teal: #d9f2ec;
+      --teal-ink: #145849;
+      --amber: #fff0ce;
+      --amber-ink: #765214;
+      --violet: #eee5ff;
+      --violet-ink: #503681;
+      --rose: #ffe4e1;
+      --rose-ink: #813d39;
+      --shadow: 0 18px 48px rgba(29, 47, 63, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.58 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: #1765a4; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    a:hover { color: #0e4778; }
+    .cover {
+      min-height: 420px;
+      padding: 68px 24px 58px;
+      color: #f5f8fb;
+      background: radial-gradient(circle at 83% 18%, #4679a7 0, transparent 28%), linear-gradient(128deg, #102131, #1b3e57 67%, #28586a);
+    }
+    .cover-inner, main, footer { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
+    .eyebrow { color: #a8c8df; font-size: .76rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { max-width: 760px; margin: 18px 0 14px; font-size: clamp(2.35rem, 6vw, 4.5rem); line-height: 1.02; letter-spacing: -.045em; }
+    .cover p { max-width: 700px; margin: 0; color: #d3e1ea; font-size: 1.13rem; }
+    .cover-meta { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 30px; }
+    .pill { padding: 6px 11px; border: 1px solid rgba(220,238,250,.3); border-radius: 99px; color: #e1edf4; font-size: .83rem; }
+    main { padding: 34px 0 72px; }
+    .intro, .section, .scheme, .matrix-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
+    .intro { padding: 26px 30px; margin-bottom: 26px; }
+    .intro h2, .section h2 { margin: 0 0 10px; font-size: 1.45rem; letter-spacing: -.02em; }
+    .intro p { margin: 0; color: var(--muted); }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 34px; }
+    nav a { padding: 7px 11px; border: 1px solid var(--line); border-radius: 99px; background: #fff; color: #355066; font-size: .85rem; text-decoration: none; }
+    .section { padding: 28px; margin: 26px 0; }
+    .section-kicker { margin-bottom: 5px; color: #557189; font-size: .76rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    .section-lead { max-width: 780px; margin: 0; color: var(--muted); }
+    .scheme { padding: 22px; margin: 20px 0; box-shadow: none; scroll-margin-top: 18px; }
+    .scheme-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    .scheme h3 { margin: 0; font-size: 1.2rem; line-height: 1.25; }
+    .tag { flex: 0 0 auto; padding: 5px 9px; border-radius: 99px; background: #edf2f5; color: #4a6071; font-size: .72rem; font-weight: 750; }
+    .scheme p { margin: 8px 0 0; color: var(--muted); }
+    .principle { padding-left: 13px; border-left: 3px solid #84aac3; color: #445a6b !important; }
+    .diagram { margin: 20px 0 14px; padding: 20px; border-radius: 14px; background: #f6f9fb; border: 1px solid #e5ebef; }
+    .flow { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: 8px; }
+    .node {
+      display: grid; place-items: center; min-width: 132px; max-width: 205px; min-height: 60px;
+      padding: 10px 13px; border: 1px solid #b7cbd9; border-radius: 12px; background: var(--blue); color: var(--blue-ink);
+      font-size: .9rem; font-weight: 760; text-align: center;
+    }
+    .node small { display: block; margin-top: 3px; color: inherit; font-size: .74rem; font-weight: 500; opacity: .82; }
+    .node.teal { background: var(--teal); border-color: #a7d5ca; color: var(--teal-ink); }
+    .node.amber { background: var(--amber); border-color: #ead49f; color: var(--amber-ink); }
+    .node.violet { background: var(--violet); border-color: #c9b8ef; color: var(--violet-ink); }
+    .node.rose { background: var(--rose); border-color: #edbfba; color: var(--rose-ink); }
+    .arrow { display: grid; place-items: center; min-width: 24px; color: #8095a4; font-size: 1.35rem; font-weight: 500; }
+    .stack { display: grid; gap: 8px; }
+    .diagram-note { margin: 13px 0 0 !important; color: #6c7f8c !important; font-size: .84rem; text-align: center; }
+    .sources { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; font-size: .86rem; }
+    .sources a { padding: 5px 9px; border-radius: 8px; background: #edf5fa; text-decoration: none; }
+    .quote { margin: 14px 0 0; padding: 12px 15px; border-left: 3px solid #d4b76b; background: #fffaf0; color: #645436; font-size: .91rem; }
+    .matrix-wrap { overflow: hidden; margin: 22px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #f4f8fa; color: #536778; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    .roles { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-top: 16px; }
+    .role { padding: 13px; border-radius: 12px; background: #f5f8fa; border: 1px solid #e4ebef; }
+    .role b { display: block; margin-bottom: 4px; color: #31546d; }
+    .role span { color: #687b88; font-size: .85rem; }
+    .footnote { color: #647383; font-size: .9rem; }
+    footer { padding: 20px 0 42px; color: #778692; font-size: .82rem; }
+    @media (max-width: 720px) {
+      .cover { min-height: auto; padding: 48px 20px; }
+      .cover-inner, main, footer { width: min(100% - 28px, 1080px); }
+      .intro, .section { padding: 20px; border-radius: 15px; }
+      .scheme { padding: 17px; }
+      .scheme-head { display: block; }
+      .tag { display: inline-block; margin-top: 10px; }
+      .diagram { padding: 14px 10px; }
+      .flow { flex-direction: column; align-items: center; }
+      .node { width: min(100%, 310px); max-width: 310px; }
+      .arrow { transform: rotate(90deg); height: 20px; }
+      .roles { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .matrix-wrap { overflow-x: auto; }
+      table { min-width: 620px; }
+    }
+    @media print {
+      :root { --paper: #fff; }
+      body { background: #fff; font-size: 11pt; }
+      .cover { min-height: 0; padding: 36px 30px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .cover-inner, main, footer { width: 100%; }
+      main { padding: 18px 0; }
+      nav { display: none; }
+      .intro, .section, .scheme, .matrix-wrap { box-shadow: none; break-inside: avoid; }
+      .section { break-before: page; }
+      .scheme { break-inside: avoid; }
+      .diagram, .node, .quote, th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <header class="cover">
+    <div class="cover-inner">
+      <div class="eyebrow">Сводка переписки · архитектура агентов</div>
+      <h1>Многоагентные системы: семь архитектур и одна ролевая схема</h1>
+      <p>Собранные из чата варианты исследовательских и инженерных систем. Каждая схема показана отдельно, с исходным принципом, характером связей и ссылками, которые были приведены в ответах.</p>
+      <div class="cover-meta"><span class="pill">4 исследовательские архитектуры</span><span class="pill">3 инженерные системы</span><span class="pill">1 функциональная ролевая схема</span></div>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <h2>Как читать эту брошюру</h2>
+      <p>В переписке часть диаграмм была обозначена моделью как концептуальные реконструкции публикаций, а не как точные внутренние схемы систем. Ниже такие места явно помечены. Потоки на рисунках передают описанный в ответах принцип работы; они не утверждают, что все реализации используют именно эти технические блоки.</p>
+    </section>
+    <nav aria-label="Содержание">
+      <a href="#research">Исследовательские системы</a>
+      <a href="#engineering">Инженерные системы</a>
+      <a href="#roles">Функциональные роли</a>
+      <a href="#other">Другие упоминания</a>
+    </nav>
+
+    <section class="section" id="research">
+      <div class="section-kicker">Часть I</div>
+      <h2>Исследовательские архитектуры</h2>
+      <p class="section-lead">Четыре отдельные схемы из ответа модели: итеративный поиск, эволюция гипотез, междисциплинарная лаборатория и иерархический параллельный поиск.</p>
+
+      <article class="scheme" id="cogentic">
+        <div class="scheme-head"><h3>1. Google Research — Cogentic</h3><span class="tag">Итеративная</span></div>
+        <p class="principle"><b>Принцип из ответа:</b> поиск идёт циклами, проверенные промежуточные результаты накапливаются, а стратегия адаптируется по ходу работы.</p>
+        <div class="diagram" role="img" aria-label="Схема Cogentic: задача поступает в управляющий цикл поиска, агенты исследуют направления, проверенные результаты сохраняются, стратегия обновляется">
+          <div class="flow"><div class="node">Исследовательская задача</div><div class="arrow">→</div><div class="node violet">Контроллер поиска<small>выбирает следующее направление</small></div></div>
+          <div class="flow" style="margin-top:9px"><div class="node teal">Агент поиска A</div><div class="node teal">Агент поиска B</div><div class="node teal">Агент поиска N</div></div>
+          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div></div>
+          <div class="flow"><div class="node amber">Проверка свидетельств</div><div class="arrow">→</div><div class="node">Хранилище проверенных результатов</div><div class="arrow">→</div><div class="node violet">Обновление стратегии ↺</div></div>
+          <p class="diagram-note">Цикл возвращает накопленные результаты в контроллер следующего шага.</p>
+        </div>
+        <p>В том же ответе модель выделила особенность системы так: развивается не только найденное решение, но и сам процесс поиска.</p>
+        <div class="sources"><a href="https://arxiv.org/abs/2609.40324">Первоисточник Cogentic · arXiv</a></div>
+      </article>
+
+      <article class="scheme" id="co-scientist">
+        <div class="scheme-head"><h3>2. Google — AI Co-Scientist</h3><span class="tag">Эволюционная</span></div>
+        <p class="principle"><b>Принцип из ответа:</b> гипотезы конкурируют, комбинируются и улучшаются на протяжении нескольких поколений, при этом сохраняется разнообразие идей.</p>
+        <div class="diagram" role="img" aria-label="Схема AI Co-Scientist: идеи генерируются, проходят конкурентную оценку, комбинируются и уточняются итерациями">
+          <div class="flow"><div class="node">Научный вопрос</div><div class="arrow">→</div><div class="node teal">Поколение гипотез</div><div class="arrow">→</div><div class="node amber">Конкурентная оценка</div></div>
+          <div class="flow" style="margin-top:9px"><div class="node violet">Отбор сильных идей</div><div class="arrow">→</div><div class="node">Комбинация и критика</div><div class="arrow">→</div><div class="node teal">Следующее поколение ↺</div></div>
+          <p class="diagram-note">Несколько циклов уточнения → лучшие гипотезы для исследователя.</p>
+        </div>
+        <div class="sources"><a href="https://research.google/blog/accelerating-scientific-breakthroughs-with-an-ai-co-scientist/">Google Research · AI Co-Scientist</a></div>
+      </article>
+
+      <article class="scheme" id="virtual-lab">
+        <div class="scheme-head"><h3>3. Stanford — Virtual Lab</h3><span class="tag">Коллегиальная</span></div>
+        <p class="principle"><b>Принцип из ответа:</b> агенты моделируют междисциплинарный исследовательский коллектив; состав и специализация команды зависят от задачи.</p>
+        <div class="diagram" role="img" aria-label="Схема Virtual Lab: собирается междисциплинарная команда агентов, которая обсуждает задачу, критикует гипотезы и интегрирует результат">
+          <div class="flow"><div class="node">Задача исследования</div><div class="arrow">→</div><div class="node violet">Подбор состава лаборатории</div></div>
+          <div class="flow" style="margin-top:9px"><div class="node teal">Специалист A</div><div class="node teal">Специалист B</div><div class="node teal">Специалист C</div><div class="node teal">Критик / рецензент</div></div>
+          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div></div>
+          <div class="flow"><div class="node amber">Междисциплинарное обсуждение</div><div class="arrow">→</div><div class="node">Интегрированный план и результат</div></div>
+        </div>
+        <div class="sources"><a href="https://www.nature.com/articles/s41586-025-09442-9">Nature · Virtual Lab</a><a href="https://github.com/zou-group/virtual-lab">Исходный код</a></div>
+      </article>
+
+      <article class="scheme" id="anthropic">
+        <div class="scheme-head"><h3>4. Anthropic — Multi-Agent Research</h3><span class="tag">Иерархическая</span></div>
+        <p class="principle"><b>Принцип из ответа:</b> ведущий агент разбивает тему на направления и управляет независимыми параллельными исследованиями.</p>
+        <div class="diagram" role="img" aria-label="Схема Anthropic Multi-Agent Research: ведущий агент декомпозирует вопрос, параллельные агенты ищут, затем ведущий объединяет результаты и решает, нужны ли итерации">
+          <div class="flow"><div class="node">Сложный вопрос</div><div class="arrow">→</div><div class="node violet">Ведущий агент<small>декомпозиция и план</small></div></div>
+          <div class="flow" style="margin-top:9px"><div class="node teal">Исследователь 1</div><div class="node teal">Исследователь 2</div><div class="node teal">Исследователь N</div></div>
+          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div></div>
+          <div class="flow"><div class="node amber">Синтез находок</div><div class="arrow">→</div><div class="node">Отчёт</div></div>
+          <p class="diagram-note">Ведущий меняет количество исполнителей, направления и число итераций по мере необходимости.</p>
+        </div>
+        <div class="sources"><a href="https://www.anthropic.com/research/multi-agent-research-system">Anthropic Engineering · Multi-Agent Research</a></div>
+      </article>
+
+      <div class="matrix-wrap">
+        <table>
+          <thead><tr><th>Система</th><th>Топология</th><th>Как развивается результат</th></tr></thead>
+          <tbody>
+            <tr><td>Cogentic</td><td>Итеративная</td><td>Накопление проверенных знаний и адаптация поиска</td></tr>
+            <tr><td>AI Co-Scientist</td><td>Эволюционная</td><td>Конкуренция и развитие гипотез</td></tr>
+            <tr><td>Virtual Lab</td><td>Коллегиальная</td><td>Междисциплинарное обсуждение</td></tr>
+            <tr><td>Anthropic Research</td><td>Иерархическая</td><td>Декомпозиция и параллельный поиск</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footnote">В исходном ответе все четыре диаграммы названы функциональными реконструкциями на основании публикаций; технические детали реализации намеренно опущены.</p>
+    </section>
+
+    <section class="section" id="engineering">
+      <div class="section-kicker">Часть II</div>
+      <h2>Инженерные системы и авторские harness</h2>
+      <p class="section-lead">В переписке обсуждались реальные открытые системы. Модель отдельно подчеркнула: здесь доступны исходный код, промпты и логика взаимодействия, а приведённые ниже схемы — упрощённые концептуальные представления.</p>
+
+      <article class="scheme" id="gastown">
+        <div class="scheme-head"><h3>5. Стив Йегге — Gas Town</h3><span class="tag">Параллельная иерархия</span></div>
+        <p class="principle"><b>Топология из ответа:</b> иерархическая многоагентная система с параллельным исполнением и независимым контуром надзора. Есть управляющие роли, исполнители, наблюдатели, восстановление и интеграция результатов.</p>
+        <div class="diagram" role="img" aria-label="Схема Gas Town: управляющий слой раздаёт задачи параллельным исполнителям, интегратор собирает результаты, независимый надзор контролирует систему и восстановление">
+          <div class="flow"><div class="node">Цель / задача</div><div class="arrow">→</div><div class="node violet">Управляющий агент</div></div>
+          <div class="flow" style="margin-top:9px"><div class="node teal">Исполнитель A</div><div class="node teal">Исполнитель B</div><div class="node teal">Исполнитель N</div></div>
+          <div class="flow" style="margin-top:9px"><div class="arrow">↓</div><span class="arrow" aria-hidden="true">&nbsp;</span><div class="arrow">↓</div></div>
+          <div class="flow"><div class="node">Интеграция результатов</div><div class="arrow">→</div><div class="node amber">Независимый надзор<small>наблюдение · восстановление</small></div></div>
+          <p class="diagram-note">Надзорный контур следит за работоспособностью самой многоагентной системы.</p>
+        </div>
+        <div class="sources"><a href="https://yegge.ai/essays/welcome-to-gas-town/">Стив Йегге · Welcome to Gas Town</a><a href="https://github.com/steveyegge/gastown">Исходный код</a></div>
+      </article>
+
+      <article class="scheme" id="superpowers">
+        <div class="scheme-head"><h3>6. Джесси Винсент — Superpowers</h3><span class="tag">Последовательная проверка</span></div>
+        <p class="principle"><b>Топология из ответа:</b> последовательное выполнение задач с двухступенчатой проверкой и возвратом на доработку. Для каждой задачи у исполнителя изолированный контекст.</p>
+        <div class="diagram" role="img" aria-label="Схема Superpowers: постановка и планирование задачи, реализация в изолированном контексте, две независимые проверки, при замечаниях возврат к реализации">
+          <div class="flow"><div class="node">Задача</div><div class="arrow">→</div><div class="node violet">План и декомпозиция</div><div class="arrow">→</div><div class="node teal">Исполнитель<small>изолированный контекст</small></div></div>
+          <div class="flow" style="margin-top:9px"><div class="node amber">Проверка требований</div><div class="arrow">→</div><div class="node amber">Проверка качества</div><div class="arrow">→</div><div class="node">Готово</div></div>
+          <p class="diagram-note">Замечания с любого этапа проверки возвращают задачу исполнителю на доработку ↺.</p>
+        </div>
+        <div class="sources"><a href="https://github.com/obra/superpowers">Superpowers · исходный код и инструкции</a></div>
+      </article>
+
+      <article class="scheme" id="agent-lab">
+        <div class="scheme-head"><h3>7. Самуэль Шмидгалл — Agent Laboratory</h3><span class="tag">Научный цикл</span></div>
+        <p class="principle"><b>Топология из ответа:</b> виртуальная научная лаборатория с последовательными исследовательскими стадиями и итеративными экспериментами.</p>
+        <div class="diagram" role="img" aria-label="Схема Agent Laboratory: поиск литературы, гипотеза, план эксперимента, реальное выполнение вычислений, анализ результатов и научный текст">
+          <div class="flow"><div class="node">Поиск литературы</div><div class="arrow">→</div><div class="node teal">Гипотеза</div><div class="arrow">→</div><div class="node violet">Дизайн эксперимента</div></div>
+          <div class="flow" style="margin-top:9px"><div class="node amber">Запуск вычислений / эксперимента</div><div class="arrow">→</div><div class="node">Анализ результатов</div><div class="arrow">→</div><div class="node teal">Научный отчёт</div></div>
+          <p class="diagram-note">Результаты эксперимента возвращаются в уточнение гипотезы и следующий цикл.</p>
+        </div>
+        <p>Модель противопоставила эту систему простому обмену текстовыми выводами: в цикле есть вычислительные эксперименты и оценка их результатов.</p>
+        <div class="sources"><a href="https://agentlaboratory.github.io/">Agent Laboratory · публикация и проект</a></div>
+      </article>
+
+      <div class="quote">«Первые две системы ориентированы преимущественно на разработку ПО, а третья — непосредственно на научные исследования» — пояснение модели в чате.</div>
+    </section>
+
+    <section class="section" id="roles">
+      <div class="section-kicker">Часть III</div>
+      <h2>Функциональная ролевая схема</h2>
+      <p class="section-lead">Ранее в чате была сформулирована общая схема из восьми функций. На вопрос, взята ли она непосредственно из Google Research, модель обещала уточнить источники; далее в переписке она была обозначена как функциональная схема, а не как официальные названия команд конкретной системы.</p>
+      <div class="diagram" role="img" aria-label="Восемь ролей: оркестратор, стратегический советник, генератор гипотез, исследователь, критик, аудитор, синтезатор, конструктор промптов">
+        <div class="flow"><div class="node violet">Оркестратор<small>ресурсы и цикл работы</small></div><div class="arrow">→</div><div class="node">Стратегический советник<small>выбирает направление</small></div></div>
+        <div class="flow" style="margin-top:9px"><div class="node teal">Генератор гипотез</div><div class="arrow">→</div><div class="node teal">Исследователь</div><div class="arrow">→</div><div class="node amber">Критик</div></div>
+        <div class="flow" style="margin-top:9px"><div class="node amber">Аудитор<small>извлекает пользу из неудач</small></div><div class="arrow">→</div><div class="node">Синтезатор<small>объединяет находки</small></div><div class="arrow">→</div><div class="node violet">Конструктор промптов<small>готовит следующий пакет заданий</small></div></div>
+        <p class="diagram-note">Подготовленные задания возвращаются оркестратору; роли — функциональные, связи можно адаптировать под процесс.</p>
+      </div>
+      <div class="roles">
+        <div class="role"><b>Оркестратор</b><span>Управляет ресурсами и ходом работы.</span></div>
+        <div class="role"><b>Стратегический советник</b><span>Подсказывает, куда двигаться дальше.</span></div>
+        <div class="role"><b>Генератор гипотез</b><span>Предлагает новые идеи и объяснения.</span></div>
+        <div class="role"><b>Исследователь</b><span>Развивает гипотезу до решения.</span></div>
+        <div class="role"><b>Критик</b><span>Ищет ошибки и слабые места.</span></div>
+        <div class="role"><b>Аудитор</b><span>Извлекает полезное из неудачных попыток.</span></div>
+        <div class="role"><b>Синтезатор</b><span>Объединяет результаты и находки.</span></div>
+        <div class="role"><b>Конструктор промптов</b><span>Готовит следующий пакет заданий.</span></div>
+      </div>
+      <div class="quote">В ответе модели: «Это функциональная схема, не внутренние названия конкретных команд».</div>
+    </section>
+
+    <section class="section" id="other">
+      <div class="section-kicker">Приложение</div>
+      <h2>Другие авторы и материалы, упомянутые в чате</h2>
+      <p class="section-lead">Эти ссылки появились в ответе о разработчиках и агентной оркестрации. Для них в той части переписки отдельные схемы не были показаны.</p>
+      <ul>
+        <li><a href="https://github.com/karpathy/autoresearch">Andrej Karpathy — autoresearch</a></li>
+        <li><a href="https://ghuntley.com/">Geoffrey Huntley — заметки об агентной инженерии</a></li>
+        <li><a href="https://pi.dev/">Pi — агентная среда разработки</a></li>
+        <li><a href="https://simonwillison.net/2025/Oct/5/parallel-coding-agents/">Simon Willison — Parallel coding agents</a></li>
+      </ul>
+      <p class="footnote">Сводные ответы также отмечали, что Gas Town — harness для параллельных агентов с наблюдением и восстановлением; Superpowers — последовательность планирования, реализации и независимой проверки; Agent Laboratory — автоматизация научного цикла от литературы и эксперимента до публикации.</p>
+      <p class="footnote">Источник материала: <a href="https://chatgpt.com/c/6b06d370-3878-83ed-bb66-4a7f720ea5db">исходная переписка «Обсуждение компаний»</a>.</p>
+    </section>
+  </main>
+  <footer>Брошюра собрана по ответам из указанной переписки. Диаграммы перерисованы в самостоятельном HTML для удобного просмотра и печати.</footer>
+</body>
+</html>
