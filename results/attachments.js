@@ -117,6 +117,17 @@
             return true;
         };
 
+        const findPromptAttachment = (key) => attachedFiles.find((file) => `${file.name}-${file.size}-${file.type}` === key) || null;
+
+        const removePromptAttachment = (key) => {
+            const idx = attachedFiles.indexOf(findPromptAttachment(key));
+            if (idx < 0) return;
+            attachedFiles.splice(idx, 1);
+            attachmentKeys.delete(key);
+            renderPromptAttachments();
+            persistDraft();
+        };
+
         // Сбрасываем все вложения (после отправки запроса), чтобы тот же файл
         // не уехал повторно со следующим запросом в те же открытые вкладки.
         const clearPromptAttachments = () => {
@@ -181,14 +192,7 @@
             const pill = btn.closest('.attachment-pill');
             if (!pill) return;
             const key = pill.getAttribute('data-attachment-key');
-            if (!key) return;
-            const idx = attachedFiles.findIndex((file) => `${file.name}-${file.size}-${file.type}` === key);
-            if (idx >= 0) {
-                attachedFiles.splice(idx, 1);
-                attachmentKeys.delete(key);
-                renderPromptAttachments();
-                persistDraft();
-            }
+            if (key) removePromptAttachment(key);
         });
 
         renderPromptAttachments();
@@ -207,6 +211,8 @@
             tryAddTransferAttachments,
             renderPromptAttachments,
             addPromptAttachments,
+            findPromptAttachment,
+            removePromptAttachment,
             clearPromptAttachments,
             extractFilesFromTransfer
         };

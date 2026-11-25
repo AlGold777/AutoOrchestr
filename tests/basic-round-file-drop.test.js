@@ -45,6 +45,7 @@ const makeDropPanel = ({ files = [], setFailure = null, pipelineRunActive = fals
     settings[ref][key] = next;
   });
   const notices = [];
+  const addCommon = jest.fn();
   const marker = 'let fileDropQueue = Promise.resolve();';
   const endMarker = "pipelinePanel?.addEventListener('change'";
   const start = resultsSource.indexOf(marker);
@@ -53,11 +54,11 @@ const makeDropPanel = ({ files = [], setFailure = null, pipelineRunActive = fals
   const handlerSetup = resultsSource.slice(start, end);
   window.BasicInputFiles = { createStore: () => store, validateBatch };
   const getQueue = new Function('pipelinePanel', 'pipelineCanvas', 'pipelineRunActive', 'isCustomEnginePipeline', 'draftPlanStorageKey',
-    'getCustomRoundSettings', 'window', 'setCustomRoundSetting', 'syncBasicInputCanvas', 'showNotification',
+    'getCustomRoundSettings', 'window', 'setCustomRoundSetting', 'syncBasicInputCanvas', 'showNotification', 'tryAddTransferAttachments',
     `${handlerSetup}; return () => fileDropQueue;`)(panel, canvas, pipelineRunActive, () => true, () => 'pipeline-A',
     () => settings, window, setCustomRoundSetting,
-    jest.fn(), (message) => notices.push(message));
-  return { panel, canvas, settings, store, removed, put, validateBatch, setCustomRoundSetting, notices, queue: getQueue };
+    jest.fn(), (message) => notices.push(message), addCommon);
+  return { panel, canvas, settings, store, removed, put, validateBatch, setCustomRoundSetting, notices, addCommon, queue: getQueue };
 };
 
 const dragEvent = (type, files = [], { x = 200, y = 80 } = {}) => {
@@ -101,33 +102,30 @@ describe('Basic round file drop integration', () => {
     ]);
   });
 
-  test('the start area, from the canvas edge through In and ▶, takes files for the first round', async () => {
+  test('the start column is a territory of its own: its files become common attachments, not files of the first round', async () => {
     const h = makeDropPanel();
     const target = document.querySelector('#entry-column');
-    [1, 60, 130].forEach((x) => {
-      const dragover = dragEvent('dragover', [], { x, y: 80 });
-      target.dispatchEvent(dragover);
-      expect(dragover.defaultPrevented).toBe(true);
-    });
-    expect(h.panel.querySelector('.pipeline-round-territory').style.left).toBe('-9px');
+    const dragover = dragEvent('dragover', [], { x: 1, y: 80 });
+    target.dispatchEvent(dragover);
+    expect(dragover.defaultPrevented).toBe(true);
+    const guide = h.panel.querySelector('.pipeline-round-territory');
+    expect([guide.style.left, guide.style.width]).toEqual(['-9px', '134px']);
 
     const drop = dragEvent('drop', [new File(['x'], 'start.txt')], { x: 60, y: 80 });
     target.dispatchEvent(drop);
     await h.queue();
 
     expect(drop.defaultPrevented).toBe(true);
-    expect(h.settings.r1.files.map((file) => file.name)).toEqual(['start.txt']);
+    expect(h.addCommon).toHaveBeenCalledWith(drop.dataTransfer);
+    expect(h.setCustomRoundSetting).not.toHaveBeenCalled();
   });
 
-  test('a User step before the first round keeps the start area outside the round', () => {
-    makeDropPanel();
-    const control = document.querySelector('#control');
-    control.removeAttribute('data-round');
-    document.querySelector('#round1').before(control);
-    control.getBoundingClientRect = () => ({ left: 115, right: 155, top: 20, bottom: 120 });
-    const event = dragEvent('dragover', [], { x: 60, y: 80 });
-    document.querySelector('#entry-column').dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(false);
+  test('a run in progress refuses a drop on the start column', () => {
+    const h = makeDropPanel({ pipelineRunActive: true });
+    const drop = dragEvent('drop', [new File(['x'], 'start.txt')], { x: 60, y: 80 });
+    document.querySelector('#entry-column').dispatchEvent(drop);
+    expect(drop.defaultPrevented).toBe(true);
+    expect(h.addCommon).not.toHaveBeenCalled();
   });
 
   test('dropping onto a User/control column is not consumed', () => {
@@ -185,8 +183,8 @@ describe('Basic round file drop integration', () => {
     target.dispatchEvent(dragEvent('dragover', [], { x: 275, y: 80 }));
     const guide = h.panel.querySelector('.pipeline-round-territory');
     expect(guide).not.toBeNull();
-    expect(guide.style.left).toBe('-9px');
-    expect(guide.style.width).toBe('284px');
+    expect(guide.style.left).toBe('125px');
+    expect(guide.style.width).toBe('150px');
     expect(guide.style.height).toBe('254px');
 
     h.canvas.dispatchEvent(new Event('scroll'));

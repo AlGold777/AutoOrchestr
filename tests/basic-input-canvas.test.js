@@ -208,6 +208,14 @@ describe('Basic input canvas', () => {
     expect(panel.querySelectorAll('.basic-input-canvas-svg path')).toHaveLength(0);
   });
 
+  test('a common attachment with a key opens from In with the scope of the start column', () => {
+    const onFile = jest.fn();
+    BasicInputCanvas.sync({ panel, onFile, schema: { steps: [] }, attachments: [{ name: 'brief.pdf', key: 'brief-key' }] });
+    panel.querySelector('.entry-column button.basic-input-canvas-chip').click();
+    expect(onFile).toHaveBeenCalledWith(expect.objectContaining({ name: 'brief.pdf', key: 'brief-key' }), { ref: 'in' });
+    expect(panel.querySelector('.entry-column .basic-input-file-delete')).not.toBeNull();
+  });
+
   test('step and model files are shown in their target columns, with optional file callback', () => {
     const onFile = jest.fn();
     BasicInputCanvas.sync({ panel, onFile, schema: { steps: [

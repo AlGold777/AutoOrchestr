@@ -120,7 +120,8 @@
     const inColumn = panel.querySelector('.entry-column');
     list(attachments).forEach((attachment, index) => {
       const file = object(attachment) ? attachment : { name: String(attachment || '') };
-      makeChip(artifactRow(inColumn), { name: file.name || file.filename, type: 'file', file: { ...file, id: file.id || `attachment-${index + 1}` } });
+      makeChip(artifactRow(inColumn), { name: file.name || file.filename, type: 'file', file: { ...file, id: file.id || `attachment-${index + 1}` },
+        scope: file.key ? { ref: 'in' } : null });
     });
 
     steps.forEach((step) => {

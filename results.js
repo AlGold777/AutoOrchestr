@@ -2179,6 +2179,8 @@ document.addEventListener('click', (event) => {
     const {
         buildAttachmentPayload,
         tryAddTransferAttachments,
+        findPromptAttachment,
+        removePromptAttachment,
         renderPromptAttachments,
         clearPromptAttachments,
         saveDraft: saveAttachmentDraft,
@@ -5359,9 +5361,9 @@ document.addEventListener('click', (event) => {
 
         const openBasicInputFile = async (file) => {
             try {
-                const stored = typeof file.content === 'string'
+                const stored = file.blob || (typeof file.content === 'string'
                     ? new Blob([file.content], { type: file.type || 'text/plain' })
-                    : await window.BasicInputFiles.createStore().get(file);
+                    : await window.BasicInputFiles.createStore().get(file));
                 if (!stored) throw new Error('Файл не найден в локальном хранилище');
                 const type = String(file.type || stored.type || '').toLowerCase().split(';')[0];
                 const image = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'].includes(type);
@@ -5375,6 +5377,7 @@ document.addEventListener('click', (event) => {
         const removeBasicInputFile = async (file, scope) => {
             if (pipelineRunActive) return;
             const ref = scope.ref;
+            if (ref === 'in') { removePromptAttachment(file.key); return; }
             if (scope.participant) {
                 const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true });
                 const model = (schema.steps || []).find((step) => step.ref === ref)?.models?.find((item) => (item.id ?? item.name) === scope.participant);
@@ -5399,9 +5402,10 @@ document.addEventListener('click', (event) => {
             if (!window.BasicInputCanvas || !pipelinePanel) return;
             const schema = isCustomEnginePipeline()
                 ? basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }) : { steps: [] };
-            const attachments = Array.from(promptAttachmentBar?.querySelectorAll('[data-attachment-key]') || [], (item) => ({ name: item.title }));
+            const attachments = Array.from(promptAttachmentBar?.querySelectorAll('[data-attachment-key]') || [],
+                (item) => ({ name: item.title, key: item.dataset.attachmentKey }));
             return window.BasicInputCanvas.sync({ panel: pipelinePanel, schema, attachments,
-                onFile: (file) => { void openBasicInputFile(file); },
+                onFile: (file, scope) => { void openBasicInputFile(scope.ref === 'in' ? { ...file, blob: findPromptAttachment(file.key) } : file); },
                 onRemoveFile: pipelineRunActive ? null : (file, scope) => { void removeBasicInputFile(file, scope).catch((error) => showNotification(`Файл не удалён: ${error?.message || error}`, 'error')); } });
         };
         // A change of the structure on the canvas of a saved Basic pipeline (Send, a role, a round, a participant) rebuilds its record
@@ -5435,12 +5439,12 @@ document.addEventListener('click', (event) => {
             const rectangles = columns.map((node) => node.getBoundingClientRect());
             for (let index = 0; index < columns.length; index += 1) {
                 const column = columns[index];
-                if (!column.matches('.stage-column[data-round]:not(.pipeline-control-step)')) continue;
+                // The start column (In, ▶) is a territory of its own, from the canvas edge: its files are the common
+                // attachments of the first request.
+                const start = column.classList.contains('entry-column');
+                if (!start && !column.matches('.stage-column[data-round]:not(.pipeline-control-step)')) continue;
                 const rect = rectangles[index];
-                // The start area (In, ▶ and the lines to the first round) belongs to that round, up to the canvas edge:
-                // a file dropped there goes with the first request instead of being opened by the browser.
-                const fromStart = columns[index - 1]?.classList.contains('entry-column');
-                const left = fromStart ? Math.min(rectangles[index - 1].left, viewport.left + 1)
+                const left = start ? Math.min(rect.left, viewport.left + 1)
                     : index ? (rectangles[index - 1].right + rect.left) / 2 : rect.left;
                 const right = index + 1 < rectangles.length ? (rect.right + rectangles[index + 1].left) / 2
                     : rect.right + Math.max(0, (rect.left - (rectangles[index - 1]?.right ?? rect.left)) / 2);
@@ -5486,6 +5490,7 @@ document.addEventListener('click', (event) => {
             const column = territory.column;
             event.preventDefault();
             if (pipelineRunActive || !isCustomEnginePipeline()) return;
+            if (column.classList.contains('entry-column')) { tryAddTransferAttachments(event.dataTransfer); return; }
             const files = Array.from(event.dataTransfer.files);
             const ref = `r${column.dataset.round}`;
             const pipeline = draftPlanStorageKey();

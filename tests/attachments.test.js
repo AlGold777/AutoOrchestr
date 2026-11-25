@@ -42,6 +42,19 @@ describe('ResultsAttachments add / render / dedup', () => {
   });
 });
 
+describe('ResultsAttachments find and remove by pill key', () => {
+  test('returns the file of a pill and removes only it', () => {
+    const { api, bar } = makeAttach();
+    api.addPromptAttachments([txtFile('a.txt'), txtFile('b.txt')]);
+    const key = bar.querySelector('.attachment-pill').dataset.attachmentKey;
+
+    expect(api.findPromptAttachment(key).name).toBe('a.txt');
+    api.removePromptAttachment(key);
+    expect(Array.from(bar.querySelectorAll('.attachment-pill'), (pill) => pill.title)).toEqual(['b.txt']);
+    expect(api.findPromptAttachment(key)).toBeNull();
+  });
+});
+
 describe('ResultsAttachments.clearPromptAttachments', () => {
   test('clears all pills and lets the same file be re-added afterwards', () => {
     const { api, bar } = makeAttach();
