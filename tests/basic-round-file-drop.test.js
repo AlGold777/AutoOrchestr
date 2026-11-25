@@ -101,6 +101,35 @@ describe('Basic round file drop integration', () => {
     ]);
   });
 
+  test('the start area, from the canvas edge through In and ▶, takes files for the first round', async () => {
+    const h = makeDropPanel();
+    const target = document.querySelector('#entry-column');
+    [1, 60, 130].forEach((x) => {
+      const dragover = dragEvent('dragover', [], { x, y: 80 });
+      target.dispatchEvent(dragover);
+      expect(dragover.defaultPrevented).toBe(true);
+    });
+    expect(h.panel.querySelector('.pipeline-round-territory').style.left).toBe('-9px');
+
+    const drop = dragEvent('drop', [new File(['x'], 'start.txt')], { x: 60, y: 80 });
+    target.dispatchEvent(drop);
+    await h.queue();
+
+    expect(drop.defaultPrevented).toBe(true);
+    expect(h.settings.r1.files.map((file) => file.name)).toEqual(['start.txt']);
+  });
+
+  test('a User step before the first round keeps the start area outside the round', () => {
+    makeDropPanel();
+    const control = document.querySelector('#control');
+    control.removeAttribute('data-round');
+    document.querySelector('#round1').before(control);
+    control.getBoundingClientRect = () => ({ left: 115, right: 155, top: 20, bottom: 120 });
+    const event = dragEvent('dragover', [], { x: 60, y: 80 });
+    document.querySelector('#entry-column').dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   test('dropping onto a User/control column is not consumed', () => {
     makeDropPanel();
     const event = dragEvent('dragover', [], { x: 500, y: 80 });
@@ -156,8 +185,8 @@ describe('Basic round file drop integration', () => {
     target.dispatchEvent(dragEvent('dragover', [], { x: 275, y: 80 }));
     const guide = h.panel.querySelector('.pipeline-round-territory');
     expect(guide).not.toBeNull();
-    expect(guide.style.left).toBe('125px');
-    expect(guide.style.width).toBe('150px');
+    expect(guide.style.left).toBe('-9px');
+    expect(guide.style.width).toBe('284px');
     expect(guide.style.height).toBe('254px');
 
     h.canvas.dispatchEvent(new Event('scroll'));

@@ -5437,7 +5437,11 @@ document.addEventListener('click', (event) => {
                 const column = columns[index];
                 if (!column.matches('.stage-column[data-round]:not(.pipeline-control-step)')) continue;
                 const rect = rectangles[index];
-                const left = index ? (rectangles[index - 1].right + rect.left) / 2 : rect.left;
+                // The start area (In, ▶ and the lines to the first round) belongs to that round, up to the canvas edge:
+                // a file dropped there goes with the first request instead of being opened by the browser.
+                const fromStart = columns[index - 1]?.classList.contains('entry-column');
+                const left = fromStart ? Math.min(rectangles[index - 1].left, viewport.left + 1)
+                    : index ? (rectangles[index - 1].right + rect.left) / 2 : rect.left;
                 const right = index + 1 < rectangles.length ? (rect.right + rectangles[index + 1].left) / 2
                     : rect.right + Math.max(0, (rect.left - (rectangles[index - 1]?.right ?? rect.left)) / 2);
                 if (event.clientX >= left && event.clientX < right) return { column, flow, left, right };
