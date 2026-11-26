@@ -54,8 +54,8 @@ function harness({valid=true}={}){
   async requestStop(id){state.stopRequested=true;if(!state.activeRunId)state.phase='PAUSED';state.stateVersion++;return clone(state);}
  };
  const bridge={
-  capture:()=>({models:['GPT'],policy:'auto',errors:[],
-   schema:{schemaVersion:1,steps:[{ref:'r1',kind:'round',models:[{name:'GPT'}]}]}}),
+  capture:()=>({models:['GPT'],policy:'manual',errors:[],
+   schema:{schemaVersion:1,run:{policy:'manual'},steps:[{ref:'r1',kind:'round',models:[{name:'GPT'}]}]}}),
   roleText:()=>'',accept:()=>({ok:true}),
   begin({runId}){assert.equal(bridgeActive,null);bridgeActive=runId;},
   end({runId}){assert.equal(bridgeActive,runId);bridgeActive=null;},
@@ -66,7 +66,7 @@ function harness({valid=true}={}){
  };
  const adapterApi={
   createBasicAdapter({journal,send}){
-   return {validate:()=>({ok:valid,errors:valid?[]:['invalid schema']}),
+   return {validate:schema=>({ok:valid&&schema.run?.policy==='auto',errors:valid&&schema.run?.policy==='auto'?[]:['invalid schema']}),
     async execute({researchId,runId,cycleId}){
      await journal({researchId,runId,cycleId,type:'RUN_INTENT'});
      await journal({researchId,runId,cycleId,type:'DISPATCH_INTENT',batchId:'b1',models:['GPT']});
