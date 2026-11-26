@@ -1,0 +1,17 @@
+{
+  "researchId": "circle-c596b953-10ee-4ce4-b262-65065e207c91",
+  "phase": "COMPLETED",
+  "closedReason": "OWNER_STOP_UNRESOLVED",
+  "cycle": null,
+  "budget": {
+    "maxCalls": 6,
+    "usedCalls": 2
+  },
+  "pendingBackup": null,
+  "lastOutcome": {
+    "outcome": "RUN_CLOSED",
+    "phase": "COMPLETED",
+    "cycle": null,
+    "reason": "OWNER_STOP_UNRESOLVED"
+  }
+}
