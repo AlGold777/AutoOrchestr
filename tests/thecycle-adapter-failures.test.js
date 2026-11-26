@@ -135,7 +135,7 @@ test('lock: Circle runner frees ownership after finish and releases the page hol
   hold(o){log.push('hold:'+typeof o.stop);},release(){log.push('release');}};
  const runner=createCircleRunner({bridge,storage,activeStore:{async createActiveStateStore(){return {store,database:'d',close(){}};}},
   controllerApi:{createController:()=>controller},adapterApi:{createBasicAdapter:()=>({validate:()=>({ok:true})})},
-  contextApi:{buildTask:async()=>'t'},createBackup:async()=>({gate:{persist:async()=>({}),assertCanStartCycle:async()=>{},requireCommit:async()=>{}},close(){}}),uuid:()=>'1'});
+  contextApi:{...require('../disput/thecycle/circle-context.js'),buildTask:async()=>'t'},createBackup:async()=>({gate:{persist:async()=>({}),assertCanStartCycle:async()=>{},requireCommit:async()=>{}},close(){}}),uuid:()=>'1'});
  await runner.start({task:'Task',maxCalls:2});
  assert.equal(log[0],'hold:function');
  assert.ok(log.some(x=>x.startsWith('releaseSettled:')));

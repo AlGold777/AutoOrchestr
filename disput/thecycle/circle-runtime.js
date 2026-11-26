@@ -29,7 +29,8 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
  createBackup=openBackup,telemetry=root.TheCycleTelemetry,uuid=()=>root.crypto.randomUUID()}={}){
  if(!bridge||!['capture','send','begin','end','accept','roleText'].every(k=>typeof bridge[k]==='function')||
  !storage?.get||!storage?.set||!activeStore?.createActiveStateStore||!controllerApi?.createController||
- !adapterApi?.createBasicAdapter||!contextApi?.buildTask||typeof createBackup!=='function')throw Error('CIRCLE_DEPENDENCIES_MISSING');
+  !adapterApi?.createBasicAdapter||!contextApi?.buildTask||!contextApi?.parseContextTask||
+  !contextApi?.validateSummarySchema||typeof createBackup!=='function')throw Error('CIRCLE_DEPENDENCIES_MISSING');
  let running=null;
  const key=id=>'thecycle.circle.research.'+id;
  async function snapshot(id){
@@ -43,8 +44,10 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    return {researchId:id,database:active.database,state,packet,report,configured:source};
   }finally{active.close();}
  }
- async function start({task,maxCalls=24,maxCallsPerCycle=maxCalls,maxPromptChars=20000,onProgress=()=>{}}={}){
+  async function start({task,maxCalls=24,maxCallsPerCycle=maxCalls,maxPromptChars=20000,onProgress=()=>{},contextMode=null}={}){
   if(running)throw Error('CIRCLE_ALREADY_RUNNING');
+   const parsed=contextApi.parseContextTask(task,contextMode);
+   task=parsed.task;contextMode=parsed.mode;
   if(typeof task!=='string'||!task.trim()||task.length>10000||!pos(maxCalls)||maxCalls>10000||
    !pos(maxCallsPerCycle)||maxCallsPerCycle>maxCalls||!pos(maxPromptChars)||maxPromptChars<2000)
    throw Error('CIRCLE_INPUT_INVALID');
@@ -64,7 +67,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   try{
    // Keeps Basic and a second Circle out of the page for the whole research, gaps between cycles included.
    if(typeof bridge.hold==='function'){bridge.hold({stop});held=true;}
-   await emit("RESEARCH_START",{budget:{maxCalls},maxCallsPerCycle,maxPromptChars});
+    await emit("RESEARCH_START",{budget:{maxCalls},maxCallsPerCycle,maxPromptChars,contextMode});
    const selected=bridge.capture();
    if(selected?.errors?.length){await emit('SCHEMA_INVALID',{errors:selected.errors});throw Error('CIRCLE_BASIC_SCHEMA_INVALID');}
    const models=[...new Set(selected?.models||[])];
@@ -72,6 +75,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    await emit("MODELS_SELECTED",{models});
    const schema=copy(selected.schema);
    schema.run={...(schema.run||{}),policy:'auto'};
+    if(contextMode==='latest-summary')contextApi.validateSummarySchema(schema);
    const ref='thecycle:circle:'+id+':schema:1';
    active=await activeStore.createActiveStateStore();
    const store=active.store;
@@ -95,7 +99,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    backup=await createBackup({stateStore:store,storage,onDiagnostic:emit});
    if(!backup?.gate?.persist||!backup.gate.assertCanStartCycle)throw Error('CIRCLE_BACKUP_UNAVAILABLE');
    if(session.stopRequested)return {researchId:id,outcomes,state:{phase:'PAUSED'},reason:'OWNER_STOP'};
-   await storage.set({[key(id)]:{schema,pipelineRef:ref,models,createdAt:new Date().toISOString(),database:active.database}});
+    await storage.set({[key(id)]:{schema,pipelineRef:ref,models,contextMode,createdAt:new Date().toISOString(),database:active.database}});
    await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls});created=true;
    await storage.set({'thecycle.circle.latest':id});
    const gate=backup.gate;
@@ -110,7 +114,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    }
    const controller=controllerApi.createController({
     store,makeAdapter,loadPipeline:async value=>value===ref?{ref,schema}:null,
-    resolveTask:async({state,store})=>{try{let context;const task=await contextApi.buildTask({state,store,maxChars:Math.floor(maxPromptChars*0.8),onContext:v=>{context=v;}});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
+     resolveTask:async({state,store})=>{try{let context;const task=await contextApi.buildTask({state,store,mode:contextMode,maxChars:Math.floor(maxPromptChars*0.8),onContext:v=>{context=v;}});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
     maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:observedGate
    });
    session.controller=controller;
