@@ -34,6 +34,11 @@ document.getElementById('run').addEventListener('click',()=>action(async()=>{
    state:'VERIFIED',key,sha256:result.sha256,database:pointer.activeDatabase,at:Date.now()
   }});
   message.textContent='Резервная копия проверена: '+result.key;
+ }catch(error){
+  await chrome.storage.local.set({thecycleBackupStatus:{
+   state:'FAILED',reason:String(error?.message||error),at:Date.now()
+  }});
+  throw error;
  }finally{store?.close();registry?.close();manager.close();}
 }));
 document.getElementById('refresh').addEventListener('click',()=>action(async()=>{}));
