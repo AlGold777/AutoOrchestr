@@ -26,7 +26,8 @@
     left: 0;
     right: 0;
     height: 12px;
-    background: #F3F4F6;
+    /* Same colour as the bar itself, so the cover never shows as a separate band. */
+    background: inherit;
     pointer-events: none;
 }
 

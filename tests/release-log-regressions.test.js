@@ -23,7 +23,7 @@ describe('release log regression guards', () => {
     expect(controlsCss).toContain('min-height: 0;');
     expect(controlsCss).toContain('align-items: stretch;');
     expect(controlsCss).toMatch(/\.top-control-bar\s*\{[^}]*position:\s*sticky;[^}]*top:\s*12px;/s);
-    expect(controlsCss).toMatch(/\.top-control-bar::before\s*\{[^}]*top:\s*-12px;[^}]*height:\s*12px;[^}]*background:\s*#F3F4F6;/s);
+    expect(controlsCss).toMatch(/\.top-control-bar::before\s*\{[^}]*top:\s*-12px;[^}]*height:\s*12px;[^}]*background:\s*inherit;/s);
     expect(controlsCss).toMatch(/\.pipeline-page \.app-main \.input-section:has\(\.prompt-container\.is-pipeline-composer-raised\)\s*\{[^}]*padding-top:\s*5px;/s);
     const source = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'utf8');
     expect(source).not.toContain('alignSubmittedPromptWithHeader');
