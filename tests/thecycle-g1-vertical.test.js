@@ -41,6 +41,7 @@ function harness({valid=true}={}){
    state.nextCycle=2;state.activeRunId=null;state.stateVersion++;
    return {state:clone(state),packet:clone(packet)};
   },
+  async getRun(){return {researchId:state.researchId,runId:state.researchId+':cycle:1',phase:state.phase};},
   async getPacket(){return packet?clone(packet):null;},
   async getEvents(){return clone(events);},
   async decide(token,{action}){
