@@ -6965,6 +6965,8 @@ document.addEventListener('click', (event) => {
         // runModelBatch transport used by the existing Basic page.
         // No parallel mock or new provider implementation.
         let theCycleBridgeRunId = null;
+        let theCycleBridgeSchema = null;
+        let theCycleBridgeSteps = [];
         window.TheCycleMainPageBridge = Object.freeze({
             capture() {
                 if (!isCustomEnginePipeline()) throw new Error('G1_REQUIRES_BASIC_SELECTED');
@@ -6977,9 +6979,12 @@ document.addEventListener('click', (event) => {
             roleText: (role, ref) => customRoleText(role, ref),
             accept: ({ text, completion }) =>
                 window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
-            begin({ runId }) {
+            begin({ runId, schema }) {
                 if (pipelineRunActive || theCycleBridgeRunId) throw new Error('BASIC_RUN_ALREADY_ACTIVE');
                 if (typeof runId !== 'string' || !runId) throw new Error('INVALID_THECYCLE_RUN');
+                if (!schema || !Array.isArray(schema.steps)) throw new Error('G1_SCHEMA_REQUIRED');
+                theCycleBridgeSchema = JSON.parse(JSON.stringify(schema));
+                theCycleBridgeSteps = window.BasicSchema.assemble(theCycleBridgeSchema, { roleText: customRoleText });
                 theCycleBridgeRunId = runId;
                 pipelineRunActive = true;
                 activePipelineRunContext = {
@@ -6992,14 +6997,21 @@ document.addEventListener('click', (event) => {
                 };
                 return true;
             },
-            async send(models, promptsByModel, { runId, batchId, signal, step = 0 } = {}) {
+            async send(models, promptsByModel, { runId, batchId, signal, step = 0, maxWordsByModel = {}, correctionByModel = {} } = {}) {
                 if (theCycleBridgeRunId !== runId || !activePipelineRunContext ||
                     activePipelineRunContext.pipelineRunId !== runId)
                     throw new Error('THECYCLE_RUN_NOT_ACTIVE');
                 if (signal?.aborted) throw new Error('THECYCLE_RUN_ABORTED');
+                const discipline = Object.fromEntries(models.map(name => [name,
+                    theCycleBridgeSteps[step]?.models.find(model => model.name === name)?.discipline || {}
+                ]));
+                promptsByModel = composeCustomPrompts(models, promptsByModel, maxWordsByModel,
+                    discipline, theCycleBridgeSchema?.defaults?.modelNotes || {}, correctionByModel,
+                    window.BasicSchema.resolveRun(theCycleBridgeSchema).maxWords);
                 const batch = await runModelBatch({
                     prompt: promptsByModel[models[0]],
                     promptsByModel,
+                    deliveryInstructionsByModel: Object.fromEntries(models.map(name => [name, discipline[name].delivery])),
                     models,
                     attachments: [],
                     forceNewTabs: activePipelineRunContext.forceNewTabs,
@@ -7033,6 +7045,8 @@ document.addEventListener('click', (event) => {
             end({ runId }) {
                 if (theCycleBridgeRunId !== runId) return false;
                 theCycleBridgeRunId = null;
+                theCycleBridgeSchema = null;
+                theCycleBridgeSteps = [];
                 pipelineRunActive = false;
                 activePipelineRunContext = null;
                 return true;
