@@ -65,6 +65,9 @@
       if (!schema.steps.some((step) => step.kind === 'round' && activeModels(step).length)) {
         reject('steps', 'At least one enabled round is required');
       }
+      if (Array.isArray(settings.stopMarks) && settings.stopMarks.length) reject('run.stopMarks', 'Circle не поддерживает метки остановки (run.stopMarks): уберите их из схемы');
+      if (settings.repeat) reject('run.repeat', 'Circle не поддерживает повтор прогона (run.repeat): цикл повторяет сам Circle, уберите run.repeat');
+      const hasFiles = (value) => value !== undefined && !(Array.isArray(value) && !value.length);
       let roundIndex = 0;
       for (const step of schema.steps) {
         if (step.kind === 'owner') {
@@ -72,6 +75,14 @@
           continue;
         }
         if (step.kind !== 'round') continue;
+        if (hasFiles(step.files)) reject('steps.' + step.ref + '.files', 'Circle не передаёт файлы (step.files): уберите файлы из шага');
+        if (step.chat === 'new') reject('steps.' + step.ref + '.chat', 'Circle не поддерживает новый чат в шаге (chat: "new"): уберите chat или поставьте "continue"');
+        const seenNames = new Set();
+        for (const model of activeModels(step)) {
+          if (hasFiles(model.files)) reject('steps.' + step.ref + '.models.' + model.name + '.files', 'Circle не передаёт файлы (model.files): уберите файлы у участника');
+          if (seenNames.has(model.name)) reject('steps.' + step.ref + '.models.' + model.name, 'Circle не поддерживает две роли одной модели в одном шаге: «' + model.name + '» повторяется');
+          seenNames.add(model.name);
+        }
         const input = step.input || (roundIndex++ === 0 ? 'none' : 'previous');
         // The counter must advance even when input is explicitly set.
         if (step.input) roundIndex += 1;
@@ -209,6 +220,7 @@
         const result = await engine.run({
           task, steps, accept, send: guardedSend, signal: aborter.signal,
           maxAttempts: ATTEMPTS, maxPromptChars, semiAuto: false,
+          runMaxWords: settings.maxWords, runStrictLength: settings.strictLength,
           decide: () => 'stop',
           ...noAnswer
         });
