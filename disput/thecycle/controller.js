@@ -82,13 +82,25 @@
       busy = true;
       try {
         let state = await safeState(researchId);
-        if (['PAUSED', 'COMPLETED'].includes(state.phase)) {
+        if (['PAUSED', 'COMPLETED'].includes(state.phase) &&
+            !(backupGate && state.backupRequiredCycleId !== null &&
+              state.backupRequiredCycleId !== undefined)) {
           await releaseIfSettled(state);
           return result(state, state.phase);
         }
         const fence = await owned(researchId);
         state = await safeState(researchId);
 
+        // A stopped run may still carry an unacknowledged committed packet.
+        // Discharge its durable backup obligation before releasing ownership.
+        if (['PAUSED', 'COMPLETED'].includes(state.phase)) {
+          try { state = await ensurePacketBackup(researchId, fence, state); }
+          catch (error) { return result(state, 'BACKUP_REQUIRED', {
+            error: { code: error?.code || 'BACKUP_REQUIRED', message: String(error?.message || error) }
+          }); }
+          await releaseIfSettled(state);
+          return result(state, state.phase);
+        }
         if (state.phase === 'RECONCILE') {
           return result(state, 'RECOVERY_REQUIRED', { runId: state.activeRunId });
         }
