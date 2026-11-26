@@ -879,7 +879,7 @@ body.is-resizing {
     gap: 8px;
     cursor: pointer;
     user-select: none;
-    background: #a8caf740;
+    background: #e2e8f078;
 }
 
 .pipeline-list-header h3 {
@@ -894,7 +894,7 @@ body.is-resizing {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 0px;
     margin-left: auto;
 }
 
@@ -971,7 +971,7 @@ body.is-resizing {
        Место каждой схемы выставляет layoutPipelineItems (results.js). */
     grid-template-columns: repeat(3, minmax(0, 1fr));
     column-gap: 16px;
-    row-gap: 6px;
+    row-gap: 1px;
     margin-left: 20px;
     width: calc(100% - 20px);
     box-sizing: border-box;
@@ -1688,7 +1688,7 @@ body.is-resizing {
     /* Верх схемы на 8 px заходит под верхнюю панель: эти 8 px закрывает отступ шапки, просвета нет. */
     top: calc(var(--pipeline-top-bar-bottom, 89px) - 8px);
     z-index: 5;
-    background: #F3F4F6;
+    background: none;
     transform: translateY(var(--stick-lead, 0px));
 }
 

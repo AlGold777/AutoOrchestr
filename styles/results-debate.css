@@ -80,7 +80,7 @@
     border-radius: 0;
     color: #b3bcc5;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0.01em;
     cursor: pointer;
     transition: color 0.2s ease, transform 0.2s ease;
@@ -97,8 +97,8 @@
 }
 
 .llm-button-icon {
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     display: block;
     object-fit: contain;
     filter: grayscale(1) saturate(0) opacity(0.446);
@@ -474,7 +474,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: #ebecee;
+  background: #e2e8f096;
   border: none;
   padding: 4px 12px 4px 12px;
   position: relative;
@@ -485,8 +485,8 @@
 /* -- 2. Единый белый блок без видимого контура вокруг поля -- */
 .llm-panel {
   position: relative;
-  border: 1px solid #ccc;
-  border-radius: 10px;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
   background: none /* #eeeeeed1*/;
   box-shadow: none; /*0 2px 3px 2px rgba(0, 0, 0, 0.05);*/
   overflow: hidden;
@@ -513,6 +513,7 @@ body.llm-stream-preview-open .llm-results .llm-panel:not(.favorite-panel) .outpu
   min-height: 0;
   max-height: none;
   overflow-y: auto;
+      background-color: #f8fafc;
 }
 
 .llm-panel.llm-panel-expanded {
@@ -985,8 +986,8 @@ body.llm-stream-preview-open .llm-results .llm-panel.llm-panel-session-restored:
 
 .status-indicator {
   display: inline-block;
-  width: 12px;
-  height: 12px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   margin-left: 0;
   background-color: #d1d5db;

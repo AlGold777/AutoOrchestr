@@ -1442,8 +1442,8 @@ body.pro-features-hidden .comparison-section {
 }
 
 .debate-auto-radio:checked {
-    border-color: var(--pipeline-blue);
-    background: radial-gradient(circle, var(--pipeline-blue) 0 45%, #fff 49% 100%);
+    border-color: #0f172a;
+    background: radial-gradient(circle, #0f172a 0 45%, #fff 49% 100%);
 }
 
 .debate-auto-radio:focus-visible {
@@ -1452,7 +1452,7 @@ body.pro-features-hidden .comparison-section {
 }
 
 .debate-auto-toggle.is-active {
-    color: #047857;
+    color: #203b4c;
 }
 .mod-compose-row textarea#modTa {
     flex: 1 1 auto;
@@ -2002,6 +2002,7 @@ body.pro-features-hidden .comparison-section {
     flex-grow: 0;
     padding: 5px 10px 10px;
     justify-content: center;
+    border-color: #00000033;
 }
 .prompt-container.prompt-sandwich:not(.debate-composer):has(#prefix-container:not(:empty), #suffix-container:not(:empty)) {
     height: auto;
@@ -2910,6 +2911,7 @@ hr.section-divider {
     width: min(calc(var(--center-max-width) - 54px), calc(100cqw - 54px));
     min-width: 0;
     max-width: none;
+    border-color: #00000033;
 }
 
 /* The closed Pipeline composer mirrors .main-inner's 980px outer width and
