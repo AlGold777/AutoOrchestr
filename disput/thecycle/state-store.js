@@ -399,8 +399,32 @@
     }
 
     // C03's decision hook: only from a settled run or a deliberate pause.
-    async function decide(token, { expectedVersion, action, pipelineRef, reason } = {}) {
+    const FINAL_STATUSES = ['PARTIAL', 'INCONCLUSIVE', 'BUDGET_EXHAUSTED', 'CANCELLED', 'ERROR', 'VERIFIED_SOLUTION'];
+    // detail is a bounded record of why the policy chose the action: only these keys, only strings.
+    function cleanDetail(detail) {
+      if (detail === undefined) return undefined;
+      const strs = (list, max) => Array.isArray(list) && list.length <= max && list.every((v) => typeof v === 'string' && v.length <= 400);
+      if (!detail || typeof detail !== 'object' || Array.isArray(detail) ||
+          Object.keys(detail).some((key) => !['action', 'refs', 'reason', 'question', 'errors'].includes(key))) throw fail('INVALID_DECISION_DETAIL');
+      const out = {};
+      for (const key of ['action', 'reason', 'question']) {
+        if (detail[key] === undefined) continue;
+        if (typeof detail[key] !== 'string' || detail[key].length > 2000) throw fail('INVALID_DECISION_DETAIL');
+        out[key] = detail[key];
+      }
+      for (const [key, max] of [['refs', 50], ['errors', 30]]) {
+        if (detail[key] === undefined) continue;
+        if (!strs(detail[key], max)) throw fail('INVALID_DECISION_DETAIL');
+        out[key] = [...detail[key]];
+      }
+      return out;
+    }
+
+    async function decide(token, { expectedVersion, action, pipelineRef, reason, detail, finalStatus, verificationRecord } = {}) {
       if (!['CONTINUE', 'PAUSE', 'COMPLETE', 'RESUME'].includes(action)) throw fail('INVALID_DECISION');
+      const cleanedDetail = cleanDetail(detail);
+      if (finalStatus !== undefined && (!FINAL_STATUSES.includes(finalStatus) || action !== 'COMPLETE' ||
+          (finalStatus === 'VERIFIED_SOLUTION' && verificationRecord !== true))) throw fail('INVALID_FINAL_STATUS');
       return write(async (s) => {
         const state = await mustOwn(s, token);
         checkVersion(state, expectedVersion);
@@ -416,9 +440,14 @@
           const packet = await request(s.packets.get([state.researchId, state.lastCommittedPacket]));
           if (!packet || packet.decision) throw fail('DECISION_PACKET_INVALID');
           packet.decision = { action, reason: reason || null, stateVersion: state.stateVersion };
+          if (cleanedDetail !== undefined) packet.decision.detail = copy(cleanedDetail);
           await request(s.packets.put(packet));
         }
-        if (reason !== undefined) state.lastDecision = { action, reason, stateVersion: state.stateVersion };
+        if (reason !== undefined) {
+          state.lastDecision = { action, reason, stateVersion: state.stateVersion };
+          if (cleanedDetail !== undefined) state.lastDecision.detail = copy(cleanedDetail);
+        }
+        if (finalStatus !== undefined) state.finalStatus = finalStatus;
         if (action === 'RESUME') state.stopRequested = false;
         state.phase = action === 'COMPLETE' ? 'COMPLETED' : action === 'PAUSE' ? 'PAUSED' : 'READY';
         // No decision here asserts mathematical proof.

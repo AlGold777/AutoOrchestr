@@ -15,27 +15,37 @@
   }
   const fail = (code, message) => new ControllerError(code, message);
 
+  // One rule "the cycle is technically complete": PIPELINE_COMPLETE, or PARTIAL that ended normally (steps_done) with no
+  // unresolved batch where every non-skipped step has at least one accepted answer (a dropped participant does not stop the work).
+  function isCycleSettled(report) {
+    if (!report || (report.unresolvedBatchIds || []).length) return false;
+    if (report.status === 'PIPELINE_COMPLETE') return true;
+    if (report.status !== 'PARTIAL' || report.stopReason !== 'steps_done' || !Array.isArray(report.steps)) return false;
+    const steps = report.steps.filter((step) => !step?.skipped);
+    return steps.length > 0 && steps.every((step) =>
+      Object.values(step.outcome || {}).some((v) => v?.ok === true && str(v.text)));
+  }
+
   // A completed pipeline is not a mathematical solution. Until the verification
   // module exists, continue only from a complete technical result; otherwise pause.
   function fixedPolicy({ state, packet, report }) {
     if (state.stopRequested) return { action: 'PAUSE', reason: 'OWNER_STOP' };
     if (state.budget.usedCalls >= state.budget.maxCalls) return { action: 'PAUSE', reason: 'BUDGET_EXHAUSTED' };
     if (!packet || packet.status !== 'RECORDED_RESULT' ||
-        report?.status !== 'PIPELINE_COMPLETE' ||
-        !pos(packet.usedCalls) ||
-        (report.unresolvedBatchIds || []).length) {
+        !isCycleSettled(report) ||
+        !pos(packet.usedCalls)) {
       return { action: 'PAUSE', reason: 'PARTIAL_OR_UNCERTAIN' };
     }
     return { action: 'CONTINUE', reason: 'FIXED_PIPELINE' };
   }
 
   function createController({ store, makeAdapter, loadPipeline, maxCallsPerCycle, maxPromptChars,
-    ownerId = root.crypto?.randomUUID?.(), backupGate = null, resolveTask = null } = {}) {
+    ownerId = root.crypto?.randomUUID?.(), backupGate = null, resolveTask = null, policy = fixedPolicy } = {}) {
     if (!store || !['load', 'acquire', 'release', 'prepareRun', 'journalFor', 'getRun', 'getEvents',
       'getPacket', 'commitPacket', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
       typeof makeAdapter !== 'function' || typeof loadPipeline !== 'function' ||
       !str(ownerId) || !pos(maxCallsPerCycle) || !pos(maxPromptChars) ||
-      (resolveTask !== null && typeof resolveTask !== 'function') ||
+      (resolveTask !== null && typeof resolveTask !== 'function') || typeof policy !== 'function' ||
       (backupGate && (!['assertCanStartCycle', 'requireCommit', 'persist'].every((key) => typeof backupGate[key] === 'function') || typeof store.acknowledgePacketBackup !== 'function'))) {
       throw fail('INVALID_CONTROLLER_DEPENDENCIES');
     }
@@ -150,8 +160,18 @@
           const packet = await store.getPacket(researchId, state.lastCommittedPacket);
           const events = packet ? await store.getEvents(researchId, packet.runId) : [];
           const report = events.find((row) => row.eventId === packet?.resultEventId)?.payload?.report;
-          const decision = fixedPolicy({ state, packet, report });
-          const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: decision.action, reason: decision.reason });
+          let decision;
+          try { decision = await policy({ state, packet, report, store }); }
+          catch (error) { decision = { action: 'PAUSE', reason: 'POLICY_ERROR' }; }
+          let next;
+          try {
+            next = await store.decide(fence, { expectedVersion: state.stateVersion, action: decision.action, reason: decision.reason,
+              pipelineRef: decision.pipelineRef, detail: decision.detail, finalStatus: decision.finalStatus, verificationRecord: decision.verificationRecord });
+          } catch (error) {
+            if (!['INVALID_DECISION_DETAIL', 'INVALID_FINAL_STATUS'].includes(error?.code)) throw error;
+            decision = { action: 'PAUSE', reason: 'DECISION_RECORD_INVALID' };
+            next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'PAUSE', reason: decision.reason });
+          }
           await releaseIfSettled(next);
           return result(next, 'DECISION', { decision });
         }
@@ -190,9 +210,11 @@
           return result(next, 'PAUSED', { reason: 'INVALID_PIPELINE', errors: checked.errors });
         }
         // The remaining budget must cover the whole next cycle: pause before any request when it cannot.
+        // reserveCalls: calls kept for what must follow this cycle (the analyst after a work cycle).
+        const reserve = Number.isSafeInteger(pipeline.reserveCalls) && pipeline.reserveCalls > 0 ? pipeline.reserveCalls : 0;
         if (typeof adapter.estimateCalls === 'function') {
           const need = adapter.estimateCalls(pipeline.schema);
-          if (pos(need) && need > Math.min(remaining, maxCallsPerCycle)) {
+          if (pos(need) && (need > Math.min(remaining, maxCallsPerCycle) || need + reserve > remaining)) {
             const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'PAUSE', reason: 'BUDGET_INSUFFICIENT_FOR_CYCLE' });
             await releaseIfSettled(next);
             return result(next, 'PAUSED', { reason: 'BUDGET_INSUFFICIENT_FOR_CYCLE', required: need, remaining });
@@ -203,7 +225,7 @@
         let task = state.task;
         if (resolveTask) {
           try {
-            task = await resolveTask({ state, store });
+            task = await resolveTask({ state, store, pipeline });
             if (!str(task) || task.length > maxPromptChars) throw fail('CONTEXT_INVALID');
           } catch (error) {
             const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'PAUSE', reason: 'CONTEXT_UNAVAILABLE' });
@@ -213,7 +235,7 @@
         }
         const cycleId = state.nextCycle;
         const runId = researchId + ':cycle:' + cycleId;
-        const maxCalls = Math.min(remaining, maxCallsPerCycle);
+        const maxCalls = Math.min(remaining - reserve > 0 ? remaining - reserve : remaining, maxCallsPerCycle);
         const aborter = new AbortController();
         live = { researchId, runId, adapter, aborter };
         try {
@@ -326,7 +348,7 @@
     return Object.freeze({ tick, stop, resume, takeOver, reconcile, closeStopped, releaseSettled, ownerId });
   }
 
-  const api = Object.freeze({ createController, fixedPolicy, ControllerError });
+  const api = Object.freeze({ createController, fixedPolicy, isCycleSettled, ControllerError });
   root.TheCycleController = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -25,7 +25,7 @@ async function openBackup({stateStore,storage,onDiagnostic}){
 }
 function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
  activeStore=root.TheCycleActiveStateStore,controllerApi=root.TheCycleController,
- adapterApi=root.TheCycleBasicAdapter,contextApi=root.TheCycleCircleContext,
+ adapterApi=root.TheCycleBasicAdapter,contextApi=root.TheCycleCircleContext,policyApi=root.TheCycleCirclePolicy,
  createBackup=openBackup,telemetry=root.TheCycleTelemetry,uuid=()=>root.crypto.randomUUID()}={}){
  if(!bridge||!['capture','send','begin','end','accept','roleText'].every(k=>typeof bridge[k]==='function')||
  !storage?.get||!storage?.set||!activeStore?.createActiveStateStore||!controllerApi?.createController||
@@ -77,6 +77,17 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    schema.run={...(schema.run||{}),policy:'auto'};
     if(contextMode==='latest-summary')contextApi.validateSummarySchema(schema);
    const ref='thecycle:circle:'+id+':schema:1';
+   // Registry of cycle schemas: the work schema and (when the policy module is present) the analyst schema built from it.
+   const analystRef='thecycle:circle:'+id+':analyst:1';
+   const registry=[{ref,role:'work'}],schemas=new Map([[ref,schema]]);
+   if(policyApi){
+    schemas.set(analystRef,policyApi.buildAnalystSchema(schema));
+    registry.push({ref:analystRef,role:'analyst'});
+   }
+   const loadPipeline=async value=>{
+    const entry=registry.find(e=>e.ref===value);
+    return entry?{ref:value,role:entry.role,schema:schemas.get(value),reserveCalls:policyApi&&entry.role==='work'?1:0}:null;
+   };
    active=await activeStore.createActiveStateStore();
    const store=active.store;
    await emit('SCHEMA_CAPTURED',{schema,database:active.database,pipelineRef:ref});
@@ -93,14 +104,17 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     },accept:bridge.accept,journal:async event=>{const saved=await journal(event);let state;try{state=await store.load(id);}catch(_){}await emit(event.type,{event,state});return saved;},availableModels:models,isRole:()=>true,roleText:bridge.roleText,
     reread:typeof bridge.reread==='function'?bridge.reread:null,settings:typeof bridge.settings==='function'?bridge.settings:null
    });
-   const checked=makeAdapter({journal:async()=>{},fence:{}}).validate(schema);
-   if(!checked.ok){await emit('SCHEMA_INVALID',{errors:checked.errors});throw Error('CIRCLE_ADAPTER_REJECTED_SCHEMA');}
+   const probe=makeAdapter({journal:async()=>{},fence:{}});
+   for(const [schemaRef,candidate] of schemas){
+    const checked=probe.validate(candidate);
+    if(!checked.ok){await emit('SCHEMA_INVALID',{errors:checked.errors,pipelineRef:schemaRef});throw Error('CIRCLE_ADAPTER_REJECTED_SCHEMA');}
+   }
    // Require real independent backup storage before any provider request.
    await emit("BACKUP_OPEN");
    backup=await createBackup({stateStore:store,storage,onDiagnostic:emit});
    if(!backup?.gate?.persist||!backup.gate.assertCanStartCycle)throw Error('CIRCLE_BACKUP_UNAVAILABLE');
    if(session.stopRequested)return {researchId:id,outcomes,state:{phase:'PAUSED'},reason:'OWNER_STOP'};
-    await storage.set({[key(id)]:{schema,pipelineRef:ref,models,contextMode,createdAt:new Date().toISOString(),database:active.database}});
+    await storage.set({[key(id)]:{schema,pipelineRef:ref,analyst:policyApi?{ref:analystRef,schema:schemas.get(analystRef)}:undefined,models,contextMode,createdAt:new Date().toISOString(),database:active.database}});
    await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls});created=true;
    await storage.set({'thecycle.circle.latest':id});
    const gate=backup.gate;
@@ -114,8 +128,29 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     };
    }
    const controller=controllerApi.createController({
-    store,makeAdapter,loadPipeline:async value=>value===ref?{ref,schema}:null,
-     resolveTask:async({state,store})=>{try{let context;const task=await contextApi.buildTask({state,store,mode:contextMode,maxChars:Math.floor(maxPromptChars*0.8),onContext:v=>{context=v;}});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
+    store,makeAdapter,loadPipeline,
+    policy:policyApi?policyApi.createPolicy({registry}):undefined,
+     resolveTask:async({state,store,pipeline})=>{try{let context;
+      if(pipeline?.role==='analyst'){
+       // The analyst reads only the work cycle that was just committed.
+       const {packet,report,answers}=await contextApi.readCycle(store,state.researchId,state.lastCommittedPacket);
+       const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:schema,actions:policyApi.ACTIONS};
+       let summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
+       // Same limit as the work cycle: 0.8 of the prompt minus the template; the summary is cut, never the template.
+       const room=Math.floor(maxPromptChars*0.8)-policyApi.buildAnalystTask({...parts,summary:''}).length;
+       if(room<256)throw Error('CIRCLE_CONTEXT_LIMIT');
+       if(summary.length>room){const mark=' [TRUNCATED]';summary=summary.slice(0,room-mark.length)+mark;}
+       const task=policyApi.buildAnalystTask({...parts,summary});
+       await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context:{role:'analyst',cycleId:packet.cycleId}});
+       return task;
+      }
+      // With an analyst, its cycles are not evidence for the work cycle.
+      let cycles=null;
+      if(policyApi&&state.lastCommittedPacket!=null){
+       cycles=[];
+       for(let n=1;n<=state.lastCommittedPacket;n++){const p=await store.getPacket(state.researchId,n);if(p?.pipelineRef===ref)cycles.push(n);}
+      }
+      const task=await contextApi.buildTask({state,store,mode:contextMode,cycles,maxChars:Math.floor(maxPromptChars*0.8),onContext:v=>{context=v;}});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
     maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:observedGate
    });
    session.controller=controller;
@@ -131,7 +166,8 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      let began=false;const cycleStarted=Date.now();
      await emit("CYCLE_START",{cycleId:state.nextCycle,runId:bridgeRun,state});
      try{
-      bridge.begin({runId:bridgeRun,schema});began=true;
+      const entry=await loadPipeline(state.pipelineRef);
+      bridge.begin({runId:bridgeRun,schema:entry?.schema||schema});began=true;
       const result=await record(await controller.tick(id));
       if(result.outcome!=='RUN_RETURNED')break;
      }finally{try{if(began)bridge.end({runId:bridgeRun});}finally{await emit("CYCLE_END",{cycleId:state.nextCycle,runId:bridgeRun,durationMs:Date.now()-cycleStarted});bridgeRun=null;}}
