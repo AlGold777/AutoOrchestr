@@ -32,7 +32,7 @@
   function createController({ store, makeAdapter, loadPipeline, maxCallsPerCycle, maxPromptChars,
     ownerId = root.crypto?.randomUUID?.(), backupGate = null } = {}) {
     if (!store || !['load', 'acquire', 'release', 'prepareRun', 'journalFor', 'getRun', 'getEvents',
-      'getPacket', 'commitPacket', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
+      'getPacket', 'commitPacket', 'acknowledgePacketBackup', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
       typeof makeAdapter !== 'function' || typeof loadPipeline !== 'function' ||
       !str(ownerId) || !pos(maxCallsPerCycle) || !pos(maxPromptChars) ||
       (backupGate && !['assertCanStartCycle', 'requireCommit', 'persist'].every((key) => typeof backupGate[key] === 'function'))) {
@@ -58,6 +58,20 @@
         await store.release(token);
         token = null;
       }
+    }
+
+    async function ensurePacketBackup(researchId, fence, state) {
+      if (!backupGate || state.lastCommittedPacket === null) return state;
+      const commitId = researchId + ':cycle:' + state.lastCommittedPacket;
+      if (state.backupRequiredCycleId !== null && state.backupRequiredCycleId !== undefined) {
+        await backupGate.requireCommit(researchId, commitId);
+        await backupGate.persist(researchId, 'cycle');
+        state = await store.acknowledgePacketBackup(fence, {
+          expectedVersion: state.stateVersion, cycleId: state.lastCommittedPacket
+        });
+      }
+      await backupGate.assertCanStartCycle(researchId, commitId);
+      return state;
     }
 
     // One tick executes at most one Basic pipeline, or one state transition.
@@ -87,22 +101,25 @@
           const committed = await store.commitPacket(fence, {
             expectedVersion: state.stateVersion, runId: state.activeRunId
           });
+          let backedState = committed.state;
           if (backupGate) {
-            // NOTE: This marker is not yet atomic with commitPacket. C02 must
-            // move it into the same IndexedDB transaction before production.
-            try {
-              await backupGate.requireCommit(researchId, researchId + ':cycle:' + committed.packet.cycleId);
-              await backupGate.persist(researchId, 'cycle');
-            } catch (error) {
+            try { backedState = await ensurePacketBackup(researchId, fence, committed.state); }
+            catch (error) {
               return result(committed.state, 'BACKUP_REQUIRED', {
                 packet: committed.packet, error: { code: error?.code || 'BACKUP_REQUIRED', message: String(error?.message || error) }
               });
             }
           }
-          await releaseIfSettled(committed.state);
-          return result(committed.state, 'PACKET_COMMITTED', { packet: committed.packet });
+          await releaseIfSettled(backedState);
+          return result(backedState, 'PACKET_COMMITTED', { packet: committed.packet });
         }
         if (state.phase === 'EVALUATE') {
+          if (backupGate) {
+            try { state = await ensurePacketBackup(researchId, fence, state); }
+            catch (error) { return result(state, 'BACKUP_REQUIRED', { error: {
+              code: error?.code || 'BACKUP_REQUIRED', message: String(error?.message || error)
+            } }); }
+          }
           const packet = await store.getPacket(researchId, state.lastCommittedPacket);
           const events = packet ? await store.getEvents(researchId, packet.runId) : [];
           const report = events.find((row) => row.eventId === packet?.resultEventId)?.payload?.report;
@@ -113,8 +130,8 @@
         }
         if (state.phase !== 'READY') throw fail('UNKNOWN_PHASE', state.phase);
         if (backupGate) {
-          try { await backupGate.assertCanStartCycle(researchId,
-            state.lastCommittedPacket === null ? null : researchId + ':cycle:' + state.lastCommittedPacket); }
+          try { state = await ensurePacketBackup(researchId, fence, state);
+            if (state.lastCommittedPacket === null) await backupGate.assertCanStartCycle(researchId); }
           catch (error) {
             return result(state, 'BACKUP_REQUIRED', { error: {
               code: error?.code || 'BACKUP_REQUIRED', message: String(error?.message || error)
