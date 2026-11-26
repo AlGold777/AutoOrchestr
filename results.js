@@ -7037,6 +7037,7 @@ document.addEventListener('click', (event) => {
                 return true;
             }
         });
+        window.dispatchEvent(new Event('thecycle:basic-bridge-ready'));
         const runCustomFromPage = async ({ task }) => {
             const engine = window.CustomEngine;
             const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
