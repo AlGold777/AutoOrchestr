@@ -6987,6 +6987,9 @@ document.addEventListener('click', (event) => {
                 theCycleBridgeSteps = window.BasicSchema.assemble(theCycleBridgeSchema, { roleText: customRoleText });
                 theCycleBridgeRunId = runId;
                 pipelineRunActive = true;
+                setPipelineEditingEnabled(false);
+                setPipelineRunUi(true);
+                updateDebateButtonsUi();
                 activePipelineRunContext = {
                     pipelineRunId: runId,
                     sessionId: debateTabsState?.activeSessionId || '1',
@@ -7049,6 +7052,9 @@ document.addEventListener('click', (event) => {
                 theCycleBridgeSteps = [];
                 pipelineRunActive = false;
                 activePipelineRunContext = null;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
                 return true;
             }
         });
