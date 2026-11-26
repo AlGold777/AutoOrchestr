@@ -401,13 +401,26 @@
     // C03's decision hook: only from a settled run or a deliberate pause.
     const FINAL_STATUSES = ['PARTIAL', 'INCONCLUSIVE', 'BUDGET_EXHAUSTED', 'CANCELLED', 'ERROR', 'VERIFIED_SOLUTION'];
     // detail is a bounded record of why the policy chose the action: only these keys, only strings.
+    const DETAIL_KEYS = ['action', 'refs', 'reason', 'question', 'errors', 'schema', 'claim', 'procedure', 'verifier', 'independence', 'verificationRecord'];
+    const VERDICTS = ['SUPPORTED', 'CONTRADICTED', 'INSUFFICIENT', 'VERIFIED'];
+    const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+    const jsonSize = (v) => JSON.stringify(v).length;
+    const DETAIL_JSON_MAX = 65536;
+    // Verification record of one VERIFY cycle: bounded, only these keys.
+    function cleanVerificationRecord(rec) {
+      const keys = ['claim', 'procedure', 'verdict', 'checks', 'independence', 'verifierModel', 'limitations', 'downgrades'];
+      if (!isObj(rec) || Object.keys(rec).some((key) => !keys.includes(key)) || !VERDICTS.includes(rec.verdict) ||
+          typeof rec.claim !== 'string' || !Array.isArray(rec.procedure) || !Array.isArray(rec.checks) ||
+          typeof rec.independence !== 'string' || typeof rec.verifierModel !== 'string' || jsonSize(rec) > DETAIL_JSON_MAX) throw fail('INVALID_DECISION_DETAIL');
+      return copy(rec);
+    }
+    // detail is a bounded record of why the policy chose the action: only these keys, bounded sizes.
     function cleanDetail(detail) {
       if (detail === undefined) return undefined;
       const strs = (list, max) => Array.isArray(list) && list.length <= max && list.every((v) => typeof v === 'string' && v.length <= 400);
-      if (!detail || typeof detail !== 'object' || Array.isArray(detail) ||
-          Object.keys(detail).some((key) => !['action', 'refs', 'reason', 'question', 'errors'].includes(key))) throw fail('INVALID_DECISION_DETAIL');
+      if (!isObj(detail) || Object.keys(detail).some((key) => !DETAIL_KEYS.includes(key))) throw fail('INVALID_DECISION_DETAIL');
       const out = {};
-      for (const key of ['action', 'reason', 'question']) {
+      for (const key of ['action', 'reason', 'question', 'claim', 'verifier', 'independence']) {
         if (detail[key] === undefined) continue;
         if (typeof detail[key] !== 'string' || detail[key].length > 2000) throw fail('INVALID_DECISION_DETAIL');
         out[key] = detail[key];
@@ -417,6 +430,16 @@
         if (!strs(detail[key], max)) throw fail('INVALID_DECISION_DETAIL');
         out[key] = [...detail[key]];
       }
+      if (detail.procedure !== undefined) {
+        if (!Array.isArray(detail.procedure) || detail.procedure.length > 10 || !detail.procedure.every((item) => isObj(item) &&
+            Object.keys(item).every((key) => ['id', 'check'].includes(key)) && typeof item.id === 'string' && typeof item.check === 'string')) throw fail('INVALID_DECISION_DETAIL');
+        out.procedure = copy(detail.procedure);
+      }
+      if (detail.schema !== undefined) {
+        if (!isObj(detail.schema) || jsonSize(detail.schema) > DETAIL_JSON_MAX) throw fail('INVALID_DECISION_DETAIL');
+        out.schema = copy(detail.schema);
+      }
+      if (detail.verificationRecord !== undefined) out.verificationRecord = cleanVerificationRecord(detail.verificationRecord);
       return out;
     }
 
@@ -445,7 +468,8 @@
         }
         if (reason !== undefined) {
           state.lastDecision = { action, reason, stateVersion: state.stateVersion };
-          if (cleanedDetail !== undefined) state.lastDecision.detail = copy(cleanedDetail);
+          // The heavy parts (schema, verification record) stay on the packet; the state keeps the short part.
+          if (cleanedDetail !== undefined) { const { schema: _s, verificationRecord: _v, ...light } = cleanedDetail; state.lastDecision.detail = copy(light); }
         }
         if (finalStatus !== undefined) state.finalStatus = finalStatus;
         if (action === 'RESUME') state.stopRequested = false;

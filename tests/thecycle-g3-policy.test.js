@@ -87,11 +87,9 @@ test('format errors pause with DECISION_FORMAT_INVALID and are never retried', a
   }
 });
 
-test('WAIT_OWNER pauses with the question; CHANGE_STRATEGY and VERIFY are not implemented yet', async () => {
+test('WAIT_OWNER pauses with the question', async () => {
   const cases = [
-    [{ action: 'WAIT_OWNER', reason: 'нужен выбор', refs: [], question: 'A или B?' }, 'WAIT_OWNER'],
-    [{ action: 'CHANGE_STRATEGY', reason: 'r', refs: [], schema: { steps: [] } }, 'NOT_IMPLEMENTED_YET'],
-    [{ action: 'VERIFY', reason: 'r', refs: [REF], claim: 'c', procedure: [{ id: 'p1', check: 'x' }] }, 'NOT_IMPLEMENTED_YET']
+    [{ action: 'WAIT_OWNER', reason: 'нужен выбор', refs: [], question: 'A или B?' }, 'WAIT_OWNER']
   ];
   for (const [answer, reason] of cases) {
     const x = await fixture({ analystAnswers: [json(answer)] });

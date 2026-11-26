@@ -84,12 +84,25 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     schemas.set(analystRef,policyApi.buildAnalystSchema(schema));
     registry.push({ref:analystRef,role:'analyst'});
    }
+   let store=null;
+   // Schemas created by decisions live on the analyst packet (IndexedDB): found by ref also after the database is reopened.
    const loadPipeline=async value=>{
     const entry=registry.find(e=>e.ref===value);
-    return entry?{ref:value,role:entry.role,schema:schemas.get(value),reserveCalls:policyApi&&entry.role==='work'?1:0}:null;
+    if(entry)return {ref:value,role:entry.role,schema:schemas.get(value),reserveCalls:policyApi&&entry.role==='work'?1:0};
+    const role=policyApi?.roleOf?policyApi.roleOf(registry,value):null;
+    const cycle=policyApi?.cycleOfRef?policyApi.cycleOfRef(value):null;
+    if(!role||!cycle||!store||!value.startsWith('thecycle:circle:'+id+':'))return null;
+    if(schemas.has(value))return {ref:value,role,schema:schemas.get(value),reserveCalls:1};
+    const detail=(await store.getPacket(id,cycle))?.decision?.detail;
+    let built=null;
+    if(role==='work'&&detail?.action==='CHANGE_STRATEGY'&&detail.schema)built=copy(detail.schema);
+    else if(role==='verify'&&detail?.action==='VERIFY'&&detail.verifier)built=policyApi.buildVerifierSchema(schema,detail.verifier);
+    if(!built)return null;
+    schemas.set(value,built);
+    return {ref:value,role,schema:built,reserveCalls:1};
    };
    active=await activeStore.createActiveStateStore();
-   const store=active.store;
+   store=active.store;
    await emit('SCHEMA_CAPTURED',{schema,database:active.database,pipelineRef:ref});
    const makeAdapter=({journal,fence})=>adapterApi.createBasicAdapter({
     send:async(modelNames,prompts,meta)=>{
@@ -129,12 +142,34 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    }
    const controller=controllerApi.createController({
     store,makeAdapter,loadPipeline,
-    policy:policyApi?policyApi.createPolicy({registry}):undefined,
+    policy:policyApi?policyApi.createPolicy({registry,models,validateSchema:probe.validate,estimateCalls:probe.estimateCalls,
+      validateSummarySchema:contextMode==='latest-summary'?contextApi.validateSummarySchema:null,maxPromptChars}):undefined,
      resolveTask:async({state,store,pipeline})=>{try{let context;
+      const roleOfRef=r=>policyApi?.roleOf?policyApi.roleOf(registry,r):null;
+      if(pipeline?.role==='verify'){
+       // The verifier sees only the task, the claim and the procedure: no research answers, no analyst text.
+       const origin=await store.getPacket(state.researchId,policyApi.cycleOfRef(pipeline.ref));
+       const d=origin?.decision?.detail;
+       if(d?.action!=='VERIFY'||!d.claim||!Array.isArray(d.procedure))throw Error('CIRCLE_VERIFY_DETAIL_MISSING');
+       const task=policyApi.buildVerifierTask({task:state.task,claim:d.claim,procedure:d.procedure});
+       await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context:{role:'verify',cycleId:origin.cycleId}});
+       return task;
+      }
       if(pipeline?.role==='analyst'){
-       // The analyst reads only the work cycle that was just committed.
-       const {packet,report,answers}=await contextApi.readCycle(store,state.researchId,state.lastCommittedPacket);
-       const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:schema,actions:policyApi.ACTIONS};
+       // The analyst reads the last work cycle; after a verification cycle it also sees the verdict.
+       let workId=state.lastCommittedPacket,verification;
+       const last=await store.getPacket(state.researchId,workId);
+       if(roleOfRef(last?.pipelineRef)==='verify'){
+        const rec=last.decision?.detail?.verificationRecord;
+        if(!rec)throw Error('CIRCLE_VERIFY_RECORD_MISSING');
+        verification=policyApi.verificationText(rec);
+        workId=null;
+        for(let n=state.lastCommittedPacket-1;n>=1;n--){const p=await store.getPacket(state.researchId,n);if(roleOfRef(p?.pipelineRef)==='work'){workId=n;break;}}
+        if(workId===null)throw Error('CIRCLE_COMMITTED_PACKET_MISSING');
+       }
+       const {packet,report,answers}=await contextApi.readCycle(store,state.researchId,workId);
+       const current=(await loadPipeline(packet.pipelineRef))?.schema||schema;
+       const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:current,actions:policyApi.ACTIONS,verification};
        let summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
        // Same limit as the work cycle: 0.8 of the prompt minus the template; the summary is cut, never the template.
        const room=Math.floor(maxPromptChars*0.8)-policyApi.buildAnalystTask({...parts,summary:''}).length;
@@ -144,11 +179,11 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
        await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context:{role:'analyst',cycleId:packet.cycleId}});
        return task;
       }
-      // With an analyst, its cycles are not evidence for the work cycle.
+      // With an analyst, its cycles are not evidence for the work cycle: only work cycles (of any strategy) count.
       let cycles=null;
       if(policyApi&&state.lastCommittedPacket!=null){
        cycles=[];
-       for(let n=1;n<=state.lastCommittedPacket;n++){const p=await store.getPacket(state.researchId,n);if(p?.pipelineRef===ref)cycles.push(n);}
+       for(let n=1;n<=state.lastCommittedPacket;n++){const p=await store.getPacket(state.researchId,n);if(roleOfRef(p?.pipelineRef)==='work')cycles.push(n);}
       }
       const task=await contextApi.buildTask({state,store,mode:contextMode,cycles,maxChars:Math.floor(maxPromptChars*0.8),onContext:v=>{context=v;}});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
     maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:observedGate

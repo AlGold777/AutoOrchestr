@@ -14,12 +14,35 @@ const str=v=>typeof v==='string'&&v.trim().length>0;
 
 // Single pass over the template: substituted data is never searched for placeholders again.
 function fill(template,values){return template.replace(/\{\{(\w+)\}\}/g,(m,k)=>Object.prototype.hasOwnProperty.call(values,k)?String(values[k]):m);}
-function buildAnalystTask({task,summary,budget,schema,actions}={}){
- return fill(ANALYST_PROMPT,{task,summary,budget,
+function buildAnalystTask({task,summary,budget,schema,actions,verification}={}){
+ const text=fill(ANALYST_PROMPT,{task,summary,budget,
   schema:typeof schema==='string'?schema:JSON.stringify(schema,null,1),
   actions:Array.isArray(actions)?actions.join(', '):actions});
+ return verification?text+'\nРЕЗУЛЬТАТ ПРОВЕРКИ:\n'+verification+'\n':text;
+}
+const procedureText=procedure=>procedure.map(p=>p.id+': '+p.check).join('\n');
+function buildVerifierTask({task,claim,procedure}={}){return fill(VERIFIER_PROMPT,{task,claim,procedure:procedureText(procedure)});}
+// Plain text of a verification record for the analyst (it sees the verdict, the verifier does not see the research).
+function verificationText(rec){
+ const lines=['вердикт: '+rec.verdict,'независимость: '+rec.independence+(rec.verifierModel?' (проверял '+rec.verifierModel+')':''),'утверждение: '+rec.claim];
+ for(const c of rec.checks)lines.push(c.id+' '+c.result+': '+c.evidence);
+ if(rec.limitations?.length)lines.push('ограничения: '+rec.limitations.join('; '));
+ if(rec.downgrades?.length)lines.push('вердикт понижен: '+rec.downgrades.join('; '));
+ return lines.join('\n');
 }
 
+// One-round, one-model, no-input cycle schema derived from the work schema (analyst and verifier).
+function singleRoundSchema(workSchema,name){
+ const out=copy(workSchema);
+ out.steps=[{ref:'r1',kind:'round',input:'none',models:[{name}]}];
+ // Basic rejects defaults.roundTask on input:none; the answer is JSON, so no length check, no marks, no repeat.
+ if(out.defaults){delete out.defaults.roundTask;if(!Object.keys(out.defaults).length)delete out.defaults;}
+ const run={maxWords:1000,strictLength:false};
+ if(workSchema.run?.policy!==undefined)run.policy=workSchema.run.policy;
+ if(workSchema.run?.onNoAnswer!==undefined)run.onNoAnswer=workSchema.run.onNoAnswer;
+ out.run=run;
+ return out;
+}
 // The analyst is an ordinary one-round Circle cycle: one model (the first enabled model of the work schema), no input.
 function buildAnalystSchema(workSchema){
  let name=null;
@@ -29,19 +52,15 @@ function buildAnalystSchema(workSchema){
   if(model){name=model.name;break;}
  }
  if(!name)throw Error('CIRCLE_ANALYST_NO_MODEL');
- const out=copy(workSchema);
- out.steps=[{ref:'r1',kind:'round',input:'none',models:[{name}]}];
- // Basic rejects defaults.roundTask on input:none; the analyst answers JSON, so no length check, no marks, no repeat.
- if(out.defaults){delete out.defaults.roundTask;if(!Object.keys(out.defaults).length)delete out.defaults;}
- const run={maxWords:1000,strictLength:false};
- if(workSchema.run?.policy!==undefined)run.policy=workSchema.run.policy;
- if(workSchema.run?.onNoAnswer!==undefined)run.onNoAnswer=workSchema.run.onNoAnswer;
- out.run=run;
- return out;
+ return singleRoundSchema(workSchema,name);
+}
+function buildVerifierSchema(workSchema,model){
+ if(!str(model))throw Error('CIRCLE_VERIFIER_NO_MODEL');
+ return singleRoundSchema(workSchema,model);
 }
 
 // Candidates: every top-level balanced {...} that parses as JSON; exactly one of them must carry the key "action".
-function candidates(text){
+function candidates(text,key='action'){
  const found=[];
  for(let i=0;i<text.length;i++){
   if(text[i]!=='{')continue;
@@ -54,7 +73,7 @@ function candidates(text){
   if(end<0)continue;
   try{const value=JSON.parse(text.slice(i,end+1));if(isObj(value)){found.push(value);i=end;}}catch(_){}
  }
- return found.filter(v=>Object.prototype.hasOwnProperty.call(v,'action'));
+ return found.filter(v=>Object.prototype.hasOwnProperty.call(v,key));
 }
 const reportOf=(packets,n)=>packets instanceof Map?packets.get(n):packets?.[n];
 function checkRef(ref,lastCommittedPacket,packets){
@@ -89,14 +108,14 @@ function parseDecision(text,{lastCommittedPacket,packets}={}){
   if(!has(key)&&d.action==='VERIFY')errors.push('VERIFY требует '+key);
  }
  if(d.action==='VERIFY'){
-  if(has('claim')&&!str(d.claim))errors.push('claim: непустая строка');
+  if(has('claim')&&(!str(d.claim)||d.claim.length>2000))errors.push('claim: непустая строка до 2000 знаков');
   if(has('procedure')){
    const p=d.procedure;
    if(!Array.isArray(p)||p.length<1||p.length>10)errors.push('procedure: 1–10 проверок');
    else{
     const ids=new Set();
     for(const item of p){
-     if(!isObj(item)||Object.keys(item).some(k=>!['id','check'].includes(k))||!str(item.id)||!str(item.check))errors.push('procedure: элемент вида {id,check}');
+     if(!isObj(item)||Object.keys(item).some(k=>!['id','check'].includes(k))||!str(item.id)||!str(item.check)||item.id.length>64||item.check.length>1000)errors.push('procedure: элемент вида {id,check}');
      else if(ids.has(item.id))errors.push('procedure: повтор id '+item.id);
      else ids.add(item.id);
     }
@@ -122,20 +141,90 @@ const analystAnswer=report=>{
   if(value?.ok===true&&typeof value.text==='string'&&value.text.trim())return value.text;
  return null;
 };
-// registry: [{ref,role:'work'|'analyst'}]. Returns the controller policy.
-function createPolicy({registry}={}){
+
+// Role of a cycle schema ref: the registry first, then the ref suffix (schemas created by decisions are found by their ref).
+function roleOf(registry,ref){
+ const entry=Array.isArray(registry)?registry.find(e=>e.ref===ref):null;
+ if(entry)return entry.role;
+ if(typeof ref!=='string')return null;
+ if(/:schema:c\d+$/.test(ref))return 'work';
+ if(/:verify:c\d+$/.test(ref))return 'verify';
+ return null;
+}
+const cycleOfRef=ref=>{const m=/:c(\d+)$/.exec(ref||'');return m?Number(m[1]):null;};
+
+// Verifier answer: exactly one JSON object with "verdict". Structural defects do not pause: the verdict drops to INSUFFICIENT.
+const VERDICTS=Object.freeze(['SUPPORTED','CONTRADICTED','INSUFFICIENT','VERIFIED']);
+const cut=(v,n)=>String(v).slice(0,n);
+function parseVerification(text,{procedure,independence}={}){
+ if(typeof text!=='string')return {ok:false,errors:['ответ не текст']};
+ const found=candidates(text,'verdict');
+ if(found.length!==1)return {ok:false,errors:[found.length?'найдено несколько JSON-объектов с verdict: '+found.length:'нет JSON-объекта с verdict']};
+ const d=found[0],defects=[];
+ const ids=new Set((procedure||[]).map(p=>p.id));
+ for(const key of Object.keys(d))if(!['verdict','checks','limitations'].includes(key))defects.push('лишний ключ: '+cut(key,60));
+ if(!VERDICTS.includes(d.verdict))defects.push('неизвестный verdict');
+ const checks=[],seen=new Set();
+ if(!Array.isArray(d.checks))defects.push('checks: не массив');
+ else for(const c of d.checks){
+  if(!isObj(c)||Object.keys(c).some(k=>!['id','result','evidence'].includes(k))||typeof c.id!=='string'||!['PASS','FAIL'].includes(c.result)||typeof c.evidence!=='string'){defects.push('checks: элемент не вида {id,result,evidence}');continue;}
+  if(!ids.has(c.id)){defects.push('checks: неизвестный id '+cut(c.id,60));continue;}
+  if(seen.has(c.id)){defects.push('checks: повтор id '+c.id);continue;}
+  seen.add(c.id);checks.push({id:c.id,result:c.result,evidence:cut(c.evidence,1000)});
+ }
+ if(Array.isArray(d.checks)&&[...ids].some(id=>!seen.has(id)))defects.push('checks: неполный набор id');
+ let limitations=[];
+ if(!Array.isArray(d.limitations)||d.limitations.some(v=>typeof v!=='string'))defects.push('limitations: массив строк');
+ else limitations=d.limitations.slice(0,20).map(v=>cut(v,500));
+ let verdict=VERDICTS.includes(d.verdict)?d.verdict:'INSUFFICIENT';
+ if(defects.length)verdict='INSUFFICIENT';
+ else if(verdict==='VERIFIED'){
+  if(checks.some(c=>c.result!=='PASS'))defects.push('VERIFIED при проверке FAIL');
+  if(independence!=='FRESH_TAB_OTHER_MODEL')defects.push('VERIFIED без доказанной независимости');
+  if(defects.length)verdict='INSUFFICIENT';
+ }
+ return {ok:true,verdict,checks,limitations,downgrades:defects.slice(0,10).map(v=>cut(v,300))};
+}
+
+const modelsOfRefs=refs=>[...new Set((refs||[]).map(r=>REF.exec(r)?.[3]).filter(Boolean))];
+const modelsOfSchema=schema=>(schema?.steps||[]).filter(s=>s?.kind==='round').flatMap(s=>(s.models||[]).filter(m=>m&&m.enabled!==false).map(m=>m.name));
+const fmtError=e=>cut(typeof e==='string'?e:(e?.path?e.path+': ':'')+(e?.message||JSON.stringify(e)),400);
+const SCHEMA_MAX=65536;
+
+// registry: [{ref,role:'work'|'analyst'}]; options for CHANGE_STRATEGY / VERIFY. Returns the controller policy.
+function createPolicy({registry,models=null,validateSchema=null,estimateCalls=null,validateSummarySchema=null,maxStrategyChanges=5,maxPromptChars=null}={}){
  if(!Array.isArray(registry))throw Error('CIRCLE_POLICY_REGISTRY');
- const roleOf=ref=>registry.find(e=>e.ref===ref)?.role||null;
- const refOf=role=>registry.find(e=>e.role===role)?.ref;
+ const role=ref=>roleOf(registry,ref);
+ const refOf=r=>registry.find(e=>e.role===r)?.ref;
  return async function policy({state,packet,report,store}){
   if(state.stopRequested)return {action:'PAUSE',reason:'OWNER_STOP'};
   const exhausted=state.budget.usedCalls>=state.budget.maxCalls;
+  const remaining=state.budget.maxCalls-state.budget.usedCalls;
   if(!packet||packet.status!=='RECORDED_RESULT'||!settled(report)||
    !Number.isSafeInteger(packet.usedCalls)||packet.usedCalls<=0)
    return {action:'PAUSE',reason:'PARTIAL_OR_UNCERTAIN'};
-  const role=roleOf(packet.pipelineRef);
-  if(role==='work'){if(exhausted)return {action:'PAUSE',reason:'BUDGET_EXHAUSTED'};return {action:'CONTINUE',reason:'ANALYST_NEXT',pipelineRef:refOf('analyst')};}
-  if(role!=='analyst')return {action:'PAUSE',reason:'PIPELINE_ROLE_UNKNOWN'};
+  const packetRole=role(packet.pipelineRef);
+  const prefix='thecycle:circle:'+state.researchId+':';
+  // The work schema that runs next: the one of the latest work cycle (a strategy change replaces the original).
+  const currentWorkRef=async()=>{
+   for(let n=state.lastCommittedPacket;n>=1;n--){const p=await store.getPacket(state.researchId,n);if(p&&role(p.pipelineRef)==='work')return p.pipelineRef;}
+   return refOf('work');
+  };
+  if(packetRole==='work'){if(exhausted)return {action:'PAUSE',reason:'BUDGET_EXHAUSTED'};return {action:'CONTINUE',reason:'ANALYST_NEXT',pipelineRef:refOf('analyst')};}
+  if(packetRole==='verify'){
+   const analystCycle=cycleOfRef(packet.pipelineRef);
+   const origin=analystCycle?await store.getPacket(state.researchId,analystCycle):null;
+   const d=origin?.decision?.detail;
+   if(!d||d.action!=='VERIFY'||!Array.isArray(d.procedure))return {action:'PAUSE',reason:'PIPELINE_UNAVAILABLE'};
+   const parsed=parseVerification(analystAnswer(report),{procedure:d.procedure,independence:d.independence});
+   if(!parsed.ok)return {action:'PAUSE',reason:'DECISION_FORMAT_INVALID',detail:{errors:parsed.errors.slice(0,30).map(fmtError)}};
+   const record={claim:d.claim,procedure:d.procedure,verdict:parsed.verdict,checks:parsed.checks,independence:d.independence,verifierModel:d.verifier,limitations:parsed.limitations};
+   if(parsed.downgrades.length)record.downgrades=parsed.downgrades;
+   const detail={action:'VERIFY',reason:'verdict '+parsed.verdict,verificationRecord:record};
+   if(exhausted)return {action:'PAUSE',reason:'BUDGET_EXHAUSTED',detail};
+   return {action:'CONTINUE',reason:'ANALYST_NEXT',pipelineRef:refOf('analyst'),detail};
+  }
+  if(packetRole!=='analyst')return {action:'PAUSE',reason:'PIPELINE_ROLE_UNKNOWN'};
   const text=analystAnswer(report);
   let parsed;
   if(text===null)parsed={ok:false,errors:['нет принятого ответа аналитика']};
@@ -153,14 +242,67 @@ function createPolicy({registry}={}){
   if(!parsed.ok)return {action:'PAUSE',reason:'DECISION_FORMAT_INVALID',detail:{errors:parsed.errors.slice(0,30).map(e=>String(e).slice(0,400))}};
   const d=parsed.decision;
   const detail={action:d.action,refs:d.refs,reason:d.reason};
-  if(d.action==='CONTINUE'){if(exhausted)return {action:'PAUSE',reason:'BUDGET_EXHAUSTED',detail};return {action:'CONTINUE',reason:'ANALYST_CONTINUE',pipelineRef:refOf('work'),detail};}
-  if(d.action==='COMPLETE')return {action:'COMPLETE',reason:'ANALYST_COMPLETE',finalStatus:'PARTIAL',detail};
+  if(d.action==='CONTINUE'){if(exhausted)return {action:'PAUSE',reason:'BUDGET_EXHAUSTED',detail};return {action:'CONTINUE',reason:'ANALYST_CONTINUE',pipelineRef:await currentWorkRef(),detail};}
+  if(d.action==='COMPLETE'){
+   // VERIFIED_SOLUTION only straight after a verification cycle that proved itself on a fresh tab of another model.
+   const prev=state.lastCommittedPacket>1?await store.getPacket(state.researchId,state.lastCommittedPacket-1):null;
+   const rec=prev&&role(prev.pipelineRef)==='verify'?prev.decision?.detail?.verificationRecord:null;
+   if(rec&&rec.verdict==='VERIFIED'&&rec.independence==='FRESH_TAB_OTHER_MODEL'&&rec.checks.length>0&&rec.checks.every(c=>c.result==='PASS'))
+    return {action:'COMPLETE',reason:'ANALYST_COMPLETE',finalStatus:'VERIFIED_SOLUTION',verificationRecord:true,detail};
+   return {action:'COMPLETE',reason:'ANALYST_COMPLETE',finalStatus:'PARTIAL',detail};
+  }
   if(d.action==='WAIT_OWNER'){if(d.question)detail.question=d.question;return {action:'PAUSE',reason:'WAIT_OWNER',detail};}
-  return {action:'PAUSE',reason:'NOT_IMPLEMENTED_YET',detail};
+  if(d.action==='CHANGE_STRATEGY'){
+   if(exhausted)return {action:'PAUSE',reason:'BUDGET_EXHAUSTED',detail};
+   const reject=errors=>({action:'PAUSE',reason:'STRATEGY_REJECTED',detail:{...detail,errors:errors.slice(0,30).map(fmtError)}});
+   if(typeof validateSchema!=='function'||typeof estimateCalls!=='function'||!Array.isArray(models))return reject(['проверка схемы недоступна']);
+   let changes=0;
+   for(let n=1;n<state.lastCommittedPacket;n++){const p=await store.getPacket(state.researchId,n);if(p?.decision?.action==='CONTINUE'&&p.decision.detail?.action==='CHANGE_STRATEGY')changes++;}
+   if(changes>=maxStrategyChanges)return reject(['лимит смен стратегии: '+maxStrategyChanges]);
+   const schema=copy(d.schema);
+   schema.run={...(isObj(schema.run)?schema.run:{}),policy:'auto'};
+   const size=JSON.stringify(schema).length;
+   if(size>SCHEMA_MAX)return reject(['схема больше '+SCHEMA_MAX+' знаков']);
+   if(Number.isFinite(maxPromptChars)){
+    // The analyst prompt carries the schema pretty-printed: it must fit with the template and room for the summary.
+    const room=Math.floor(0.8*maxPromptChars)-buildAnalystTask({task:'',summary:'',budget:'',schema:'',actions:ACTIONS}).length-2000;
+    if(JSON.stringify(schema,null,1).length>room)return {action:'PAUSE',reason:'STRATEGY_REJECTED',detail:{...detail,errors:['SCHEMA_TOO_LARGE_FOR_PROMPT']}};
+   }
+   const checked=validateSchema(schema);
+   if(!checked.ok)return reject(checked.errors||['схема отклонена']);
+   const foreign=[...new Set(modelsOfSchema(schema))].filter(m=>!models.includes(m));
+   if(foreign.length)return reject(['модели вне выбранных в исследовании: '+foreign.join(', ')]);
+   if(typeof validateSummarySchema==='function'){try{validateSummarySchema(schema);}catch(e){return reject([String(e?.message||e)]);}}
+   const need=estimateCalls(schema);
+   if(!(need>=1)||need+1>remaining)return reject(['схема требует '+need+' запросов и один аналитику, осталось '+remaining]);
+   return {action:'CONTINUE',reason:'STRATEGY_CHANGED',pipelineRef:prefix+'schema:c'+state.lastCommittedPacket,detail:{...detail,schema}};
+  }
+  if(d.action==='VERIFY'){
+   if(remaining<2)return {action:'PAUSE',reason:'BUDGET_INSUFFICIENT_FOR_VERIFY',detail};
+   if(!Array.isArray(models)||!models.length)return {action:'PAUSE',reason:'PIPELINE_UNAVAILABLE',detail};
+   // Independent verifier: a selected model that is neither an author of the refs, nor the analyst, nor an answerer of any work cycle.
+   const answered=r=>{const out=[];for(const step of r?.steps||[])for(const [name,v] of Object.entries(step.outcome||{}))if(v?.ok===true&&typeof v.text==='string'&&v.text.trim())out.push(name);return out;};
+   const analystModels=answered(report);
+   const excluded=new Set([...modelsOfRefs(d.refs),...analystModels]);
+   for(let n=1;n<=state.lastCommittedPacket;n++){
+    const p=await store.getPacket(state.researchId,n);
+    if(!p||role(p.pipelineRef)!=='work')continue;
+    const events=await store.getEvents(state.researchId,p.runId);
+    const r=events.find(e=>e.eventId===p.resultEventId)?.payload?.report;
+    for(const m of answered(r))excluded.add(m);
+   }
+   const other=models.find(m=>!excluded.has(m));
+   const verifier=other||models.find(m=>!analystModels.includes(m))||models[0];
+   if(Number.isFinite(maxPromptChars)&&buildVerifierTask({task:state.task,claim:d.claim,procedure:d.procedure}).length>Math.floor(0.8*maxPromptChars))
+    return {action:'PAUSE',reason:'VERIFY_PROMPT_TOO_LARGE',detail};
+   return {action:'CONTINUE',reason:'VERIFY_NEXT',pipelineRef:prefix+'verify:c'+state.lastCommittedPacket,
+    detail:{...detail,claim:d.claim,procedure:d.procedure,verifier,independence:other?'FRESH_TAB_OTHER_MODEL':'UNPROVEN'}};
+  }
+  return {action:'PAUSE',reason:'PIPELINE_ROLE_UNKNOWN',detail};
  };
 }
 
-const api=Object.freeze({ANALYST_PROMPT,VERIFIER_PROMPT,ACTIONS,buildAnalystTask,buildAnalystSchema,summaryFromAnswers,budgetText,parseDecision,createPolicy});
+const api=Object.freeze({ANALYST_PROMPT,VERIFIER_PROMPT,ACTIONS,buildAnalystTask,buildAnalystSchema,buildVerifierSchema,buildVerifierTask,verificationText,parseVerification,roleOf,cycleOfRef,summaryFromAnswers,budgetText,parseDecision,createPolicy});
 root.TheCycleCirclePolicy=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
