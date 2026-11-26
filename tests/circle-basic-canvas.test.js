@@ -30,3 +30,22 @@ describe('Circle edits the Basic canvas and schema', () => {
     expect(results).toMatch(/const resumeCustomFromPage = async[\s\S]*?if \(circlePageRunner \|\| theCycleHeld\) \{ showNotification\('Pipeline already running', 'warn'\); return false; \}[\s\S]*?const latest =/);
   });
 });
+
+describe('TheCycle bridge always opens new model tabs', () => {
+  const start = results.indexOf('window.TheCycleMainPageBridge = Object.freeze({');
+  const bridge = results.slice(start, results.indexOf("window.dispatchEvent(new Event('thecycle:basic-bridge-ready'))", start));
+  const begin = bridge.slice(bridge.indexOf('begin({ runId, schema })'), bridge.indexOf('async send('));
+
+  test('begin sets forceNewTabs true and does not read the new pages checkbox', () => {
+    expect(begin).toMatch(/forceNewTabs: true,/);
+    expect(bridge).not.toContain('newPagesCheckbox');
+  });
+
+  test('every begin starts with an empty set of opened models', () => {
+    expect(begin).toMatch(/newPagesModels: new Set\(\),\s*newPagesDispatched: false/);
+  });
+
+  test('send passes the run context forceNewTabs to runModelBatch', () => {
+    expect(bridge).toMatch(/forceNewTabs: runContext\.forceNewTabs,/);
+  });
+});

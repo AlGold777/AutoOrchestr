@@ -7716,7 +7716,8 @@ document.addEventListener('click', (event) => {
                     pipelineRunId: runId,
                     sessionId: debateTabsState?.activeSessionId || '1',
                     startedAt: Date.now(),
-                    forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
+                    // Circle never writes into a tab the user already has: every begin opens fresh model tabs, whatever the page checkbox says.
+                    forceNewTabs: true,
                     newPagesModels: new Set(),
                     newPagesDispatched: false
                 };
