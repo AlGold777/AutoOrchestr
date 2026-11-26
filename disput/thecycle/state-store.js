@@ -104,7 +104,7 @@
       if (![researchId, task, pipelineRef].every(str) || !pos(maxCalls)) throw fail('INVALID_RESEARCH');
       const state = {
         researchId, task, pipelineRef, stateVersion: 0, phase: 'READY',
-        nextCycle: 1, activeRunId: null, lastCommittedPacket: null,
+        nextCycle: 1, activeRunId: null, lastCommittedPacket: null, backupRequiredCycleId: null,
         stopRequested: false, budget: { maxCalls, usedCalls: 0 }
       };
       return write(async (s) => {
@@ -334,11 +334,27 @@
         run.phase = 'COMMITTED';
         await request(s.runs.put(run));
         state.lastCommittedPacket = run.cycleId;
+        // Persist backup obligation in the SAME transaction as the packet.
+        state.backupRequiredCycleId = run.cycleId;
         state.nextCycle += 1;
         state.activeRunId = null;
         state.phase = state.stopRequested ? 'PAUSED' : 'EVALUATE';
         await writeState(s, state);
         return copy({ state, packet });
+      });
+    }
+
+    async function acknowledgePacketBackup(token, { expectedVersion, cycleId } = {}) {
+      if (!pos(cycleId)) throw fail('INVALID_CYCLE');
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (state.backupRequiredCycleId !== cycleId ||
+            state.lastCommittedPacket !== cycleId ||
+            !(await request(s.packets.get([state.researchId, cycleId]))))
+          throw fail('BACKUP_ACK_NOT_ALLOWED');
+        state.backupRequiredCycleId = null;
+        return copy(await writeState(s, state));
       });
     }
 
@@ -418,7 +434,7 @@
     }
 
     return Object.freeze({ createResearch, load, getOwnership, acquire, release, prepareRun, journalFor,
-      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, commitPacket, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
+      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
       close: () => db.close() });
   }
   const api = Object.freeze({ createStateStore, StoreError, DB_NAME, DB_VERSION });
