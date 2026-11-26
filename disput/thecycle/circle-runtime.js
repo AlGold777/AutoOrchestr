@@ -68,7 +68,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      if(owner?.researchId!==fence.researchId||owner?.ownerId!==fence.ownerId||owner?.epoch!==fence.epoch||meta.runId!==bridgeRun)
       throw Error('CIRCLE_STALE_OWNER');
      return bridge.send(modelNames,prompts,meta);
-    },accept:bridge.accept,journal:async event=>{const saved=await journal(event);await emit(event.type,{event,state:await store.load(id)});return saved;},availableModels:models,isRole:()=>true,roleText:bridge.roleText
+    },accept:bridge.accept,journal:async event=>{const saved=await journal(event);let state;try{state=await store.load(id);}catch(_){}await emit(event.type,{event,state});return saved;},availableModels:models,isRole:()=>true,roleText:bridge.roleText
    });
    if(!makeAdapter({journal:async()=>{},fence:{}}).validate(schema).ok)throw Error('CIRCLE_ADAPTER_REJECTED_SCHEMA');
    // Require real independent backup storage before any provider request.
@@ -138,10 +138,11 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
  }
  async function stop(){
   if(!running)return {status:'NOT_RUNNING'};
-  running.stopRequested=true;
-  await running.emit?.("STOP_REQUESTED");
-  if(running.controller)await running.controller.stop(running.researchId);
-  return {status:'STOP_REQUESTED',researchId:running.researchId};
+  const session=running;
+  session.stopRequested=true;
+  if(session.controller)await session.controller.stop(session.researchId);
+  await session.emit?.("STOP_REQUESTED");
+  return {status:'STOP_REQUESTED',researchId:session.researchId};
  }
  async function latest(){return (await storage.get('thecycle.circle.latest'))['thecycle.circle.latest']||null;}
  return Object.freeze({start,stop,snapshot,latest,isRunning:()=>Boolean(running)});

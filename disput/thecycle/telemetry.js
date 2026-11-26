@@ -74,7 +74,8 @@ function createTelemetry({repository,clock=()=>Date.now(),notify=()=>{},version=
 function markdown(rows,{exportedAt=new Date().toISOString()}={}){
  // JSON lines are fenced using a delimiter longer than any backtick run in data.
  const json=rows.map(row=>JSON.stringify(row)).join('\n');
- const fence='\x60'.repeat(Math.max(3,...Array.from(json.matchAll(/\x60+/g),m=>m[0].length+1)));
+ let fenceSize=3;for(const m of json.matchAll(/\x60+/g))fenceSize=Math.max(fenceSize,m[0].length+1);
+ const fence='\x60'.repeat(fenceSize);
  const counts={};for(const row of rows)counts[row.type]=(counts[row.type]||0)+1;
  return '# TheCycle diagnostics\n\nExported: '+exportedAt+'\n\nEvents: '+rows.length+'\n\n## Event counts\n\n'+Object.entries(counts).map(([k,v])=>'- '+k+': '+v).join('\n')+'\n\n## Chronological events\n\n'+fence+'jsonl\n'+json+'\n'+fence+'\n';
 }
