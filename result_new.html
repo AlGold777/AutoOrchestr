@@ -1175,4 +1175,27 @@
 
 
 
+
+<!-- G1 operator surface: intentionally one Basic run, no autonomous replay yet. -->
+<details id="thecycle-g1" style="position:fixed;right:18px;bottom:18px;width:min(460px,calc(100vw - 36px));max-height:85vh;overflow:auto;z-index:30000;background:#fff;color:#161616;border:1px solid #777;border-radius:10px;padding:12px;box-shadow:0 6px 24px #0003;font:14px system-ui">
+ <summary style="cursor:pointer;font-weight:650">TheCycle — G1 (один Basic-run)</summary>
+ <p style="font-size:12px">Выберите Basic и модели в редакторе выше. Результат сохраняется в IndexedDB. Во время G1 не закрывайте эту страницу.</p>
+ <label for="thecycle-g1-task">Задача</label>
+ <textarea id="thecycle-g1-task" rows="3" maxlength="10000" style="display:block;width:100%;box-sizing:border-box"></textarea>
+ <label for="thecycle-g1-budget">Максимум обращений к моделям</label>
+ <input id="thecycle-g1-budget" type="number" min="1" max="10000" value="24" style="width:80px">
+ <div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap">
+  <button type="button" id="thecycle-g1-start">Start G1</button>
+  <button type="button" id="thecycle-g1-stop">Stop</button>
+  <button type="button" id="thecycle-g1-status">Status</button>
+ </div>
+ <pre id="thecycle-g1-output" role="status" style="max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"></pre>
+</details>
+<script src="disput/thecycle/state-store.js"></script>
+<script src="disput/thecycle/recovery-repositories.js"></script>
+<script src="disput/thecycle/active-state-store.js"></script>
+<script src="disput/thecycle/basic-adapter.js"></script>
+<script src="disput/thecycle/controller.js"></script>
+<script src="disput/thecycle/g1-runtime.js"></script>
+<script src="thecycle-g1-ui.js"></script>
 </body></html>
