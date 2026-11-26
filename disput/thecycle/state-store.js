@@ -373,8 +373,20 @@
       });
     }
 
+    // C02 backup foundation: capture every store in one readonly transaction.
+    // This is a consistent logical snapshot, not a durable off-device backup.
+    // The caller MUST write the returned object to independent storage and
+    // confirm its integrity before claiming backup protection.
+    async function exportSnapshot() {
+      return read(async (s) => {
+        const snapshot = { format: 'thecycle-idb-snapshot', version: 1, databaseVersion: DB_VERSION, stores: {} };
+        for (const name of STORES) snapshot.stores[name] = copy(await request(s[name].getAll()));
+        return snapshot;
+      });
+    }
+
     return Object.freeze({ createResearch, load, getOwnership, acquire, release, prepareRun, journalFor,
-      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, commitPacket, requestStop, decide,
+      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, commitPacket, requestStop, decide, exportSnapshot,
       close: () => db.close() });
   }
   const api = Object.freeze({ createStateStore, StoreError, DB_NAME, DB_VERSION });
