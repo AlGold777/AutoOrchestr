@@ -13,20 +13,24 @@ async function performBackupOnce(){
     root.TheCycleDirectorySink,root.TheCycleBackup];
   if(modules.some(x=>!x))throw new Error('THECYCLE_BACKUP_MODULES_MISSING');
   const manager=await root.TheCycleDirectoryHandleManager.createDirectoryHandleManager();
-  let store;
+  let store,registry;
   try{
+    registry=await root.TheCycleRecoveryRepositories.createRecoveryRepositories();
+    const pointer=await registry.activation.read();
+    if(!/^auto-orchestr-thecycle(?:-restore-[a-zA-Z0-9_-]{8,})?$/.test(pointer.activeDatabase))
+      throw new Error('BACKUP_ACTIVE_DATABASE_INVALID');
     const directory=await manager.load('thecycle-backups');
-    store=await root.TheCycleStateStore.createStateStore();
+    store=await root.TheCycleStateStore.createStateStore({name:pointer.activeDatabase});
     const sink=root.TheCycleDirectorySink.createDirectorySink({directory});
     const backup=root.TheCycleBackup.createBackupService({store,sink});
     const key='thecycle-alarm-'+Date.now()+'-'+root.crypto.randomUUID().replace(/-/g,'');
     const result=await backup.save(key);
     if(result.verified!==true)throw new Error('THECYCLE_BACKUP_UNVERIFIED');
     await root.chrome.storage.local.set({thecycleBackupStatus:{
-      state:'VERIFIED',key,sha256:result.sha256,at:Date.now()
+      state:'VERIFIED',key,sha256:result.sha256,database:pointer.activeDatabase,at:Date.now()
     }});
     return {key,sha256:result.sha256};
-  }finally{store?.close();manager.close();}
+  }finally{store?.close();registry?.close();manager.close();}
 }
 function performBackup(){
  if(inFlight)return inFlight;
