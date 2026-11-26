@@ -1,0 +1,27 @@
+{
+  "researchId": "circle-a4e4dd42-de6e-48e4-9cdb-709850629ad3",
+  "phase": "PAUSED",
+  "cycle": 4,
+  "budget": {
+    "maxCalls": 4,
+    "usedCalls": 4
+  },
+  "decision": {
+    "action": "PAUSE",
+    "reason": "BUDGET_EXHAUSTED",
+    "stateVersion": 31
+  },
+  "pendingBackup": null,
+  "lastOutcome": {
+    "outcome": "DECISION",
+    "phase": "PAUSED",
+    "cycle": 4,
+    "decision": {
+      "action": "PAUSE",
+      "reason": "BUDGET_EXHAUSTED"
+    }
+  },
+  "result": [
+    "«Заметки под рукой» — название для приложения, в котором мысли всегда легко найти.Развил «Заметник» (цикл 3, шаг 1, ): заменил придуманное слово на понятную фразу, которая подчёркивает доступность записей."
+  ]
+}
