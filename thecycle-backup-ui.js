@@ -24,3 +24,10 @@ document.getElementById('run').addEventListener('click',()=>action(async()=>{
 }));
 document.getElementById('refresh').addEventListener('click',()=>action(async()=>{}));
 void refresh().catch(error=>{message.textContent=String(error);});
+
+document.getElementById('inspect').addEventListener('click',()=>action(async()=>{
+ const key=document.getElementById('backup-key').value.trim();
+ const result=await TheCycleBackupInspector.inspectBackup({key});
+ document.getElementById('inspection').textContent=JSON.stringify(result,null,2);
+ message.textContent='Целостность и структура копии подтверждены. Активация заблокирована.';
+}));
