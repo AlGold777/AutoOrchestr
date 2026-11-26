@@ -5,6 +5,9 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {createG1Runner}=require('../disput/thecycle/g1-runtime.js');
 const realController=require('../disput/thecycle/controller.js');
+const realAdapter=require('../disput/thecycle/basic-adapter.js');
+const realSchema=require('../disput/basic-schema.js');
+const realEngine=require('../disput/custom-engine.js');
 
 const clone=v=>JSON.parse(JSON.stringify(v));
 function harness({valid=true}={}){
@@ -112,4 +115,31 @@ test('production G1 entrypoint is wired to the existing results page',()=>{
   assert.ok(html.includes(script),script);
  assert.match(page,/window\.TheCycleMainPageBridge\s*=/);
  assert.match(page,/await runModelBatch\(\{/);
+});
+
+test('G1 Basic Adapter reaches the actual finite Basic Engine with one dispatch',async()=>{
+ const journal=[];
+ let dispatched=0;
+ const instance=realAdapter.createBasicAdapter({
+  schemaApi:realSchema,engine:realEngine,availableModels:['GPT'],
+  isRole:()=>true,roleText:()=>'',accept:()=>({ok:true}),
+  journal:async event=>journal.push(event),
+  send:async(models,prompts,meta)=>{
+   dispatched++;
+   assert.deepEqual(models,['GPT']);
+   assert.match(prompts.GPT,/Solve problem/);
+   assert.equal(meta.runId,'research:cycle:1');
+   return {byModel:{GPT:{text:'Answer from provider',status:'SUCCESS',answered:true}}};
+  }
+ });
+ const schema={schemaVersion:1,origin:'user',run:{policy:'auto'},
+  steps:[{ref:'r1',kind:'round',models:[{name:'GPT'}]}]};
+ assert.deepEqual(instance.validate(schema),{ok:true,errors:[]});
+ const result=await instance.execute({researchId:'research',runId:'research:cycle:1',
+  cycleId:1,schema,task:'Solve problem',maxCalls:4,maxPromptChars:20000});
+ assert.equal(result.status,'PIPELINE_COMPLETE');
+ assert.equal(dispatched,1);
+ assert.deepEqual(journal.map(e=>e.type),
+  ['RUN_INTENT','DISPATCH_INTENT','DISPATCH_RESPONSE','RUN_RESULT']);
+ assert.equal(result.answers[0],'Answer from provider');
 });
