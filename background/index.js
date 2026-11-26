@@ -1,5 +1,6 @@
 // background/index.js
 // Entry point for MV3 service worker (non-module, importScripts only).
+importScripts('../disput/thecycle/alarm-scheduler.js', 'thecycle-alarm-bootstrap.js');
 
 // Register the browser-action handler before the heavy orchestration bundle is
 // imported. On MV3 cold start this lets the UI tab open immediately, while the
