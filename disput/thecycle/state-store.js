@@ -370,7 +370,7 @@
     }
 
     // C03's decision hook: only from a settled run or a deliberate pause.
-    async function decide(token, { expectedVersion, action, pipelineRef } = {}) {
+    async function decide(token, { expectedVersion, action, pipelineRef, reason } = {}) {
       if (!['CONTINUE', 'PAUSE', 'COMPLETE', 'RESUME'].includes(action)) throw fail('INVALID_DECISION');
       return write(async (s) => {
         const state = await mustOwn(s, token);
@@ -382,6 +382,14 @@
           if (!str(pipelineRef) || !['CONTINUE', 'RESUME'].includes(action)) throw fail('INVALID_PIPELINE');
           state.pipelineRef = pipelineRef; // C03 validates schema before dispatch
         }
+        if (reason !== undefined && (!str(reason) || reason.length > 200)) throw fail('INVALID_DECISION_REASON');
+        if (state.phase === 'EVALUATE' && state.lastCommittedPacket !== null) {
+          const packet = await request(s.packets.get([state.researchId, state.lastCommittedPacket]));
+          if (!packet || packet.decision) throw fail('DECISION_PACKET_INVALID');
+          packet.decision = { action, reason: reason || null, stateVersion: state.stateVersion };
+          await request(s.packets.put(packet));
+        }
+        if (reason !== undefined) state.lastDecision = { action, reason, stateVersion: state.stateVersion };
         if (action === 'RESUME') state.stopRequested = false;
         state.phase = action === 'COMPLETE' ? 'COMPLETED' : action === 'PAUSE' ? 'PAUSED' : 'READY';
         // No decision here asserts mathematical proof.

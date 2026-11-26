@@ -30,11 +30,12 @@
   }
 
   function createController({ store, makeAdapter, loadPipeline, maxCallsPerCycle, maxPromptChars,
-    ownerId = root.crypto?.randomUUID?.(), backupGate = null } = {}) {
+    ownerId = root.crypto?.randomUUID?.(), backupGate = null, resolveTask = null } = {}) {
     if (!store || !['load', 'acquire', 'release', 'prepareRun', 'journalFor', 'getRun', 'getEvents',
       'getPacket', 'commitPacket', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
       typeof makeAdapter !== 'function' || typeof loadPipeline !== 'function' ||
       !str(ownerId) || !pos(maxCallsPerCycle) || !pos(maxPromptChars) ||
+      (resolveTask !== null && typeof resolveTask !== 'function') ||
       (backupGate && (!['assertCanStartCycle', 'requireCommit', 'persist'].every((key) => typeof backupGate[key] === 'function') || typeof store.acknowledgePacketBackup !== 'function'))) {
       throw fail('INVALID_CONTROLLER_DEPENDENCIES');
     }
@@ -136,7 +137,7 @@
           const events = packet ? await store.getEvents(researchId, packet.runId) : [];
           const report = events.find((row) => row.eventId === packet?.resultEventId)?.payload?.report;
           const decision = fixedPolicy({ state, packet, report });
-          const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: decision.action });
+          const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: decision.action, reason: decision.reason });
           await releaseIfSettled(next);
           return result(next, 'DECISION', { decision });
         }
@@ -174,6 +175,19 @@
           await releaseIfSettled(next);
           return result(next, 'PAUSED', { reason: 'INVALID_PIPELINE', errors: checked.errors });
         }
+        // Circle may construct a bounded task from already committed evidence.
+        // Classic execution and G1 retain the original task by default.
+        let task = state.task;
+        if (resolveTask) {
+          try {
+            task = await resolveTask({ state, store });
+            if (!str(task) || task.length > maxPromptChars) throw fail('CONTEXT_INVALID');
+          } catch (error) {
+            const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'PAUSE', reason: 'CONTEXT_UNAVAILABLE' });
+            await releaseIfSettled(next);
+            return result(next, 'PAUSED', { reason: 'CONTEXT_UNAVAILABLE', error: String(error?.message || error) });
+          }
+        }
         const cycleId = state.nextCycle;
         const runId = researchId + ':cycle:' + cycleId;
         const maxCalls = Math.min(remaining, maxCallsPerCycle);
@@ -183,7 +197,7 @@
           await store.prepareRun(fence, { expectedVersion: state.stateVersion, runId, cycleId,
             pipelineRef: state.pipelineRef, maxCalls });
           const report = await adapter.execute({ researchId, cycleId, runId, schema: pipeline.schema,
-            task: state.task, maxCalls, maxPromptChars, signal: aborter.signal });
+            task, maxCalls, maxPromptChars, signal: aborter.signal });
           const next = await safeState(researchId);
           // Never use the return value as authority for continuation: the
           // durable journal and packet commit must be observed in later ticks.

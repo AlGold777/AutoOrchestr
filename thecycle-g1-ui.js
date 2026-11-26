@@ -5,7 +5,10 @@
  const out=el('thecycle-g1-output'),startBtn=el('thecycle-g1-start');
  const stopBtn=el('thecycle-g1-stop');
  if(!out||!root.TheCycleG1)return;
- let runner=null;
+ let runner=null,circle=null,mode='g1';
+ const circleBtn=el('thecycle-circle-start');
+ const getCircle=()=>circle||(circle=root.TheCycleCircle.createCircleRunner({bridge:root.TheCycleMainPageBridge}));
+ const selectedRunner=()=>mode==='circle'?getCircle():getRunner();
  const getRunner=()=>{
   if(!runner){
    if(!root.TheCycleMainPageBridge)throw new Error('BASIC_BRIDGE_NOT_READY');
@@ -26,9 +29,13 @@
    runStatus:report?.status,answers:accepted};
  };
  async function status(){
-  selectedId=selectedId||await getRunner().latest();
+  if(!selectedId){
+   const id=await getCircle().latest();
+   if(id){mode='circle';selectedId=id;}
+  }
+  selectedId=selectedId||await selectedRunner().latest();
   if(!selectedId){show('Нет исследований TheCycle G1.');return;}
-  show(brief(await getRunner().snapshot(selectedId)));
+  show(brief(await selectedRunner().snapshot(selectedId)));
  }
  async function action(fn){
   try{await fn();}catch(e){show('Ошибка: '+String(e?.message||e));console.error('[TheCycle G1]',e);}
@@ -37,16 +44,27 @@
   const task=el('thecycle-g1-task').value.trim();
   const maxCalls=Number(el('thecycle-g1-budget').value);
   if(!task)throw new Error('Введите задачу');
-  if(getRunner().isRunning())throw new Error('Исследование уже выполняется');
-  startBtn.disabled=true;
+  if(getRunner().isRunning()||getCircle().isRunning())throw new Error('Исследование уже выполняется');
+  mode='g1';selectedId=null;startBtn.disabled=true;circleBtn.disabled=true;
   show('Basic запущен. Исследование сохраняется в IndexedDB. Не закрывайте страницу в G1.');
   try{
    const result=await getRunner().start({task,maxCalls,maxCallsPerCycle:maxCalls});
    selectedId=result.researchId;
    show({outcomes:result.outcomes,...brief(result)});
-  }finally{startBtn.disabled=false;}
+  }finally{startBtn.disabled=false;circleBtn.disabled=false;}
  }));
- stopBtn.addEventListener('click',()=>action(async()=>show(await getRunner().stop())));
+ circleBtn.addEventListener('click',()=>action(async()=>{
+  const task=el('thecycle-g1-task').value.trim(),maxCalls=Number(el('thecycle-g1-budget').value);
+  if(getRunner().isRunning()||getCircle().isRunning())throw Error('Исследование уже выполняется');
+  mode='circle';selectedId=null;startBtn.disabled=true;circleBtn.disabled=true;
+  show('Circle: автоматические циклы. Не закрывайте страницу. Требуется настроенный каталог бэкапов.');
+  try{
+   const result=await getCircle().start({task,maxCalls,onProgress:v=>show(v)});
+   selectedId=result.researchId;show({outcomes:result.outcomes,...brief(result)});
+  }finally{startBtn.disabled=false;circleBtn.disabled=false;}
+ }));
+ el('thecycle-circle-backup-settings').addEventListener('click',()=>action(()=>chrome.runtime.openOptionsPage()));
+ stopBtn.addEventListener('click',()=>action(async()=>show(await selectedRunner().stop())));
  el('thecycle-g1-status').addEventListener('click',()=>action(status));
  if(root.TheCycleMainPageBridge)void action(status);
  else root.addEventListener('thecycle:basic-bridge-ready',()=>{void action(status);},{once:true});
