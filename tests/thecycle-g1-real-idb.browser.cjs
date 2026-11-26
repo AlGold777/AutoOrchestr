@@ -97,4 +97,36 @@ test('G1 real browser: Basic Engine → durable IDB journal/packet → reload �
  assert.equal(recovered.intents,1);
  assert.equal(recovered.responses,1);
  assert.equal(recovered.owner.ownerId,null);
+ // Second research, same real IndexedDB: uncertain provider response must
+ // never be reissued, turned into a success or silently committed.
+ const unknown=await page.evaluate(async()=>{
+  const storage={
+   async get(k){const raw=localStorage.getItem(k);return raw===null?{}:{[k]:JSON.parse(raw)};},
+   async set(o){for(const [k,v] of Object.entries(o))localStorage.setItem(k,JSON.stringify(v));}
+  };
+  let sends=0,runId=null;
+  const bridge={
+   capture:()=>({models:['GPT'],errors:[],schema:{schemaVersion:1,origin:'user',
+    steps:[{ref:'r1',kind:'round',models:[{name:'GPT'}]}]}}),
+   roleText:()=>'',accept:()=>({ok:true}),
+   begin({runId:id}){runId=id;},end(){runId=null;},
+   async send(models,prompts,meta){if(meta.runId!==runId)throw Error('RUN_MISMATCH');
+    sends++;return {byModel:{}};}
+  };
+  const runner=TheCycleG1.createG1Runner({bridge,storage});
+  const result=await runner.start({task:'Do not retry uncertain transport',maxCalls:3});
+  const active=await TheCycleActiveStateStore.createActiveStateStore();
+  try{
+   const rows=await active.store.getEvents(result.researchId,result.runId);
+   return {sends,outcomes:result.outcomes,phase:result.state.phase,
+    packet:result.packet,
+    types:rows.map(e=>e.payload.type)};
+  }finally{active.close();}
+ });
+ assert.equal(unknown.sends,1);
+ assert.equal(unknown.packet,null);
+ assert.equal(unknown.phase,'RECONCILE');
+ assert.deepEqual(unknown.outcomes,['RECOVERY_REQUIRED']);
+ assert.equal(unknown.types.filter(x=>x==='DISPATCH_INTENT').length,1);
+ assert.equal(unknown.types.filter(x=>x==='DISPATCH_UNKNOWN').length,1);
 });
