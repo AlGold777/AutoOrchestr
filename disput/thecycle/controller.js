@@ -30,11 +30,12 @@
   }
 
   function createController({ store, makeAdapter, loadPipeline, maxCallsPerCycle, maxPromptChars,
-    ownerId = root.crypto?.randomUUID?.() } = {}) {
+    ownerId = root.crypto?.randomUUID?.(), backupGate = null } = {}) {
     if (!store || !['load', 'acquire', 'release', 'prepareRun', 'journalFor', 'getRun', 'getEvents',
       'getPacket', 'commitPacket', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
       typeof makeAdapter !== 'function' || typeof loadPipeline !== 'function' ||
-      !str(ownerId) || !pos(maxCallsPerCycle) || !pos(maxPromptChars)) {
+      !str(ownerId) || !pos(maxCallsPerCycle) || !pos(maxPromptChars) ||
+      (backupGate && !['assertCanStartCycle', 'requireCommit', 'persist'].every((key) => typeof backupGate[key] === 'function'))) {
       throw fail('INVALID_CONTROLLER_DEPENDENCIES');
     }
     // ownerId must be unique per live controller instance, not shared across tabs.
@@ -86,6 +87,18 @@
           const committed = await store.commitPacket(fence, {
             expectedVersion: state.stateVersion, runId: state.activeRunId
           });
+          if (backupGate) {
+            // NOTE: This marker is not yet atomic with commitPacket. C02 must
+            // move it into the same IndexedDB transaction before production.
+            try {
+              await backupGate.requireCommit(researchId, researchId + ':cycle:' + committed.packet.cycleId);
+              await backupGate.persist(researchId, 'cycle');
+            } catch (error) {
+              return result(committed.state, 'BACKUP_REQUIRED', {
+                packet: committed.packet, error: { code: error?.code || 'BACKUP_REQUIRED', message: String(error?.message || error) }
+              });
+            }
+          }
           await releaseIfSettled(committed.state);
           return result(committed.state, 'PACKET_COMMITTED', { packet: committed.packet });
         }
@@ -99,6 +112,14 @@
           return result(next, 'DECISION', { decision });
         }
         if (state.phase !== 'READY') throw fail('UNKNOWN_PHASE', state.phase);
+        if (backupGate) {
+          try { await backupGate.assertCanStartCycle(researchId); }
+          catch (error) {
+            return result(state, 'BACKUP_REQUIRED', { error: {
+              code: error?.code || 'BACKUP_REQUIRED', message: String(error?.message || error)
+            } });
+          }
+        }
         const remaining = state.budget.maxCalls - state.budget.usedCalls;
         if (state.stopRequested || !pos(remaining)) {
           const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'PAUSE' });
