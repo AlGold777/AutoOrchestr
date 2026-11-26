@@ -1,6 +1,5 @@
 // background/index.js
 // Entry point for MV3 service worker (non-module, importScripts only).
-
 // Register the browser-action handler before the heavy orchestration bundle is
 // imported. On MV3 cold start this lets the UI tab open immediately, while the
 // rest of the service worker continues loading.
@@ -294,6 +293,21 @@ importScripts(
   'message-delivery-store.js',
   'message-router.js'
 );
+
+// TheCycle modules load after the lifecycle barrier and the core bundle; a failure here must not break the service worker.
+try {
+  importScripts(
+    '../disput/thecycle/alarm-scheduler.js',
+    '../disput/thecycle/directory-handle-manager.js',
+    '../disput/thecycle/state-store.js',
+    '../disput/thecycle/recovery-repositories.js',
+    '../disput/thecycle/directory-sink.js',
+    '../disput/thecycle/backup-service.js',
+    'thecycle-alarm-bootstrap.js'
+  );
+} catch (err) {
+  console.error('[BACKGROUND] TheCycle modules failed to load:', err);
+}
 
 // One-time cleanup: the shadow debate background executor was removed when the
 // disput runtime was consolidated onto results.js/serialDebateState. Drop its

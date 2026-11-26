@@ -28,11 +28,14 @@
   const PIPELINE_PRESETS = Object.freeze([
     // The Default template runs the Basic engine (disput/custom-engine.js), not the Debate engine.
     makePreset('CUSTOM', 'Default', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.STANDARD, { runner: 'custom' }),
+    makePreset('CIRCLE', 'Circle', 'UNIVERSAL_STANDARD', REASONING_BUDGETS.RESEARCH, { runner: 'circle', pipelineType: 'circle' })
   ]);
 
   const BUILTIN_PIPELINE_DEFINITIONS = Object.freeze([
     // The one built-in template; the others (Polishing, Delta, Test, Research, Architecture) were removed.
     Object.freeze({ name: 'Default', presetId: 'CUSTOM', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '1', defaultModelCount: 0, defaultModels: Object.freeze(['GPT', 'Claude']), roles: ['participant'] }),
+    // Circle owns the outer loop; this canvas defines one finite Basic execution.
+    Object.freeze({ name: 'Circle', presetId: 'CIRCLE', profileId: 'UNIVERSAL_STANDARD', runPolicy: 'auto', noMiniPrompts: true, length: '700', roundLimit: '1', defaultModelCount: 0, roles: ['participant'] })
   ]);
 
   // Basic schemas seeded into the list on the first start (results.js, initPipelineList). Not presets and not

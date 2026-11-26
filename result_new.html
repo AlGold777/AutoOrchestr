@@ -606,6 +606,9 @@
                         <button class="devtools-tab is-active" id="disput-tab" role="tab" aria-selected="true" aria-controls="disput-tabpanel" data-tab-target="disput-tabpanel">
                             Disput
                         </button>
+                        <button class="devtools-tab" id="thecycle-tab" role="tab" aria-selected="false" aria-controls="thecycle-tabpanel" data-tab-target="thecycle-tabpanel">
+                            TheCycle
+                        </button>
                         <button class="devtools-tab" id="selectors0-tab" role="tab" aria-selected="false" aria-controls="selectors0-tabpanel" data-tab-target="selectors0-tabpanel">
                             Selectors
                         </button>
@@ -618,6 +621,22 @@
                     </div>
                     <div class="devtools-tabpanels">
                         <section class="devtools-tabpanel" id="local-llm-tabpanel" role="tabpanel" aria-labelledby="local-llm-tab" tabindex="0" hidden=""></section>
+
+                        <section class="devtools-tabpanel" id="thecycle-tabpanel" role="tabpanel" aria-labelledby="thecycle-tab" tabindex="0" hidden="">
+                            <div class="devtools-toolbar"><div class="devtools-toolbar-actions">
+                                <span class="devtools-meta" id="thecycle-telemetry-status" role="status">0 events</span>
+                                <div class="telemetry-actions">
+                                    <button type="button" class="diag-icon-btn diag-export-all-logs-btn" id="thecycle-export-md" aria-label="Export TheCycle telemetry as Markdown" title="Export TheCycle telemetry as Markdown">MD</button>
+                                    <button type="button" class="diag-icon-btn" id="thecycle-clear-telemetry" aria-label="Clear TheCycle diagnostic logs only" title="Clear TheCycle logs only" style="color:#808080"><i class="ti ti-x" aria-hidden="true"></i></button>
+                                </div>
+                            </div></div>
+                            <div class="devtools-card-grid"><article class="devtools-card telemetry-rounds-card">
+                                <div class="devtools-card-header"><h2>TheCycle events</h2></div>
+                                <div class="devtools-card-body"><div class="telemetry-rounds-table-wrapper">
+                                    <table class="telemetry-rounds-table"><thead><tr><th>Time</th><th>Research</th><th>Cycle</th><th>Event</th><th>State</th><th>Decision / error</th><th>Details</th></tr></thead><tbody id="thecycle-telemetry-rows"></tbody></table>
+                                </div></div>
+                            </article></div>
+                        </section>
 
                         <section class="devtools-tabpanel" id="telemetry-tabpanel" role="tabpanel" aria-labelledby="telemetry-tab" tabindex="0" hidden="">
                             <div class="devtools-toolbar">
@@ -731,6 +750,7 @@
                                 </div>
                             </div>
                         </section>
+
 
                         <section class="devtools-tabpanel" id="selectors0-tabpanel" role="tabpanel" aria-labelledby="selectors0-tab" tabindex="0" hidden="">
                             <div class="selectors0-shell">
@@ -974,7 +994,18 @@
                             <input type="radio" name="pipeline" class="pipeline-radio">
                             <span class="pipeline-item-name" title="Default">Default</span>
                         </div>
+                        <div class="pipeline-item" data-name="Circle">
+                            <input type="radio" name="pipeline" class="pipeline-radio">
+                            <span class="pipeline-item-name" title="Circle">Circle</span>
+                        </div>
                     </div>
+                    <section id="circle-pipeline-controls" hidden style="padding:8px 0">
+                        <label for="circle-call-budget">Circle · общий лимит вызовов</label>
+                        <input id="circle-call-budget" type="number" min="1" max="10000" value="24" style="width:72px">
+                        <button type="button" id="circle-backup-settings" class="btn">Backup settings</button>
+                        <button type="button" id="circle-status" class="btn">Status</button>
+                        <pre id="circle-status-output" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-size:12px"></pre>
+                    </section>
                     <div class="pipeline-items-divider" aria-hidden="true"></div>
                     <div class="customer-pipeline-items" id="customerPipelineItems"></div>
                 </div>
@@ -1063,4 +1094,39 @@
 
 
 
+
+<!-- G1 operator surface: intentionally one Basic run, no autonomous replay yet. -->
+<details id="thecycle-g1" hidden style="position:fixed;right:18px;bottom:18px;width:min(460px,calc(100vw - 36px));max-height:85vh;overflow:auto;z-index:30000;background:#fff;color:#161616;border:1px solid #777;border-radius:10px;padding:12px;box-shadow:0 6px 24px #0003;font:14px system-ui">
+ <summary style="cursor:pointer;font-weight:650">TheCycle — G1 (один Basic-run)</summary>
+ <p style="font-size:12px">Выберите Basic и модели в редакторе выше. Результат сохраняется в IndexedDB. Во время G1 не закрывайте эту страницу.</p>
+ <label for="thecycle-g1-task">Задача</label>
+ <textarea id="thecycle-g1-task" rows="3" maxlength="10000" style="display:block;width:100%;box-sizing:border-box"></textarea>
+ <label for="thecycle-g1-budget">Максимум обращений к моделям</label>
+ <input id="thecycle-g1-budget" type="number" min="1" max="10000" value="24" style="width:80px">
+ <div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap">
+  <button type="button" id="thecycle-g1-start">Start G1</button>
+  <button type="button" id="thecycle-circle-start">Start Circle</button>
+  <button type="button" id="thecycle-circle-backup-settings">Backup settings</button>
+  <button type="button" id="thecycle-g1-stop">Stop</button>
+  <button type="button" id="thecycle-g1-status">Status</button>
+ </div>
+ <pre id="thecycle-g1-output" role="status" style="max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"></pre>
+</details>
+<script src="disput/thecycle/state-store.js"></script>
+<script src="disput/thecycle/recovery-repositories.js"></script>
+<script src="disput/thecycle/active-state-store.js"></script>
+<script src="disput/thecycle/basic-adapter.js"></script>
+<script src="disput/thecycle/controller.js"></script>
+<script src="disput/thecycle/g1-runtime.js"></script>
+<script src="disput/thecycle/gate-metadata.js"></script>
+<script src="disput/thecycle/directory-sink.js"></script>
+<script src="disput/thecycle/backup-service.js"></script>
+<script src="disput/thecycle/backup-gate.js"></script>
+<script src="disput/thecycle/directory-handle-manager.js"></script>
+<script src="disput/thecycle/backup-runtime.js"></script>
+<script src="disput/thecycle/circle-context.js"></script>
+<script src="disput/thecycle/telemetry.js"></script>
+<script src="disput/thecycle/circle-runtime.js"></script>
+<script src="results/thecycle-telemetry-view.js"></script>
+<script src="thecycle-g1-ui.js"></script>
 </body></html>

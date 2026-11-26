@@ -106,7 +106,7 @@ describe('Basic docs stay true to the code', () => {
     const codes = [...issues.matchAll(/^\| ((?:OI|LIM|TEST)-\d+) \|/gm)].map((match) => match[1]);
     expect(codes.length).toBeGreaterThanOrEqual(3);
     codes.forEach((code) => expect({ code, section: new RegExp(`^#{3,4} ${code}\\.`, 'm').test(issues) }).toEqual({ code, section: true }));
-    const everything = ['results.js', ...fs.readdirSync(path.join(root, 'disput')).map((file) => `disput/${file}`), 'pipeline/pipeline-runtime.js']
+    const everything = ['results.js', ...fs.readdirSync(path.join(root, 'disput')).map((file) => `disput/${file}`).filter((file) => fs.statSync(path.join(root, file)).isFile()), 'pipeline/pipeline-runtime.js']
       .map((file) => read(file)).join('\n');
     const places = issues.split('\n').filter((line) => line.includes('**Где в коде'));
     expect(places.length).toBeGreaterThanOrEqual(1);

@@ -2779,6 +2779,16 @@ document.addEventListener('click', (event) => {
     let activePipelineAbortController = null;
     // Same for a Custom run (runCustomFromPage).
     let customAbortController = null;
+    // A Circle research owns the page for all finite Basic runs, including the gaps.
+    let circlePageRunner = null;
+    // TheCycle bridge state; declared early because the run controls read it before the bridge is created.
+    let theCycleBridgeRunId = null;
+    let theCycleBridgeSchema = null;
+    let theCycleBridgeSteps = [];
+    let theCycleBridgeAbort = null;
+    // A TheCycle research holds the page between its cycles too (Basic and a second run stay blocked).
+    let theCycleHeld = false;
+    let theCycleHeldStop = null;
     let activePipelineRunContext = null;
     let latestBasicRunRecord = null;
     // The result of the last autosave of a run to the documents folder (T03); T08 reads it.
@@ -6083,6 +6093,7 @@ document.addEventListener('click', (event) => {
         });
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
+            if (circlePageRunner || theCycleBridgeRunId || theCycleHeld) return { action: 'stop', icon: 'ti ti-player-stop', title: circlePageRunner ? 'Остановить Circle' : 'Остановить TheCycle', active: true, enabled: true, stepEnabled: false };
             if (customAbortController) {
                 return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Basic', active: true, enabled: true, stepEnabled: false };
             }
@@ -7665,6 +7676,144 @@ document.addEventListener('click', (event) => {
                 items, folderName, copyState, startedAt, pipeline, runId
             });
         };
+        // G1: production TheCycle bridge to the very same Basic plan and
+        // runModelBatch transport used by the existing Basic page.
+        // No parallel mock or new provider implementation.
+        window.TheCycleMainPageBridge = Object.freeze({
+            capture() {
+                if (!isCustomEnginePipeline() && getSelectedPipelinePresetId() !== 'CIRCLE') throw new Error('THECYCLE_REQUIRES_BASIC_OR_CIRCLE_SELECTED');
+                const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
+                const schema = JSON.parse(JSON.stringify(built.schema));
+                const models = [...new Set((schema.steps || []).flatMap(step =>
+                    (step.models || []).filter(model => model.enabled !== false).map(model => model.name)))];
+                return { schema, models, errors: built.errors, policy: built.run.policy };
+            },
+            roleText: (role, ref) => customRoleText(role, ref),
+            accept: ({ text, completion }) =>
+                window.DebateResponseAcceptance?.evaluate
+                    ? window.DebateResponseAcceptance.evaluate({ text, meta: { completion } })
+                    : { ok: false, reason: 'acceptance_unavailable' },
+            begin({ runId, schema }) {
+                if (pipelineRunActive || theCycleBridgeRunId) throw new Error('BASIC_RUN_ALREADY_ACTIVE');
+                if (typeof runId !== 'string' || !runId) throw new Error('INVALID_THECYCLE_RUN');
+                if (!schema || !Array.isArray(schema.steps)) throw new Error('G1_SCHEMA_REQUIRED');
+                theCycleBridgeSchema = JSON.parse(JSON.stringify(schema));
+                theCycleBridgeSteps = window.BasicSchema.assemble(theCycleBridgeSchema, { roleText: customRoleText });
+                theCycleBridgeRunId = runId;
+                theCycleBridgeAbort = new AbortController();
+                pipelineRunActive = true;
+                setPipelineEditingEnabled(false);
+                setPipelineRunUi(true);
+                updateDebateButtonsUi();
+                activePipelineRunContext = {
+                    pipelineRunId: runId,
+                    sessionId: debateTabsState?.activeSessionId || '1',
+                    startedAt: Date.now(),
+                    forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
+                    newPagesModels: new Set(),
+                    newPagesDispatched: false
+                };
+                return true;
+            },
+            async send(models, promptsByModel, { runId, batchId, signal, step = 0, maxWordsByModel = {}, correctionByModel = {} } = {}) {
+                // An error raised before runModelBatch is called means nothing was sent: the adapter journals it as NOT_SENT.
+                const notSent = (code, cause) => Object.assign(new Error(code), { code, notSent: true, ...(cause ? { cause } : {}) });
+                if (theCycleBridgeRunId !== runId || !activePipelineRunContext ||
+                    activePipelineRunContext.pipelineRunId !== runId)
+                    throw notSent('THECYCLE_RUN_NOT_ACTIVE');
+                // The page Stop aborts theCycleBridgeAbort; the adapter's own signal aborts on its cancel.
+                const stopSignal = theCycleBridgeAbort?.signal;
+                const batchSignal = signal && stopSignal && typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, stopSignal]) : (signal || stopSignal);
+                if (batchSignal?.aborted) throw notSent('THECYCLE_RUN_ABORTED');
+                let composed;
+                try {
+                    const discipline = Object.fromEntries(models.map(name => [name,
+                        theCycleBridgeSteps[step]?.models.find(model => model.name === name)?.discipline || {}
+                    ]));
+                    composed = {
+                        discipline,
+                        prompts: composeCustomPrompts(models, promptsByModel, maxWordsByModel,
+                            discipline, theCycleBridgeSchema?.defaults?.modelNotes || {}, correctionByModel,
+                            window.BasicSchema.resolveRun(theCycleBridgeSchema).maxWords)
+                    };
+                } catch (error) { throw notSent('THECYCLE_PROMPT_FAILED', error); }
+                const { discipline } = composed;
+                const prompts = composed.prompts;
+                const runContext = activePipelineRunContext;
+                const batch = await runModelBatch({
+                    prompt: prompts[models[0]],
+                    promptsByModel: prompts,
+                    deliveryInstructionsByModel: Object.fromEntries(models.map(name => [name, discipline[name].delivery])),
+                    models,
+                    attachments: [],
+                    forceNewTabs: runContext.forceNewTabs,
+                    useApiFallback: apiModeCheckbox ? apiModeCheckbox.checked : true,
+                    signal: batchSignal,
+                    context: {
+                        ...runContext,
+                        custom: true,
+                        stageId: 'thecycle:' + runId + ':s' + (step + 1),
+                        stageAttemptId: batchId,
+                        pipelineRoundId: 's' + (step + 1),
+                        pipelineBatchId: batchId,
+                        // Batches of a run go one after another: a returned batch is settled for the background.
+                        settledBatches: Number(runContext.settledBatches || 0),
+                        anonymizeParticipants: false
+                    },
+                    generationProfile: 'long'
+                });
+                runContext.settledBatches = Number(runContext.settledBatches || 0) + 1;
+                // The request finished: a model without a trustworthy answer gives "no answer" (the engine drops it as Basic does).
+                // Only a transport result marked UNCERTAIN leaves the delivery unknown.
+                return { byModel: Object.fromEntries(models.map(model => {
+                    const status = batch?.results?.[model] || {};
+                    const answer = String(batch?.responses?.[model] || '');
+                    const trustworthy = String(status.status || '').toUpperCase() === 'SUCCESS' && status.attribution === 'verified';
+                    return [model, {
+                        text: trustworthy ? answer : '',
+                        answered: trustworthy,
+                        status: status.status || 'NO_RESPONSE',
+                        completion: status.completion || '',
+                        attribution: status.attribution || '',
+                        transportRequestId: status.transportRequestId || '',
+                        reason: status.reason || ''
+                    }];
+                })) };
+            },
+            // A research holds the page from its start to its end, so the gaps between cycles do not let a Basic run in.
+            hold({ stop = null } = {}) {
+                if (pipelineRunActive || theCycleBridgeRunId || theCycleHeld) throw new Error('BASIC_RUN_ALREADY_ACTIVE');
+                theCycleHeld = true;
+                theCycleHeldStop = typeof stop === 'function' ? stop : null;
+                setPipelineEditingEnabled(false);
+                setPipelineRunUi(true);
+                updateDebateButtonsUi();
+                return true;
+            },
+            release() {
+                theCycleHeld = false;
+                theCycleHeldStop = null;
+                if (theCycleBridgeRunId) return false;
+                setPipelineEditingEnabled(!circlePageRunner);
+                setPipelineRunUi(Boolean(circlePageRunner));
+                updateDebateButtonsUi();
+                return true;
+            },
+            end({ runId }) {
+                if (theCycleBridgeRunId !== runId) return false;
+                theCycleBridgeRunId = null;
+                theCycleBridgeSchema = null;
+                theCycleBridgeSteps = [];
+                theCycleBridgeAbort = null;
+                pipelineRunActive = false;
+                activePipelineRunContext = null;
+                setPipelineEditingEnabled(!circlePageRunner && !theCycleHeld);
+                setPipelineRunUi(Boolean(circlePageRunner) || theCycleHeld);
+                updateDebateButtonsUi();
+                return true;
+            }
+        });
+        window.dispatchEvent(new Event('thecycle:basic-bridge-ready'));
         const runCustomFromPage = async ({ task, resumeRecord = null, forceNewTabs = false, deferEnd = null }) => {
             // A new run closes the End window of the previous one (its run is already over, see endRunEarly).
             closeOpenEndWindow?.();
@@ -8738,8 +8887,61 @@ document.addEventListener('click', (event) => {
                 if (pendingEnd) { const end = pendingEnd; pendingEnd = null; void showEndWindow(end); }
             }
         };
+        // Circle has its own runtime; the existing Basic canvas supplies one finite schema.
+        const showCircleStatus = (value) => {
+            const output = document.getElementById('circle-status-output');
+            if (output) output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+        };
+        const circleSummary = (result) => ({
+            researchId: result.researchId, phase: result.state?.phase,
+            cycle: result.state?.lastCommittedPacket, budget: result.state?.budget,
+            decision: result.packet?.decision, pendingBackup: result.state?.backupRequiredCycleId,
+            lastOutcome: result.outcomes?.at(-1), result: result.report?.answers
+        });
+        const createPageCircle = () => {
+            if (!window.TheCycleCircle?.createCircleRunner) throw new Error('CIRCLE_RUNTIME_UNAVAILABLE');
+            return window.TheCycleCircle.createCircleRunner({ bridge: window.TheCycleMainPageBridge });
+        };
+        const runCircleFromPage = async ({ task }) => {
+            if (circlePageRunner || pipelineRunActive || theCycleHeld) return false;
+            const maxCalls = Number(document.getElementById('circle-call-budget')?.value || 24);
+            if (!Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 10000) {
+                showNotification('Circle: неверный лимит вызовов.', 'warn'); return false;
+            }
+            try {
+                circlePageRunner = createPageCircle();
+                setPipelineEditingEnabled(false);
+                setPipelineRunUi(true);
+                updateDebateButtonsUi();
+                showCircleStatus('Circle: подготовка запуска и проверка бэкапа.');
+                const result = await circlePageRunner.start({ task, maxCalls, onProgress: showCircleStatus });
+                showCircleStatus(circleSummary(result));
+                const outcome = result.outcomes?.at(-1)?.outcome || result.state?.phase;
+                showNotification('Circle: ' + outcome + '. Циклов сохранено: ' + (result.state?.lastCommittedPacket || 0), 'info');
+                return !['RECOVERY_REQUIRED', 'BACKUP_REQUIRED', 'RUN_REJECTED'].includes(outcome);
+            } catch (error) {
+                showCircleStatus('Circle: ' + String(error?.message || error));
+                showNotification('Circle: ' + String(error?.message || error), 'error');
+                return false;
+            } finally {
+                circlePageRunner = null;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
+            }
+        };
+        document.getElementById('circle-backup-settings')?.addEventListener('click', () => {
+            chrome.runtime.openOptionsPage();
+        });
+        document.getElementById('circle-status')?.addEventListener('click', async () => {
+            try {
+                const runner = circlePageRunner || createPageCircle();
+                const id = await runner.latest();
+                showCircleStatus(id ? circleSummary(await runner.snapshot(id)) : 'Circle: исследований ещё нет.');
+            } catch (error) { showCircleStatus('Circle: ' + String(error?.message || error)); }
+        });
         const startDebateFromPage = async () => {
-            if (pipelineRunActive) {
+            if (pipelineRunActive || circlePageRunner || theCycleHeld) {
                 showNotification('Pipeline already running', 'warn');
                 return false;
             }
@@ -8754,6 +8956,9 @@ document.addEventListener('click', (event) => {
             if (selectedPreset && window.PipelinePresets?.isPresetEnabled && !window.PipelinePresets.isPresetEnabled(presetId)) {
                 showNotification('Этот профиль пока недоступен.', 'warn');
                 return false;
+            }
+            if (selectedPreset?.runner === 'circle') {
+                return runCircleFromPage({ task: moderatorEntryText || pipelineNameText });
             }
             if (selectedPreset?.runner === 'custom') {
                 const task = moderatorEntryText || pipelineNameText;
@@ -8770,6 +8975,21 @@ document.addEventListener('click', (event) => {
         };
         const cancelPipelineRun = async () => {
             basicRepeatStop = true;
+            if (circlePageRunner) {
+                const bridgeRun = theCycleBridgeRunId;
+                await circlePageRunner.stop();
+                theCycleBridgeAbort?.abort();
+                if (bridgeRun) { try { await debateTransportPort?.cancelRun?.(bridgeRun); } catch (_) {} }
+                return true;
+            }
+            // A TheCycle run without the Circle runner (G1): abort its in-flight requests; its runner frees the page in end().
+            if (theCycleBridgeRunId || theCycleHeld) {
+                const bridgeRun = theCycleBridgeRunId;
+                if (theCycleHeldStop) { try { await theCycleHeldStop(); } catch (_) {} }
+                theCycleBridgeAbort?.abort();
+                if (bridgeRun) { try { await debateTransportPort?.cancelRun?.(bridgeRun); } catch (_) {} }
+                return true;
+            }
             if (customAbortController) {
                 const runId = activePipelineRunContext?.pipelineRunId;
                 customAbortController.abort();
@@ -9420,6 +9640,8 @@ document.addEventListener('click', (event) => {
             const draft = pipelinePanel?.dataset.pipelineDraft === 'true';
             const config = activeName ? getPipelineConfigByName(activeName) : null;
             const editable = draft || (!!activeName && !config?.disabled);
+            const circleControls = document.getElementById('circle-pipeline-controls');
+            if (circleControls) circleControls.hidden = config?.protocol?.presetId !== 'CIRCLE';
             if (pipelinePanel) {
                 pipelinePanel.classList.toggle('has-custom-pipeline', editable);
             }
@@ -11743,7 +11965,8 @@ document.addEventListener('click', (event) => {
             const item = event.target.closest('.pipeline-item');
             if (!item || !pipelineItems.contains(item)) return;
             // A run belongs to the pipeline it started in: its feed, its record and its continuation keep that name.
-            if (pipelineRunActive) {
+            if (pipelineRunActive || circlePageRunner || theCycleHeld) {
+                if (circlePageRunner || theCycleHeld) { event.preventDefault(); return; }
                 if (item.dataset.name !== pipelineStore.active) showNotification(PIPELINE_RUN_LOCK_TEXT, 'warn');
                 return;
             }

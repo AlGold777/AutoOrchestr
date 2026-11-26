@@ -39,8 +39,8 @@ describe('built-in schema user_doc (seeded on the first start)', () => {
     expect(Presets.BUILTIN_SCHEMA_REVISIONS.user_doc).toBeGreaterThanOrEqual(2);
   });
 
-  test('the built-in pipeline definitions stay Default only; the schema is not a definition', () => {
-    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual(['Default']);
-    expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual(['CUSTOM']);
+  test('the built-in pipeline definitions stay Default and Circle only; the schema is not a definition', () => {
+    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual(['Default', 'Circle']);
+    expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual(['CUSTOM', 'CIRCLE']);
   });
 });

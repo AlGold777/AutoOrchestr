@@ -2053,7 +2053,7 @@ describe('Pipeline debate favorites view', () => {
     const names = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item'))
       .map((item) => item.dataset.name);
     // The built-in schema user_doc is seeded on the first start (BUILTIN_SCHEMAS), after the Default template.
-    expect(names).toEqual(['Default', 'user_doc']);
+    expect(names).toEqual(['Default', 'Circle', 'user_doc']);
     // The template Default has no delete button; the seeded user_doc can be deleted by the user.
     const deletable = Array.from(document.querySelectorAll('#pipelineItems .pipeline-item-delete'))
       .map((button) => button.closest('.pipeline-item')?.dataset.name);
@@ -5596,7 +5596,7 @@ describe('Pipeline debate favorites view', () => {
     });
     expect(debug.ensureDefaultPipelinePresets()).toBe(true);
     const store = debug.getPipelineStoreSnapshot();
-    expect(store.order).toEqual(['Default', 'My review']);
+    expect(store.order).toEqual(['Default', 'Circle', 'My review']);
     expect(store.pipelines['Red Team']).toBeUndefined();
     expect(store.pipelines['My review'].modelStacks).toEqual(saved.modelStacks);
     expect(store.active).toBe('');

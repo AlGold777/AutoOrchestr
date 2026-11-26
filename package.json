@@ -5,6 +5,7 @@
   "description": "Selector management and content scripts for multi-LLM browser extension",
   "scripts": {
     "test": "jest --config tests/jest.config.js",
+    "test:thecycle": "node --test tests/thecycle-*.test.js",
     "test:qwen": "node tests/qwen-playwright-check.js",
     "test:answer-matrix": "node scripts/answer-completeness-matrix.js",
     "fixtures:import-b1": "node scripts/import-b1-skeletons.js",

@@ -1,13 +1,15 @@
 const Presets = require('../disput/pipeline-presets');
 
 describe('pipeline presets: the one runner is the Basic engine', () => {
-  test('offers the one preset, the Default template, run by the Basic engine', () => {
+  test('offers the Default template (Basic engine) and Circle', () => {
     expect(Presets.DEFAULT_PRESET_ID).toBe('CUSTOM');
-    expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual(['CUSTOM']);
-    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual(['Default']);
+    expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual(['CUSTOM', 'CIRCLE']);
+    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual(['Default', 'Circle']);
     expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/topology|scheme|roundLimit|waveLimit|turnLimit/i);
     expect(Presets.isPresetEnabled('CUSTOM')).toBe(true);
     expect(Presets.getPipelinePreset('CUSTOM').runner).toBe('custom');
+    expect(Presets.getPipelinePreset('CIRCLE').runner).toBe('circle');
+    expect(Presets.isPresetEnabled('CIRCLE')).toBe(true);
   });
 
   test('normalizes an explicit stage budget', () => {
