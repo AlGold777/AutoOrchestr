@@ -35,10 +35,11 @@ function createG1Runner({bridge,storage=root.chrome?.storage?.local,
    throw new Error('G1_BUDGET_INVALID');
   const selected=bridge.capture();
   if(selected?.errors?.length)throw new Error('G1_BASIC_SCHEMA_INVALID: '+JSON.stringify(selected.errors));
-  if(selected?.policy!=='auto')throw new Error('G1_REQUIRES_AUTO_BASIC');
+  // TheCycle is autonomous even when the editor's Basic default is manual.
   const models=[...new Set(selected.models||[])];
   if(!models.length||models.some(m=>!nonempty(m)))throw new Error('G1_NO_MODELS');
   const schema=copy(selected.schema);
+  schema.run={...(schema.run||{}),policy:'auto'};
   const researchId='g1-'+uuid();
   const runId=researchId+':cycle:1';
   const pipelineRef='thecycle:g1:'+researchId+':schema:1';
