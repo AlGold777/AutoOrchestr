@@ -1012,7 +1012,18 @@
                             <input type="radio" name="pipeline" class="pipeline-radio">
                             <span class="pipeline-item-name" title="Architecture">Architecture</span>
                         </div>
+                        <div class="pipeline-item" data-name="Circle">
+                            <input type="radio" name="pipeline" class="pipeline-radio">
+                            <span class="pipeline-item-name" title="Circle">Circle</span>
+                        </div>
                     </div>
+                    <section id="circle-pipeline-controls" hidden style="padding:8px 0">
+                        <label for="circle-call-budget">Circle · общий лимит вызовов</label>
+                        <input id="circle-call-budget" type="number" min="1" max="10000" value="24" style="width:72px">
+                        <button type="button" id="circle-backup-settings" class="btn">Backup settings</button>
+                        <button type="button" id="circle-status" class="btn">Status</button>
+                        <pre id="circle-status-output" role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-size:12px"></pre>
+                    </section>
                     <div class="pipeline-items-divider" aria-hidden="true"></div>
                     <div class="customer-pipeline-items" id="customerPipelineItems"></div>
                     <section class="disput-state-map-panel" id="disput-state-map-panel" data-status="not_ready">
@@ -1177,7 +1188,7 @@
 
 
 <!-- G1 operator surface: intentionally one Basic run, no autonomous replay yet. -->
-<details id="thecycle-g1" style="position:fixed;right:18px;bottom:18px;width:min(460px,calc(100vw - 36px));max-height:85vh;overflow:auto;z-index:30000;background:#fff;color:#161616;border:1px solid #777;border-radius:10px;padding:12px;box-shadow:0 6px 24px #0003;font:14px system-ui">
+<details id="thecycle-g1" hidden style="position:fixed;right:18px;bottom:18px;width:min(460px,calc(100vw - 36px));max-height:85vh;overflow:auto;z-index:30000;background:#fff;color:#161616;border:1px solid #777;border-radius:10px;padding:12px;box-shadow:0 6px 24px #0003;font:14px system-ui">
  <summary style="cursor:pointer;font-weight:650">TheCycle — G1 (один Basic-run)</summary>
  <p style="font-size:12px">Выберите Basic и модели в редакторе выше. Результат сохраняется в IndexedDB. Во время G1 не закрывайте эту страницу.</p>
  <label for="thecycle-g1-task">Задача</label>

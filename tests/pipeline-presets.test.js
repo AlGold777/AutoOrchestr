@@ -4,14 +4,16 @@ describe('universal pipeline presets', () => {
   test('offers purpose profiles without execution topologies', () => {
     expect(Presets.DEFAULT_PRESET_ID).toBe('UNIVERSAL_STANDARD');
     expect(Presets.PIPELINE_PRESETS.map((preset) => preset.id)).toEqual([
-      'UNIVERSAL_STANDARD', 'CUSTOM', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM', 'ARCHITECTURE', 'POLISHING', 'DELTA'
+      'UNIVERSAL_STANDARD', 'CUSTOM', 'TEST', 'UNIVERSAL_RESEARCH', 'UNIVERSAL_RED_TEAM', 'ARCHITECTURE', 'POLISHING', 'DELTA', 'CIRCLE'
     ]);
     expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.map((item) => item.name)).toEqual([
-      'Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture'
+      'Basic', 'Polishing', 'Delta', 'Test', 'Research', 'Architecture', 'Circle'
     ]);
     expect(JSON.stringify(Presets.PIPELINE_PRESETS)).not.toMatch(/topology|scheme|roundLimit|waveLimit|turnLimit/i);
     expect(Presets.isPresetEnabled('CUSTOM')).toBe(true);
     expect(Presets.getPipelinePreset('CUSTOM').runner).toBe('custom');
+    expect(Presets.getPipelinePreset('CIRCLE').runner).toBe('circle');
+    expect(Presets.isPresetEnabled('CIRCLE')).toBe(true);
     expect(Presets.isPresetEnabled('UNIVERSAL_RED_TEAM')).toBe(false);
   });
 

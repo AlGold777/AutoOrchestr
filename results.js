@@ -2720,6 +2720,8 @@ document.addEventListener('click', (event) => {
     let deltaAbortController = null;
     // Same for a Custom run (runCustomFromPage).
     let customAbortController = null;
+    // A Circle research owns the page for all finite Basic runs, including the gaps.
+    let circlePageRunner = null;
     let activePipelineRunContext = null;
     const debateAggregateStore = window.DebateRunStore?.createStore?.() || null;
     const debateCaseStore = window.DebateCaseStore?.createStore?.({ storage: chrome?.storage?.local }) || null;
@@ -5658,6 +5660,7 @@ document.addEventListener('click', (event) => {
         let debateApplication = null;
         let phantomRunStateReported = false;
         const getDebateRunControls = () => {
+            if (circlePageRunner) return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Circle', active: true, enabled: true, stepEnabled: false };
             if (customAbortController) {
                 return { action: 'stop', icon: 'ti ti-player-stop', title: 'Остановить Basic', active: true, enabled: true, stepEnabled: false };
             }
@@ -6969,7 +6972,7 @@ document.addEventListener('click', (event) => {
         let theCycleBridgeSteps = [];
         window.TheCycleMainPageBridge = Object.freeze({
             capture() {
-                if (!isCustomEnginePipeline()) throw new Error('G1_REQUIRES_BASIC_SELECTED');
+                if (!isCustomEnginePipeline() && getSelectedPipelinePresetId() !== 'CIRCLE') throw new Error('THECYCLE_REQUIRES_BASIC_OR_CIRCLE_SELECTED');
                 const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
                 const schema = JSON.parse(JSON.stringify(built.schema));
                 const models = [...new Set((schema.steps || []).flatMap(step =>
@@ -7052,8 +7055,8 @@ document.addEventListener('click', (event) => {
                 theCycleBridgeSteps = [];
                 pipelineRunActive = false;
                 activePipelineRunContext = null;
-                setPipelineEditingEnabled(true);
-                setPipelineRunUi(false);
+                setPipelineEditingEnabled(!circlePageRunner);
+                setPipelineRunUi(Boolean(circlePageRunner));
                 updateDebateButtonsUi();
                 return true;
             }
@@ -7347,8 +7350,61 @@ document.addEventListener('click', (event) => {
                 updateDebateButtonsUi();
             }
         };
+        // Circle has its own runtime; the existing Basic canvas supplies one finite schema.
+        const showCircleStatus = (value) => {
+            const output = document.getElementById('circle-status-output');
+            if (output) output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+        };
+        const circleSummary = (result) => ({
+            researchId: result.researchId, phase: result.state?.phase,
+            cycle: result.state?.lastCommittedPacket, budget: result.state?.budget,
+            decision: result.packet?.decision, pendingBackup: result.state?.backupRequiredCycleId,
+            lastOutcome: result.outcomes?.at(-1), result: result.report?.answers
+        });
+        const createPageCircle = () => {
+            if (!window.TheCycleCircle?.createCircleRunner) throw new Error('CIRCLE_RUNTIME_UNAVAILABLE');
+            return window.TheCycleCircle.createCircleRunner({ bridge: window.TheCycleMainPageBridge });
+        };
+        const runCircleFromPage = async ({ task }) => {
+            if (circlePageRunner || pipelineRunActive) return false;
+            const maxCalls = Number(document.getElementById('circle-call-budget')?.value || 24);
+            if (!Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 10000) {
+                showNotification('Circle: неверный лимит вызовов.', 'warn'); return false;
+            }
+            try {
+                circlePageRunner = createPageCircle();
+                setPipelineEditingEnabled(false);
+                setPipelineRunUi(true);
+                updateDebateButtonsUi();
+                showCircleStatus('Circle: подготовка запуска и проверка бэкапа.');
+                const result = await circlePageRunner.start({ task, maxCalls, onProgress: showCircleStatus });
+                showCircleStatus(circleSummary(result));
+                const outcome = result.outcomes?.at(-1)?.outcome || result.state?.phase;
+                showNotification('Circle: ' + outcome + '. Циклов сохранено: ' + (result.state?.lastCommittedPacket || 0), 'info');
+                return !['RECOVERY_REQUIRED', 'BACKUP_REQUIRED', 'RUN_REJECTED'].includes(outcome);
+            } catch (error) {
+                showCircleStatus('Circle: ' + String(error?.message || error));
+                showNotification('Circle: ' + String(error?.message || error), 'error');
+                return false;
+            } finally {
+                circlePageRunner = null;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
+            }
+        };
+        document.getElementById('circle-backup-settings')?.addEventListener('click', () => {
+            chrome.runtime.openOptionsPage();
+        });
+        document.getElementById('circle-status')?.addEventListener('click', async () => {
+            try {
+                const runner = circlePageRunner || createPageCircle();
+                const id = await runner.latest();
+                showCircleStatus(id ? circleSummary(await runner.snapshot(id)) : 'Circle: исследований ещё нет.');
+            } catch (error) { showCircleStatus('Circle: ' + String(error?.message || error)); }
+        });
         const startDebateFromPage = async () => {
-            if (pipelineRunActive) {
+            if (pipelineRunActive || circlePageRunner) {
                 showNotification('Pipeline already running', 'warn');
                 return false;
             }
@@ -7363,6 +7419,9 @@ document.addEventListener('click', (event) => {
             if (selectedPreset && window.PipelinePresets?.isPresetEnabled && !window.PipelinePresets.isPresetEnabled(presetId)) {
                 showNotification('Этот профиль пока недоступен.', 'warn');
                 return false;
+            }
+            if (selectedPreset?.runner === 'circle') {
+                return runCircleFromPage({ task: moderatorEntryText || pipelineNameText });
             }
             if (selectedPreset?.runner === 'custom') {
                 return runCustomFromPage({ task: moderatorEntryText || pipelineNameText });
@@ -7581,6 +7640,7 @@ document.addEventListener('click', (event) => {
             }
         };
         const cancelPipelineRun = async () => {
+            if (circlePageRunner) { await circlePageRunner.stop(); return true; }
             if (customAbortController || polishingAbortController || deltaAbortController) {
                 const runId = activePipelineRunContext?.pipelineRunId;
                 (customAbortController || polishingAbortController || deltaAbortController).abort();
@@ -8257,6 +8317,8 @@ document.addEventListener('click', (event) => {
             const draft = pipelinePanel?.dataset.pipelineDraft === 'true';
             const config = activeName ? getPipelineConfigByName(activeName) : null;
             const editable = draft || (!!activeName && !config?.disabled);
+            const circleControls = document.getElementById('circle-pipeline-controls');
+            if (circleControls) circleControls.hidden = config?.protocol?.presetId !== 'CIRCLE';
             if (pipelinePanel) {
                 pipelinePanel.classList.toggle('has-custom-pipeline', editable);
             }
@@ -9718,6 +9780,7 @@ document.addEventListener('click', (event) => {
         pipelineItems?.addEventListener('click', (event) => {
             const item = event.target.closest('.pipeline-item');
             if (!item || !pipelineItems.contains(item)) return;
+            if (circlePageRunner) { event.preventDefault(); return; }
             selectPipeline(item, { clearDebateFeed: true });
             if (item.dataset.name === 'Specialized profile') pipelineProfileView?.open?.();
         });

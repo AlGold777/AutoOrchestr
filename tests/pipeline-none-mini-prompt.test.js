@@ -35,7 +35,7 @@ describe('None in the mini prompt list of a model block', () => {
 
 describe('which templates start with None', () => {
   test('Basic, Polishing, Delta and Test start with None', () => {
-    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.filter((item) => item.noMiniPrompts).map((item) => item.name)).toEqual(['Basic', 'Polishing', 'Delta', 'Test']);
+    expect(Presets.BUILTIN_PIPELINE_DEFINITIONS.filter((item) => item.noMiniPrompts).map((item) => item.name)).toEqual(['Basic', 'Polishing', 'Delta', 'Test', 'Circle']);
     expect(source).toContain('withRoles: !stageTemplate && !noMiniPrompts');
     expect(source).toContain('noMiniPrompts: definition.noMiniPrompts === true');
   });
