@@ -4,7 +4,6 @@
 if(!root.chrome?.alarms||!root.TheCycleAlarmScheduler)return;
 let inFlight=null;
 async function performBackupOnce(){
- alarms:root.chrome.alarms,
 
   // A document context must supply the authorized directory handle and
   // perform the actual readback-verified backup. Never silently mark success.
@@ -35,6 +34,7 @@ function performBackup(){
  return inFlight;
 }
 const scheduler=root.TheCycleAlarmScheduler.createAlarmScheduler({
+ alarms:root.chrome.alarms,
  onBackupDue:performBackup,
  onFailure:async error=>{
   await root.chrome.storage.local.set({thecycleBackupStatus:{
