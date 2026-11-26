@@ -3,13 +3,13 @@
 (function(root){'use strict';
 const pos=n=>Number.isSafeInteger(n)&&n>0;
 const copy=v=>JSON.parse(JSON.stringify(v));
-async function openBackup({stateStore,storage}){
+async function openBackup({stateStore,storage,onDiagnostic}){
  const settings=await storage.get('thecycleBackupEnabled');
  if(settings.thecycleBackupEnabled!==true)throw Error('CIRCLE_CONFIGURE_BACKUP_DIRECTORY');
  const manager=await root.TheCycleDirectoryHandleManager.createDirectoryHandleManager();
  try {
   const directory=await manager.load('thecycle-backups');
-  return await root.TheCycleBackupRuntime.createBackupRuntime({directory,stateStore});
+  return await root.TheCycleBackupRuntime.createBackupRuntime({directory,stateStore,onDiagnostic});
  }finally{manager.close();}
 }
 function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
@@ -46,14 +46,14 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   const record=async result=>{
    const item={outcome:result.outcome,phase:result.state?.phase,cycle:result.state?.lastCommittedPacket,decision:result.decision,reason:result.reason,error:result.error};
    outcomes.push(item);
-   await emit(result.outcome,{state:result.state,outcome:result.outcome,decision:result.decision,reason:result.reason,error:result.error});
+   await emit(result.outcome,{state:result.state,packet:result.packet,report:result.report,runId:result.runId,outcome:result.outcome,decision:result.decision,reason:result.reason,error:result.error,errors:result.errors});
    try{onProgress(copy(item));}catch(_){}
    return result;
   };
   try{
    await emit("RESEARCH_START",{budget:{maxCalls},maxCallsPerCycle,maxPromptChars});
    const selected=bridge.capture();
-   if(selected?.errors?.length)throw Error('CIRCLE_BASIC_SCHEMA_INVALID');
+   if(selected?.errors?.length){await emit('SCHEMA_INVALID',{errors:selected.errors});throw Error('CIRCLE_BASIC_SCHEMA_INVALID');}
    const models=[...new Set(selected?.models||[])];
    if(!models.length||models.some(m=>typeof m!=='string'||!m.trim()))throw Error('CIRCLE_NO_MODELS');
    await emit("MODELS_SELECTED",{models});
@@ -62,32 +62,45 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    const ref='thecycle:circle:'+id+':schema:1';
    active=await activeStore.createActiveStateStore();
    const store=active.store;
+   await emit('SCHEMA_CAPTURED',{schema,database:active.database,pipelineRef:ref});
    const makeAdapter=({journal,fence})=>adapterApi.createBasicAdapter({
     send:async(modelNames,prompts,meta)=>{
      const owner=await store.getOwnership();
+     await emit('TRANSPORT_FENCE',{owner,runId:meta.runId,cycleId:meta.cycleId,batchId:meta.batchId,step:meta.step});
      if(owner?.researchId!==fence.researchId||owner?.ownerId!==fence.ownerId||owner?.epoch!==fence.epoch||meta.runId!==bridgeRun)
       throw Error('CIRCLE_STALE_OWNER');
      return bridge.send(modelNames,prompts,meta);
     },accept:bridge.accept,journal:async event=>{const saved=await journal(event);let state;try{state=await store.load(id);}catch(_){}await emit(event.type,{event,state});return saved;},availableModels:models,isRole:()=>true,roleText:bridge.roleText
    });
-   if(!makeAdapter({journal:async()=>{},fence:{}}).validate(schema).ok)throw Error('CIRCLE_ADAPTER_REJECTED_SCHEMA');
+   const checked=makeAdapter({journal:async()=>{},fence:{}}).validate(schema);
+   if(!checked.ok){await emit('SCHEMA_INVALID',{errors:checked.errors});throw Error('CIRCLE_ADAPTER_REJECTED_SCHEMA');}
    // Require real independent backup storage before any provider request.
    await emit("BACKUP_OPEN");
-   backup=await createBackup({stateStore:store,storage});
+   backup=await createBackup({stateStore:store,storage,onDiagnostic:emit});
    if(!backup?.gate?.persist||!backup.gate.assertCanStartCycle)throw Error('CIRCLE_BACKUP_UNAVAILABLE');
    if(session.stopRequested)return {researchId:id,outcomes,state:{phase:'PAUSED'},reason:'OWNER_STOP'};
    await storage.set({[key(id)]:{schema,pipelineRef:ref,models,createdAt:new Date().toISOString(),database:active.database}});
    await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls});created=true;
    await storage.set({'thecycle.circle.latest':id});
+   const gate=backup.gate;
+   const observedGate={...gate};
+   for(const method of ['requireCommit','persist','assertCanStartCycle']){
+    if(typeof gate[method]!=='function')continue;
+    observedGate[method]=async(...args)=>{
+     const started=Date.now();
+     try{const result=await gate[method](...args);await emit('BACKUP_GATE_'+method.toUpperCase(),{backup:result&&typeof result==='object'?result:undefined,durationMs:Date.now()-started,reason:args[1]});return result;}
+     catch(error){await emit('BACKUP_GATE_ERROR',{reason:method,error,durationMs:Date.now()-started});throw error;}
+    };
+   }
    const controller=controllerApi.createController({
     store,makeAdapter,loadPipeline:async value=>value===ref?{ref,schema}:null,
-    resolveTask:async({state,store})=>{try{const task=await contextApi.buildTask({state,store,maxChars:Math.floor(maxPromptChars*0.8)});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
-    maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:backup.gate
+    resolveTask:async({state,store})=>{try{let context;const task=await contextApi.buildTask({state,store,maxChars:Math.floor(maxPromptChars*0.8),onContext:v=>{context=v;}});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
+    maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:observedGate
    });
    session.controller=controller;
    // Initial checkpoint; gate starts blocked by design.
    await emit('BACKUP_START',{reason:'initial'});
-   await backup.gate.persist(id,'manual');
+   await observedGate.persist(id,'manual');
    await emit('BACKUP_VERIFIED',{reason:'initial'});
    for(;;){
     let state=await store.load(id);
@@ -109,7 +122,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      if(result.outcome==='DECISION'){
       // Decision is committed after the packet backup; save the updated state as well.
       await emit('BACKUP_START',{state:result.state,reason:'decision'});
-      await backup.gate.persist(id,'cycle');
+      await observedGate.persist(id,'cycle');
       await emit('BACKUP_VERIFIED',{state:result.state,reason:'decision'});
       if(result.decision?.action==='CONTINUE')continue;
      }

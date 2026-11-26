@@ -6,7 +6,7 @@ const num=v=>Number.isFinite(v)?v:undefined;
 const clone=v=>JSON.parse(JSON.stringify(v));
 function errorInfo(e){
  if(!e)return undefined;
- return {code:str(e.code||e.name,100),message:str(typeof e==='string'?e:e.message,500)};
+ return {code:str(e.code||e.name,100),message:str(typeof e==='string'?e:e.message,1000),stack:str(e.stack,6000),cause:e.cause?{code:str(e.cause.code||e.cause.name,100),message:str(e.cause.message,1000)}:undefined};
 }
 function project(type,d={}){
  const state=d.state||{}, event=d.event||{}, report=event.report||d.report||{};
@@ -14,7 +14,24 @@ function project(type,d={}){
  const budget=state.budget||d.budget||{};
  const decision=d.decision||state.lastDecision||{};
  const models=Array.isArray(d.models||event.models)?(d.models||event.models).filter(x=>typeof x==='string').map(x=>str(x,80)):undefined;
+ const schema=d.schema||event.schema;
+ const context=d.context;
+ const backup=d.backup;
+ const owner=d.owner;
+ const packet=d.packet;
  const result={
+  diagnosticsRevision:2,
+  pipelineRef:str(state.pipelineRef||d.pipelineRef),database:str(d.database),
+  nextCycle:num(state.nextCycle),activeRunId:str(state.activeRunId),stopRequested:typeof state.stopRequested==='boolean'?state.stopRequested:undefined,
+  owner:owner?{researchId:str(owner.researchId),ownerId:str(owner.ownerId),epoch:num(owner.epoch)}:undefined,
+  packet:packet?{cycleId:num(packet.cycleId),runId:str(packet.runId),status:str(packet.status),resultEventId:str(packet.resultEventId),journalEventCount:num(packet.journalEventCount),usedCalls:num(packet.usedCalls)}:undefined,
+  schema:schema?{schemaVersion:num(schema.schemaVersion),origin:str(schema.origin),run:{policy:str(schema.run?.policy),maxWords:num(schema.run?.maxWords)},steps:(schema.steps||[]).map(s=>({ref:str(s.ref),kind:str(s.kind),order:str(s.order),input:str(s.input),models:(s.models||[]).map(m=>({name:str(m.name,80),enabled:m.enabled!==false,role:str(m.role,80),maxWords:num(m.maxWords),customRequest:typeof m.request==='string'}))}))}:undefined,
+  context:context?{originalChars:num(context.originalChars),maxChars:num(context.maxChars),included:(context.included||[]).map(x=>({cycleId:num(x.cycleId),runId:str(x.runId),step:num(x.step),model:str(x.model,80),originalChars:num(x.originalChars),includedChars:num(x.includedChars),truncated:x.truncated===true})),omittedOlderCycles:num(context.omittedOlderCycles)}:undefined,
+  backup:backup?{key:str(backup.key),sha256:str(backup.sha256,64),verified:typeof backup.verified==='boolean'?backup.verified:undefined,packetCommitId:str(backup.packetCommitId),revision:num(backup.revision),blocked:typeof backup.blocked==='boolean'?backup.blocked:undefined,lastVerifiedAt:num(backup.lastVerifiedAt),lastBackupId:str(backup.lastBackupId),verifiedCommitId:str(backup.verifiedCommitId),pendingCommitIds:Array.isArray(backup.pendingCommitIds)?backup.pendingCommitIds.map(x=>str(x)):undefined}:undefined,
+  validationErrors:Array.isArray(d.errors)?d.errors.map(x=>({path:str(x.path),message:str(x.message,1000)})):undefined,
+  step:num(event.meta?.step??d.step),reservedCalls:num(event.reservedCalls??report.reservedCalls),
+  promptSizes:event.prompts?Object.entries(event.prompts).map(([model,prompt])=>({model:str(model,80),chars:typeof prompt==='string'?prompt.length:undefined})):undefined,
+  stepResults:Array.isArray(report.steps)?report.steps.map(step=>({index:num(step.index),kind:str(step.kind),label:str(step.label),skipped:step.skipped===true,models:Object.entries(step.outcome||{}).map(([model,v])=>({model:str(model,80),accepted:v?.ok===true,reason:str(v?.reason),status:str(v?.status),attempt:num(v?.attempt),transportRequestId:str(v?.transportRequestId),answerChars:typeof v?.text==='string'?v.text.length:0}))})):undefined,
   researchId:str(d.researchId||event.researchId||state.researchId),
   cycleId:num(d.cycleId??event.cycleId??state.lastCommittedPacket),
   runId:str(d.runId||event.runId||state.activeRunId),
@@ -27,14 +44,14 @@ function project(type,d={}){
   contextChars:num(d.contextChars),durationMs:num(d.durationMs),
   stateVersion:num(state.stateVersion),backupRequiredCycle:num(state.backupRequiredCycleId),
   reportStatus:str(report.status,100),stepCount:Array.isArray(report.steps)?report.steps.length:undefined,
-  unresolvedBatchIds:Array.isArray(report.unresolvedBatchIds)?report.unresolvedBatchIds.map(x=>str(x)):undefined,
+  unresolvedBatchIds:Array.isArray(report.unresolvedBatchIds||event.unresolvedBatchIds)?(report.unresolvedBatchIds||event.unresolvedBatchIds).map(x=>str(x)):undefined,
   missingModels:Array.isArray(event.missing)?event.missing.map(x=>str(x,80)):undefined,
   responses:Object.keys(response).length?Object.entries(response).map(([model,row])=>({
    model:str(model,80),status:str(row?.status,100),answered:row?.answered===true,
    completion:str(row?.completion,100),attribution:str(row?.attribution,100),
    transportRequestId:str(row?.transportRequestId),answerChars:typeof row?.text==='string'?row.text.length:0
   })):undefined,
-  error:errorInfo(d.error||((event.type==='RUN_ERROR')?{code:event.code,message:event.message}:null))
+  error:errorInfo(d.error||((event.type==='RUN_ERROR')?{code:event.code,message:event.message,stack:event.stack}:null))
  };
  return clone(result);
 }

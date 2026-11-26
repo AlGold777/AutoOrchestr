@@ -18,10 +18,11 @@ async function readCycle(store,researchId,cycleId){
  const report=events.find(e=>e.eventId===packet.resultEventId)?.payload?.report;
  return {packet,report,answers:extractAnswers(report)};
 }
-async function buildTask({state,store,maxChars=16000}){
+async function buildTask({state,store,maxChars=16000,onContext=()=>{}}){
  if(!state||typeof state.task!=='string'||!state.task.trim()||!Number.isSafeInteger(maxChars))throw Error('CIRCLE_INVALID_TASK');
  if(state.nextCycle===1){
   if(state.task.length>maxChars)throw Error('CIRCLE_CONTEXT_LIMIT');
+  onContext({originalChars:state.task.length,maxChars,included:[],omittedOlderCycles:0});
   return state.task;
  }
  if(state.lastCommittedPacket!==state.nextCycle-1)throw Error('CIRCLE_CONTEXT_GAP');
@@ -32,7 +33,8 @@ async function buildTask({state,store,maxChars=16000}){
  const end='\n[END OF PRIOR EVIDENCE]';
  let left=maxChars-intro.length-end.length;
  if(left<256)throw Error('CIRCLE_CONTEXT_LIMIT');
- const selected=[];
+ const selected=[],included=[];
+ let oldest=state.lastCommittedPacket;
  for(let id=state.lastCommittedPacket;id>=1&&left>256;id--){
   const {packet,answers}=await readCycle(store,state.researchId,id);
   for(const row of answers){
@@ -41,10 +43,12 @@ async function buildTask({state,store,maxChars=16000}){
    if(room<64)break;
    const excerpt=row.text.length>room?row.text.slice(0,room)+' [TRUNCATED]':row.text;
    const block=prefix+excerpt;
-   selected.push(block);left-=block.length;
+   selected.push(block);left-=block.length;oldest=id;
+   included.push({cycleId:id,runId:packet.runId,step:row.step,model:row.model,originalChars:row.text.length,includedChars:Math.min(row.text.length,room),truncated:row.text.length>room});
   }
   if(id===state.lastCommittedPacket&&!selected.length)throw Error('CIRCLE_CONTEXT_LIMIT');
  }
+ onContext({originalChars:state.task.length,maxChars,included,omittedOlderCycles:oldest-1});
  return intro+selected.join('')+end;
 }
 const api=Object.freeze({extractAnswers,readCycle,buildTask});

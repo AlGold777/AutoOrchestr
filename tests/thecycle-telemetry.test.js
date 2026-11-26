@@ -20,3 +20,10 @@ test('TheCycle tab, MD and grey X are wired in real Telemetry modal',()=>{
  assert.match(h,/data-tab-target="thecycle-tabpanel"/);assert.match(h,/id="thecycle-export-md"/);assert.match(h,/id="thecycle-clear-telemetry"[^>]*style="color:#808080"><i class="ti ti-x"/);
  assert.match(v,/api\.markdown\(rows\)/);assert.match(v,/await api\.clear\(\)/);
 });
+
+test('diagnostics contain structural schema, acceptance reasons, provenance, backup proof and errors without response text',()=>{
+ const data=telemetry.project('RUN_RESULT',{event:{schema:{schemaVersion:1,run:{policy:'auto'},steps:[{ref:'r1',models:[{name:'GPT',request:'private text'}]}]},report:{status:'PARTIAL',steps:[{index:0,outcome:{GPT:{ok:false,reason:'too_short',text:'private answer',attempt:1}}}]}},context:{included:[{cycleId:1,runId:'r1',model:'GPT',step:1,includedChars:20,truncated:true}]},backup:{key:'backup-1',sha256:'a'.repeat(64),verified:true},owner:{ownerId:'o',epoch:2},error:Error('disk failure')});
+ assert.equal(data.schema.steps[0].models[0].customRequest,true);assert.equal(data.stepResults[0].models[0].reason,'too_short');
+ assert.equal(data.context.included[0].runId,'r1');assert.equal(data.backup.sha256,'a'.repeat(64));assert.equal(data.owner.epoch,2);assert.match(data.error.stack,/disk failure/);
+ assert.ok(!JSON.stringify(data).includes('private text')&&!JSON.stringify(data).includes('private answer'));
+});
