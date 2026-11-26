@@ -385,8 +385,40 @@
       });
     }
 
+    // Integrity envelope covers the exact UTF-8 JSON bytes, not a reserialized
+    // object. SHA-256 detects corruption; it does NOT authenticate the source.
+    async function digest(bytes, cryptoApi) {
+      if (!cryptoApi?.subtle?.digest) throw fail('BACKUP_CRYPTO_UNAVAILABLE');
+      const hash = new Uint8Array(await cryptoApi.subtle.digest('SHA-256', bytes));
+      return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function exportVerifiedBackup({ cryptoApi = root.crypto } = {}) {
+      if (typeof TextEncoder === 'undefined') throw fail('BACKUP_ENCODING_UNAVAILABLE');
+      const snapshot = await exportSnapshot();
+      const payload = JSON.stringify(snapshot);
+      const sha256 = await digest(new TextEncoder().encode(payload), cryptoApi);
+      return { format: 'thecycle-backup', version: 1, algorithm: 'SHA-256', sha256, payload };
+    }
+
+    async function verifyBackup(envelope, { cryptoApi = root.crypto } = {}) {
+      if (!envelope || envelope.format !== 'thecycle-backup' || envelope.version !== 1 ||
+          envelope.algorithm !== 'SHA-256' || typeof envelope.payload !== 'string' ||
+          !/^[0-9a-f]{64}$/.test(envelope.sha256 || '')) throw fail('INVALID_BACKUP');
+      if (typeof TextEncoder === 'undefined') throw fail('BACKUP_ENCODING_UNAVAILABLE');
+      const actual = await digest(new TextEncoder().encode(envelope.payload), cryptoApi);
+      if (actual !== envelope.sha256) throw fail('BACKUP_INTEGRITY_FAILED');
+      let snapshot;
+      try { snapshot = JSON.parse(envelope.payload); } catch (_) { throw fail('INVALID_BACKUP_PAYLOAD'); }
+      if (snapshot?.format !== 'thecycle-idb-snapshot' || snapshot.version !== 1 ||
+          snapshot.databaseVersion !== DB_VERSION || !snapshot.stores ||
+          !STORES.every((name) => Array.isArray(snapshot.stores[name])) ||
+          Object.keys(snapshot.stores).length !== STORES.length) throw fail('BACKUP_SCHEMA_MISMATCH');
+      return copy(snapshot);
+    }
+
     return Object.freeze({ createResearch, load, getOwnership, acquire, release, prepareRun, journalFor,
-      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, commitPacket, requestStop, decide, exportSnapshot,
+      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, commitPacket, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
       close: () => db.close() });
   }
   const api = Object.freeze({ createStateStore, StoreError, DB_NAME, DB_VERSION });
