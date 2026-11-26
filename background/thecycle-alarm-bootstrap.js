@@ -35,7 +35,11 @@ function performBackup(){
 }
 const scheduler=root.TheCycleAlarmScheduler.createAlarmScheduler({
  alarms:root.chrome.alarms,
- onBackupDue:performBackup,
+ onBackupDue:async()=>{
+  const configured=await root.chrome.storage.local.get('thecycleBackupEnabled');
+  if(configured.thecycleBackupEnabled!==true)return;
+  return performBackup();
+ },
  onFailure:async error=>{
   await root.chrome.storage.local.set({thecycleBackupStatus:{
    state:'FAILED',reason:String(error?.message||error),at:Date.now()
