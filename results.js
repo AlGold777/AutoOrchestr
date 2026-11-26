@@ -7037,7 +7037,7 @@ document.addEventListener('click', (event) => {
                 return { byModel: Object.fromEntries(models.map(model => {
                     const status = batch?.results?.[model] || {};
                     const answer = String(batch?.responses?.[model] || '');
-                    const trustworthy = status.status === 'SUCCESS' && status.attribution === 'verified';
+                    const trustworthy = String(status.status || '').toUpperCase() === 'SUCCESS' && status.attribution === 'verified';
                     return [model, {
                         text: trustworthy ? answer : '',
                         answered: trustworthy,
