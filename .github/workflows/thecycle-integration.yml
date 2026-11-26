@@ -48,4 +48,4 @@ jobs:
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
       - name: Browser G1 vertical with real IndexedDB and persisted reload
-        run: node --test tests/thecycle-g1-real-idb.browser.cjs
+        run: node --test tests/thecycle-g1-real-idb.browser.cjs tests/thecycle-extension-browser.browser.cjs
