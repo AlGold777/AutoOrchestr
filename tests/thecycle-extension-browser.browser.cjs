@@ -58,4 +58,58 @@ test('TheCycle G1 installs in Chromium MV3 and exposes Circle beside unchanged B
  assert.deepEqual(state.registered.map(x=>x.name).sort(),['Basic','Circle']);
  const fatal=errors.filter(x=>/TheCycle|Circle|BasicSchema|CustomEngine/i.test(x));
  assert.deepEqual(fatal,[], 'Browser script errors: '+fatal.join(' | '));
+
+ // A real installed extension runs its genuine UI, Basic Engine, Controller,
+ // and IndexedDB. Only the external LLM response is replaced with a deterministic
+ // fixture; this is not an authenticated-provider acceptance.
+ await page.evaluate(()=>{
+  let activeRun=null;
+  window.TheCycleMainPageBridge=Object.freeze({
+   capture(){return {models:['GPT'],errors:[],policy:'manual',
+    schema:{schemaVersion:1,origin:'user',run:{policy:'manual'},
+     steps:[{ref:'r1',kind:'round',models:[{name:'GPT'}]}]}};},
+   roleText:()=>'',accept:()=>({ok:true}),
+   begin({runId}){if(activeRun)throw Error('SMOKE_CONCURRENT_RUN');activeRun=runId;},
+   end({runId}){if(activeRun!==runId)throw Error('SMOKE_RUN_MISMATCH');activeRun=null;},
+   async send(models,prompts,meta){
+    if(meta.runId!==activeRun)throw Error('SMOKE_INCORRECT_RUN');
+    const stored=await chrome.storage.local.get('thecycle.g1.smoke.sends');
+    await chrome.storage.local.set({'thecycle.g1.smoke.sends':(stored['thecycle.g1.smoke.sends']||0)+1});
+    return {byModel:{GPT:{text:'G1_EXTENSION_UI_BROWSER_RESPONSE',
+     status:'SUCCESS',answered:true,attribution:'verified',
+     transportRequestId:'g1-extension-smoke-1'}}};
+   }
+  });
+ });
+ await page.locator('#thecycle-g1 summary').click();
+ await page.locator('#thecycle-g1-task').fill('Run one Basic cycle through the extension UI');
+ await page.locator('#thecycle-g1-budget').fill('3');
+ await page.locator('#thecycle-g1-start').click();
+ await page.waitForFunction(()=>{
+  const text=document.querySelector('#thecycle-g1-output')?.textContent||'';
+  return text.includes('G1_SINGLE_CYCLE_STOP')&&text.includes('G1_EXTENSION_UI_BROWSER_RESPONSE');
+ },null,{timeout:60000});
+ const first=JSON.parse(await page.locator('#thecycle-g1-output').textContent());
+ assert.equal(first.phase,'PAUSED');
+ assert.equal(first.packetStatus,'RECORDED_RESULT');
+ assert.equal(first.runStatus,'PIPELINE_COMPLETE');
+ assert.equal(first.answers[0]?.answer,'G1_EXTENSION_UI_BROWSER_RESPONSE');
+ const firstSends=await page.evaluate(async()=>(
+  await chrome.storage.local.get('thecycle.g1.smoke.sends'))['thecycle.g1.smoke.sends']);
+ assert.equal(firstSends,1,'Exactly one transport dispatch');
+
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>!!window.TheCycleMainPageBridge?.capture,null,{timeout:60000});
+ await page.locator('#thecycle-g1 summary').click();
+ await page.locator('#thecycle-g1-status').click();
+ await page.waitForFunction(()=>
+  (document.querySelector('#thecycle-g1-output')?.textContent||'')
+   .includes('G1_EXTENSION_UI_BROWSER_RESPONSE'),null,{timeout:30000});
+ const restored=JSON.parse(await page.locator('#thecycle-g1-output').textContent());
+ assert.equal(restored.researchId,first.researchId);
+ assert.equal(restored.packetStatus,'RECORDED_RESULT');
+ assert.equal(restored.answers[0]?.answer,first.answers[0]?.answer);
+ const afterReloadSends=await page.evaluate(async()=>(
+  await chrome.storage.local.get('thecycle.g1.smoke.sends'))['thecycle.g1.smoke.sends']);
+ assert.equal(afterReloadSends,1,'Reload must not dispatch again');
 });
