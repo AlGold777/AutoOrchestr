@@ -2,7 +2,8 @@
 // until a persistent directory handle and research runtime are configured.
 (function(root){'use strict';
 if(!root.chrome?.alarms||!root.TheCycleAlarmScheduler)return;
-async function performBackup(){
+let inFlight=null;
+async function performBackupOnce(){
  alarms:root.chrome.alarms,
 
   // A document context must supply the authorized directory handle and
@@ -27,6 +28,11 @@ async function performBackup(){
     }});
     return {key,sha256:result.sha256};
   }finally{store?.close();manager.close();}
+}
+function performBackup(){
+ if(inFlight)return inFlight;
+ inFlight=performBackupOnce().finally(()=>{inFlight=null;});
+ return inFlight;
 }
 const scheduler=root.TheCycleAlarmScheduler.createAlarmScheduler({
  onBackupDue:performBackup,
