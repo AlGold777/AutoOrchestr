@@ -51,7 +51,7 @@ describe('no scrollbars on the canvas and in the round cards', () => {
 
 describe('built-in Default follows the models selected on top', () => {
   test('the sync is skipped only for a Basic pipeline other than the built-in Default', () => {
-    expect(read('results.js')).toContain("if (isCustomEnginePipeline() && !isDefaultPipelineName(pipelineStore.active || 'Default')) return false;");
+    expect(read('results.js')).toContain("if (usesBasicCanvas() && !isDefaultPipelineName(pipelineStore.active || 'Default')) return false;");
   });
 });
 

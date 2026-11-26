@@ -3784,12 +3784,18 @@ document.addEventListener('click', (event) => {
         // text» (customDefaults.roundPrompts), not a catalog prompt, so it is not in getOrderedJudgePrompts.
         const CUSTOM_ROLE_ID = 'custom';
         const isCustomEnginePipeline = () => window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'custom';
-        const getRoleOptionPrompts = () => (isCustomEnginePipeline()
+        // The canvas and the schema of Basic: Basic itself and Circle, which takes its one finite execution from the same canvas.
+        // isCustomEnginePipeline stays «the runner is the Basic engine»; the editing places use this one.
+        const usesBasicCanvas = () => {
+            const runner = window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner;
+            return runner === 'custom' || runner === 'circle';
+        };
+        const getRoleOptionPrompts = () => (usesBasicCanvas()
             ? [...getOrderedJudgePrompts(), { id: CUSTOM_ROLE_ID, label: 'Custom' }]
             : getOrderedJudgePrompts());
         // Keeps the Custom option of existing role selectors in step with the pipeline's engine.
         const syncCustomRoleOption = () => {
-            const enabled = isCustomEnginePipeline();
+            const enabled = usesBasicCanvas();
             pipelinePanel?.querySelectorAll('.role-selector').forEach((select) => {
                 const option = select.querySelector(`option[value="${CUSTOM_ROLE_ID}"]`);
                 if (enabled && !option) select.insertAdjacentHTML('beforeend', `<option value="${CUSTOM_ROLE_ID}">Custom</option>`);
@@ -4327,7 +4333,7 @@ document.addEventListener('click', (event) => {
                 modelStacks
             };
             // A Basic pipeline is stored as its schema; the cards' working copies are read back from it.
-            if (isCustomEnginePipeline()) config.schema = basicSchemaFromPage(draftPlan, null, { forSave: true, basedOn });
+            if (usesBasicCanvas()) config.schema = basicSchemaFromPage(draftPlan, null, { forSave: true, basedOn });
             else {
                 config.customModelSettings = JSON.parse(JSON.stringify(getCustomCardSettings()));
                 config.customDefaults = JSON.parse(JSON.stringify(getCustomPipelineDefaults()));
@@ -5410,7 +5416,7 @@ document.addEventListener('click', (event) => {
         };
         const syncBasicInputCanvas = () => {
             if (!window.BasicInputCanvas || !pipelinePanel) return;
-            const schema = isCustomEnginePipeline()
+            const schema = usesBasicCanvas()
                 ? basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true }) : { steps: [] };
             const attachments = Array.from(promptAttachmentBar?.querySelectorAll('[data-attachment-key]') || [],
                 (item) => ({ name: item.title, key: item.dataset.attachmentKey }));
@@ -5491,7 +5497,7 @@ document.addEventListener('click', (event) => {
             showRoundTerritory(territory);
             if (!territory) return;
             event.preventDefault();
-            event.dataTransfer.dropEffect = pipelineRunActive || !isCustomEnginePipeline() ? 'none' : 'copy';
+            event.dataTransfer.dropEffect = pipelineRunActive || !usesBasicCanvas() ? 'none' : 'copy';
         });
         pipelinePanel?.addEventListener('drop', (event) => {
             const territory = roundTerritoryAt(event);
@@ -5499,7 +5505,7 @@ document.addEventListener('click', (event) => {
             if (!territory || !event.dataTransfer?.files?.length) return;
             const column = territory.column;
             event.preventDefault();
-            if (pipelineRunActive || !isCustomEnginePipeline()) return;
+            if (pipelineRunActive || !usesBasicCanvas()) return;
             if (column.classList.contains('entry-column')) { tryAddTransferAttachments(event.dataTransfer); return; }
             const files = Array.from(event.dataTransfer.files);
             const ref = `r${column.dataset.round}`;
@@ -5548,7 +5554,7 @@ document.addEventListener('click', (event) => {
                 } else {
                     block.classList.remove('active');
                     block.classList.add('inactive');
-                    if (sel) sel.disabled = !isCustomEnginePipeline();
+                    if (sel) sel.disabled = !usesBasicCanvas();
                     if (indicator) {
                         indicator.className = 'status-indicator';
                         indicator.title = '';
@@ -6222,7 +6228,7 @@ document.addEventListener('click', (event) => {
         const syncPipelineRoundModelsFromSelectedLLMs = ({ force = false } = {}) => {
             // Basic's participant IDs, including switched-off duplicates, are restored from its schema.
             // The built-in Default has no participants of its own: its rounds follow the models selected on top.
-            if (isCustomEnginePipeline() && !isDefaultPipelineName(pipelineStore.active || 'Default')) return false;
+            if (usesBasicCanvas() && !isDefaultPipelineName(pipelineStore.active || 'Default')) return false;
             if (!force && pipelineR1ManualDirty && !isR1DefaultSelection()) return false;
             const selectedIndices = getSelectedLLMIndicesForPipeline();
             let changed = false;
@@ -7494,6 +7500,7 @@ document.addEventListener('click', (event) => {
         const resumeCustomFromPage = async (runId = null) => {
             requestDocumentsAccess();
             if (!customRunStore || !window.CustomRunRecord) { showNotification('Basic: записи прогонов недоступны.', 'warn'); return false; }
+            if (circlePageRunner || theCycleHeld) { showNotification('Pipeline already running', 'warn'); return false; }
             if (pipelineRunActive) { showNotification('Basic: прогон уже идёт.', 'warn'); return false; }
             const latest = runId ? await customRunStore.load(runId) : await customRunStore.latest(customPipelineName());
             if (!latest) { showNotification('Basic: сохранённого прогона нет.', 'info'); return false; }
@@ -7681,7 +7688,7 @@ document.addEventListener('click', (event) => {
         // No parallel mock or new provider implementation.
         window.TheCycleMainPageBridge = Object.freeze({
             capture() {
-                if (!isCustomEnginePipeline() && getSelectedPipelinePresetId() !== 'CIRCLE') throw new Error('THECYCLE_REQUIRES_BASIC_OR_CIRCLE_SELECTED');
+                if (!usesBasicCanvas()) throw new Error('THECYCLE_REQUIRES_BASIC_OR_CIRCLE_SELECTED');
                 const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
                 const schema = JSON.parse(JSON.stringify(built.schema));
                 const models = [...new Set((schema.steps || []).flatMap(step =>
@@ -8893,7 +8900,7 @@ document.addEventListener('click', (event) => {
             if (output) output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
         };
         const circleSummary = (result) => ({
-            researchId: result.researchId, phase: result.state?.phase,
+            researchId: result.researchId, phase: result.state?.phase, closedReason: result.state?.closedReason,
             cycle: result.state?.lastCommittedPacket, budget: result.state?.budget,
             decision: result.packet?.decision, pendingBackup: result.state?.backupRequiredCycleId,
             lastOutcome: result.outcomes?.at(-1), result: result.report?.answers
@@ -8902,7 +8909,29 @@ document.addEventListener('click', (event) => {
             if (!window.TheCycleCircle?.createCircleRunner) throw new Error('CIRCLE_RUNTIME_UNAVAILABLE');
             return window.TheCycleCircle.createCircleRunner({ bridge: window.TheCycleMainPageBridge });
         };
+        // Restores the saved backup-directory permission. requestPermission needs the Run click's user gesture,
+        // so startDebateFromPage starts this as the very first thing, before any other await.
+        let circleAccessPending = false;
+        let circleAccess = null; // the permission request of the current Run click
+        const ensureCircleBackupAccess = () => {
+            const restore = window.TheCycleDirectoryHandleManager?.restoreBackupDirectoryAccess;
+            if (typeof restore !== 'function') return Promise.resolve({ ok: true, skipped: true });
+            circleAccessPending = true;
+            return restore({ source: 'run' }).catch((error) => ({
+                ok: false, code: 'DIRECTORY_ACCESS_ERROR', message: String(error?.message || error)
+            })).finally(() => { circleAccessPending = false; });
+        };
         const runCircleFromPage = async ({ task }) => {
+            if (circlePageRunner || pipelineRunActive || theCycleHeld) return false;
+            const access = circleAccess; circleAccess = null;
+            const granted = access ? await access : { ok: true };
+            if (!granted.ok) {
+                const text = granted.message || window.TheCycleDirectoryHandleManager?.NO_ACCESS_MESSAGE || 'Нет доступа к каталогу копий.';
+                try { await window.TheCycleTelemetry?.append('RUN_BLOCKED', { reason: 'BACKUP_DIRECTORY_' + (granted.outcome || granted.code || 'NO_ACCESS') }); } catch (_) {}
+                showCircleStatus('Circle: ' + text);
+                showNotification('Circle: ' + text, 'warn');
+                return false;
+            }
             if (circlePageRunner || pipelineRunActive || theCycleHeld) return false;
             const maxCalls = Number(document.getElementById('circle-call-budget')?.value || 24);
             if (!Number.isSafeInteger(maxCalls) || maxCalls < 1 || maxCalls > 10000) {
@@ -8945,6 +8974,10 @@ document.addEventListener('click', (event) => {
                 showNotification('Pipeline already running', 'warn');
                 return false;
             }
+            if (circleAccessPending) return false; // the permission prompt of the previous click is still open
+            // Circle: ask for the directory permission now, while the click's user activation is still fresh.
+            circleAccess = window.PipelinePresets?.getPipelinePreset?.(getSelectedPipelinePresetId())?.runner === 'circle'
+                ? ensureCircleBackupAccess() : null;
             const moderatorEntryText = getModeratorDispatchText();
             const pipelineNameText = await resolveDisputeTopicForRun(moderatorEntryText);
             if (!pipelineNameText) {
@@ -9243,7 +9276,7 @@ document.addEventListener('click', (event) => {
             if (!config || typeof config !== 'object') return;
             pipelineApplyingConfig = true;
             const working = basicWorkingFromConfig(config);
-            if (!working.schema && isCustomEnginePipeline()) working.legacySourceSchema = legacyBasicSourceSchema(config);
+            if (!working.schema && usesBasicCanvas()) working.legacySourceSchema = legacyBasicSourceSchema(config);
             if (!isDefaultPipelineName(draftPlanStorageKey()) || !customPipelineDefaults.has(draftPlanStorageKey())) {
                 adoptBasicWorking(draftPlanStorageKey(), isDefaultPipelineName(draftPlanStorageKey()) ? { cards: {}, rounds: {}, defaults: {}, runExplicit: {}, error: '' } : working);
             }
@@ -9335,7 +9368,7 @@ document.addEventListener('click', (event) => {
             }
             const sendOverrides = config.version >= 2 ? null : buildSendOverridesFromLegacy(config);
             Object.entries(modelStacks).forEach(([stackId, state]) => {
-                if ((working.schema || isCustomEnginePipeline()) && Array.isArray(state?.items)) {
+                if ((working.schema || usesBasicCanvas()) && Array.isArray(state?.items)) {
                     const stack = document.getElementById(stackId);
                     PipelineRuntime?.renderModelStack?.(stack, {
                         items: state.items,
@@ -9689,7 +9722,7 @@ document.addEventListener('click', (event) => {
                     addModelBtn.textContent = '+';
                     label.insertBefore(addModelBtn, label.firstChild);
                 }
-                const canAddModel = editable && (custom || draft) && isCustomEnginePipeline() && !pipelineRunActive;
+                const canAddModel = editable && (custom || draft) && usesBasicCanvas() && !pipelineRunActive;
                 addModelBtn.hidden = !canAddModel;
                 addModelBtn.disabled = !canAddModel;
             });
@@ -10013,7 +10046,7 @@ document.addEventListener('click', (event) => {
                 }
                 // A copy of a template remembers it; saving a saved pipeline again keeps what it was based on.
                 const basedOn = isTemplate ? currentName : (pipelineStore.pipelines[currentName]?.schema?.basedOn || '');
-                if (isCustomEnginePipeline()) {
+                if (usesBasicCanvas()) {
                     // A Basic pipeline is saved through its schema, the way an imported one is installed: the record is
                     // derived from the schema (recordFromSchema), never taken from the canvas separately.
                     const schema = basicSchemaFromPage(draftPlanForCanvas(getActiveDraftPlan()), null, { forSave: true, basedOn });
@@ -10051,7 +10084,7 @@ document.addEventListener('click', (event) => {
         // Import takes back). It is the schema Save would store, checked the way Save and Import check it.
         const schemaFileName = (name) => `${String(name || '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/\s+/g, ' ').slice(0, 80).trim() || 'schema'}.json`;
         const buildBasicExport = () => {
-            if (!isCustomEnginePipeline()) return { ok: false, errors: [{ path: '', message: 'Экспорт доступен для схем Basic.' }] };
+            if (!usesBasicCanvas()) return { ok: false, errors: [{ path: '', message: 'Экспорт доступен для схем Basic.' }] };
             const name = String(pipelineStore.active || getPipelineHeaderName() || '').trim();
             const basedOn = isDefaultPipelineName(name) ? '' : (pipelineStore.pipelines[name]?.schema?.basedOn || '');
             // A saved schema the page could not read has no working copies: the file is that schema as it is stored, with its errors
@@ -11418,7 +11451,7 @@ document.addEventListener('click', (event) => {
         pipelinePanel.addEventListener('pointerdown', (event) => {
             cancelParticipantPress();
             const block = event.target?.closest?.('.model-block');
-            if (pipelineRunActive || !isCustomEnginePipeline() || !block || event.button !== 0
+            if (pipelineRunActive || !usesBasicCanvas() || !block || event.button !== 0
                 || event.target.closest(BLOCK_CONTROL_SELECTOR) || !block.querySelector('[data-participant-add]')) return;
             const press = { block, x: event.clientX, y: event.clientY, pointerId: event.pointerId, timer: null };
             press.timer = setTimeout(() => {
@@ -11566,7 +11599,7 @@ document.addEventListener('click', (event) => {
                 const stageRun = stages.filter((item) => item.plannedStageId === `canvas-r${round}`).pop() || null;
                 // Custom rounds (R1 included) with mini-request selectors: one role for the round's models
                 // instead of the participant list.
-                const roleChoice = isCustomEnginePipeline() && document.querySelector(`#r${round}-models .role-selector`)
+                const roleChoice = usesBasicCanvas() && document.querySelector(`#r${round}-models .role-selector`)
                     ? { prompts: getRoleOptionPrompts(), roles: (stack?.items || []).map((item) => item.role || ''), disabled: pipelineRunActive,
                         roundPrompt: getCustomRoundPrompt(`r${round}`),
                         // The round card of Basic: the input, the task, the owner and the output.
@@ -11617,14 +11650,14 @@ document.addEventListener('click', (event) => {
             if (roundAdd && pipelinePanel.contains(roundAdd)) {
                 event.preventDefault();
                 event.stopPropagation();
-                if (isCustomEnginePipeline()) void addModelToRound(Number(roundAdd.closest('.stage-column[data-round]')?.dataset.round || 0));
+                if (usesBasicCanvas()) void addModelToRound(Number(roundAdd.closest('.stage-column[data-round]')?.dataset.round || 0));
                 return;
             }
             const participantAction = event.target?.closest?.('[data-participant-add], [data-participant-remove], [data-participant-switch]');
             if (participantAction && pipelinePanel.contains(participantAction)) {
                 event.preventDefault();
                 event.stopPropagation();
-                if (!isCustomEnginePipeline()) return;
+                if (!usesBasicCanvas()) return;
                 const block = participantAction.closest('.model-block');
                 if (participantAction.hasAttribute('data-participant-add')) void addBasicParticipant(block);
                 else if (participantAction.hasAttribute('data-participant-remove')) void removeBasicParticipantFromRound(block);

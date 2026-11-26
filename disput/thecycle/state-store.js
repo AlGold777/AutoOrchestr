@@ -316,6 +316,35 @@
       });
     }
 
+    // Owner Stop with a request already sent: the unresolved batches stay UNKNOWN (budget stays spent, nothing is
+    // resent, no packet is invented), the run is closed and the research ends with an explicit reason, so the
+    // transport can be released and a new research can start.
+    async function abandonRun(token, { expectedVersion, runId, reason } = {}) {
+      if (!str(runId) || !str(reason) || reason.length > 200) throw fail('INVALID_RECOVERY');
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (!state.stopRequested || state.activeRunId !== runId ||
+            !['RECONCILE', 'RUNNING', 'INTENT'].includes(state.phase)) throw fail('ABANDON_NOT_ALLOWED');
+        const run = await request(s.runs.get([state.researchId, runId]));
+        if (!run) throw fail('RUN_NOT_ACTIVE');
+        const unresolvedBatchIds = [];
+        for (const batch of run.batches) {
+          if (['INTENT', 'UNKNOWN'].includes(batch.status)) { batch.status = 'UNKNOWN'; unresolvedBatchIds.push(batch.batchId); }
+        }
+        run.phase = 'CLOSED_UNRESOLVED';
+        run.eventCount += 1;
+        await request(s.events.add({ researchId: state.researchId, runId, eventId: 'RUN_CLOSED',
+          sequence: run.eventCount, payload: { type: 'RUN_CLOSED', runId, reason, unresolvedBatchIds } }));
+        await request(s.runs.put(run));
+        state.activeRunId = null;
+        state.phase = 'COMPLETED';
+        state.closedReason = reason;
+        state.lastDecision = { action: 'COMPLETE', reason, stateVersion: state.stateVersion };
+        return copy(await writeState(s, state));
+      });
+    }
+
     // Atomic handoff: raw journal remains immutable and the packet references
     // it. Semantic knowledge graph / manifest hashing belongs to C05.
     async function commitPacket(token, { expectedVersion, runId } = {}) {
@@ -442,7 +471,7 @@
     }
 
     return Object.freeze({ createResearch, load, getOwnership, acquire, release, prepareRun, journalFor,
-      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
+      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, abandonRun, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
       close: () => db.close() });
   }
   const api = Object.freeze({ createStateStore, StoreError, DB_NAME, DB_VERSION });

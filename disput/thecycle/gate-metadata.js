@@ -51,6 +51,13 @@
         req.onerror = () => fail(req.error);
       });
     }
+    function list() {
+      return transaction('readonly', (store, done, fail) => {
+        const req = store.getAll();
+        req.onsuccess = () => done(req.result || []);
+        req.onerror = () => fail(req.error);
+      });
+    }
     function put(researchId, expectedRevision, value) {
       if (!value || value.researchId !== researchId ||
           value.revision !== expectedRevision + 1) throw new TypeError('INVALID_GATE_REVISION');
@@ -68,7 +75,7 @@
         };
       });
     }
-    return Object.freeze({ get, put, close: () => db.close() });
+    return Object.freeze({ get, put, list, close: () => db.close() });
   }
   const api = Object.freeze({ createGateMetadata });
   root.TheCycleGateMetadata = api;

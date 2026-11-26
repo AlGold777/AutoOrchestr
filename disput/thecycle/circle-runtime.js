@@ -8,8 +8,19 @@ async function openBackup({stateStore,storage,onDiagnostic}){
  if(settings.thecycleBackupEnabled!==true)throw Error('CIRCLE_CONFIGURE_BACKUP_DIRECTORY');
  const manager=await root.TheCycleDirectoryHandleManager.createDirectoryHandleManager();
  try {
-  const directory=await manager.load('thecycle-backups');
-  return await root.TheCycleBackupRuntime.createBackupRuntime({directory,stateStore,onDiagnostic});
+  let directory;
+  try{directory=await manager.load('thecycle-backups');}
+  catch(error){
+   const code=String(error?.message||error);
+   if(code==='DIRECTORY_PERMISSION_REQUIRED'||code==='DIRECTORY_HANDLE_NOT_FOUND'){
+    // Nothing was sent yet: the run is blocked before the first request.
+    try{await onDiagnostic?.('BACKUP_DIRECTORY_PERMISSION',{reason:code,directory:{id:'thecycle-backups',source:'runtime',
+     outcome:code==='DIRECTORY_PERMISSION_REQUIRED'?'DENIED':'NOT_CONFIGURED',requested:false,error:code}});}catch(_){}
+    throw Object.assign(new Error(root.TheCycleDirectoryHandleManager.NO_ACCESS_MESSAGE||code),{code});
+   }
+   throw error;
+  }
+  return await root.TheCycleBackupRuntime.createBackupRuntime({directory,stateStore,onDiagnostic,storage});
  }finally{manager.close();}
 }
 function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
@@ -139,6 +150,14 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     }
     await record({state,outcome:'RECOVERY_REQUIRED'});
     break;
+   }
+   if(session.stopRequested){
+    // Stop after a request left the page: its outcome is unknown. Close the research (no resend) and free the transport.
+    const stopped=await store.load(id);
+    if(stopped.activeRunId&&['RECONCILE','RUNNING','INTENT'].includes(stopped.phase)){
+     try{await record(await controller.closeStopped(id));}
+     catch(error){await emit('RUN_CLOSE_FAILED',{state:stopped,error});}
+    }
    }
    const final=await snapshot(id);
    await emit("RESEARCH_END",{state:final.state,outcome:outcomes.at(-1)?.outcome});

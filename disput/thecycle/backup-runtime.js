@@ -4,7 +4,8 @@
 (function initTheCycleBackupRuntime(root) {
   'use strict';
   async function createBackupRuntime({ directory, indexedDB = root.indexedDB,
-    stateStore, clock = () => Date.now(), onDiagnostic = async () => {} } = {}) {
+    stateStore, clock = () => Date.now(), onDiagnostic = async () => {},
+    storage = root.chrome?.storage?.local, keep = 10 } = {}) {
     const modules = [root.TheCycleGateMetadata, root.TheCycleDirectorySink,
       root.TheCycleBackup, root.TheCycleBackupGate];
     if (modules.some((item) => !item) || !stateStore) {
@@ -17,10 +18,15 @@
     // fabricate proof that a specific packet commit is present. This wrapper
     // verifies the captured snapshot actually contains that packet.
     const note = async (type, data) => { try { await onDiagnostic(type,data); } catch (_) {} };
+    // Rotation runs only after a copy passed every check below; its failure never fails the backup.
+    const retention = root.TheCycleBackupRetention && storage?.get && storage?.set
+      ? root.TheCycleBackupRetention.createRetention({ sink, store: stateStore, metadata, storage, keep, clock, onEvent: note })
+      : null;
+    const rotate = async (result) => { if (retention) await retention.afterVerified({ key: result.key, sha256: result.sha256, createdAt: clock() }); };
     const backup = {
       async save(key, { researchId, requiredCommitId } = {}) {
         const saved = await backupService.save(key);
-        if (!requiredCommitId) { const result={...saved,packetCommitId:null}; await note('BACKUP_READBACK_VERIFIED',{researchId,backup:result}); return result; }
+        if (!requiredCommitId) { const result={...saved,packetCommitId:null}; await note('BACKUP_READBACK_VERIFIED',{researchId,backup:result}); await rotate(result); return result; }
         const envelope = await backupService.getVerifiedEnvelope(key);
         const snapshot = await stateStore.verifyBackup(envelope);
         const match = /^(.+):cycle:([1-9][0-9]*)$/.exec(requiredCommitId);
@@ -31,6 +37,7 @@
         }
         const result={...saved,packetCommitId:requiredCommitId};
         await note('BACKUP_READBACK_VERIFIED',{researchId,backup:result});
+        await rotate(result);
         return result;
       }
     };

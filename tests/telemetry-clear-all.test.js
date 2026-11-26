@@ -12,7 +12,10 @@ const RESULTS_SRC = fs.readFileSync(path.join(__dirname, '..', 'results.js'), 'u
 
 describe('telemetry clear-all control', () => {
   test('trash button exists right after the JSON export, in the telemetry actions', () => {
-    const actionsIdx = HTML_SRC.indexOf('class="telemetry-actions"');
+    // The main Telemetry tab: the TheCycle tab before it has its own telemetry-actions toolbar.
+    const panelIdx = HTML_SRC.indexOf('id="telemetry-tabpanel"');
+    expect(panelIdx).toBeGreaterThan(-1);
+    const actionsIdx = HTML_SRC.indexOf('class="telemetry-actions"', panelIdx);
     expect(actionsIdx).toBeGreaterThan(-1);
     // Slice to the end of the actions container rather than a fixed width, so
     // adding a control to the toolbar cannot push a later button out of view.

@@ -54,7 +54,30 @@
       try { return JSON.parse(await file.text()); }
       catch (_) { throw new Error('BACKUP_FILE_INVALID_JSON'); }
     }
-    return Object.freeze({ put, get });
+    const SUFFIX = '.thecycle.json';
+    // Only this sink's own files: key + lastModified. Never touches other files of the directory.
+    async function list() {
+      await requirePermission();
+      const iterate = typeof directory.entries === 'function' ? directory.entries() : null;
+      if (!iterate) throw new Error('BACKUP_DIRECTORY_LISTING_UNAVAILABLE');
+      const rows = [];
+      for await (const [name, handle] of iterate) {
+        if (typeof name !== 'string' || !name.endsWith(SUFFIX) || handle?.kind === 'directory') continue;
+        const key = name.slice(0, -SUFFIX.length);
+        if (!safeKey(key)) continue;
+        try { rows.push({ key, lastModified: (await handle.getFile()).lastModified }); }
+        catch (_) { /* a vanished file is not listed */ }
+      }
+      return rows;
+    }
+    async function remove(key) {
+      const name = filename(key);
+      await requirePermission();
+      if (typeof directory.removeEntry !== 'function') throw new Error('BACKUP_DIRECTORY_REMOVE_UNAVAILABLE');
+      try { await directory.removeEntry(name); return true; }
+      catch (error) { if (error?.name === 'NotFoundError') return false; throw error; }
+    }
+    return Object.freeze({ put, get, list, remove });
   }
   const api = Object.freeze({ createDirectorySink });
   root.TheCycleDirectorySink = api;

@@ -101,10 +101,18 @@ function createG1Runner({bridge,storage=root.chrome?.storage?.local,
    const report=events.find(e=>e.eventId===packet?.resultEventId)?.payload?.report||null;
    return {researchId,runId,outcomes,database:active.database,state:final,packet,report};
   }finally{
-   if(bridgeStarted)bridge.end({runId});
-   try{await controller?.releaseSettled?.(researchId);}catch(_){}
-   running=null;active.close();
-   if(held)try{bridge.release?.();}catch(_){}
+   try{
+    try{if(bridgeStarted)bridge.end({runId});}
+    finally{
+     try{await controller?.releaseSettled?.(researchId);}catch(_){}
+    }
+   }finally{
+    running=null;
+    try{active.close();}
+    finally{
+     if(held)try{bridge.release?.();}catch(_){}
+    }
+   }
   }
  }
  async function stop(){

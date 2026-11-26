@@ -82,6 +82,20 @@
       if (busy) return { outcome: 'BUSY' };
       busy = true;
       try {
+        try { return await tickBody(researchId); }
+        catch (error) {
+          // Stop landed between reading the state and writing the transition: the version moved.
+          // Nothing was sent at this point, so re-read once; a stopped research pauses instead of throwing.
+          if (error?.code !== 'STALE_STATE' || !(await safeState(researchId)).stopRequested) throw error;
+          return await tickBody(researchId);
+        }
+      } finally {
+        busy = false;
+      }
+    }
+
+    async function tickBody(researchId) {
+      {
         let state = await safeState(researchId);
         if (['PAUSED', 'COMPLETED'].includes(state.phase) &&
             !(backupGate && state.backupRequiredCycleId !== null &&
@@ -213,13 +227,16 @@
           return result(next, next.phase === 'RECONCILE' ? 'RECOVERY_REQUIRED' : 'RUN_RETURNED', { report });
         } catch (error) {
           const next = await safeState(researchId);
+          // Stop moved the state version before prepareRun: nothing was sent, the research is paused.
+          if (error?.code === 'STALE_STATE' && next.stopRequested && !next.activeRunId) {
+            await releaseIfSettled(next);
+            return result(next, 'PAUSED', { reason: 'OWNER_STOP' });
+          }
           return result(next, next.activeRunId ? 'RECOVERY_REQUIRED' : 'RUN_REJECTED',
             { error: { code: error?.code || 'RUN_ERROR', message: String(error?.message || error) } });
         } finally {
           live = null;
         }
-      } finally {
-        busy = false;
       }
     }
 
@@ -233,6 +250,25 @@
       }
       if (!busy) await releaseIfSettled(state);
       return result(state, 'STOP_REQUESTED');
+    }
+
+    // Owner Stop whose request is already out: close the research as unresolved (the batch stays UNKNOWN, nothing
+    // is resent) and release the transport, so a new research starts without a reload.
+    async function closeStopped(researchId, reason = 'OWNER_STOP_UNRESOLVED') {
+      if (!str(researchId)) throw fail('INVALID_RESEARCH');
+      if (busy) return { outcome: 'BUSY' };
+      busy = true;
+      try {
+        if (typeof store.abandonRun !== 'function') throw fail('CLOSE_NOT_SUPPORTED');
+        const state = await safeState(researchId);
+        if (!state.stopRequested || !state.activeRunId || !['RECONCILE', 'RUNNING', 'INTENT'].includes(state.phase)) {
+          throw fail('CLOSE_NOT_ALLOWED');
+        }
+        const fence = await owned(researchId);
+        const next = await store.abandonRun(fence, { expectedVersion: state.stateVersion, runId: state.activeRunId, reason });
+        await releaseIfSettled(next);
+        return result(next, 'RUN_CLOSED', { reason, runId: state.activeRunId });
+      } finally { busy = false; }
     }
 
     // Frees the transport ownership of a settled research (no active run, nothing left to back up) using the
@@ -287,7 +323,7 @@
       } finally { busy = false; }
     }
 
-    return Object.freeze({ tick, stop, resume, takeOver, reconcile, releaseSettled, ownerId });
+    return Object.freeze({ tick, stop, resume, takeOver, reconcile, closeStopped, releaseSettled, ownerId });
   }
 
   const api = Object.freeze({ createController, fixedPolicy, ControllerError });

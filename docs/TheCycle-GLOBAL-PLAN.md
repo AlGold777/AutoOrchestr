@@ -113,3 +113,31 @@
 ## Circle — штатная точка входа
 
 Circle зарегистрирован в общем списке Pipelines (`CIRCLE`, runner `circle`). Выберите Circle, настройте модели на canvas, каталог резервирования и общий лимит вызовов, введите задачу в штатный composer и нажмите Run. Stop управляет всем исследованием; Status показывает сохранённое состояние. Экспериментальная панель скрыта. Classic и Basic Engine не изменены. Приёмка в реальном браузере требует установки текущей ветки.
+
+## Перенос на 2.81.1116 (Claude, 2026-11-26)
+
+Ветка влита в рабочую линию расширения слиянием (до коммита 2ae4ba91); новые коммиты ветки вливаются так же. Изменено при переносе:
+
+- Рабочая страница Circle — `pipeline_panel.html` (там Basic в текущей версии); `result_new.html` сохранён.
+- Адаптер и мост — под Basic 2.81.1116: исход шага по `model.id`; шаги `owner` отклоняются; при `input:none` отклоняется только `defaults.roundTask`.
+- Исключение до вызова транспорта — `NOT_SENT` (бюджет возвращается), не `DISPATCH_UNKNOWN`. Доставленная неудача одной модели — её «нет ответа»; `UNKNOWN` — только когда неизвестно, ушёл ли запрос.
+- Stop прерывает запросы моста (составной сигнал + `cancelRun` транспорта).
+- `controller.releaseSettled` в `finally` обоих runtime: после штатного конца и Stop владение снимается, если запуск завершён и бэкап выполнен.
+- `estimateCalls` в адаптере: цикл не стартует при остатке меньше оценки, пауза `BUDGET_INSUFFICIENT_FOR_CYCLE`.
+- Мост `hold/release` на всё исследование: в паузах между циклами Basic, второй запуск, смена pipeline и редактирование заблокированы.
+- `background/index.js`: модули TheCycle подключаются после основного `importScripts`, в try/catch.
+- Тесты на `node:test` — `npm run test:thecycle`; Jest их исключает (`tests/jest.config.js`).
+
+- `usesBasicCanvas()` в `results.js`: холст и схема Basic работают и для `runner: 'circle'`; `resumeCustomFromPage` отказывает при `circlePageRunner || theCycleHeld`.
+- Доступ к каталогу: `directory-handle-manager.ensurePermission` / `restoreBackupDirectoryAccess` — первым действием в `startDebateFromPage` при Circle и в кнопке «Создать копию»; отказ — `RUN_BLOCKED` до первой отправки.
+- Ротация: `backup-retention.createRetention` после проверенной копии в путях записи runtime, alarm и ручной копии (`recovery-runtime.js` и `backup-policy.js` ротацию пока не вызывают; порядок «10 последних» — по `createdAt` часов, не по порядку записи); хранит 10; защищены новая копия, `lastBackupId` незавершённых исследований, копии вне ledger `thecycleBackupLedger`.
+- Stop во время отправки: `state-store.abandonRun` + `controller.closeStopped` — пачки остаются UNKNOWN, исследование `COMPLETED` с `closedReason: 'OWNER_STOP_UNRESOLVED'` (виден в Status), владение снято; `STALE_STATE` от Stop — пауза.
+- Тесты: in-memory IndexedDB `tests/thecycle-fake-idb.js`.
+
+Найдено при переносе и оставлено этапам G2/G4:
+- Кнопка «Start Circle» G1-панели не запрашивает доступ к каталогу (запуск отклоняется в `openBackup`); `g1-runtime.js` без `closeStopped` — после Stop во время отправки владение остаётся.
+- После сбоя или перезагрузки страницы во время отправки состояние остаётся RECONCILE/RUNNING, а владение — за прежним `ownerId`; новый запуск падает `TRANSPORT_OWNED`. Нужен путь `reconcile`/`takeOver` из UI. Очистка сохранённых данных способом восстановления не является.
+- `maxAttempts: 1` в адаптере отключает исправляющие повторы Basic (`too_long`, формат): такой шаг сразу PARTIAL, политика ставит паузу.
+- FSA-хэндл в service worker в Chrome не проверен.
+- Живая проверка в Chrome не проводилась. Минимальные испытания: два цикла подряд; передача результата первого во второй; Stop и повторный запуск; ошибка одной модели; экспорт телеметрии TheCycle.
+

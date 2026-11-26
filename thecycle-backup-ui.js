@@ -17,9 +17,13 @@ document.getElementById('disable').addEventListener('click',()=>action(async()=>
  await chrome.storage.local.set({thecycleBackupEnabled:false});
  message.textContent='Резервирование отключено.';
 }));
+const emit=async(type,data)=>{try{await window.TheCycleTelemetry?.append(type,data);}catch(_){}};
 document.getElementById('run').addEventListener('click',()=>action(async()=>{
+ // First await of the click: requestPermission needs the user gesture.
+ const access=await TheCycleDirectoryHandleManager.restoreBackupDirectoryAccess({source:'manual'});
+ if(!access.ok)throw new Error(access.message);
  const manager=await TheCycleDirectoryHandleManager.createDirectoryHandleManager();
- let store,registry;
+ let store,registry,metadata;
  try{
   registry=await TheCycleRecoveryRepositories.createRecoveryRepositories();
   const pointer=await registry.activation.read();
@@ -30,16 +34,25 @@ document.getElementById('run').addEventListener('click',()=>action(async()=>{
   const key='thecycle-manual-'+Date.now()+'-'+crypto.randomUUID().replace(/-/g,'');
   const result=await service.save(key);
   if(!result.verified)throw new Error('BACKUP_UNVERIFIED');
+  await emit('BACKUP_READBACK_VERIFIED',{database:pointer.activeDatabase,backup:{key,sha256:result.sha256,verified:result.verified},reason:'manual'});
+  // Rotation only after the copy is fully verified; its failure never fails the backup.
+  try{
+   metadata=await TheCycleGateMetadata.createGateMetadata();
+   const retention=TheCycleBackupRetention.createRetention({sink,store,metadata,storage:chrome.storage.local,
+    onEvent:(type,data)=>emit(type,{database:pointer.activeDatabase,...data})});
+   await retention.afterVerified({key,sha256:result.sha256,createdAt:Date.now()});
+  }catch(error){await emit('RETENTION_ERROR',{error,retention:{key}});}
   await chrome.storage.local.set({thecycleBackupStatus:{
    state:'VERIFIED',key,sha256:result.sha256,database:pointer.activeDatabase,at:Date.now()
   }});
   message.textContent='Резервная копия проверена: '+result.key;
  }catch(error){
+  await emit('BACKUP_FAILED',{reason:'manual',error});
   await chrome.storage.local.set({thecycleBackupStatus:{
    state:'FAILED',reason:String(error?.message||error),at:Date.now()
   }});
   throw error;
- }finally{store?.close();registry?.close();manager.close();}
+ }finally{try{metadata?.close();}catch(_){}store?.close();registry?.close();manager.close();}
 }));
 document.getElementById('refresh').addEventListener('click',()=>action(async()=>{}));
 void refresh().catch(error=>{message.textContent=String(error);});

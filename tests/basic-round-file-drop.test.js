@@ -53,7 +53,7 @@ const makeDropPanel = ({ files = [], setFailure = null, pipelineRunActive = fals
   if (start < 0 || end <= start) throw new Error('Basic round drop handlers are missing from results.js');
   const handlerSetup = resultsSource.slice(start, end);
   window.BasicInputFiles = { createStore: () => store, validateBatch };
-  const getQueue = new Function('pipelinePanel', 'pipelineCanvas', 'pipelineRunActive', 'isCustomEnginePipeline', 'draftPlanStorageKey',
+  const getQueue = new Function('pipelinePanel', 'pipelineCanvas', 'pipelineRunActive', 'usesBasicCanvas', 'draftPlanStorageKey',
     'getCustomRoundSettings', 'window', 'setCustomRoundSetting', 'syncBasicInputCanvas', 'showNotification', 'tryAddTransferAttachments',
     `${handlerSetup}; return () => fileDropQueue;`)(panel, canvas, pipelineRunActive, () => true, () => 'pipeline-A',
     () => settings, window, setCustomRoundSetting,
