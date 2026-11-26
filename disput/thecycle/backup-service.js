@@ -41,9 +41,20 @@
       return { key, sha256: envelope.sha256,
         counts: Object.fromEntries(Object.entries(snapshot.stores).map(([name, rows]) => [name, rows.length])) };
     }
+    // Backup export is explicit: caller decides where the bytes are stored.
+    // Import remains disabled until a verified quiescent transport and a
+    // separate empty-target restore transaction are implemented.
+    async function getVerifiedEnvelope(key) {
+      if (!str(key)) throw fail('INVALID_BACKUP_KEY');
+      const envelope = await sink.get(key);
+      if (!envelope) throw fail('BACKUP_NOT_FOUND');
+      await store.verifyBackup(envelope);
+      return JSON.parse(JSON.stringify(envelope));
+    }
+
     // No automatic restore: only a fresh, empty database may be populated,
     // after checking every record, ownership fence and transport quiescence.
-    return Object.freeze({ save, inspect });
+    return Object.freeze({ save, inspect, getVerifiedEnvelope });
   }
   const api = Object.freeze({ createBackupService, BackupError });
   root.TheCycleBackup = api;
