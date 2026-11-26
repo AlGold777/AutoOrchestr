@@ -69,7 +69,7 @@ function createG1Runner({bridge,storage=root.chrome?.storage?.local,
     maxCallsPerCycle,maxPromptChars,ownerId:'g1-controller-'+uuid(),backupGate:null
    });
    running={researchId,controller};
-   bridge.begin({runId});bridgeStarted=true;
+   bridge.begin({runId,schema});bridgeStarted=true;
    const outcomes=[];
    // G1 executes exactly one Basic pipeline. COMMIT and EVALUATE are
    // state-only ticks; do not dispatch a second Basic run here.
