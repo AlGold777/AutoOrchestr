@@ -32,10 +32,10 @@
   function createController({ store, makeAdapter, loadPipeline, maxCallsPerCycle, maxPromptChars,
     ownerId = root.crypto?.randomUUID?.(), backupGate = null } = {}) {
     if (!store || !['load', 'acquire', 'release', 'prepareRun', 'journalFor', 'getRun', 'getEvents',
-      'getPacket', 'commitPacket', 'acknowledgePacketBackup', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
+      'getPacket', 'commitPacket', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
       typeof makeAdapter !== 'function' || typeof loadPipeline !== 'function' ||
       !str(ownerId) || !pos(maxCallsPerCycle) || !pos(maxPromptChars) ||
-      (backupGate && !['assertCanStartCycle', 'requireCommit', 'persist'].every((key) => typeof backupGate[key] === 'function'))) {
+      (backupGate && (!['assertCanStartCycle', 'requireCommit', 'persist'].every((key) => typeof backupGate[key] === 'function') || typeof store.acknowledgePacketBackup !== 'function'))) {
       throw fail('INVALID_CONTROLLER_DEPENDENCIES');
     }
     // ownerId must be unique per live controller instance, not shared across tabs.
