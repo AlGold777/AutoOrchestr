@@ -90,7 +90,8 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      if(owner?.researchId!==fence.researchId||owner?.ownerId!==fence.ownerId||owner?.epoch!==fence.epoch||meta.runId!==bridgeRun)
       throw notSent(new Error('CIRCLE_STALE_OWNER'));
      return bridge.send(modelNames,prompts,meta);
-    },accept:bridge.accept,journal:async event=>{const saved=await journal(event);let state;try{state=await store.load(id);}catch(_){}await emit(event.type,{event,state});return saved;},availableModels:models,isRole:()=>true,roleText:bridge.roleText
+    },accept:bridge.accept,journal:async event=>{const saved=await journal(event);let state;try{state=await store.load(id);}catch(_){}await emit(event.type,{event,state});return saved;},availableModels:models,isRole:()=>true,roleText:bridge.roleText,
+    reread:typeof bridge.reread==='function'?bridge.reread:null,settings:typeof bridge.settings==='function'?bridge.settings:null
    });
    const checked=makeAdapter({journal:async()=>{},fence:{}}).validate(schema);
    if(!checked.ok){await emit('SCHEMA_INVALID',{errors:checked.errors});throw Error('CIRCLE_ADAPTER_REJECTED_SCHEMA');}

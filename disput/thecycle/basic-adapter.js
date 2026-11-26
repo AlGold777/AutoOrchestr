@@ -22,7 +22,9 @@
   function createBasicAdapter({
     schemaApi = root.BasicSchema || (typeof require === 'function' ? require('../basic-schema') : null),
     engine = root.CustomEngine || (typeof require === 'function' ? require('../custom-engine') : null),
-    send, accept, journal, availableModels, isRole, roleText, reconcileTransport = null
+    send, accept, journal, availableModels, isRole, roleText, reconcileTransport = null,
+    // Optional, as in the Basic page: reread the model page for a missing answer; settings() gives {waitMinutes, skipNoAnswer}.
+    reread = null, settings: runSettingsOf = null
   } = {}) {
     if (!schemaApi || !['validate', 'toCanvas', 'assemble', 'resolveRun'].every((key) => typeof schemaApi[key] === 'function') ||
         !engine || typeof engine.run !== 'function') {
@@ -190,10 +192,25 @@
       try {
         if (aborter.signal.aborted) throw fail('CANCELLED');
         await persist({ type: 'RUN_INTENT', schema: schemaCopy, task, maxCalls, maxPromptChars });
+        // A participant without an answer is handled as in Basic: the page is read again, the time of the Basic settings
+        // is waited, then the participant is skipped and the rounds go on without it. Nothing is sent again (ATTEMPTS = 1).
+        // Without a reread callback the old behaviour stays: the run stops.
+        const noAnswer = {};
+        if (typeof reread === 'function') {
+          const basic = (typeof runSettingsOf === 'function' ? runSettingsOf() : null) || {};
+          const waitMinutes = Number(basic.waitMinutes) > 0 ? Number(basic.waitMinutes) : 20;
+          Object.assign(noAnswer, {
+            reread,
+            onNoAnswer: basic.skipNoAnswer === true ? 'skip' : 'ask',
+            decisionTimeoutMs: waitMinutes * 60000,
+            decide: (request) => (request?.choices?.includes('wait') ? { action: 'wait', minutes: waitMinutes } : 'skip_participant')
+          });
+        }
         const result = await engine.run({
           task, steps, accept, send: guardedSend, signal: aborter.signal,
           maxAttempts: ATTEMPTS, maxPromptChars, semiAuto: false,
-          decide: () => 'stop'
+          decide: () => 'stop',
+          ...noAnswer
         });
         if (blockedReason === 'CHECKPOINT_FAILED') throw fail('CHECKPOINT_FAILED');
         const allAccepted = result.steps.length === steps.length && result.steps.every((step, index) =>

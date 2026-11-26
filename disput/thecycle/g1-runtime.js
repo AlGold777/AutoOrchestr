@@ -56,7 +56,8 @@ function createG1Runner({bridge,storage=root.chrome?.storage?.local,
     return bridge.send(modelNames,prompts,meta);
    },
    accept:bridge.accept,journal,availableModels:models,
-   isRole:()=>true,roleText:bridge.roleText
+   isRole:()=>true,roleText:bridge.roleText,
+    reread:typeof bridge.reread==='function'?bridge.reread:null,settings:typeof bridge.settings==='function'?bridge.settings:null
   });
   let controller,bridgeStarted=false,held=false;
   try{

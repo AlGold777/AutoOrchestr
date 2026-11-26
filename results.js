@@ -7808,6 +7808,8 @@ document.addEventListener('click', (event) => {
                     return [model, {
                         text: trustworthy ? answer : '',
                         answered: trustworthy,
+                        // The prompt as the transport dispatched it (token included): the reread of a missing answer looks for it.
+                        sentPrompt: window.TransportPolicy?.resolvePromptForModel?.(batch?.sentPrompts, model, null) ?? null,
                         status: status.status || 'NO_RESPONSE',
                         completion: status.completion || '',
                         attribution: status.attribution || '',
@@ -7815,6 +7817,16 @@ document.addEventListener('click', (event) => {
                         reason: status.reason || ''
                     }];
                 })) };
+            },
+            // The same page read as in Basic (M-11): the background takes the answer of the request's own turn, or says there is none.
+            async reread(request) {
+                const reply = await chrome.runtime.sendMessage({ type: 'BASIC_REREAD_OWN_TURN', llmName: request.modelName,
+                    tabId: null, sentPrompt: request.sentPrompt, sentPrompts: request.sentPrompts, previousText: request.previousText });
+                return reply || { found: false, reason: 'no_reply' };
+            },
+            // «Настройки Basic»: the one source of the Basic page (never copied).
+            settings() {
+                return { waitMinutes: basicSettings.waitMinutes, skipNoAnswer: basicSettings.skipNoAnswer };
             },
             // A research holds the page from its start to its end, so the gaps between cycles do not let a Basic run in.
             hold({ stop = null } = {}) {

@@ -49,3 +49,20 @@ describe('TheCycle bridge always opens new model tabs', () => {
     expect(bridge).toMatch(/forceNewTabs: runContext\.forceNewTabs,/);
   });
 });
+
+describe('TheCycle bridge: a missing answer is reread and waited as in Basic', () => {
+  const start = results.indexOf('window.TheCycleMainPageBridge = Object.freeze({');
+  const bridge = results.slice(start, results.indexOf("window.dispatchEvent(new Event('thecycle:basic-bridge-ready'))", start));
+
+  test('send returns the sent prompt of each model', () => {
+    expect(bridge).toMatch(/sentPrompt: window\.TransportPolicy\?\.resolvePromptForModel\?\.\(batch\?\.sentPrompts, model, null\) \?\? null,/);
+  });
+
+  test('reread sends the same message as the Basic page and has the no_reply fallback', () => {
+    expect(bridge).toMatch(/async reread\(request\)[\s\S]*?type: 'BASIC_REREAD_OWN_TURN', llmName: request\.modelName[\s\S]*?sentPrompts: request\.sentPrompts, previousText: request\.previousText[\s\S]*?\{ found: false, reason: 'no_reply' \}/);
+  });
+
+  test('settings come from the one Basic settings object', () => {
+    expect(bridge).toMatch(/settings\(\) \{\s*return \{ waitMinutes: basicSettings\.waitMinutes, skipNoAnswer: basicSettings\.skipNoAnswer \};/);
+  });
+});
