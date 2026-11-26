@@ -6967,6 +6967,7 @@ document.addEventListener('click', (event) => {
         let theCycleBridgeRunId = null;
         window.TheCycleMainPageBridge = Object.freeze({
             capture() {
+                if (!isCustomEnginePipeline()) throw new Error('G1_REQUIRES_BASIC_SELECTED');
                 const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
                 const schema = JSON.parse(JSON.stringify(built.schema));
                 const models = [...new Set((schema.steps || []).flatMap(step =>
