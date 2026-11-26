@@ -108,10 +108,21 @@
       }
     } catch (error) {
       db.close();
-      await new Promise(resolve => {
-        const req = indexedDB.deleteDatabase(targetName);
-        req.onsuccess = resolve; req.onerror = resolve; req.onblocked = resolve;
-      });
+      let cleanupFailure = null;
+      try {
+        await new Promise((resolve, reject) => {
+          const req = indexedDB.deleteDatabase(targetName);
+          req.onsuccess = resolve;
+          req.onerror = () => reject(req.error || new Error('RESTORE_CLEANUP_FAILED'));
+          req.onblocked = () => reject(new Error('RESTORE_CLEANUP_BLOCKED'));
+        });
+      } catch (cleanupError) { cleanupFailure = cleanupError; }
+      if (cleanupFailure) {
+        const combined = new Error('RESTORE_FAILED_CLEANUP_UNCONFIRMED');
+        combined.cause = error;
+        combined.cleanupError = cleanupFailure;
+        throw combined;
+      }
       throw error;
     } finally { db.close(); }
     return { targetName, researchCount: restored.stores.research.length,
