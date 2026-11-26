@@ -113,7 +113,8 @@
         }
         if (state.phase !== 'READY') throw fail('UNKNOWN_PHASE', state.phase);
         if (backupGate) {
-          try { await backupGate.assertCanStartCycle(researchId); }
+          try { await backupGate.assertCanStartCycle(researchId,
+            state.lastCommittedPacket === null ? null : researchId + ':cycle:' + state.lastCommittedPacket); }
           catch (error) {
             return result(state, 'BACKUP_REQUIRED', { error: {
               code: error?.code || 'BACKUP_REQUIRED', message: String(error?.message || error)
