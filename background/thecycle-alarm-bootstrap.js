@@ -10,7 +10,8 @@ async function performBackupOnce(){
   const configured=await root.chrome.storage.local.get('thecycleBackupEnabled');
   if(configured.thecycleBackupEnabled!==true)throw new Error('BACKUP_NOT_ENABLED');
   const modules=[root.TheCycleDirectoryHandleManager,root.TheCycleStateStore,
-    root.TheCycleDirectorySink,root.TheCycleBackup];
+    root.TheCycleDirectorySink,root.TheCycleBackup,
+    root.TheCycleRecoveryRepositories];
   if(modules.some(x=>!x))throw new Error('THECYCLE_BACKUP_MODULES_MISSING');
   const manager=await root.TheCycleDirectoryHandleManager.createDirectoryHandleManager();
   let store,registry;
