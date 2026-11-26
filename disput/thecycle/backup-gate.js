@@ -32,7 +32,7 @@
       if (!nonempty(researchId)) throw new TypeError('INVALID_RESEARCH_ID');
       const found = await metadata.get(researchId);
       return validate(found || { researchId, revision: 0, pendingCommitIds: [],
-        lastVerifiedAt: null, lastBackupId: null, blocked: true });
+        lastVerifiedAt: null, lastBackupId: null, verifiedCommitId: null, blocked: true });
     }
     async function save(before, after) {
       const updated = { ...after, revision: before.revision + 1 };
@@ -52,9 +52,12 @@
           pendingCommitIds: [...state.pendingCommitIds, commitId] });
       });
     }
-    async function assertCanStartCycle(researchId) {
+    async function assertCanStartCycle(researchId, expectedCommitId = null) {
       const state = await load(researchId);
-      if (state.blocked || state.pendingCommitIds.length) throw new Error('BACKUP_REQUIRED');
+      if (state.blocked || state.pendingCommitIds.length ||
+          (expectedCommitId !== null && state.verifiedCommitId !== expectedCommitId)) {
+        throw new Error('BACKUP_REQUIRED');
+      }
       if (state.lastVerifiedAt === null || clock() - state.lastVerifiedAt >= INTERVAL_MS) {
         throw new Error('BACKUP_INTERVAL_DUE');
       }
@@ -80,7 +83,8 @@
           throw error;
         }
         return save(state, { ...state, blocked: false, pendingCommitIds: [],
-          lastVerifiedAt: clock(), lastBackupId: result.key });
+          lastVerifiedAt: clock(), lastBackupId: result.key,
+          verifiedCommitId: target || state.verifiedCommitId });
       });
     }
     return Object.freeze({ requireCommit, assertCanStartCycle, persist, load, INTERVAL_MS });
