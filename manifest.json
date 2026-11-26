@@ -73,7 +73,9 @@
         "*://kimi.ai/*",
         "*://www.kimi.ai/*"
       ],
-      "js": ["content-scripts/content-bridge.js"],
+      "js": [
+        "content-scripts/content-bridge.js"
+      ],
       "world": "MAIN",
       "run_at": "document_start"
     },
@@ -342,5 +344,6 @@
         "*://www.kimi.ai/*"
       ]
     }
-  ]
+  ],
+  "options_page": "thecycle-backup.html"
 }
