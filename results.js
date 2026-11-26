@@ -6961,6 +6961,82 @@ document.addEventListener('click', (event) => {
         const customPipelineName = () => String(pipelineStore.active || getPipelineHeaderName() || 'Basic').trim();
         // The text of the notification at the end of a Basic run.
         const basicRunNotice = (stopText, acceptedCount) => `Basic: ${stopText}.${acceptedCount ? '' : ' Принятых ответов нет.'}`;
+        // G1: production TheCycle bridge to the very same Basic plan and
+        // runModelBatch transport used by the existing Basic page.
+        // No parallel mock or new provider implementation.
+        let theCycleBridgeRunId = null;
+        window.TheCycleMainPageBridge = Object.freeze({
+            capture() {
+                const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
+                const schema = JSON.parse(JSON.stringify(built.schema));
+                const models = [...new Set((schema.steps || []).flatMap(step =>
+                    (step.models || []).filter(model => model.enabled !== false).map(model => model.name)))];
+                return { schema, models, errors: built.errors, policy: built.run.policy };
+            },
+            roleText: (role, ref) => customRoleText(role, ref),
+            accept: ({ text, completion }) =>
+                window.DebateResponseAcceptance?.evaluate?.({ text, meta: { completion } }) || { ok: true },
+            begin({ runId }) {
+                if (pipelineRunActive || theCycleBridgeRunId) throw new Error('BASIC_RUN_ALREADY_ACTIVE');
+                if (typeof runId !== 'string' || !runId) throw new Error('INVALID_THECYCLE_RUN');
+                theCycleBridgeRunId = runId;
+                pipelineRunActive = true;
+                activePipelineRunContext = {
+                    pipelineRunId: runId,
+                    sessionId: debateTabsState?.activeSessionId || '1',
+                    startedAt: Date.now(),
+                    forceNewTabs: newPagesCheckbox ? newPagesCheckbox.checked : true,
+                    newPagesModels: new Set(),
+                    newPagesDispatched: false
+                };
+                return true;
+            },
+            async send(models, promptsByModel, { runId, batchId, signal, step = 0 } = {}) {
+                if (theCycleBridgeRunId !== runId || !activePipelineRunContext ||
+                    activePipelineRunContext.pipelineRunId !== runId)
+                    throw new Error('THECYCLE_RUN_NOT_ACTIVE');
+                if (signal?.aborted) throw new Error('THECYCLE_RUN_ABORTED');
+                const batch = await runModelBatch({
+                    prompt: promptsByModel[models[0]],
+                    promptsByModel,
+                    models,
+                    attachments: [],
+                    forceNewTabs: activePipelineRunContext.forceNewTabs,
+                    useApiFallback: apiModeCheckbox ? apiModeCheckbox.checked : true,
+                    signal,
+                    context: {
+                        ...activePipelineRunContext,
+                        custom: true,
+                        stageId: 'thecycle:' + runId + ':s' + (step + 1),
+                        stageAttemptId: batchId,
+                        pipelineRoundId: 's' + (step + 1),
+                        pipelineBatchId: batchId,
+                        anonymizeParticipants: false
+                    },
+                    generationProfile: 'long'
+                });
+                return { byModel: Object.fromEntries(models.map(model => {
+                    const status = batch?.results?.[model] || {};
+                    const answer = String(batch?.responses?.[model] || '');
+                    const trustworthy = status.status === 'SUCCESS' && status.attribution === 'verified';
+                    return [model, {
+                        text: trustworthy ? answer : '',
+                        answered: trustworthy,
+                        status: status.status || '',
+                        completion: status.completion || '',
+                        attribution: status.attribution || '',
+                        transportRequestId: status.transportRequestId || ''
+                    }];
+                })) };
+            },
+            end({ runId }) {
+                if (theCycleBridgeRunId !== runId) return false;
+                theCycleBridgeRunId = null;
+                pipelineRunActive = false;
+                activePipelineRunContext = null;
+                return true;
+            }
+        });
         const runCustomFromPage = async ({ task }) => {
             const engine = window.CustomEngine;
             const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
