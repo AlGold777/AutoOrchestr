@@ -2929,7 +2929,7 @@ hr.section-divider {
     justify-content: flex-start;
 }
 .pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) .moderator-input {
-    padding: 0 10px;
+    padding: 0 10px; margin-bottom: 15px;
 }
 .pipeline-page .prompt-container.prompt-sandwich.debate-composer.has-selected-models:not(.has-debate-feed) .mod-middle {
     gap: 0;
