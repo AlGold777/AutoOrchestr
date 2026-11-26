@@ -18,9 +18,23 @@ document.getElementById('disable').addEventListener('click',()=>action(async()=>
  message.textContent='Резервирование отключено.';
 }));
 document.getElementById('run').addEventListener('click',()=>action(async()=>{
- const result=await chrome.runtime.sendMessage({type:'THECYCLE_BACKUP_NOW'});
- if(!result?.ok)throw new Error(result?.error||'BACKUP_FAILED');
- message.textContent='Резервная копия проверена: '+result.key;
+ const manager=await TheCycleDirectoryHandleManager.createDirectoryHandleManager();
+ let store,registry;
+ try{
+  registry=await TheCycleRecoveryRepositories.createRecoveryRepositories();
+  const pointer=await registry.activation.read();
+  const directory=await manager.load('thecycle-backups');
+  store=await TheCycleStateStore.createStateStore({name:pointer.activeDatabase});
+  const sink=TheCycleDirectorySink.createDirectorySink({directory});
+  const service=TheCycleBackup.createBackupService({store,sink});
+  const key='thecycle-manual-'+Date.now()+'-'+crypto.randomUUID().replace(/-/g,'');
+  const result=await service.save(key);
+  if(!result.verified)throw new Error('BACKUP_UNVERIFIED');
+  await chrome.storage.local.set({thecycleBackupStatus:{
+   state:'VERIFIED',key,sha256:result.sha256,database:pointer.activeDatabase,at:Date.now()
+  }});
+  message.textContent='Резервная копия проверена: '+result.key;
+ }finally{store?.close();registry?.close();manager.close();}
 }));
 document.getElementById('refresh').addEventListener('click',()=>action(async()=>{}));
 void refresh().catch(error=>{message.textContent=String(error);});
