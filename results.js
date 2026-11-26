@@ -6195,6 +6195,8 @@ document.addEventListener('click', (event) => {
             document.dispatchEvent(new CustomEvent('basic-pipeline-editing', { detail: { enabled: Boolean(enabled) } }));
             if (!pipelinePanel) return;
             const disabled = !enabled;
+            const circleSchemaSelect = document.getElementById('circle-schema-select');
+            if (circleSchemaSelect) circleSchemaSelect.disabled = disabled;
                 pipelinePanel
                 .querySelectorAll('.model-input-checkbox, .role-selector, .model-participant-add, .model-participant-remove, .pipeline-round-add-model-btn, #pipeline-add-round-btn, .pipeline-round-delete-btn, #removeRoundBtn, #pipeline-add-btn, #pipeline-save-btn, #pipeline-delete-btn, #pipeline-import-btn')
                 .forEach((el) => {
@@ -7683,13 +7685,39 @@ document.addEventListener('click', (event) => {
                 items, folderName, copyState, startedAt, pipeline, runId
             });
         };
+        // The schema of the Circle cycle: '' = the Circle canvas, else the name of a saved Basic pipeline (kept in the page memory only).
+        let circleSchemaChoice = '';
+        const circleSavedSchemaNames = () => Object.keys(pipelineStore.pipelines || {})
+            .filter((name) => !isDefaultPipelineName(name) && pipelineStore.pipelines[name]?.schema
+                && Array.isArray(pipelineStore.pipelines[name].schema.steps));
+        const circleChosenSchemaRecord = () => {
+            if (!circleSchemaChoice) return null;
+            const record = pipelineStore.pipelines?.[circleSchemaChoice];
+            return record?.schema && !isDefaultPipelineName(circleSchemaChoice) ? record : null;
+        };
+        const refreshCircleSchemaSelect = () => {
+            const select = document.getElementById('circle-schema-select');
+            if (!select) return;
+            const names = circleSavedSchemaNames();
+            if (circleSchemaChoice && !names.includes(circleSchemaChoice)) circleSchemaChoice = '';
+            select.textContent = '';
+            const add = (value, label) => { const option = document.createElement('option'); option.value = value; option.textContent = label; select.appendChild(option); };
+            add('', 'Холст Circle');
+            names.forEach((name) => add(name, name));
+            select.value = circleSchemaChoice;
+        };
         // G1: production TheCycle bridge to the very same Basic plan and
         // runModelBatch transport used by the existing Basic page.
         // No parallel mock or new provider implementation.
         window.TheCycleMainPageBridge = Object.freeze({
             capture() {
                 if (!usesBasicCanvas()) throw new Error('THECYCLE_REQUIRES_BASIC_OR_CIRCLE_SELECTED');
-                const built = buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
+                // A saved Basic schema chosen in the Circle list runs as it is (rounds of different make-up); otherwise the canvas of Circle.
+                const chosen = circleChosenSchemaRecord();
+                const built = chosen
+                    ? (() => { const own = JSON.parse(JSON.stringify(chosen.schema)); const errors = window.BasicSchema.validate(own);
+                        return { schema: own, errors, run: window.BasicSchema.resolveRun(own) }; })()
+                    : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
                 const schema = JSON.parse(JSON.stringify(built.schema));
                 const models = [...new Set((schema.steps || []).flatMap(step =>
                     (step.models || []).filter(model => model.enabled !== false).map(model => model.name)))];
@@ -8960,6 +8988,10 @@ document.addEventListener('click', (event) => {
                 updateDebateButtonsUi();
             }
         };
+        document.getElementById('circle-schema-select')?.addEventListener('change', (event) => {
+            circleSchemaChoice = pipelineRunActive || circlePageRunner ? circleSchemaChoice : String(event.target.value || '');
+            event.target.value = circleSchemaChoice;
+        });
         document.getElementById('circle-backup-settings')?.addEventListener('click', () => {
             chrome.runtime.openOptionsPage();
         });
@@ -9675,7 +9707,10 @@ document.addEventListener('click', (event) => {
             const config = activeName ? getPipelineConfigByName(activeName) : null;
             const editable = draft || (!!activeName && !config?.disabled);
             const circleControls = document.getElementById('circle-pipeline-controls');
-            if (circleControls) circleControls.hidden = config?.protocol?.presetId !== 'CIRCLE';
+            if (circleControls) {
+                circleControls.hidden = config?.protocol?.presetId !== 'CIRCLE';
+                if (!circleControls.hidden && !pipelineRunActive) refreshCircleSchemaSelect();
+            }
             if (pipelinePanel) {
                 pipelinePanel.classList.toggle('has-custom-pipeline', editable);
             }
