@@ -88,6 +88,31 @@
             for (const row of rows) tx.objectStore(name).add(row);
         } catch (error) { try { tx.abort(); } catch (_) {} reject(error); }
       });
+      // Read back all stores before declaring success.
+      const readback = await new Promise((resolve, reject) => {
+        const tx = db.transaction(Object.keys(STORES), 'readonly');
+        const result = {};
+        tx.oncomplete = () => resolve(result);
+        tx.onabort = () => reject(tx.error || new Error('RESTORE_READBACK_ABORTED'));
+        for (const name of Object.keys(STORES)) {
+          const req = tx.objectStore(name).getAll();
+          req.onsuccess = () => { result[name] = req.result; };
+          req.onerror = () => { try { tx.abort(); } catch (_) {} };
+        }
+      });
+      for (const name of Object.keys(STORES)) {
+        if (readback[name].length !== restored.stores[name].length ||
+            !restored.stores[name].every(row => readback[name].some(item =>
+              JSON.stringify(item) === JSON.stringify(row))))
+          throw new Error('RESTORE_READBACK_MISMATCH');
+      }
+    } catch (error) {
+      db.close();
+      await new Promise(resolve => {
+        const req = indexedDB.deleteDatabase(targetName);
+        req.onsuccess = resolve; req.onerror = resolve; req.onblocked = resolve;
+      });
+      throw error;
     } finally { db.close(); }
     return { targetName, researchCount: restored.stores.research.length,
       status: 'RESTORED_PAUSED', requiresManualReconciliation: restored.stores.research.some(r => r.phase === 'RECONCILE') };
