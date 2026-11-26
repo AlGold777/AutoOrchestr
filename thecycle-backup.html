@@ -8,7 +8,18 @@
 <button id="run">Создать копию</button>
 <button id="disable">Отключить</button>
 <button id="refresh">Обновить статус</button>
+<h2>Проверка резервной копии</h2>
+<p>Проверка выполняется без изменения активной базы. Активация восстановленной базы заблокирована до независимого подтверждения остановки транспорта.</p>
+<label for="backup-key">Ключ резервной копии</label>
+<input id="backup-key" type="text" autocomplete="off" size="52" placeholder="thecycle-alarm-...">
+<button id="inspect">Проверить копию</button>
+<pre id="inspection"></pre>
 <p id="message" role="status"></p><pre id="status"></pre>
 <script src="disput/thecycle/directory-handle-manager.js"></script>
 <script src="disput/thecycle/backup-setup.js"></script>
+<script src="disput/thecycle/state-store.js"></script>
+<script src="disput/thecycle/directory-sink.js"></script>
+<script src="disput/thecycle/backup-service.js"></script>
+<script src="disput/thecycle/restore-service.js"></script>
+<script src="disput/thecycle/backup-inspector.js"></script>
 <script src="thecycle-backup-ui.js"></script></body></html>
