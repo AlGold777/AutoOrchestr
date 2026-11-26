@@ -11,7 +11,8 @@
 | Роль | Claude | GPT |
 |---|---|---|
 | Ведущий | основная сессия | основная сессия |
-| Главный архитектор, исполнитель, проверяющий, коммит | Haiku 5.5 (`model: haiku`) | GPT-6 Luna (`model: gpt-6-luna`, `reasoning_effort: high`) |
+| Главный архитектор, проверяющий, исполнитель-исследователь | Sonnet 5.5 (`model: sonnet`) | GPT-6 Luna (`model: gpt-6-luna`, `reasoning_effort: high`) |
+| Исполнитель механической задачи, запуск тестов, коммит | Haiku 5.5 (`model: haiku`) | GPT-6 Luna (`model: gpt-6-luna`, `reasoning_effort: high`) |
 
 Модели задаёт корневой `AGENTS.md`; при его изменении этот блок меняется вместе с ним.
 
