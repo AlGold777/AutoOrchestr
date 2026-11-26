@@ -9,9 +9,23 @@ const scheduler=root.TheCycleAlarmScheduler.createAlarmScheduler({
   // perform the actual readback-verified backup. Never silently mark success.
   const configured=await root.chrome.storage.local.get('thecycleBackupEnabled');
   if(configured.thecycleBackupEnabled!==true)return;
-  await root.chrome.storage.local.set({thecycleBackupStatus:{
-   state:'ACTION_REQUIRED',reason:'DOCUMENT_BACKUP_RUNTIME_NOT_ATTACHED',at:Date.now()
-  }});
+  const modules=[root.TheCycleDirectoryHandleManager,root.TheCycleStateStore,
+    root.TheCycleDirectorySink,root.TheCycleBackup];
+  if(modules.some(x=>!x))throw new Error('THECYCLE_BACKUP_MODULES_MISSING');
+  const manager=await root.TheCycleDirectoryHandleManager.createDirectoryHandleManager();
+  let store;
+  try{
+    const directory=await manager.load('thecycle-backups');
+    store=await root.TheCycleStateStore.createStateStore();
+    const sink=root.TheCycleDirectorySink.createDirectorySink({directory});
+    const backup=root.TheCycleBackup.createBackupService({store,sink});
+    const key='thecycle-alarm-'+Date.now()+'-'+root.crypto.randomUUID().replace(/-/g,'');
+    const result=await backup.save(key);
+    if(result.verified!==true)throw new Error('THECYCLE_BACKUP_UNVERIFIED');
+    await root.chrome.storage.local.set({thecycleBackupStatus:{
+      state:'VERIFIED',key,sha256:result.sha256,at:Date.now()
+    }});
+  }finally{store?.close();manager.close();}
  },
  onFailure:async error=>{
   await root.chrome.storage.local.set({thecycleBackupStatus:{
