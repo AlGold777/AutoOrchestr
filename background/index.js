@@ -4,6 +4,7 @@ importScripts(
   '../disput/thecycle/alarm-scheduler.js',
   '../disput/thecycle/directory-handle-manager.js',
   '../disput/thecycle/state-store.js',
+  '../disput/thecycle/recovery-repositories.js',
   '../disput/thecycle/directory-sink.js',
   '../disput/thecycle/backup-service.js',
   'thecycle-alarm-bootstrap.js'
