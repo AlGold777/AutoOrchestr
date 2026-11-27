@@ -7727,8 +7727,13 @@ document.addEventListener('click', (event) => {
                         return { schema: own, errors, run: window.BasicSchema.resolveRun(own) }; })()
                     : buildBasicRun(draftPlanForCanvas(getActiveDraftPlan()));
                 const schema = JSON.parse(JSON.stringify(built.schema));
-                const models = [...new Set((schema.steps || []).flatMap(step =>
-                    (step.models || []).filter(model => model.enabled !== false).map(model => model.name)))];
+                // Models of the research: those of the schema plus the ones selected on top. A model selected on top but absent
+                // from the schema takes no part in the work cycles, so it can verify independently (VERIFY).
+                const schemaModels = (schema.steps || []).flatMap(step =>
+                    (step.models || []).filter(model => model.enabled !== false).map(model => model.name));
+                const known = new Set((Array.isArray(PipelineRuntime?.MODELS) ? PipelineRuntime.MODELS : []).map(model => model?.name));
+                const topModels = getSelectedLLMs().filter(name => known.has(name));
+                const models = [...new Set([...schemaModels, ...topModels])];
                 return { schema, models, errors: built.errors, policy: built.run.policy };
             },
             roleText: (role, ref) => customRoleText(role, ref),

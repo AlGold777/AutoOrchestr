@@ -45,3 +45,11 @@ describe('Circle takes its cycle schema from the canvas or a saved Basic schema'
     expect(api.rec()).toBeNull();
   });
 });
+
+test('research models are the schema models plus the models selected on top (independent verifier)', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'results.js'), 'utf8');
+  const i = src.indexOf('capture() {');
+  const body = src.slice(i, i + 2600);
+  expect(body).toMatch(/getSelectedLLMs\(\)\.filter\(name => known\.has\(name\)\)/);
+  expect(body).toMatch(/new Set\(\[\.\.\.schemaModels, \.\.\.topModels\]\)/);
+});
