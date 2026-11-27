@@ -345,7 +345,21 @@
       } finally { busy = false; }
     }
 
-    return Object.freeze({ tick, stop, resume, takeOver, reconcile, closeStopped, releaseSettled, ownerId });
+    // Human decision "continue without the batch": the unknown dispatch is abandoned (never resent) and the run commits as a partial packet.
+    async function abandonUnknown(researchId, reason = 'UNKNOWN_ABANDONED_BY_OWNER') {
+      if (busy) return { outcome: 'BUSY' };
+      busy = true;
+      try {
+        if (typeof store.abandonUnknown !== 'function') throw fail('ABANDON_NOT_SUPPORTED');
+        const state = await safeState(researchId);
+        if (state.phase !== 'RECONCILE' || !state.activeRunId) throw fail('ABANDON_NOT_ALLOWED');
+        const fence = await owned(researchId);
+        const next = await store.abandonUnknown(fence, { expectedVersion: state.stateVersion, runId: state.activeRunId, reason });
+        return result(next, 'UNKNOWN_ABANDONED', { reason, runId: state.activeRunId });
+      } finally { busy = false; }
+    }
+
+    return Object.freeze({ tick, stop, resume, takeOver, reconcile, abandonUnknown, closeStopped, releaseSettled, ownerId });
   }
 
   const api = Object.freeze({ createController, fixedPolicy, isCycleSettled, ControllerError });

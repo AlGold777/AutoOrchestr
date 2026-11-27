@@ -8944,8 +8944,17 @@ document.addEventListener('click', (event) => {
             researchId: result.researchId, phase: result.state?.phase, closedReason: result.state?.closedReason,
             cycle: result.state?.lastCommittedPacket, budget: result.state?.budget,
             decision: result.packet?.decision, pendingBackup: result.state?.backupRequiredCycleId,
+            pauseReason: result.pauseReason, lastDecision: result.lastDecision,
             lastOutcome: result.outcomes?.at(-1), result: result.report?.answers
         });
+        // An outcome left unknown by a reload: the two human choices appear next to Status.
+        const showCircleResult = (result) => {
+            showCircleStatus(circleSummary(result));
+            for (const id of ['circle-abandon-unknown', 'circle-close']) {
+                const button = document.getElementById(id);
+                if (button) button.hidden = !(result.unknown || result.pauseReason === 'UNKNOWN_DISPATCH_AFTER_RELOAD' || result.outcomes?.at(-1)?.reason === 'UNKNOWN_DISPATCH_AFTER_RELOAD');
+            }
+        };
         const createPageCircle = () => {
             if (!window.TheCycleCircle?.createCircleRunner) throw new Error('CIRCLE_RUNTIME_UNAVAILABLE');
             return window.TheCycleCircle.createCircleRunner({ bridge: window.TheCycleMainPageBridge });
@@ -8985,7 +8994,7 @@ document.addEventListener('click', (event) => {
                 updateDebateButtonsUi();
                 showCircleStatus('Circle: подготовка запуска и проверка бэкапа.');
                 const result = await circlePageRunner.start({ task, maxCalls, onProgress: showCircleStatus });
-                showCircleStatus(circleSummary(result));
+                showCircleResult(result);
                 const outcome = result.outcomes?.at(-1)?.outcome || result.state?.phase;
                 showNotification('Circle: ' + outcome + '. Циклов сохранено: ' + (result.state?.lastCommittedPacket || 0), 'info');
                 return !['RECOVERY_REQUIRED', 'BACKUP_REQUIRED', 'RUN_REJECTED'].includes(outcome);
@@ -9011,9 +9020,54 @@ document.addEventListener('click', (event) => {
             try {
                 const runner = circlePageRunner || createPageCircle();
                 const id = await runner.latest();
-                showCircleStatus(id ? circleSummary(await runner.snapshot(id)) : 'Circle: исследований ещё нет.');
+                if (id) showCircleResult(await runner.snapshot(id)); else showCircleStatus('Circle: исследований ещё нет.');
             } catch (error) { showCircleStatus('Circle: ' + String(error?.message || error)); }
         });
+        // Continue the saved research after a reload (G4.1). "resume" needs the backup directory, so its permission is requested
+        // first, inside the click; "abandon" / "close" are the human choices for an outcome left unknown by the reload.
+        const runCircleRecovery = async (mode) => {
+            if (circlePageRunner || pipelineRunActive || theCycleHeld) { showNotification('Pipeline already running', 'warn'); return false; }
+            if (circleAccessPending) return false;
+            const access = mode === 'close' ? null : ensureCircleBackupAccess();
+            let runner = null;
+            try {
+                const granted = access ? await access : { ok: true };
+                if (!granted.ok) {
+                    const text = granted.message || window.TheCycleDirectoryHandleManager?.NO_ACCESS_MESSAGE || 'Нет доступа к каталогу копий.';
+                    try { await window.TheCycleTelemetry?.append('RUN_BLOCKED', { reason: 'BACKUP_DIRECTORY_' + (granted.outcome || granted.code || 'NO_ACCESS') }); } catch (_) {}
+                    showCircleStatus('Circle: ' + text);
+                    showNotification('Circle: ' + text, 'warn');
+                    return false;
+                }
+                if (circlePageRunner || pipelineRunActive || theCycleHeld) return false;
+                runner = createPageCircle();
+                // Taken before the first await: a Run click in between sees the page busy.
+                circlePageRunner = runner;
+                const id = await runner.latest();
+                if (!id) { showCircleStatus('Circle: исследований ещё нет.'); return false; }
+                setPipelineEditingEnabled(false);
+                setPipelineRunUi(true);
+                updateDebateButtonsUi();
+                showCircleStatus('Circle: продолжение исследования, проверка бэкапа.');
+                const options = { onProgress: showCircleStatus };
+                const result = mode === 'resume' ? await runner.resume(id, options) : await runner.resolveUnknown(id, mode === 'close' ? 'close' : 'abandon', options);
+                showCircleResult(result);
+                showNotification('Circle: ' + (result.outcomes?.at(-1)?.outcome || result.state?.phase), 'info');
+                return true;
+            } catch (error) {
+                showCircleStatus('Circle: ' + String(error?.message || error));
+                showNotification('Circle: ' + String(error?.message || error), 'error');
+                return false;
+            } finally {
+                if (circlePageRunner === runner) circlePageRunner = null;
+                setPipelineEditingEnabled(true);
+                setPipelineRunUi(false);
+                updateDebateButtonsUi();
+            }
+        };
+        document.getElementById('circle-resume')?.addEventListener('click', () => { void runCircleRecovery('resume'); });
+        document.getElementById('circle-abandon-unknown')?.addEventListener('click', () => { void runCircleRecovery('abandon'); });
+        document.getElementById('circle-close')?.addEventListener('click', () => { void runCircleRecovery('close'); });
         const startDebateFromPage = async () => {
             if (pipelineRunActive || circlePageRunner || theCycleHeld) {
                 showNotification('Pipeline already running', 'warn');

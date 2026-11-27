@@ -132,7 +132,8 @@
           if (old.researchId !== researchId || takeoverEpoch !== old.epoch) throw fail('TRANSPORT_OWNED');
           // A recovery owner must be distinct from the old owner.
           if (ownerId === old.ownerId) throw fail('TAKEOVER_REQUIRES_NEW_OWNER');
-          if (state.activeRunId) {
+          // COMMIT holds a finished run (nothing in flight): the new owner commits it, no reconciliation needed.
+          if (state.activeRunId && state.phase !== 'COMMIT') {
             state.phase = 'RECONCILE';
             await writeState(s, state);
           }
@@ -345,6 +346,30 @@
       });
     }
 
+    // Human decision "continue without the batch": unresolved batches become ABANDONED_UNKNOWN (budget stays spent,
+    // nothing is resent, no answer is invented); the run can only end as a PARTIAL_RECOVERY packet.
+    async function abandonUnknown(token, { expectedVersion, runId, reason } = {}) {
+      if (!str(runId) || !str(reason) || reason.length > 200) throw fail('INVALID_RECOVERY');
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (state.phase !== 'RECONCILE' || state.activeRunId !== runId) throw fail('ABANDON_NOT_ALLOWED');
+        const run = await request(s.runs.get([state.researchId, runId]));
+        if (!run) throw fail('RUN_NOT_ACTIVE');
+        const batchIds = [];
+        for (const batch of run.batches) {
+          if (['INTENT', 'UNKNOWN'].includes(batch.status)) { batch.status = 'ABANDONED_UNKNOWN'; batchIds.push(batch.batchId); }
+        }
+        run.phase = 'ERROR';
+        run.eventCount += 1;
+        await request(s.events.add({ researchId: state.researchId, runId, eventId: 'ABANDONED_UNKNOWN',
+          sequence: run.eventCount, payload: { type: 'ABANDONED_UNKNOWN', runId, reason, batchIds } }));
+        await request(s.runs.put(run));
+        state.phase = 'COMMIT';
+        return copy(await writeState(s, state));
+      });
+    }
+
     // Atomic handoff: raw journal remains immutable and the packet references
     // it. Semantic knowledge graph / manifest hashing belongs to C05.
     async function commitPacket(token, { expectedVersion, runId } = {}) {
@@ -524,7 +549,7 @@
     }
 
     return Object.freeze({ createResearch, load, getOwnership, acquire, release, prepareRun, journalFor,
-      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, abandonRun, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
+      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, abandonRun, abandonUnknown, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
       close: () => db.close() });
   }
   const api = Object.freeze({ createStateStore, StoreError, DB_NAME, DB_VERSION });
