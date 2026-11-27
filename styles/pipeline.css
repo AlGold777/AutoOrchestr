@@ -879,13 +879,13 @@ body.is-resizing {
     gap: 8px;
     cursor: pointer;
     user-select: none;
-    background: #e2e8f078;
+    background:  none/*#e2e8f078*/;
 }
 
 .pipeline-list-header h3 {
     font-size: 14px;
     font-weight: 600;
-    color: var(--pipeline-muted);
+    color: #0f172acf;
     margin-right: 4px;
     margin-left: 10px;
 }
@@ -1038,7 +1038,7 @@ body.is-resizing {
 
 .pipeline-item-name {
     font-size: 14px;
-    color: var(--pipeline-muted);
+    color: #0f172acf;
     transition: color 0.2s ease;
     min-width: 0;
     flex: 0 1 auto;
@@ -1050,7 +1050,7 @@ body.is-resizing {
 
 .pipeline-item.active .pipeline-item-name {
     color: var(--pipeline-text);
-    font-weight: 600;
+    font-weight: 450;
 }
 
 .pipeline-active-summary {
