@@ -296,9 +296,9 @@ t=420   Е. Приёмка трёх ответов, шаг закрыт, нач�
 |---|---|
 | Раунды 0–4, порядок, константы | `background/job-orchestrator.js` (`ROUND1_BEFORE_SEND_MS`, `ROUND1_POST_SEND_MS`, `getRound2BatchBudgetMs`, `ROUND3_*`, `ROUND4_*`) |
 | Подготовка вкладки к чтению (вниз) | `runPreCollectScrollNudge` там же |
-| Проход к началу ответа | `shared/answer-materialize-sweep.js`; описание — `docs/Architecture/materialize-sweep.md` |
+| Проход к началу ответа | `shared/answer-materialize-sweep.js`; описание — `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/materialize-sweep.md` |
 | Очередь отправки, повторы | `background/dispatch-coordinator.js` (`withPromptDispatchLock`, `withPromptDispatchFocusLock`) |
-| Обход вкладок, квоты, окно фокуса | `background/human-presence.js`, `shared/visit-policy.js`; `docs/Architecture/model-tabs-architecture.md`, раздел «Pages Visit» |
+| Обход вкладок, квоты, окно фокуса | `background/human-presence.js`, `shared/visit-policy.js`; `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/model-tabs-architecture.md`, раздел «Pages Visit» |
 | Таймауты | `docs/Transport/timings-settings.md` |
 | Метка доставки, завершение ответа | `docs/Transport/message-delivery.md` |
 | Готовность кнопки отправки | `content-scripts/content-utils.js`, `ContentUtils.ensureSendReady` |

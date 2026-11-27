@@ -16,7 +16,7 @@
 
 - [Onboarding](../Agents/agent-onboarding.md), [работа команды](../Agents/agent-team.md), [спецификация страниц](../Agents/agent-extension-pages-spec.md).
 - [Completion Protocol V2](completion-protocol-v2.md) — действующая концепция; новое архитектурное согласование для перечисленных исправлений не требуется.
-- [Полнота копирования](../Architecture/answer-markdown-spec.md) — контракт Markdown, отчёта полноты и связанных артефактов.
+- [Полнота копирования](<../Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-spec.md>) — контракт Markdown, отчёта полноты и связанных артефактов.
 
 ## 2. Сохраняемые контракты
 

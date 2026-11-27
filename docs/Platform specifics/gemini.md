@@ -1,6 +1,6 @@
 # Gemini (провайдер Gemini)
 
-Код: `content-scripts/content-gemini.js`, селекторы `selectors/gemini.config.js`, привязка хода `content-scripts/turn-resolver.js`, снимок узлов `content-utils/response-lifecycle-detector.js`. Разметка: `docs/Architecture/answer-markdown-matrix.md` (строка 23). Заготовка от 2026-10-30.
+Код: `content-scripts/content-gemini.js`, селекторы `selectors/gemini.config.js`, привязка хода `content-scripts/turn-resolver.js`, снимок узлов `content-utils/response-lifecycle-detector.js`. Разметка: `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-matrix.md` (строка 23). Заготовка от 2026-10-30.
 
 ## 1. Отправка
 

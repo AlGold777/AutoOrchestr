@@ -38,10 +38,10 @@ updates as new messages arrive. Click outside the window or press Esc to close i
 
 - Documentation map and writing rules: [docs/documentation-map.md](docs/documentation-map.md)
 - Project setup and runtime overview: [docs/project-overview.md](docs/project-overview.md)
-- Main-page model tabs and dispatch: [docs/Architecture/model-tabs-architecture.md](docs/Architecture/model-tabs-architecture.md)
+- Main-page model tabs and dispatch: [docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/model-tabs-architecture.md](<docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/model-tabs-architecture.md>)
 - Timing architecture and current values: [docs/Transport/timings-settings.md](docs/Transport/timings-settings.md)
 - Pipeline baseline, audits and unfinished migration plans: [docs/Pipeline scenarios/Pre-Dispute](<docs/Pipeline scenarios/Pre-Dispute>)
-- Universal task engine concept and draft contracts: [docs/Architecture/Universal Engine/README.md](<docs/Architecture/Universal Engine/README.md>)
+- Universal task engine concept and draft contracts: [docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/Universal Engine/README.md](<docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/Universal Engine/README.md>)
 - Basic pipeline (the engine and its schemas): start with [docs/Pipeline scenarios/basic-start-here.md](<docs/Pipeline scenarios/basic-start-here.md>)
 - Append-only change history: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 

@@ -262,7 +262,7 @@ User prompt
 - `shared/model-run-state.js`: per-model state contract.
 - `shared/finalization-controller.js`: completion and finality checks.
 - `shared/recovery-intent.js`: recovery classification and retry intent.
-- `disput/debate-runtime.js` (`DebateFSM`): run state shape, run-status lifecycle and turn/card status mapping used by `results.js` (the name is historical; see [Architecture/debate-removal-registry.md](Architecture/debate-removal-registry.md)).
+- `disput/debate-runtime.js` (`DebateFSM`): run state shape, run-status lifecycle and turn/card status mapping used by `results.js` (the name is historical; see [Architecture - Многоагентные архитектуры и исследовательские пайплайны/debate-removal-registry.md](<Architecture - Многоагентные архитектуры и исследовательские пайплайны/debate-removal-registry.md>)).
 
 Terminal states must be treated as final unless a new run/session explicitly supersedes them.
 
@@ -315,7 +315,7 @@ The `shared/` directory contains cross-context contracts. Changes here affect ba
 Selector sources, overrides, health checks, signing and provider-specific
 failure modes are maintained in `selectors/`, `selector-manager.js` and their
 tests. The main-page tab contract is in
-[model-tabs-architecture.md](Architecture/model-tabs-architecture.md); this overview only
+[model-tabs-architecture.md](<Architecture - Многоагентные архитектуры и исследовательские пайплайны/model-tabs-architecture.md>); this overview only
 points to the canonical entry points:
 
 - `selectors/*.config.js` — canonical provider configuration;
@@ -485,7 +485,7 @@ for the glossary, the name map from interface to code, and the reading order.
 ## Disput page: run layer under Basic
 
 Basic runs through the modules that kept the historical name `Debate`
-(which of them Basic needs and which are leftovers: [Architecture/debate-removal-registry.md](Architecture/debate-removal-registry.md)):
+(which of them Basic needs and which are leftovers: [Architecture - Многоагентные архитектуры и исследовательские пайплайны/debate-removal-registry.md](<Architecture - Многоагентные архитектуры и исследовательские пайплайны/debate-removal-registry.md>)):
 
 - `disput/debate-runtime.js` (`DebateFSM`) — run state shape, run-status lifecycle, turn status mapping. Unit-tested (`tests/debate-runtime.test.js`).
 - `disput/debate-engine.js` — transcript persistence/export.

@@ -1,6 +1,6 @@
 # DeepSeek (провайдер DeepSeek)
 
-Код: `content-scripts/content-deepseek.js`, селекторы `selectors/deepseek.config.js`. Разметка: `docs/Architecture/answer-markdown-matrix.md` (строка 19). Заготовка от 2026-10-30.
+Код: `content-scripts/content-deepseek.js`, селекторы `selectors/deepseek.config.js`. Разметка: `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-matrix.md` (строка 19). Заготовка от 2026-10-30.
 
 ## 1. Отправка
 

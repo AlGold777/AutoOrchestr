@@ -1,6 +1,6 @@
 # ChatGPT (провайдер GPT)
 
-Код: `content-scripts/content-chatgpt.js`, селекторы `selectors/chatgpt.config.js`, разбор ответа `content-scripts/turn-resolver.js`. Разметка блоков кода и таблиц: `docs/Architecture/answer-markdown-matrix.md` (строки 18, 39, 56, 73). Заготовка от 2026-10-30. Факты взяты из кода и выгрузок 2.81.935–2.81.948; живой DOM на сегодня не снимался.
+Код: `content-scripts/content-chatgpt.js`, селекторы `selectors/chatgpt.config.js`, разбор ответа `content-scripts/turn-resolver.js`. Разметка блоков кода и таблиц: `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-matrix.md` (строки 18, 39, 56, 73). Заготовка от 2026-10-30. Факты взяты из кода и выгрузок 2.81.935–2.81.948; живой DOM на сегодня не снимался.
 
 ## 1. Отправка
 
@@ -24,7 +24,7 @@
 
 ## 3. Структура ответа
 
-- Таблицы: pipe-таблицы через `replaceTablesWithMarkdown` при очистке (`content-chatgpt.js:560`). Разметка таблицы: `[class*=tableContainer]` > `[class*=tableWrapper]` > `table` (`docs/Architecture/answer-markdown-matrix.md`, строка 18).
+- Таблицы: pipe-таблицы через `replaceTablesWithMarkdown` при очистке (`content-chatgpt.js:560`). Разметка таблицы: `[class*=tableContainer]` > `[class*=tableWrapper]` > `table` (`docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-matrix.md`, строка 18).
 - Код: `pre` > `#code-block-viewer.cm-editor` > `pre.cm-content` > `code` (там же). Подпись языка и кнопка копирования живут в блоке кода и удаляются при очистке (матрица, строка 73).
 - Markdown-копия ответа не приходит: `copySource: none`, `resultHasMarkdown: false` (реестр L-31, статус ОТКРЫТО, прогон 950). Причина в извлечении копии (`content-chatgpt.js`, `getResponses`, строки 1393–1410, вызов `buildLatestAnswerCopy`). Не разобрана.
 - Переводы строк в плоском тексте: в каждой GPT-попытке всех выгрузок 2.81.935–2.81.948 поле `answer` содержит 0 переводов строки (проверка по `customRun.attempts`; например, `docs/Run Automation/Test_run/Mosquito_Trap_Function_Card_2026-10-30/exports/Basic 20261030_16-13.json`, GPT a1 SUCCESS, 5091 симв., 0 переводов). Исправление M-6 (коммит cd6b496b, ветка) экспорты не содержат. Не проверено на живом прогоне.

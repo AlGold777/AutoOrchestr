@@ -1,6 +1,6 @@
 # Qwen (провайдер Qwen)
 
-Код: `content-scripts/content-qwen.js`, селекторы `selectors/qwen.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 22). Заготовка от 2026-10-30. Экспорты: одна попытка Qwen в `docs/Run Automation/Test_run/Mosquito_Trap_Function_Card_2026-10-30/exports/Basic 20261030_16-13.json` (2.81.948).
+Код: `content-scripts/content-qwen.js`, селекторы `selectors/qwen.config.js`. Матрица: `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-matrix.md` (строка 22). Заготовка от 2026-10-30. Экспорты: одна попытка Qwen в `docs/Run Automation/Test_run/Mosquito_Trap_Function_Card_2026-10-30/exports/Basic 20261030_16-13.json` (2.81.948).
 
 ## 1. Отправка
 

@@ -1,6 +1,6 @@
 # Kimi (провайдер Kimi)
 
-Код: `content-scripts/content-kimi.js`, селекторы `selectors/kimi.config.js`. Матрица: `docs/Architecture/answer-markdown-matrix.md` (строка 27, скелета нет). Заготовка от 2026-10-30. Попыток Kimi в выгрузках `docs/Run Automation/Test_run/*/exports/` нет: все факты ниже из кода и реестра, живым прогоном не проверены.
+Код: `content-scripts/content-kimi.js`, селекторы `selectors/kimi.config.js`. Матрица: `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-matrix.md` (строка 27, скелета нет). Заготовка от 2026-10-30. Попыток Kimi в выгрузках `docs/Run Automation/Test_run/*/exports/` нет: все факты ниже из кода и реестра, живым прогоном не проверены.
 
 ## 1. Отправка
 

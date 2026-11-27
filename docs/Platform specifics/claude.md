@@ -1,6 +1,6 @@
 # Claude (провайдер Claude)
 
-Код: `content-scripts/content-claude.js`, селекторы `selectors/claude.config.js`. Разметка: `docs/Architecture/answer-markdown-matrix.md` (строка 24). Общий детектор лимита: `shared/usage-limit-detector.js`. Заготовка от 2026-10-30. Факты — код, реестр, выгрузки 2.81.935–2.81.948 и заметки прогонов.
+Код: `content-scripts/content-claude.js`, селекторы `selectors/claude.config.js`. Разметка: `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/answer-markdown-matrix.md` (строка 24). Общий детектор лимита: `shared/usage-limit-detector.js`. Заготовка от 2026-10-30. Факты — код, реестр, выгрузки 2.81.935–2.81.948 и заметки прогонов.
 
 ## 1. Отправка
 

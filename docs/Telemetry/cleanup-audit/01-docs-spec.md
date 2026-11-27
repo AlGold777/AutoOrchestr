@@ -34,7 +34,7 @@
 - Валидатор: 3 из 7 примеров (`old-answer`, `prompt-not-inserted`, `prompt-not-sent`) дают `TYPED_CANONICAL_CONFLICT`.
 - `registry/report-dependency-registry.json` совпадает с `dependencyRegistrySnapshot()` (тест `tests/proof-telemetry-contracts.test.js:167-171`).
 - Потребители: `all-presets.example.json` ← `scripts/analyze-proof-telemetry-size.js:108`, `tests/proof-telemetry-report-cli.test.js:109`. `canonical-evidence.example.json` и `presets/*.example.json`: тесты и runtime не читают. Схемы v6, all-presets, diagnostic-report, canonical-evidence ← `scripts/validate-proof-telemetry.js`. `telemetry-event.schema.json` (v5): потребителей нет.
-- Ссылаются на docs/Telemetry: `docs/documentation-map.md:10`, `docs/Architecture/model-tabs-architecture.md:186,613,1011`, `docs/project-overview.md:20`.
+- Ссылаются на docs/Telemetry: `docs/documentation-map.md:10`, `docs/Architecture - Многоагентные архитектуры и исследовательские пайплайны/model-tabs-architecture.md:186,613,1011`, `docs/project-overview.md:20`.
 
 ## Кандидаты на удаление или архив
 
