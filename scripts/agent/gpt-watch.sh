@@ -1,14 +1,21 @@
 #!/bin/zsh
 # Ждёт новый законченный ответ в чате ChatGPT и завершается только на событии.
 # Запускать в фоне: завершение будит ведущего, пустых проверок нет.
-# usage: gpt-watch.sh <url-substring> <out-file> [interval-sec=30] [timeout-min=240]
+# usage: gpt-watch.sh <url-substring> <out-file> [interval-sec=30] [timeout-min=240] [--append <файл>]
 #   Новый ответ — новый ход (или выросло число ответов) относительно старта; ответ на только
 #   что отправленное gpt-send.sh считается новым, даже если уже готов. Ответ законченный, если
 #   генерации нет и длина не менялась между двумя опросами. Полный текст ответа -> <out-file>.
-# exit: 0 новый ответ; 3 вкладка не найдена 10 раз подряд; 4 тайм-аут.
+#   --append: тот же ответ дословно дописать в конец файла (отчёт этапа) под заголовком «Ответ GPT».
+# exit: 0 новый ответ; 2 неверный вызов или нет папки файла --append; 3 вкладка не найдена 10 раз подряд;
+#       4 тайм-аут; 5 ответ получен, но не дописан в файл --append (он остаётся в <out-file>).
 set -u
-[[ $# -ge 2 ]] || { echo "usage: gpt-watch.sh <url-substring> <out-file> [interval] [timeout-min]" >&2; exit 2; }
-D=${0:A:h}; NEEDLE=$1; OUT=$2; IV=${3:-30}; TMO=$(( ${4:-240} * 60 ))
+usage() { echo "usage: gpt-watch.sh <url-substring> <out-file> [interval] [timeout-min] [--append <файл>]" >&2; exit 2; }
+ARGS=(); APP=
+while (( $# )); do
+  if [[ $1 == --append ]]; then [[ -n ${2:-} && -d ${2:h} ]] || usage; APP=$2; shift 2; else ARGS+=("$1"); shift; fi
+done
+(( ${#ARGS} >= 2 )) || usage
+D=${0:A:h}; NEEDLE=$ARGS[1]; OUT=$ARGS[2]; IV=${ARGS[3]:-30}; TMO=$(( ${ARGS[4]:-240} * 60 ))
 state() { "$D/tab-js.sh" "$NEEDLE" "$D/gpt-state.js"; }
 field() { python3 -I -c 'import json,sys;d=json.loads(sys.stdin.read());print(d[sys.argv[1]])' "$1"; }
 s=$(state); [[ $s == NO_TAB || $s != \{* ]] && { echo "NO_TAB"; exit 3; }
@@ -29,6 +36,9 @@ while (( SECONDS - t0 < TMO )); do
     "$D/tab-js.sh" "$NEEDLE" "$D/gpt-last.js" > "$OUT.tmp"
     [[ $(head -c 6 "$OUT.tmp") == NO_TAB ]] && { rm -f "$OUT.tmp"; prevLen=-1; continue; }
     mv "$OUT.tmp" "$OUT"; rm -f "$SENT"
+    if [[ -n $APP ]]; then
+      { print -r -- $'\n### Ответ GPT\n' && cat "$OUT"; } >> "$APP" || { echo "НЕ ДОПИСАНО в $APP; ответ в $OUT"; exit 5; }
+    fi
     echo "НОВЫЙ ОТВЕТ: ответов $n, символов $len -> $OUT"; exit 0
   fi
   prevLen=$len
