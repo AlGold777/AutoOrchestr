@@ -1,0 +1,15 @@
+0 GPT R1 printing 23:38 1. blocks 1 {"score": 22, "max": 22, "failed": []}
+1 Claude R1 ⚠ копия неполн blocks 1 {"score": 22, "max": 22, "failed": []}
+2 GPT R2 printing 23:41 РЕ blocks 1 {"score": 22, "max": 22, "failed": []}
+3 GPT R1 printing 23:42 1. blocks 1 {"score": 22, "max": 22, "failed": []}
+4 Claude R1 23:42 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+5 GPT R2 23:43 РЕЗУЛЬТАТЫ  blocks 1 {"score": 22, "max": 22, "failed": []}
+6 GPT R1 printing 23:44 1. blocks 1 {"score": 22, "max": 22, "failed": []}
+7 Claude R1 23:44 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+8 GPT R2 23:45 РЕЗУЛЬТАТЫ  blocks 1 {"score": 22, "max": 22, "failed": []}
+9 GPT R1 printing 23:46 1. blocks 1 {"score": 22, "max": 22, "failed": []}
+10 Claude R1 23:46 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+11 GPT R2 printing 23:47 РЕ blocks 1 {"score": 22, "max": 22, "failed": []}
+12 GPT R1 ⚠ копия неполная  blocks 1 {"score": 22, "max": 22, "failed": []}
+13 Claude R1 23:49 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+14 GPT R2 printing 23:49 РЕ blocks 1 {"score": 22, "max": 22, "failed": []}

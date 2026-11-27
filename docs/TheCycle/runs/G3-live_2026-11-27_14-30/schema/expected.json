@@ -1,0 +1,57 @@
+{
+ "feasible_count": 37,
+ "top3": [
+  {
+   "ids": [
+    "B",
+    "D",
+    "G",
+    "L"
+   ],
+   "cost": 11,
+   "value": 77,
+   "uncovered": []
+  },
+  {
+   "ids": [
+    "B",
+    "D",
+    "I",
+    "J"
+   ],
+   "cost": 11,
+   "value": 77,
+   "uncovered": []
+  },
+  {
+   "ids": [
+    "A",
+    "D",
+    "G",
+    "L"
+   ],
+   "cost": 10,
+   "value": 74,
+   "uncovered": [
+    12
+   ]
+  }
+ ],
+ "robust_optimum": {
+  "ids": [
+   "C",
+   "D",
+   "G",
+   "L"
+  ],
+  "cost": 12,
+  "value": 74,
+  "worst": 57,
+  "after_failure": {
+   "C": 57,
+   "D": 62,
+   "G": 61,
+   "L": 62
+  }
+ }
+}

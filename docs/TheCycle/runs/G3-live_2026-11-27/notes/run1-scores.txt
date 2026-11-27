@@ -1,0 +1,13 @@
+0 GPT R1 ⚠ копия неполная  blocks 1 {"score": 5, "max": 22, "failed": ["top2_ids", "top2_cost", "top2_value", "top2_uncovered", "top3_ids", "top3_cost", "top3_value", "top3_uncovered", "
+1 GPT R2 printing 06:52 РЕ blocks 1 {"score": 5, "max": 22, "failed": ["top2_ids", "top2_cost", "top2_value", "top2_uncovered", "top3_ids", "top3_cost", "top3_value", "top3_uncovered", "
+2 GPT R1 printing 06:52  { NO_JSON
+3 GPT R1 printing 06:53 1. blocks 1 {"score": 13, "max": 22, "failed": ["robust_ids", "robust_cost", "robust_value", "robust_worst", "after_B", "after_E", "after_J", "after_O", "after_R"
+4 GPT R2 printing 06:54 1. blocks 1 {"score": 13, "max": 22, "failed": ["robust_ids", "robust_cost", "robust_value", "robust_worst", "after_B", "after_E", "after_J", "after_O", "after_R"
+5 GPT R3 printing 06:54 1. NO_JSON
+6 GPT R4 06:55 1. Результа NO_JSON
+7 GPT R5 06:56 1. Результа NO_JSON
+8 GPT R6 printing 06:57 1. NO_JSON
+9 GPT R7 printing 06:58 1. NO_JSON
+10 GPT R8 06:59 1. Результа NO_JSON
+11 GPT R9 printing 07:00 РЕ blocks 1 {"score": 13, "max": 22, "failed": ["robust_ids", "robust_cost", "robust_value", "robust_worst", "after_B", "after_E", "after_J", "after_O", "after_R"
+12 GPT R1 printing 07:01  { NO_JSON

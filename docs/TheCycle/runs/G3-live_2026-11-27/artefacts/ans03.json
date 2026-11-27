@@ -1,0 +1,1 @@
+{"feasible_count": 365, "top3": [{"ids": "CHJMQ", "cost": 16, "value": 123, "uncovered": []}, {"ids": "CFJMQ", "cost": 14, "value": 119, "uncovered": [20]}, {"ids": "DEJNR", "cost": 16, "value": 119, "uncovered": [15]}], "robust_optimum": {"ids": null, "cost": null, "value": null, "worst": null, "after_failure": {}}}
