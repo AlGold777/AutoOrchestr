@@ -29,6 +29,14 @@ describe('Circle continue after reload: buttons', () => {
     expect(results).toContain("if (mode === 'resume' && limit) options.maxCalls = limit;");
     expect(results).toContain('if (wasHidden && !circleControls.hidden) void loadCircleResearches();');
   });
+  test('the list shows the creation time in local time', () => {
+    const source = results.slice(results.indexOf('const circleLocalTime'), results.indexOf('const refreshCircleResearches'));
+    const circleLocalTime = new Function(source + 'return circleLocalTime;')();
+    const local = new Date(2026, 10, 27, 19, 50);
+    expect(circleLocalTime(local.toISOString())).toBe('2026-11-27 19:50');
+    expect(circleLocalTime('')).toBe('');
+    expect(results).toContain('${circleLocalTime(row.createdAt)}');
+  });
   test('busy page is refused like a start', () => {
     expect(results).toMatch(/const runCircleRecovery = async \(mode\) => \{\s*if \(circlePageRunner \|\| pipelineRunActive \|\| theCycleHeld\)/);
   });

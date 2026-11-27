@@ -8980,6 +8980,13 @@ document.addEventListener('click', (event) => {
             const row = circleResearches.find((item) => item.researchId === select?.value);
             if (input) input.value = row ? String(row.maxCalls) : '';
         };
+        // The stored creation time is UTC; the person reads the list in local time.
+        const circleLocalTime = (iso) => {
+            const date = new Date(iso || NaN);
+            if (Number.isNaN(date.getTime())) return '';
+            const two = (value) => String(value).padStart(2, '0');
+            return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
+        };
         const refreshCircleResearches = async (runner, selectedId) => {
             const select = document.getElementById('circle-research-select');
             if (!select) return;
@@ -8988,7 +8995,7 @@ document.addEventListener('click', (event) => {
             select.replaceChildren(...circleResearches.map((row) => {
                 const option = document.createElement('option');
                 option.value = row.researchId;
-                option.textContent = `${row.createdAt.slice(0, 16).replace('T', ' ')} · ${row.phase} · ${row.usedCalls}/${row.maxCalls} · ${row.task.slice(0, 60)}`;
+                option.textContent = `${circleLocalTime(row.createdAt)} ·${row.phase} · ${row.usedCalls}/${row.maxCalls} · ${row.task.slice(0, 60)}`;
                 return option;
             }));
             if (circleResearches.some((row) => row.researchId === wanted)) select.value = wanted;
