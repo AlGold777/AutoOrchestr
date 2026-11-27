@@ -58,6 +58,8 @@ test('work -> analyst CONTINUE -> work -> analyst COMPLETE: COMPLETED with final
   assert.deepEqual(x.begins, ['work', 'analyst', 'work', 'analyst']);
   assert.match(x.prompts[1], /ИСХОДНАЯ ЗАДАЧА:\nSolve it/); assert.match(x.prompts[1], /Work evidence 1/);
   assert.match(x.prompts[1], /использовано вызовов 1 из 10, осталось 9/);
+  assert.match(x.prompts[1], /ДОПУСТИМЫЕ ССЫЛКИ:\ncycle=1 step=1 model=GPT/);
+  assert.match(x.prompts[3], /ДОПУСТИМЫЕ ССЫЛКИ:\ncycle=1 step=1 model=GPT\ncycle=3 step=1 model=GPT/);
   // the work cycle after the analyst sees only work evidence, never the analyst answer
   assert.match(x.prompts[2], /Work evidence 1/); assert.doesNotMatch(x.prompts[2], /ещё один круг/);
   assert.equal(r.state.budget.usedCalls, 4); assert.equal(r.state.lastDecision.action, 'COMPLETE');

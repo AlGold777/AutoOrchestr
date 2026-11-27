@@ -176,7 +176,13 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
         }
         const {packet,report,answers}=await contextApi.readCycle(store,state.researchId,workId);
         const current=(await loadPipeline(packet.pipelineRef))?.schema||schema;
-        const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:current,actions:policyApi.ACTIONS,verification};
+        const allowedRefs=[];
+        for(let n=1;n<=state.lastCommittedPacket;n++){
+         const p=await store.getPacket(state.researchId,n);
+         if(p?.status!=='RECORDED_RESULT'||roleOfRef(p.pipelineRef)!=='work')continue;
+         try{const c=await contextApi.readCycle(store,state.researchId,n);for(const a of c.answers)allowedRefs.push('cycle='+n+' step='+a.step+' model='+a.model);}catch(_){}
+        }
+        const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:current,actions:policyApi.ACTIONS,verification,refs:allowedRefs.slice(-40)};
         let summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
         // Same limit as the work cycle: 0.8 of the prompt minus the template; the summary is cut, never the template.
         const room=Math.floor(maxPromptChars*0.8)-policyApi.buildAnalystTask({...parts,summary:''}).length;

@@ -14,10 +14,11 @@ const str=v=>typeof v==='string'&&v.trim().length>0;
 
 // Single pass over the template: substituted data is never searched for placeholders again.
 function fill(template,values){return template.replace(/\{\{(\w+)\}\}/g,(m,k)=>Object.prototype.hasOwnProperty.call(values,k)?String(values[k]):m);}
-function buildAnalystTask({task,summary,budget,schema,actions,verification}={}){
+function buildAnalystTask({task,summary,budget,schema,actions,verification,refs}={}){
+ const refsText=Array.isArray(refs)&&refs.length?'\n\nДОПУСТИМЫЕ ССЫЛКИ:\n'+refs.join('\n'):'';
  const text=fill(ANALYST_PROMPT,{task,summary,budget,
   schema:typeof schema==='string'?schema:JSON.stringify(schema,null,1),
-  actions:Array.isArray(actions)?actions.join(', '):actions});
+  actions:(Array.isArray(actions)?actions.join(', '):actions)+refsText});
  return verification?text+'\nРЕЗУЛЬТАТ ПРОВЕРКИ:\n'+verification+'\n':text;
 }
 const procedureText=procedure=>procedure.map(p=>p.id+': '+p.check).join('\n');
@@ -98,7 +99,11 @@ function parseDecision(text,{lastCommittedPacket,packets}={}){
  if(!str(d.reason)||d.reason.length>200)errors.push('reason: непустая строка до 200 знаков');
  if(!Array.isArray(d.refs))errors.push('refs: массив строк');
  else if(d.refs.length>50||new Set(d.refs).size!==d.refs.length)errors.push('refs: не более 50 и без повторов');
- else for(const ref of d.refs){const e=checkRef(ref,lastCommittedPacket,packets);if(e)errors.push('refs: '+e);}
+ else{
+  d.refs=d.refs.map(ref=>{const m=typeof ref==='string'?/^\s*cycle=\s*(\d+)\s+step=\s*(\d+)\s+model=(.*)$/.exec(ref):null;return m&&m[3].trim()?'cycle='+m[1]+' step='+m[2]+' model='+m[3].trim():ref;});
+  if(new Set(d.refs).size!==d.refs.length)errors.push('refs: не более 50 и без повторов');
+ }
+ if(Array.isArray(d.refs)&&!errors.some(e=>e.startsWith('refs:')))for(const ref of d.refs){const e=checkRef(ref,lastCommittedPacket,packets);if(e)errors.push('refs: '+e);}
  const has=k=>Object.prototype.hasOwnProperty.call(d,k);
  if(['COMPLETE','VERIFY'].includes(d.action)&&Array.isArray(d.refs)&&d.refs.length<1)errors.push('refs: для '+d.action+' нужна хотя бы одна ссылка');
  if(has('schema')){if(d.action!=='CHANGE_STRATEGY')errors.push('schema допустима только при CHANGE_STRATEGY');else if(!isObj(d.schema))errors.push('schema: объект');}

@@ -92,3 +92,17 @@ test('JSON followed by the delivery token line is accepted; the prompts allow th
   assert.match(ANALYST_PROMPT, /служебная метка последней строкой/);
   assert.match(VERIFIER_PROMPT, /служебная метка последней строкой/);
 });
+
+test('ссылка с пробелами вокруг имени модели принимается и нормализуется; пустое имя — ошибка', () => {
+  const r = ok({ action: 'COMPLETE', reason: 'done', refs: ['cycle=1 step=1 model= GPT '] });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.decision.refs, [REF]);
+  bad({ action: 'COMPLETE', reason: 'done', refs: ['cycle=1 step=2 model= '] }, /refs/);
+  bad({ action: 'COMPLETE', reason: 'done', refs: ['cycle=1 step=1 model=GPT', 'cycle=1 step=1 model= GPT'] }, /повтор/);
+});
+
+test('задача аналитика содержит блок допустимых ссылок', () => {
+  const text = buildAnalystTask({ task: 'T', summary: 'S', budget: 'B', schema: {}, actions: ['CONTINUE'], refs: [REF, 'cycle=2 step=1 model=S'] });
+  assert.match(text, /ДОПУСТИМЫЕ ССЫЛКИ:\ncycle=1 step=1 model=GPT\ncycle=2 step=1 model=S/);
+  assert.doesNotMatch(buildAnalystTask({ task: 'T', summary: 'S', budget: 'B', schema: {}, actions: ['CONTINUE'] }), /ДОПУСТИМЫЕ ССЫЛКИ/);
+});

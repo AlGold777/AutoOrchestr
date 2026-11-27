@@ -135,7 +135,7 @@ test('1. sixty work+analyst cycles: one send per batch, budget = sends, summary 
   const firsts = x.transport.filter((t) => t.role === 'work' && t.nth === 0 && t.cycle >= 3).map((t) => t.text.length);
   assert.equal(firsts.length, 59); assert.ok(Math.max(...firsts) - Math.min(...firsts) < 40, 'work task is bounded: ' + Math.min(...firsts) + '..' + Math.max(...firsts));
   assert.ok(Math.max(...firsts) < 4000);
-  const analysts = x.transport.filter((t) => t.role === 'analyst' && t.cycle >= 4).map((t) => t.text.length);
+  const analysts = x.transport.filter((t) => t.role === 'analyst' && t.cycle >= 42).map((t) => t.text.length);
   assert.ok(Math.max(...analysts) - Math.min(...analysts) < 120, 'analyst task is bounded');
   assert.ok(x.transport.find((t) => t.cycle === 119 && t.nth === 0).text.includes('SUMMARY c117'), 'work cycle reads the latest summary');
   assert.ok(!x.transport.find((t) => t.cycle === 119 && t.nth === 0).text.includes('SUMMARY c115'), 'older summaries are not carried');
