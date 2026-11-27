@@ -11099,6 +11099,33 @@ async function findTabEndingWithOwnTag(llmName, skipTabId, roundPrompts) {
   return null;
 }
 
+// The open tab of this model that holds the delivery token anywhere outside the composer. Only for a caller outside the run
+// held in jobState: the token is unique to the request, and whether the answer is complete is judged on the collected text.
+// A page whose own captions follow the answer (DeepSeek under the composer) does not pass the tail rule above.
+const PAGE_HOLDS_TAG_PROBE = (tag) => {
+  const needle = String(tag || '').toLowerCase();
+  if (!needle || !document.body) return false;
+  const clone = document.body.cloneNode(true);
+  clone.querySelectorAll('textarea, input, [contenteditable], script, style').forEach((node) => node.remove());
+  return String(clone.textContent || '').toLowerCase().includes(needle);
+};
+
+async function findTabHoldingOwnTag(llmName, roundTags) {
+  if (typeof chrome?.tabs?.query !== 'function' || typeof chrome?.scripting?.executeScript !== 'function') return null;
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch (_) { return null; }
+  for (const tab of Array.isArray(tabs) ? tabs : []) {
+    if (!tab || !isValidTabId(tab.id) || !isEligibleTabForLlm(llmName, tab)) continue;
+    for (const tag of roundTags) {
+      try {
+        const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: PAGE_HOLDS_TAG_PROBE, args: [tag] });
+        if (results?.[0]?.result === true) return tab.id;
+      } catch (_) {}
+    }
+  }
+  return null;
+}
+
 async function rereadOwnTurnForBasic(message = {}) {
   const llmName = String(message.llmName || '');
   // The requests of this participant in the round (the original and its corrections): the answer of any of them is taken.
@@ -11107,9 +11134,12 @@ async function rereadOwnTurnForBasic(message = {}) {
   const roundTags = roundPrompts.map((prompt) => String(prompt.match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '')).filter(Boolean);
   const previousText = String(message.previousText || '').trim();
   const previousLength = previousText.length;
-  const entry = jobState?.llms?.[llmName];
-  if (!llmName || !roundPrompts.length || !entry) return { found: false, reason: 'reread_unavailable' };
-  let tabId = Number(message.tabId) || Number(entry.tabId) || null;
+  // detached: the caller is not the run held in jobState (a research continued after Stop or a reload) — the job state may
+  // be empty or belong to a later run.
+  const detached = message.detached === true;
+  let entry = jobState?.llms?.[llmName] || null;
+  if (!llmName || !roundPrompts.length || (!entry && !detached)) return { found: false, reason: 'reread_unavailable' };
+  let tabId = Number(message.tabId) || Number(entry?.tabId) || null;
   let ownTurn = false;
   if (isValidTabId(tabId)) {
     for (const prompt of roundPrompts) {
@@ -11119,12 +11149,20 @@ async function rereadOwnTurnForBasic(message = {}) {
   }
   if (!ownTurn) {
     // The bound tab is closed, replaced or holds another chat: the request is looked for among the open tabs of this model.
-    const foundTabId = await findTabEndingWithOwnTag(llmName, tabId, roundPrompts);
+    const foundTabId = await findTabEndingWithOwnTag(llmName, tabId, roundPrompts)
+      || (detached ? await findTabHoldingOwnTag(llmName, roundTags) : null);
     if (!isValidTabId(foundTabId)) return { found: false, reason: isValidTabId(tabId) ? 'no_own_turn' : 'no_tab' };
+    if (detached && entry && entry.tabId !== foundTabId) {
+      // The held entry is of another chat. A finished one is replaced; an unfinished one belongs to a run in progress.
+      if (!isFinalizedEntry(entry)) return { found: false, reason: 'model_busy' };
+      delete jobState.llms[llmName];
+      entry = null;
+    }
     tabId = foundTabId;
-    entry.tabId = foundTabId;
+    if (entry) entry.tabId = foundTabId;
     ownTurn = true;
   }
+  if (!entry) ensureManualRecoveryModelEntry(llmName, tabId, 'resume_reread');
   try {
     await handleManualResponsePing(llmName, {
       getIt: true, manualLatestRecovery: true, manualRecovery: true, advanceStrategy: false, reason: 'retry_reread_page'

@@ -7837,7 +7837,8 @@ document.addEventListener('click', (event) => {
             // The same page read as in Basic (M-11): the background takes the answer of the request's own turn, or says there is none.
             async reread(request) {
                 const reply = await chrome.runtime.sendMessage({ type: 'BASIC_REREAD_OWN_TURN', llmName: request.modelName,
-                    tabId: null, sentPrompt: request.sentPrompt, sentPrompts: request.sentPrompts, previousText: request.previousText });
+                    tabId: null, detached: request.detached === true,
+                    sentPrompt: request.sentPrompt, sentPrompts: request.sentPrompts, previousText: request.previousText });
                 return reply || { found: false, reason: 'no_reply' };
             },
             // «Настройки Basic»: the one source of the Basic page (never copied).

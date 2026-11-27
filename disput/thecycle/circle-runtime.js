@@ -245,11 +245,13 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    if(!owner?.ownerId||owner.researchId!==id||!pos(owner.epoch))return await fail('NO_OWNERSHIP');
    const answers={},tags=[];
    for(const model of intent.models){
-    const prompt=typeof sent.prompts==='string'?sent.prompts:sent.prompts[model];
+    // The transport keys the prompts it dispatched by the upper-cased model name («DEEPSEEK»).
+    const key=Object.keys(typeof sent.prompts==='string'?{}:sent.prompts).find(k=>k.trim().toUpperCase()===String(model).trim().toUpperCase());
+    const prompt=typeof sent.prompts==='string'?sent.prompts:sent.prompts[key];
     const tag=String(prompt||'').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0];
     // Without the delivery token of the request nothing proves whose turn the page shows.
     if(!tag)return await fail('NO_DELIVERY_TOKEN',{model});
-    const reply=await bridge.reread({modelName:model,sentPrompt:prompt,sentPrompts:[prompt],previousText:''});
+    const reply=await bridge.reread({modelName:model,sentPrompt:prompt,sentPrompts:[prompt],previousText:'',detached:true});
     // confirmed = the delivery token of THIS request is the tail of the answer (the model finished writing); completion 'complete' and status SUCCESS come with it.
     if(reply?.found!==true||reply.confirmed!==true||typeof reply.text!=='string'||!reply.text.trim())return await fail('ANSWER_NOT_CONFIRMED',{model,found:reply?.found===true,pageReason:reply?.reason});
     if(reply.completion!=='complete'||reply.status!=='SUCCESS')return await fail('ANSWER_NOT_COMPLETE',{model,completion:reply.completion,status:reply.status});

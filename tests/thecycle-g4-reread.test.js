@@ -77,6 +77,26 @@ test('send journals the prompt with the delivery token BEFORE the request outcom
   assert.match(prompt.prompts.GPT, /\[\[AO-abc234\]\]/);
 });
 
+// Live run 2026-11-27: the transport journals the prompts under upper-cased model names («DEEPSEEK»).
+test('journaled prompt keyed by the upper-cased model name is found', async () => {
+  const x = await fixture();
+  const owner = await x.owner();
+  const tok = await x.store.acquire({ researchId: x.id, ownerId: 'crashed', takeoverEpoch: owner.epoch });
+  const runId = x.id + ':cycle:1', base = { researchId: x.id, runId, cycleId: 1 };
+  const s = await x.store.load(x.id);
+  await x.store.prepareRun(tok, { expectedVersion: s.stateVersion, runId, cycleId: 1, pipelineRef: s.pipelineRef, maxCalls: 1 });
+  const journal = x.store.journalFor(tok);
+  await journal({ type: 'RUN_INTENT', ...base, maxCalls: 1 });
+  await journal({ type: 'DISPATCH_INTENT', ...base, batchId: 'b1', models: ['DeepSeek'] });
+  await journal({ type: 'DISPATCH_PROMPT', ...base, batchId: 'b1', prompts: { DEEPSEEK: 'Investigate ' + TOKEN } });
+  x.hooks.reread = found();
+  await x.newRunner().resume(x.id);
+  assert.equal(x.sends.length, 0);
+  assert.equal(x.rereads[0].sentPrompt, 'Investigate ' + TOKEN); assert.equal(x.rereads[0].modelName, 'DeepSeek');
+  assert.equal(x.rereads[0].detached, true);
+  assert.deepEqual((await x.store.getRun(x.id, runId)).batches.map((b) => b.status), ['RESPONSE']);
+});
+
 test('reread finds the confirmed answer: batch RESPONSE, packet recorded, nothing sent again', async () => {
   const x = await fixture();
   await crashInFlight(x);
