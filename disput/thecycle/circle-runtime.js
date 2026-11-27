@@ -61,10 +61,10 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    const packet=state.lastCommittedPacket==null?null:await active.store.getPacket(id,state.lastCommittedPacket);
    const events=packet?await active.store.getEvents(id,packet.runId):[];
    const report=events.find(e=>e.eventId===packet?.resultEventId)?.payload?.report||null;
-   const source=(await storage.get(key(id)))[key(id)]||null;
+   const source=state.configuration||(await storage.get(key(id)))[key(id)]||null;
    // After a reload a run left in flight has an unknown outcome: it is told apart from a live run by "nothing runs in this page".
    const elsewhere=!running&&await activeElsewhere(id);
-   const unknown=!running&&!elsewhere&&Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase);
+   const unknown=!elsewhere&&(Boolean(state.parkedRunId)||!running&&Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase));
    const pauseReason=elsewhere?'CIRCLE_ACTIVE_ELSEWHERE':unknown?'UNKNOWN_DISPATCH_AFTER_RELOAD':(['PAUSED','COMPLETED'].includes(state.phase)?(state.lastDecision?.reason||state.closedReason||null):null);
    return {researchId:id,database:active.database,state,packet,report,configured:source,unknown,activeElsewhere:elsewhere,pauseReason,lastDecision:state.lastDecision||null};
   }finally{active.close();}
@@ -172,16 +172,15 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
        }
        if(pipeline?.role==='analyst'){
         // The analyst reads the last work cycle; after a verification cycle it also sees the verdict.
-        let workId=state.lastCommittedPacket,verification;
-        const last=await store.getPacket(state.researchId,workId);
-        if(roleOfRef(last?.pipelineRef)==='verify'){
-         const rec=last.decision?.detail?.verificationRecord;
-         if(!rec)throw Error('CIRCLE_VERIFY_RECORD_MISSING');
-         verification=policyApi.verificationText(rec);
-         workId=null;
-         for(let n=state.lastCommittedPacket-1;n>=1;n--){const p=await store.getPacket(state.researchId,n);if(p?.status==='RECORDED_RESULT'&&roleOfRef(p.pipelineRef)==='work'){workId=n;break;}}
-         if(workId===null)throw Error('CIRCLE_COMMITTED_PACKET_MISSING');
+        let workId=null,verification;
+        for(let n=state.lastCommittedPacket;n>=1;n--){
+         const p=await store.getPacket(state.researchId,n);
+         if(p?.status!=='RECORDED_RESULT')continue;
+         const role=roleOfRef(p.pipelineRef);
+         if(role==='work'){workId=n;break;}
+         if(role==='verify'&&!verification){const rec=p.decision?.detail?.verificationRecord;if(rec)verification=policyApi.verificationText(rec);}
         }
+        if(workId===null)throw Error('CIRCLE_COMMITTED_PACKET_MISSING');
         const {packet,report,answers}=await contextApi.readCycle(store,state.researchId,workId);
         const current=(await loadPipeline(packet.pipelineRef))?.schema||schema;
         const allowedRefs=[];
@@ -294,11 +293,13 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    break;
   }
   if(session.stopRequested){
-   // Stop after a request left the page: its outcome is unknown. Close the research (no resend) and free the transport.
+   // Stop after a request left the page: park the original run, never resend it.
    const stopped=await store.load(id);
    if(stopped.activeRunId&&['RECONCILE','RUNNING','INTENT'].includes(stopped.phase)){
-    try{await record(await controller.closeStopped(id));}
-    catch(error){await emit('RUN_CLOSE_FAILED',{state:stopped,error});}
+    await record(await controller.parkStopped(id));
+    await observedGate.persist(id,'manual');
+    await emit('BACKUP_VERIFIED',{reason:'park'});
+    await controller.releaseSettled(id);
    }
   }
  }
@@ -332,7 +333,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    active=await activeStore.createActiveStateStore();
    const store=active.store;
    await emit('SCHEMA_CAPTURED',{schema,database:active.database,pipelineRef:ref});
-   const cfg={schema,pipelineRef:ref,models,contextMode,maxCallsPerCycle,maxPromptChars};
+   const cfg={schema,pipelineRef:ref,models,contextMode,maxCallsPerCycle,maxPromptChars,perCycleTracksBudget:maxCallsPerCycle===maxCalls};
    const backupRef={gate:null};
    const parts=assemble(id,cfg,{store,emit,session,backupRef});
    await parts.check();
@@ -342,8 +343,9 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    if(!backup?.gate?.persist||!backup.gate.assertCanStartCycle)throw Error('CIRCLE_BACKUP_UNAVAILABLE');
    backupRef.gate=backup.gate;
    if(session.stopRequested)return {researchId:id,outcomes,state:{phase:'PAUSED'},reason:'OWNER_STOP'};
-    await storage.set({[key(id)]:{...cfg,analyst:parts.analyst||undefined,createdAt:new Date().toISOString(),database:active.database}});
-   await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls});created=true;
+    const configuration={...cfg,analyst:parts.analyst||undefined,createdAt:new Date().toISOString(),database:active.database};
+    await storage.set({[key(id)]:configuration});
+   await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls,configuration});created=true;
    await storage.set({'thecycle.circle.latest':id});
    stopBeat=await startHeartbeat(id);await setPending(id,'ACTIVE');
    const {controller,observedGate}=parts.build();
@@ -374,7 +376,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
  }
  // Human-started continuation of a saved research after a page reload (mode: resume | abandon | close).
  // The outcome of a request that was in flight is never guessed: it pauses for a human choice; nothing is resent.
- async function recover(id,mode,onProgress=()=>{}){
+ async function recover(id,mode,{onProgress=()=>{},maxCalls,reopenLegacy=false}={}){
   if(running)throw Error('CIRCLE_ALREADY_RUNNING');
   if(typeof id!=='string'||!id)throw Error('CIRCLE_INPUT_INVALID');
   const session={researchId:id,controller:null,stopRequested:false,bridgeRun:null};
@@ -387,20 +389,26 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    // The research may be working in another tab (fresh heartbeat of another runner): no takeover, no choice buttons.
    if(await activeElsewhere(id))throw Object.assign(new Error('CIRCLE_ACTIVE_ELSEWHERE'),{code:'CIRCLE_ACTIVE_ELSEWHERE'});
    if(typeof bridge.hold==='function'){bridge.hold({stop});held=true;}
-   const saved=(await storage.get(key(id)))[key(id)];
-   if(!saved?.schema||!saved.pipelineRef||!Array.isArray(saved.models))throw Error('CIRCLE_RESEARCH_NOT_FOUND');
    active=await activeStore.createActiveStateStore();
    const store=active.store;
-   let state=await store.load(id);
+   let state;
+   try{state=await store.load(id);}catch(error){if(error?.code==='RESEARCH_NOT_FOUND')throw Error('CIRCLE_RESEARCH_NOT_FOUND');throw error;}
+   const saved=state.configuration||(await storage.get(key(id)))[key(id)];
+   if(!saved?.schema||!saved.pipelineRef||!Array.isArray(saved.models))throw Error('CIRCLE_RESEARCH_NOT_FOUND');
+   const legacy=reopenLegacy===true&&state.phase==='COMPLETED'&&state.closedReason==='OWNER_STOP_UNRESOLVED'&&state.finalStatus==null;
+   if(maxCalls!==undefined&&(mode!=='resume'||(!legacy&&state.phase!=='PAUSED')||!pos(maxCalls)||maxCalls<state.budget.maxCalls||maxCalls>10000))throw Error('INVALID_BUDGET');
+   if(reopenLegacy&&!legacy)throw Error('RESUME_NOT_ALLOWED');
    stopBeat=await startHeartbeat(id);await setPending(id,'ACTIVE');
-   const cfg={...saved,maxCallsPerCycle:pos(saved.maxCallsPerCycle)?saved.maxCallsPerCycle:state.budget.maxCalls,
+   const tracks=saved.perCycleTracksBudget??(saved.maxCallsPerCycle===state.budget.maxCalls);
+   const configuration={...saved,perCycleTracksBudget:tracks};
+   const cfg={...configuration,maxCallsPerCycle:tracks?(maxCalls??state.budget.maxCalls):(pos(saved.maxCallsPerCycle)?saved.maxCallsPerCycle:state.budget.maxCalls),
     maxPromptChars:pos(saved.maxPromptChars)?saved.maxPromptChars:20000};
    await emit('RESEARCH_RESUME',{mode,state});
    const backupRef={gate:null};
    const parts=assemble(id,cfg,{store,emit,session,backupRef});
    await parts.check();
    if(mode==='close'&&session.stopRequested)return {...(await snapshot(id)),outcomes};
-   const needsBackup=mode!=='close'&&!(state.phase==='COMPLETED'&&state.backupRequiredCycleId==null);
+   const needsBackup=mode!=='close'&&!(state.phase==='COMPLETED'&&state.backupRequiredCycleId==null&&!legacy);
    if(needsBackup){
     // Without a verified copy nothing continues; this happens before ownership changes and before any request.
     await emit('BACKUP_OPEN');
@@ -416,7 +424,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     await emit('BACKUP_VERIFIED',{reason:'resume'});
    }
    const finish=async()=>{await stopBeat?.();stopBeat=null;const final=await snapshot(id);await settlePending(id,final.state,mode==='close');await emit('RESEARCH_END',{state:final.state,outcome:outcomes.at(-1)?.outcome});return {...final,outcomes};};
-   if(state.phase==='COMPLETED'&&state.backupRequiredCycleId==null&&mode!=='close')return await finish();
+   if(state.phase==='COMPLETED'&&state.backupRequiredCycleId==null&&mode!=='close'&&!legacy)return await finish();
    // The new controller fences the old writer; a stale owner then gets STALE_OWNER on its next write.
    const owner=await store.getOwnership();
    if(owner?.ownerId){
@@ -425,10 +433,30 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     await emit('OWNERSHIP_TAKEN_OVER',{owner});
    }
    state=await store.load(id);
+   if(state.phase==='RECONCILE'&&state.activeRunId&&!owner?.ownerId)await controller.claimRecovery(id);
+   const wasParked=Boolean(state.parkedRunId)||legacy;
+   // Continue the pending evaluation or scheduled role instead of replaying a committed cycle.
+   if((mode==='resume'&&(state.phase==='PAUSED'||legacy))||((mode==='abandon'||mode==='close')&&state.parkedRunId)){
+    if(state.backupRequiredCycleId!=null){await record(await controller.tick(id));state=await store.load(id);if(state.backupRequiredCycleId!=null)return await finish();}
+    let pipelineRef;
+    if(parts.analyst&&!wasParked&&state.pausedResumePhase!=='EVALUATE'&&state.lastDecision?.reason==='BUDGET_EXHAUSTED'){
+     const p=state.lastCommittedPacket==null?null:await store.getPacket(id,state.lastCommittedPacket);
+     const role=p?policyApi.roleOf(parts.registry,p.pipelineRef):null;
+     if(role==='work'||role==='verify')pipelineRef=parts.analyst.ref;
+     else if(role==='analyst'&&p?.decision?.detail?.action==='CONTINUE'){
+      for(let n=state.lastCommittedPacket-1;n>=1;n--){const prev=await store.getPacket(id,n);if(prev?.status==='RECORDED_RESULT'&&policyApi.roleOf(parts.registry,prev.pipelineRef)==='work'){pipelineRef=prev.pipelineRef;break;}}
+     }
+    }
+    if(session.stopRequested)return await finish();
+    await record(await controller.resume(id,{maxCalls,pipelineRef,reopenLegacy:legacy,configuration}));
+    state=await store.load(id);
+    if(needsBackup){await observedGate.persist(id,'manual');await emit('BACKUP_VERIFIED',{reason:'resume-state'});}
+   }
+   await storage.set({'thecycle.circle.latest':id});
    const inFlight=Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase);
    if(mode==='close'){
     await controller.stop(id);
-    if(inFlight)await record(await controller.closeStopped(id));
+    if(inFlight)await record(await controller.closeStopped(id,'OWNER_CLOSED_UNRESOLVED'));
     else await controller.releaseSettled(id);
     return await finish();
    }
@@ -439,18 +467,23 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     if(inFlight){
      // The request may have gone out before the reload: it is never resent. The answer is taken only from the page, by the
      // delivery token of the journaled request; without a confirmed answer a human chooses.
-     if(await rereadBatch(id,{store,controller,state,emit}))state=await store.load(id);
+     const run=await store.getRun(id,state.activeRunId);
+     const unsettled=run?.batches?.some(b=>['INTENT','UNKNOWN'].includes(b.status));
+     if(run&&!unsettled&&state.phase==='RECONCILE'){
+      await record(await controller.reconcile(id,{evidence:{source:'DURABLE_JOURNAL',reference:state.activeRunId}}));
+      state=await store.load(id);
+     }else if(await rereadBatch(id,{store,controller,state,emit}))state=await store.load(id);
      else{
-      await record({state,outcome:'PAUSED',reason:'UNKNOWN_DISPATCH_AFTER_RELOAD',runId:state.activeRunId});
+      if(wasParked||session.stopRequested){
+       await controller.stop(id);
+       await record(await controller.parkStopped(id));
+       await observedGate.persist(id,'manual');
+       await controller.releaseSettled(id);
+       state=await store.load(id);
+      }
+      await record({state,outcome:'PAUSED',reason:'UNKNOWN_DISPATCH_AFTER_RELOAD',runId:state.activeRunId||state.parkedRunId});
       return await finish();
      }
-    }else if(state.phase==='PAUSED'){
-     if(state.backupRequiredCycleId!=null){
-      await record(await controller.tick(id));
-      state=await store.load(id);
-      if(state.backupRequiredCycleId!=null)return await finish();
-     }
-     await record(await controller.resume(id));
     }
    }
    await drive({id,store,controller,observedGate,loadPipeline:parts.loadPipeline,schema:cfg.schema,session,record,emit});
@@ -464,11 +497,11 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    try{backup?.close?.();}finally{try{active?.close();}finally{running=null;if(held)try{bridge.release?.();}catch(_){}}}
   }
  }
- const resume=(id,options={})=>recover(id,'resume',options.onProgress);
+ const resume=(id,options={})=>recover(id,'resume',options);
  // choice: 'abandon' (continue without the unknown batch) | 'close' (close the research).
  async function resolveUnknown(id,choice,options={}){
   if(!['abandon','close'].includes(choice))throw Error('CIRCLE_INPUT_INVALID');
-  return recover(id,choice,options.onProgress);
+  return recover(id,choice,options);
  }
  async function stop(){
   if(!running)return {status:'NOT_RUNNING'};
@@ -479,7 +512,13 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   return {status:'STOP_REQUESTED',researchId:session.researchId};
  }
  async function latest(){return (await storage.get('thecycle.circle.latest'))['thecycle.circle.latest']||null;}
- return Object.freeze({start,resume,resolveUnknown,stop,snapshot,latest,isRunning:()=>Boolean(running)});
+ async function listResearch(){
+  const active=await activeStore.createActiveStateStore();
+  try{return (await active.store.listResearch()).filter(s=>s.researchId.startsWith('circle-')).map(s=>({researchId:s.researchId,task:s.task,phase:s.phase,budget:s.budget,lastCommittedPacket:s.lastCommittedPacket,
+   recoverableLegacy:s.phase==='COMPLETED'&&s.closedReason==='OWNER_STOP_UNRESOLVED'&&s.finalStatus==null}));}
+  finally{active.close();}
+ }
+ return Object.freeze({start,resume,resolveUnknown,stop,snapshot,latest,listResearch,isRunning:()=>Boolean(running)});
 }
 const api=Object.freeze({createCircleRunner});
 root.TheCycleCircle=api;

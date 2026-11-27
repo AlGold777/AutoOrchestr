@@ -69,9 +69,12 @@
     const snapshot = validate(await stateStore.verifyBackup(envelope));
     const restored = structuredClone(snapshot);
     for (const state of restored.stores.research) {
-      if (state.activeRunId || ['INTENT','RUNNING','RECONCILE','COMMIT'].includes(state.phase))
-        state.phase = 'RECONCILE';
-      else if (state.phase !== 'COMPLETED') state.phase = 'PAUSED';
+      if (state.phase === 'COMMIT' && state.activeRunId) { /* preserve the completed run for commit */ }
+      else if (state.activeRunId || ['INTENT','RUNNING','RECONCILE'].includes(state.phase)) state.phase = 'RECONCILE';
+      else if (state.phase !== 'COMPLETED') {
+        if (state.phase === 'EVALUATE') state.pausedResumePhase = 'EVALUATE';
+        state.phase = 'PAUSED';
+      }
       state.stopRequested = true;
       state.stateVersion += 1;
     }

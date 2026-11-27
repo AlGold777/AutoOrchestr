@@ -137,7 +137,7 @@ test('close: the research ends closed, unknown batch kept, transport free, nothi
   await crashAt(x, 'RUNNING');
   const result = await x.newRunner().resolveUnknown(x.id, 'close');
   assert.equal(x.prompts.length, 0);
-  assert.equal(result.state.phase, 'COMPLETED'); assert.equal(result.state.closedReason, 'OWNER_STOP_UNRESOLVED');
+  assert.equal(result.state.phase, 'COMPLETED'); assert.equal(result.state.closedReason, 'OWNER_CLOSED_UNRESOLVED');
   assert.deepEqual((await x.store.getRun(x.id, x.id + ':cycle:1')).batches.map((b) => b.status), ['UNKNOWN']);
   assert.equal((await x.owner())?.ownerId ?? null, null);
 });

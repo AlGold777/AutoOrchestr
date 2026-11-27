@@ -100,13 +100,14 @@
     const read = (work) => tx(db, 'readonly', work);
     const write = (work) => tx(db, 'readwrite', work);
 
-    async function createResearch({ researchId, task, pipelineRef, maxCalls } = {}) {
+    async function createResearch({ researchId, task, pipelineRef, maxCalls, configuration } = {}) {
       if (![researchId, task, pipelineRef].every(str) || !pos(maxCalls)) throw fail('INVALID_RESEARCH');
       const state = {
         researchId, task, pipelineRef, stateVersion: 0, phase: 'READY',
         nextCycle: 1, activeRunId: null, lastCommittedPacket: null, backupRequiredCycleId: null,
         stopRequested: false, budget: { maxCalls, usedCalls: 0 }
       };
+      if (configuration !== undefined) state.configuration = copy(configuration);
       return write(async (s) => {
         if (await request(s.research.get(researchId))) throw fail('RESEARCH_EXISTS');
         await request(s.research.add(state));
@@ -115,6 +116,7 @@
     }
 
     const load = (researchId) => read(async (s) => copy(await mustState(s, researchId)));
+    const listResearch = () => read(async (s) => copy(await request(s.research.getAll())));
     const getOwnership = () => read(async (s) => copy((await request(s.control.get(LOCK))) || null));
 
     // Ownership has no timeout: an expired timer is not proof that a provider
@@ -161,7 +163,7 @@
       return write(async (s) => {
         const state = await mustOwn(s, token);
         checkVersion(state, expectedVersion);
-        if (state.phase !== 'READY' || state.activeRunId || state.stopRequested) throw fail('RUN_NOT_ALLOWED');
+        if (state.phase !== 'READY' || state.activeRunId || state.parkedRunId || state.stopRequested) throw fail('RUN_NOT_ALLOWED');
         if (cycleId !== state.nextCycle || pipelineRef !== state.pipelineRef) throw fail('WRONG_PLAN');
         if (maxCalls > state.budget.maxCalls - state.budget.usedCalls) throw fail('BUDGET_EXHAUSTED');
         const run = { researchId: state.researchId, runId, cycleId, pipelineRef, maxCalls,
@@ -321,7 +323,35 @@
       });
     }
 
-    // Owner Stop with a request already sent: the unresolved batches stay UNKNOWN (budget stays spent, nothing is
+    // Park a stopped Basic execution without discarding the run or its unresolved batches.
+    async function parkStopped(token, { expectedVersion, runId } = {}) {
+      if (!str(runId)) throw fail('INVALID_RECOVERY');
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (!state.stopRequested || state.activeRunId !== runId || state.parkedRunId ||
+            !['RECONCILE', 'RUNNING', 'INTENT'].includes(state.phase)) throw fail('PARK_NOT_ALLOWED');
+        const run = await request(s.runs.get([state.researchId, runId]));
+        if (!run) throw fail('RUN_NOT_ACTIVE');
+        const unresolvedBatchIds = [];
+        for (const batch of run.batches) {
+          if (['INTENT', 'UNKNOWN'].includes(batch.status)) { batch.status = 'UNKNOWN'; unresolvedBatchIds.push(batch.batchId); }
+        }
+        run.phase = 'ERROR';
+        run.eventCount += 1;
+        await request(s.events.add({ researchId: state.researchId, runId,
+          eventId: 'RUN_PARKED:' + state.stateVersion, sequence: run.eventCount,
+          payload: { type: 'RUN_PARKED', runId, unresolvedBatchIds } }));
+        await request(s.runs.put(run));
+        state.activeRunId = null;
+        state.parkedRunId = runId;
+        state.phase = 'PAUSED';
+        state.lastDecision = { action: 'PAUSE', reason: 'OWNER_STOP_UNRESOLVED', stateVersion: state.stateVersion };
+        return copy(await writeState(s, state));
+      });
+    }
+
+    // Explicit Close with a request already sent: the unresolved batches stay UNKNOWN (budget stays spent, nothing is
     // resent, no packet is invented), the run is closed and the research ends with an explicit reason, so the
     // transport can be released and a new research can start.
     async function abandonRun(token, { expectedVersion, runId, reason } = {}) {
@@ -397,6 +427,7 @@
         state.nextCycle += 1;
         state.activeRunId = null;
         state.phase = state.stopRequested ? 'PAUSED' : 'EVALUATE';
+        if (state.stopRequested && packet.status === 'RECORDED_RESULT') state.pausedResumePhase = 'EVALUATE';
         await writeState(s, state);
         return copy({ state, packet });
       });
@@ -422,7 +453,10 @@
       return write(async (s) => {
         const state = await mustState(s, researchId);
         state.stopRequested = true;
-        if (!state.activeRunId && state.phase !== 'COMPLETED') state.phase = 'PAUSED';
+        if (!state.activeRunId && state.phase !== 'COMPLETED') {
+          if (state.phase === 'EVALUATE') state.pausedResumePhase = 'EVALUATE';
+          state.phase = 'PAUSED';
+        }
         return copy(await writeState(s, state));
       });
     }
@@ -472,17 +506,60 @@
       return out;
     }
 
-    async function decide(token, { expectedVersion, action, pipelineRef, reason, detail, finalStatus, verificationRecord } = {}) {
+    async function decide(token, { expectedVersion, action, pipelineRef, reason, detail, finalStatus, verificationRecord, maxCalls, reopenLegacy = false, configuration } = {}) {
       if (!['CONTINUE', 'PAUSE', 'COMPLETE', 'RESUME'].includes(action)) throw fail('INVALID_DECISION');
+      if (action !== 'RESUME' && (maxCalls !== undefined || reopenLegacy || configuration !== undefined)) throw fail('INVALID_RESUME');
       const cleanedDetail = cleanDetail(detail);
       if (finalStatus !== undefined && (!FINAL_STATUSES.includes(finalStatus) || action !== 'COMPLETE' ||
           (finalStatus === 'VERIFIED_SOLUTION' && verificationRecord !== true))) throw fail('INVALID_FINAL_STATUS');
       return write(async (s) => {
         const state = await mustOwn(s, token);
         checkVersion(state, expectedVersion);
-        if (state.activeRunId || !['EVALUATE', 'READY', 'PAUSED'].includes(state.phase)) throw fail('DECISION_NOT_ALLOWED');
+        if (action === 'RESUME') {
+          if (state.activeRunId || state.backupRequiredCycleId != null) throw fail('RESUME_NOT_ALLOWED');
+          const legacy = reopenLegacy === true && state.phase === 'COMPLETED' &&
+            state.closedReason === 'OWNER_STOP_UNRESOLVED' && state.finalStatus == null;
+          if (state.phase !== 'PAUSED' && !legacy) throw fail('RESUME_NOT_ALLOWED');
+          const parked = legacy ? state.researchId + ':cycle:' + state.nextCycle : state.parkedRunId;
+          let run = null;
+          if (parked) {
+            run = await request(s.runs.get([state.researchId, parked]));
+            if (!run || run.cycleId !== state.nextCycle || (legacy && run.phase !== 'CLOSED_UNRESOLVED') ||
+                await request(s.packets.get([state.researchId, run.cycleId]))) throw fail('RESUME_RUN_INVALID');
+          }
+          const limit = maxCalls === undefined ? state.budget.maxCalls : maxCalls;
+          if (!pos(limit) || limit < state.budget.maxCalls || (maxCalls !== undefined && limit > 10000)) throw fail('INVALID_BUDGET');
+          if (!parked && limit <= state.budget.usedCalls) throw fail('BUDGET_EXHAUSTED');
+          if (limit !== state.budget.maxCalls) {
+            state.budgetHistory = [...(state.budgetHistory || []), { previousMaxCalls: state.budget.maxCalls,
+              maxCalls: limit, usedCalls: state.budget.usedCalls, stateVersion: state.stateVersion }];
+            state.budget.maxCalls = limit;
+          }
+          if (configuration !== undefined && state.configuration === undefined) state.configuration = copy(configuration);
+          if (pipelineRef !== undefined) {
+            if (!str(pipelineRef) || parked || state.pausedResumePhase === 'EVALUATE') throw fail('INVALID_PIPELINE');
+            state.pipelineRef = pipelineRef;
+          }
+          state.stopRequested = false;
+          if (parked) {
+            if (legacy) {
+              run.phase = 'ERROR';
+              run.eventCount += 1;
+              await request(s.events.add({ researchId: state.researchId, runId: parked,
+                eventId: 'RUN_REOPENED:' + state.stateVersion, sequence: run.eventCount,
+                payload: { type: 'RUN_REOPENED', runId: parked, previousReason: state.closedReason } }));
+              await request(s.runs.put(run));
+              delete state.closedReason;
+            }
+            state.activeRunId = parked;
+            delete state.parkedRunId;
+            state.phase = 'RECONCILE';
+          } else state.phase = state.pausedResumePhase === 'EVALUATE' ? 'EVALUATE' : 'READY';
+          delete state.pausedResumePhase;
+          return copy(await writeState(s, state));
+        }
+        if (state.activeRunId || state.parkedRunId || !['EVALUATE', 'READY', 'PAUSED'].includes(state.phase)) throw fail('DECISION_NOT_ALLOWED');
         if (action === 'CONTINUE' && state.stopRequested) throw fail('STOP_REQUESTED');
-        if (action === 'RESUME' && state.phase !== 'PAUSED') throw fail('RESUME_NOT_ALLOWED');
         if (pipelineRef !== undefined) {
           if (!str(pipelineRef) || !['CONTINUE', 'RESUME'].includes(action)) throw fail('INVALID_PIPELINE');
           state.pipelineRef = pipelineRef; // C03 validates schema before dispatch
@@ -501,7 +578,6 @@
           if (cleanedDetail !== undefined) { const { schema: _s, verificationRecord: _v, ...light } = cleanedDetail; state.lastDecision.detail = copy(light); }
         }
         if (finalStatus !== undefined) state.finalStatus = finalStatus;
-        if (action === 'RESUME') state.stopRequested = false;
         state.phase = action === 'COMPLETE' ? 'COMPLETED' : action === 'PAUSE' ? 'PAUSED' : 'READY';
         // No decision here asserts mathematical proof.
         return copy(await writeState(s, state));
@@ -552,8 +628,8 @@
       return copy(snapshot);
     }
 
-    return Object.freeze({ createResearch, load, getOwnership, acquire, release, prepareRun, journalFor,
-      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, abandonRun, abandonUnknown, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
+    return Object.freeze({ createResearch, load, listResearch, getOwnership, acquire, release, prepareRun, journalFor,
+      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, parkStopped, abandonRun, abandonUnknown, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
       close: () => db.close() });
   }
   const api = Object.freeze({ createStateStore, StoreError, DB_NAME, DB_VERSION });

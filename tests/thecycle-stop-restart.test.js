@@ -52,16 +52,16 @@ test('Stop before any request: nothing sent, transport free, the next start runs
   assert.equal(x.prompts.length, 1); assert.equal(second.state.budget.usedCalls, 1);
 });
 
-test('Stop during a send (outcome unknown): research closed OWNER_STOP_UNRESOLVED, unknown batch kept, transport free, new start does not resend', async () => {
+test('Stop during a send (outcome unknown): research parked, unknown batch kept, transport free, new start does not resend', async () => {
   const x = await fixture({ onSend: async ({ n, runner }) => { if (n === 1) { await runner.stop(); return { byModel: {} }; } return null; } });
   const first = await x.runner.start({ task: 'Investigate', maxCalls: 3 });
   assert.equal(x.prompts.length, 1);
-  assert.equal(first.state.phase, 'COMPLETED'); assert.equal(first.state.closedReason, 'OWNER_STOP_UNRESOLVED');
-  assert.equal(first.state.activeRunId, null); assert.equal(first.outcomes.at(-1).outcome, 'RUN_CLOSED');
+  assert.equal(first.state.phase, 'PAUSED'); assert.equal(first.state.lastDecision.reason, 'OWNER_STOP_UNRESOLVED');
+  assert.equal(first.state.activeRunId, null); assert.equal(first.state.parkedRunId, first.researchId + ':cycle:1'); assert.equal(first.outcomes.at(-1).outcome, 'RUN_PARKED');
   const run = await x.store.getRun(first.researchId, first.researchId + ':cycle:1');
-  assert.equal(run.phase, 'CLOSED_UNRESOLVED'); assert.deepEqual(run.batches.map((b) => b.status), ['UNKNOWN']);
+  assert.equal(run.phase, 'ERROR'); assert.deepEqual(run.batches.map((b) => b.status), ['UNKNOWN']);
   const events = await x.store.getEvents(first.researchId, run.runId);
-  assert.ok(events.some((e) => e.eventId === 'RUN_CLOSED' && e.payload.reason === 'OWNER_STOP_UNRESOLVED'));
+  assert.ok(events.some((e) => e.payload.type === 'RUN_PARKED'));
   assert.equal((await x.store.getOwnership())?.ownerId ?? null, null);
   // new research, no reload
   const second = await x.runner.start({ task: 'Second research', maxCalls: 1 });
@@ -69,8 +69,19 @@ test('Stop during a send (outcome unknown): research closed OWNER_STOP_UNRESOLVE
   assert.equal(x.prompts.length, 2, 'exactly one new request, the old batch was not resent');
   assert.equal(x.prompts[1].runId, second.researchId + ':cycle:1');
   assert.equal(second.state.budget.usedCalls, 1);
-  // the old research stays closed and its batch unresolved
-  assert.equal((await x.store.load(first.researchId)).phase, 'COMPLETED');
+  // The old research is resumable; its original batch is never resent.
+  assert.equal((await x.store.load(first.researchId)).phase, 'PAUSED');
+  const pending = await x.runner.resume(first.researchId, { maxCalls: 5 });
+  assert.equal(pending.state.phase, 'PAUSED'); assert.equal(x.prompts.length, 2);
+  assert.equal(pending.state.budget.maxCalls, 5);
+  assert.equal(pending.state.parkedRunId, run.runId);
+  await x.runner.resolveUnknown(first.researchId, 'abandon');
+  const continued = await x.runner.resume(first.researchId);
+  assert.equal(continued.state.budget.usedCalls, 5);
+  assert.equal(continued.state.budget.maxCalls, 5);
+  assert.equal(x.prompts[2].runId, first.researchId + ':cycle:2');
+  assert.equal((await x.store.getPacket(first.researchId, 1)).status, 'PARTIAL_RECOVERY');
+  assert.deepEqual((await x.store.getRun(first.researchId, run.runId)).batches.map(b=>b.status), ['ABANDONED_UNKNOWN']);
 });
 
 test('abandonRun refuses without Stop and for a foreign owner', async () => {
@@ -141,4 +152,24 @@ test('no access to the backup directory: run blocked before the first request, t
   assert.equal(denied.directory.outcome, 'DENIED'); assert.equal(denied.directory.source, 'runtime');
   assert.match(telemetryApi.markdown(events), /BACKUP_DIRECTORY_PERMISSION/);
   delete globalThis.indexedDB;
+});
+
+
+test('extend budget on the same saved research, preserve old packet and continue with a new cycle', async () => {
+  const x = await fixture();
+  const first = await x.runner.start({ task: 'Investigate', maxCalls: 1 });
+  const packet = await x.store.getPacket(first.researchId, 1);
+  await x.runner.start({ task: 'Other research', maxCalls: 1 });
+  assert.equal((await x.runner.listResearch()).length, 2);
+  await assert.rejects(x.runner.resume(first.researchId), /BUDGET_EXHAUSTED/);
+  await assert.rejects(x.runner.resume(first.researchId, { maxCalls: 0 }), /INVALID_BUDGET/);
+  const resumed = await x.runner.resume(first.researchId, { maxCalls: 3 });
+  assert.equal(resumed.researchId, first.researchId);
+  assert.equal(resumed.state.budget.usedCalls, 3);
+  assert.equal(resumed.state.budget.maxCalls, 3);
+  assert.deepEqual(await x.store.getPacket(first.researchId, 1), packet);
+  assert.equal(x.prompts[2].runId, first.researchId + ':cycle:2');
+  assert.match(x.prompts[2].text, /Evidence 1/);
+  assert.equal(resumed.state.budgetHistory.length, 1);
+  assert.equal(resumed.state.configuration.contextMode, 'all-evidence');
 });

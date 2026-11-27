@@ -9067,13 +9067,32 @@ document.addEventListener('click', (event) => {
                 runner = createPageCircle();
                 // Taken before the first await: a Run click in between sees the page busy.
                 circlePageRunner = runner;
-                const id = await runner.latest();
+                let id = await runner.latest();
+                let maxCalls, reopenLegacy = false;
+                if (mode === 'resume') {
+                    const rows = (await runner.listResearch()).filter(s => s.phase !== 'COMPLETED' || s.recoverableLegacy);
+                    if (!rows.length) { showCircleStatus('Circle: нет незавершённых исследований.'); return false; }
+                    const index = Math.max(0, rows.findIndex(s => s.researchId === id));
+                    const choice = window.prompt('Выберите исследование (номер):\n' + rows.map((s, i) => (i + 1) + '. ' + s.task.slice(0, 100) + ' · ' + s.phase + ' · ' + s.budget.usedCalls + '/' + s.budget.maxCalls).join('\n'), String(index + 1));
+                    if (choice === null) return false;
+                    const picked = rows[Number(choice) - 1];
+                    if (!picked || !Number.isSafeInteger(Number(choice))) throw Error('CIRCLE_INPUT_INVALID');
+                    id = picked.researchId;
+                    reopenLegacy = picked.recoverableLegacy;
+                    if (reopenLegacy && !window.confirm('Старая версия закрыла это исследование с неизвестным исходом запроса. Восстановить его для сверки?')) return false;
+                    if (picked.phase === 'PAUSED' || reopenLegacy) {
+                        const value = window.prompt('Общий лимит вызовов (использовано ' + picked.budget.usedCalls + '; прежний лимит ' + picked.budget.maxCalls + ')', String(picked.budget.maxCalls));
+                        if (value === null) return false;
+                        maxCalls = Number(value);
+                        if (!Number.isSafeInteger(maxCalls) || maxCalls < picked.budget.maxCalls || maxCalls > 10000) throw Error('INVALID_BUDGET');
+                    }
+                }
                 if (!id) { showCircleStatus('Circle: исследований ещё нет.'); return false; }
                 setPipelineEditingEnabled(false);
                 setPipelineRunUi(true);
                 updateDebateButtonsUi();
                 showCircleStatus('Circle: продолжение исследования, проверка бэкапа.');
-                const options = { onProgress: showCircleStatus };
+                const options = { onProgress: showCircleStatus, maxCalls, reopenLegacy };
                 const result = mode === 'resume' ? await runner.resume(id, options) : await runner.resolveUnknown(id, mode === 'close' ? 'close' : 'abandon', options);
                 showCircleResult(result);
                 showNotification('Circle: ' + (result.outcomes?.at(-1)?.outcome || result.state?.phase), 'info');

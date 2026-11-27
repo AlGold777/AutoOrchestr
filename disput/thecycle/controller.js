@@ -274,7 +274,21 @@
       return result(state, 'STOP_REQUESTED');
     }
 
-    // Owner Stop whose request is already out: close the research as unresolved (the batch stays UNKNOWN, nothing
+    // Stop and Close are distinct: park keeps an unfinished research resumable.
+    async function parkStopped(researchId) {
+      if (busy) return { outcome: 'BUSY' };
+      busy = true;
+      try {
+        const state = await safeState(researchId);
+        if (typeof store.parkStopped !== 'function' || !state.stopRequested || !state.activeRunId)
+          throw fail('PARK_NOT_ALLOWED');
+        const fence = await owned(researchId);
+        const next = await store.parkStopped(fence, { expectedVersion: state.stateVersion, runId: state.activeRunId });
+        return result(next, 'RUN_PARKED', { reason: 'OWNER_STOP_UNRESOLVED', runId: state.activeRunId });
+      } finally { busy = false; }
+    }
+
+    // Explicit Close whose request is already out: close the research as unresolved (the batch stays UNKNOWN, nothing
     // is resent) and release the transport, so a new research starts without a reload.
     async function closeStopped(researchId, reason = 'OWNER_STOP_UNRESOLVED') {
       if (!str(researchId)) throw fail('INVALID_RESEARCH');
@@ -315,17 +329,30 @@
       } finally { busy = false; }
     }
 
-    async function resume(researchId) {
+    async function resume(researchId, { maxCalls, pipelineRef, reopenLegacy = false, configuration } = {}) {
       if (busy) return { outcome: 'BUSY' };
       busy = true;
       try {
         let state = await safeState(researchId);
-        if (state.phase !== 'PAUSED' || state.activeRunId) throw fail('RESUME_NOT_ALLOWED');
-        if (state.budget.usedCalls >= state.budget.maxCalls) throw fail('BUDGET_EXHAUSTED');
+        const legacy = reopenLegacy === true && state.phase === 'COMPLETED' && state.closedReason === 'OWNER_STOP_UNRESOLVED' && state.finalStatus == null;
+        if ((state.phase !== 'PAUSED' && !legacy) || state.activeRunId) throw fail('RESUME_NOT_ALLOWED');
+        if (maxCalls !== undefined && (!pos(maxCalls) || maxCalls < state.budget.maxCalls || maxCalls > 10000)) throw fail('INVALID_BUDGET');
+        if (!legacy && !state.parkedRunId && state.budget.usedCalls >= (maxCalls ?? state.budget.maxCalls)) throw fail('BUDGET_EXHAUSTED');
         const fence = await owned(researchId);
         state = await safeState(researchId);
-        const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'RESUME' });
+        const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'RESUME', maxCalls, pipelineRef, reopenLegacy, configuration });
         return result(next, 'RESUMED');
+      } finally { busy = false; }
+    }
+
+    async function claimRecovery(researchId) {
+      if (busy) throw fail('RECOVERY_BUSY');
+      busy = true;
+      try {
+        const state = await safeState(researchId);
+        if (state.phase !== 'RECONCILE' || !state.activeRunId) throw fail('RECOVERY_NOT_ALLOWED');
+        await owned(researchId);
+        return result(await safeState(researchId), 'OWNERSHIP_ACQUIRED');
       } finally { busy = false; }
     }
 
@@ -359,7 +386,7 @@
       } finally { busy = false; }
     }
 
-    return Object.freeze({ tick, stop, resume, takeOver, reconcile, abandonUnknown, closeStopped, releaseSettled, ownerId });
+    return Object.freeze({ tick, stop, resume, takeOver, reconcile, abandonUnknown, parkStopped, closeStopped, claimRecovery, releaseSettled, ownerId });
   }
 
   const api = Object.freeze({ createController, fixedPolicy, isCycleSettled, ControllerError });
