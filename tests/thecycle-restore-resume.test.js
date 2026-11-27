@@ -383,3 +383,70 @@ test('a close without a writable directory still closes and reports the missing 
   assert.equal(closed.state.phase, 'COMPLETED');
   assert.deepEqual(closed.closeCopy, { verified: false, error: 'BACKUP_DIRECTORY_PERMISSION_REQUIRED' });
 });
+
+// R01: a raised budget or a human decision is data of this browser too, even when no new event was recorded after the copy.
+async function copyThenChange(change) {
+  const here = await browser(), dir = directory(), store = await createStateStore({ indexedDB: here.indexedDB });
+  await store.createResearch({ researchId: 'r-late', task: 'T', pipelineRef: 'p', maxCalls: 4 });
+  await createBackupService({ store, sink: createDirectorySink({ directory: dir }) }).save('thecycle-manual-late');
+  const token = await store.acquire({ researchId: 'r-late', ownerId: 'tab' });
+  await change(store, token, async () => (await store.load('r-late')).stateVersion);
+  return { here, dir };
+}
+
+test('a budget raised after the copy is not lost: the restore is refused, the active database stays', async () => {
+  const { here, dir } = await copyThenChange(async (store, token, version) =>
+    store.raiseBudget(token, { expectedVersion: await version(), maxCalls: 9 }));
+  await assert.rejects(here.restoreCopy(dir, 'thecycle-manual-late'), { code: 'RESTORE_ACTIVE_NEWER' });
+  assert.deepEqual(await here.pointer(), { revision: 0, activeDatabase: 'auto-orchestr-thecycle' });
+});
+
+test('a decision made after the copy is not lost: the restore is refused, the active database stays', async () => {
+  const { here, dir } = await copyThenChange(async (store, token, version) =>
+    store.decide(token, { expectedVersion: await version(), action: 'CONTINUE', reason: 'late decision' }));
+  await assert.rejects(here.restoreCopy(dir, 'thecycle-manual-late'), { code: 'RESTORE_ACTIVE_NEWER' });
+  assert.deepEqual(await here.pointer(), { revision: 0, activeDatabase: 'auto-orchestr-thecycle' });
+});
+
+test('an unchanged browser restores its own copy: no budget or decision difference is invented', async () => {
+  const { here, dir } = await copyThenChange(async () => {});
+  const result = await here.restoreCopy(dir, 'thecycle-manual-late');
+  assert.equal(result.researchCount, 1);
+});
+
+test('a copy with a later budget than the active database is restored with that budget', async () => {
+  const there = await browser(), dir = directory(), other = await createStateStore({ indexedDB: createFakeIndexedDB() });
+  await other.createResearch({ researchId: 'r-late', task: 'T', pipelineRef: 'p', maxCalls: 4 });
+  const token = await other.acquire({ researchId: 'r-late', ownerId: 'tab' });
+  await other.raiseBudget(token, { expectedVersion: (await other.load('r-late')).stateVersion, maxCalls: 9 });
+  await createBackupService({ store: other, sink: createDirectorySink({ directory: dir }) }).save('thecycle-manual-budget');
+  const result = await there.restoreCopy(dir, 'thecycle-manual-budget');
+  const restored = await createStateStore({ indexedDB: there.indexedDB, name: result.database });
+  assert.equal((await restored.load('r-late')).budget.maxCalls, 9);
+});
+
+// R02: the copy is read once; a file replaced after the check cannot change what is restored.
+test('the copy file is read once; a replacement after the check does not enter the restored database', async () => {
+  const there = await browser(), dir = directory();
+  const original = await createStateStore({ indexedDB: createFakeIndexedDB() });
+  await original.createResearch({ researchId: 'r-first', task: 'T', pipelineRef: 'p', maxCalls: 4 });
+  await createBackupService({ store: original, sink: createDirectorySink({ directory: dir }) }).save('thecycle-manual-swap');
+  const stranger = await createStateStore({ indexedDB: createFakeIndexedDB() });
+  await stranger.createResearch({ researchId: 'r-swapped', task: 'T', pipelineRef: 'p', maxCalls: 4 });
+  const other = directory();
+  await createBackupService({ store: stranger, sink: createDirectorySink({ directory: other }) }).save('thecycle-manual-swap');
+  const FILE = 'thecycle-manual-swap.thecycle.json';
+  const first = dir.files.get(FILE), second = other.files.get(FILE);
+  // After the first read the file is replaced by another valid copy.
+  let reads = 0;
+  const handle = dir.getFileHandle.bind(dir);
+  dir.getFileHandle = async (name, options) => {
+    const real = await handle(name, options);
+    if (name !== FILE) return real;
+    return { ...real, async getFile() { reads += 1; const file = await real.getFile(); return { ...file, async text() { const text = await file.text(); if (reads === 1) first.text = second.text; return text; } }; } };
+  };
+  const result = await there.restoreCopy(dir, 'thecycle-manual-swap');
+  assert.equal(reads, 1);
+  const restored = await createStateStore({ indexedDB: there.indexedDB, name: result.database });
+  assert.deepEqual((await restored.listResearch()).map((r) => r.researchId), ['r-first']);
+});

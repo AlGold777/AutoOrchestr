@@ -3,7 +3,7 @@
 (function initTheCycleRecoveryRuntime(root) {
   'use strict';
   async function recover({ directory, stateStore, indexedDB = root.indexedDB,
-    backupKey, targetName, verifyTransportQuiescence } = {}) {
+    backupKey, targetName, envelope, verifyTransportQuiescence } = {}) {
     if (!root.TheCycleDirectorySink || !root.TheCycleBackup ||
         !root.TheCycleRestore || !stateStore ||
         typeof verifyTransportQuiescence !== 'function')
@@ -18,7 +18,7 @@
     const service = root.TheCycleBackup.createBackupService({ store: stateStore, sink });
     const result = await root.TheCycleRestore.restore({
       backupService: service, stateStore, indexedDB,
-      key: backupKey, targetName, transportQuiescent: true
+      key: backupKey, targetName, envelope, transportQuiescent: true
     });
     return Object.freeze({ ...result, quiescenceEvidence: {
       source: evidence.source, reference: evidence.reference

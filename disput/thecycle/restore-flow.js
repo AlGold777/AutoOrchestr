@@ -5,16 +5,36 @@ const HB_PREFIX='thecycle.circle.heartbeat.',HB_FRESH_MS=180000;
 const PENDING_KEY='thecycle.circle.pending',ACTIVATION_KEY='thecycle.activation';
 const RESTORED_PHASES=['PAUSED','RECONCILE','COMPLETED'];
 const fail=(code,cause)=>Object.assign(Error(code),{code,...(cause?{cause}:{})});
-// True when this browser has recorded something the copy does not (a research, a sent request or its answer, a close):
-// switching to the copy would lose it, and the request could be sent again. State versions are not compared: restore and
-// takeover raise them.
+// True when this browser has recorded something the copy does not (a research, a sent request or its answer, a close, a raised
+// budget, a human decision): switching to the copy would lose it, and the request could be sent again. State versions are not
+// compared: restore and takeover raise them.
 function activeIsNewer(active,copy){
  const saved=new Map(copy.stores.research.map(row=>[row.researchId,row]));
  const eventId=row=>JSON.stringify([row.researchId,row.runId,row.eventId]);
  const events=new Set(copy.stores.events.map(eventId));
- return active.stores.research.some(local=>!saved.has(local.researchId)||
-   (local.phase==='COMPLETED'&&saved.get(local.researchId).phase!=='COMPLETED'))||
-  active.stores.events.some(local=>!events.has(eventId(local)));
+ // Budget changes and decisions of one research, as comparable records: what the active database holds must all be in the copy.
+ const records=(research,packets)=>{
+  const out=new Set();
+  for(const change of research.budgetHistory||[])out.add('budget:'+JSON.stringify(change));
+  if(research.lastDecision)out.add('decision:'+JSON.stringify(research.lastDecision));
+  for(const packet of packets.filter(row=>row.researchId===research.researchId)){
+   for(const decision of packet.decisionHistory||[])out.add('decision:'+JSON.stringify([packet.cycleId,decision]));
+   if(packet.decision)out.add('decision:'+JSON.stringify([packet.cycleId,packet.decision]));
+  }
+  return out;
+ };
+ const packetKey=row=>JSON.stringify([row.researchId,row.cycleId]);
+ const packets=new Set(copy.stores.packets.map(packetKey));
+ return active.stores.research.some(local=>{
+   const saved_=saved.get(local.researchId);
+   if(!saved_||(local.phase==='COMPLETED'&&saved_.phase!=='COMPLETED'))return true;
+   if(Number(local.budget?.maxCalls)>Number(saved_.budget?.maxCalls))return true;
+   const known=records(saved_,copy.stores.packets);
+   for(const record of records(local,active.stores.packets))if(!known.has(record))return true;
+   return false;
+  })||
+  active.stores.events.some(local=>!events.has(eventId(local)))||
+  active.stores.packets.some(local=>!packets.has(packetKey(local)));
 }
 // A sent request whose outcome the copy does not know: the person chooses what to do with it on the Circle page.
 const hasUnknownRequest=snapshot=>snapshot.stores.research.some(research=>research.phase!=='COMPLETED'&&
@@ -49,13 +69,15 @@ async function restoreFromCopy({backupKey,directory,storage=root.chrome?.storage
   // An empty copy would hide the researches of this browser behind an empty database.
   const sink=root.TheCycleDirectorySink.createDirectorySink({directory});
   const service=root.TheCycleBackup.createBackupService({store:source,sink});
-  const info=await service.inspect(backupKey);
+  // The copy file is read once: the same verified envelope is checked, compared and written into the new database.
+  const envelope=await service.getVerifiedEnvelope(backupKey);
+  const content=await source.verifyBackup(envelope);
+  const info={sha256:envelope.sha256,counts:Object.fromEntries(Object.entries(content.stores).map(([name,rows])=>[name,rows.length]))};
   if(!info.counts.research)throw fail('RESTORE_COPY_EMPTY');
-  const content=await source.verifyBackup(await service.getVerifiedEnvelope(backupKey));
   if(activeIsNewer(await source.exportSnapshot(),content))throw fail('RESTORE_ACTIVE_NEWER');
   // Integrity and compatibility, a new database, written rows read back: all inside the recovery runtime.
   const targetName='auto-orchestr-thecycle-restore-'+String(uuid()).replace(/[^a-zA-Z0-9_-]/g,'');
-  const restored=await root.TheCycleRecoveryRuntime.recover({directory,stateStore:source,indexedDB,backupKey,targetName,
+  const restored=await root.TheCycleRecoveryRuntime.recover({directory,stateStore:source,indexedDB,backupKey,targetName,envelope,
    verifyTransportQuiescence:observeTransport});
   const target=await open(root.TheCycleStateStore.createStateStore({indexedDB,name:targetName}));
   const researches=await target.listResearch();

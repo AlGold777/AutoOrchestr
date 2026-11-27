@@ -59,13 +59,14 @@
     });
   }
   async function restore({ backupService, stateStore, indexedDB = root.indexedDB,
-    key, targetName, transportQuiescent = false } = {}) {
+    key, targetName, envelope: given, transportQuiescent = false } = {}) {
     if (!backupService || typeof backupService.getVerifiedEnvelope !== 'function' ||
         !stateStore || typeof stateStore.verifyBackup !== 'function' ||
         !indexedDB || !validString(key) || !validString(targetName) ||
         !/^auto-orchestr-thecycle-restore-[a-zA-Z0-9_-]{8,}$/.test(targetName) ||
         transportQuiescent !== true) throw new Error('RESTORE_PRECONDITION_FAILED');
-    const envelope = await backupService.getVerifiedEnvelope(key);
+    // A caller that already verified the copy passes the very envelope it checked: the file is not read a second time.
+    const envelope = given ? JSON.parse(JSON.stringify(given)) : await backupService.getVerifiedEnvelope(key);
     const snapshot = validate(await stateStore.verifyBackup(envelope));
     const restored = structuredClone(snapshot);
     for (const state of restored.stores.research) {
