@@ -11059,6 +11059,43 @@ const RETRY_REREAD_POLL_MS = 2000;
 const RETRY_REREAD_QUIET_POLLS = 2;
 const RETRY_REREAD_WAIT_MS = 60000;
 
+// Runs in the provider page: does the page text (without the composer) end with the tag, the last line the model is asked to write?
+// Self-contained (serialized into the page). Read-only. Same tail rule as ANSWER_ENDING_WITH_TAG_PROBE: provider chrome may follow.
+const PAGE_ENDS_WITH_TAG_PROBE = (tag) => {
+  const needle = String(tag || '').toLowerCase();
+  if (!needle || !document.body) return false;
+  const clone = document.body.cloneNode(true);
+  clone.querySelectorAll('textarea, input, [contenteditable], script, style').forEach((node) => node.remove());
+  const text = String(clone.textContent || '').replace(/\s+/g, ' ').toLowerCase().trimEnd();
+  const at = text.lastIndexOf(needle);
+  return at >= 0 && text.slice(at + needle.length).trim().length <= 80;
+};
+
+async function pageEndsWithTag(tabId, prompt) {
+  const tag = String(String(prompt || '').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0] || '').toLowerCase();
+  if (!tag || !isValidTabId(tabId) || typeof chrome?.scripting?.executeScript !== 'function') return false;
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: PAGE_ENDS_WITH_TAG_PROBE, args: [tag] });
+    return results?.[0]?.result === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// The open tab of this model whose page ends with the delivery token of one of the round's requests (the answer is complete there).
+async function findTabEndingWithOwnTag(llmName, skipTabId, roundPrompts) {
+  if (typeof chrome?.tabs?.query !== 'function') return null;
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch (_) { return null; }
+  for (const tab of Array.isArray(tabs) ? tabs : []) {
+    if (!tab || tab.id === skipTabId || !isValidTabId(tab.id) || !isEligibleTabForLlm(llmName, tab)) continue;
+    for (const prompt of roundPrompts) {
+      if (await pageEndsWithTag(tab.id, prompt) || await pageHoldsAnswerEndingWithTag(tab.id, prompt, llmName)) return tab.id;
+    }
+  }
+  return null;
+}
+
 async function rereadOwnTurnForBasic(message = {}) {
   const llmName = String(message.llmName || '');
   // The requests of this participant in the round (the original and its corrections): the answer of any of them is taken.
@@ -11069,13 +11106,22 @@ async function rereadOwnTurnForBasic(message = {}) {
   const previousLength = previousText.length;
   const entry = jobState?.llms?.[llmName];
   if (!llmName || !roundPrompts.length || !entry) return { found: false, reason: 'reread_unavailable' };
-  const tabId = Number(message.tabId) || Number(entry.tabId) || null;
-  if (!isValidTabId(tabId)) return { found: false, reason: 'no_tab' };
+  let tabId = Number(message.tabId) || Number(entry.tabId) || null;
   let ownTurn = false;
-  for (const prompt of roundPrompts) {
-    if (await pageHoldsOwnPromptTurn(tabId, prompt, llmName) || await pageHoldsAnswerEndingWithTag(tabId, prompt, llmName)) { ownTurn = true; break; }
+  if (isValidTabId(tabId)) {
+    for (const prompt of roundPrompts) {
+      if (await pageHoldsOwnPromptTurn(tabId, prompt, llmName) || await pageHoldsAnswerEndingWithTag(tabId, prompt, llmName)
+        || await pageEndsWithTag(tabId, prompt)) { ownTurn = true; break; }
+    }
   }
-  if (!ownTurn) return { found: false, reason: 'no_own_turn' };
+  if (!ownTurn) {
+    // The bound tab is closed, replaced or holds another chat: the request is looked for among the open tabs of this model.
+    const foundTabId = await findTabEndingWithOwnTag(llmName, tabId, roundPrompts);
+    if (!isValidTabId(foundTabId)) return { found: false, reason: isValidTabId(tabId) ? 'no_own_turn' : 'no_tab' };
+    tabId = foundTabId;
+    entry.tabId = foundTabId;
+    ownTurn = true;
+  }
   try {
     await handleManualResponsePing(llmName, {
       getIt: true, manualLatestRecovery: true, manualRecovery: true, advanceStrategy: false, reason: 'retry_reread_page'
