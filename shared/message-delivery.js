@@ -312,6 +312,15 @@
       metadata.terminal = true;
       metadata.status = 'SUCCESS';
     }
+    // C-7. The token of this request at the tail proves ownership and completeness. A candidate the
+    // background could not verify (answer_not_verified) must not keep its "unproven" marks, or the
+    // pipeline takes it as final and drops the text. Only for a message that carries the token itself.
+    if (endMarkerSeen && !progressOnly) {
+      delete metadata.attributionState;
+      delete metadata.attributionLabel;
+      if (metadata.verificationState === 'candidate') metadata.verificationState = 'verified';
+      if (metadata.answerState === 'candidate') metadata.answerState = 'complete';
+    }
     if (progressOnly) {
       metadata.status = 'PARTIAL';
       metadata.reason = 'progress_only';

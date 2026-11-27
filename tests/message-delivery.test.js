@@ -57,6 +57,23 @@ describe('message delivery', () => {
     expect(Delivery.receive({ llmName: 'GPT', transportRequestId: 'request-2', answer: 'Incomplete' }).metadata.answerEndMarkerSeen).toBe(false);
   });
 
+  // C-7, live run 2026-11-27: a complete Gemini answer was recorded as no answer.
+  test('a candidate carrying the token of its request is a proven answer', () => {
+    const prompts = Delivery.prepare({ prompt: 'Q', models: ['Gemini'], requestIds: { Gemini: 'req-g' } });
+    const token = /\[\[AO-[a-z0-9]{6}\]\]/.exec(prompts.Gemini)[0];
+    const candidate = () => ({
+      status: 'RECEIVING', terminal: false, answerState: 'candidate', verificationState: 'candidate',
+      attributionState: 'unproven', attributionLabel: 'Verification pending', reason: 'answer_not_verified'
+    });
+    const proven = Delivery.receive({ type: 'LLM_PARTIAL_RESPONSE', llmName: 'Gemini', transportRequestId: 'req-g', answer: `Вердикт готов, все пункты проверены.\n${token}`, metadata: candidate() });
+    expect(proven.metadata).toMatchObject({ terminal: true, status: 'SUCCESS', verificationState: 'verified', answerState: 'complete' });
+    expect(proven.metadata.attributionState).toBeUndefined();
+    expect(proven.metadata.attributionLabel).toBeUndefined();
+    // A later message without the token keeps its own marks, though the request has already seen the token.
+    const bare = Delivery.receive({ type: 'LLM_PARTIAL_RESPONSE', llmName: 'Gemini', transportRequestId: 'req-g', answer: 'Другой текст без метки', metadata: candidate() });
+    expect(bare.metadata.attributionState).toBe('unproven');
+  });
+
   test('partial answers are cleaned but never marked', () => {
     Delivery.prepare({ prompt: 'Q', models: ['GPT'] });
     const partial = Delivery.receive({ llmName: 'GPT', answer: 'Печатает…' }, { final: false });
