@@ -195,8 +195,8 @@ function parseVerification(text,{procedure,independence}={}){
   if(!isObj(c)||Object.keys(c).some(k=>!['id','result','evidence'].includes(k))||typeof c.id!=='string'||!['PASS','FAIL'].includes(c.result)||typeof c.evidence!=='string'){defects.push('checks: элемент не вида {id,result,evidence}');continue;}
   if(!ids.has(c.id)){defects.push('checks: неизвестный id '+cut(c.id,60));continue;}
   if(seen.has(c.id)){defects.push('checks: повтор id '+c.id);continue;}
-  seen.add(c.id);checks.push({id:c.id,result:c.result,evidence:cut(c.evidence,1000)});
-  if(c.result==='PASS'&&!str(c.evidence))defects.push('checks: PASS без evidence: '+cut(c.id,60));
+  seen.add(c.id);const evidence=cut(c.evidence,1000);checks.push({id:c.id,result:c.result,evidence});
+  if(c.result==='PASS'&&!str(evidence))defects.push('checks: PASS без evidence: '+cut(c.id,60));
  }
  if(Array.isArray(d.checks)&&[...ids].some(id=>!seen.has(id)))defects.push('checks: неполный набор id');
  let limitations=[];

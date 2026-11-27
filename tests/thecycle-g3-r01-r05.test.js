@@ -63,6 +63,11 @@ test('R02: PASS with empty evidence is a defect: INSUFFICIENT', () => {
   assert.equal(one({ id: 'p1', result: 'FAIL', evidence: '' }, [], 'CONTRADICTED').verdict, 'CONTRADICTED');
 });
 
+test('R02: PASS evidence is checked as stored, after the 1000-character cut', () => {
+  const res = one({ ...p1, evidence: ' '.repeat(1000) + 'proof' });
+  assert.equal(res.verdict, 'INSUFFICIENT'); assert.match(res.downgrades.join('\n'), /без evidence/);
+});
+
 test('R02: VERIFIED with limitations is lowered to SUPPORTED; other verdicts stay', async () => {
   const res = one(p1, ['проверен только частный случай']);
   assert.equal(res.verdict, 'SUPPORTED'); assert.match(res.downgrades.join('\n'), /limitations/);
