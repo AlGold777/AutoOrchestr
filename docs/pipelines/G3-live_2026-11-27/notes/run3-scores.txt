@@ -1,0 +1,8 @@
+0 GPT R1 ⚠ копия неполная  blocks 1 {"score": 13, "max": 22, "failed": ["robust_ids", "robust_cost", "robust_value", "robust_worst", "after_B", "after_E", "after_J", "after_O", "after_R"
+1 GPT R2 printing 07:47 РЕ blocks 1 {"score": 5, "max": 22, "failed": ["top2_ids", "top2_cost", "top2_value", "top2_uncovered", "top3_ids", "top3_cost", "top3_value", "top3_uncovered", "
+2 GPT R1 printing 07:47 {" NO_JSON
+3 GPT R1 printing 07:48 1. blocks 1 {"score": 13, "max": 22, "failed": ["robust_ids", "robust_cost", "robust_value", "robust_worst", "after_B", "after_E", "after_J", "after_O", "after_R"
+4 DeepSeek R2 uncompleted  NO_JSON
+5 GPT R2 printing 08:10 1. NO_JSON
+6 DeepSeek R3 ⚠ копия непо NO_JSON
+7 GPT R3 08:32 Δ 2 1. Итог NO_JSON
