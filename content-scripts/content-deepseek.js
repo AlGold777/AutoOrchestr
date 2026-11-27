@@ -716,7 +716,8 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     clean(content, options = {}) {
       this.stats = { elementsRemoved: 0, charactersRemoved: 0, rulesApplied: 0 };
 
-      const isHtml = /<\/?[a-z][\s\S]*>/i.test(content);
+      // Extracted answer text may itself contain HTML examples: parse only explicitly identified HTML.
+      const isHtml = options.format === 'html';
       let text = content;
 
       if (isHtml) {
@@ -737,26 +738,8 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         }
       }
 
-      const patterns = [
-        ...this.rules.uiPhrases,
-        ...this.rules.timePatterns,
-        ...this.rules.urls,
-        ...this.rules.formatting,
-        ...this.rules.stripTags
-      ];
-
-      let out = text;
-      for (const p of patterns) {
-        const before = out.length;
-        out = out.replace(p, ' ');
-        const diff = before - out.length;
-        if (diff > 0) {
-          this.stats.rulesApplied++;
-          this.stats.charactersRemoved += diff;
-        }
-      }
-
-      out = out.replace(/\n\s*\n\s*\n/g, '\n\n').replace(/[ \t]+/g, ' ').trim();
+      // UI elements are excluded when the answer DOM is selected; deleting words, times or links from prose corrupts answers and code.
+      let out = String(text || '').trim();
 
       const maxLength = options.maxLength || null;
       if (maxLength && out.length > maxLength) {
@@ -1549,7 +1532,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
                 let html = String(answerHtml || '').trim();
                 if (!String(cleanedPipeline || '').trim()) {
                   const domFallback = grabLatestAssistantText();
-                  cleanedPipeline = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000 });
+                  cleanedPipeline = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000, format: domFallback.text ? 'text' : 'html' });
                   if (!html && domFallback.html) html = domFallback.html;
                 }
                 if (window.ContentUtils?.isBaselineEquivalent?.(cleanedPipeline, preDispatchBaseline)) {
@@ -1588,7 +1571,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
             let cleanedResponse = contentCleaner.clean(response, { maxLength: 200000 });
             if (!String(cleanedResponse || '').trim()) {
               const domFallback = grabLatestAssistantText();
-              cleanedResponse = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000 });
+              cleanedResponse = contentCleaner.clean(domFallback.text || domFallback.html || '', { maxLength: 200000, format: domFallback.text ? 'text' : 'html' });
               if (domFallback.html) lastResponseHtml = domFallback.html;
             }
             if (window.ContentUtils?.isBaselineEquivalent?.(cleanedResponse, preDispatchBaseline)) {

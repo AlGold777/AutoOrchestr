@@ -690,28 +690,7 @@ class ContentCleaner {
   }
 
   initializeCleaningRules() {
-    return {
-      // UI-элементы и фразы интерфейса
-      uiPhrases: [
-        /\b(Send|Menu|Settings|New chat|Clear|Like|Reply|Copy|Share|Follow|Subscribe)\b/gi,
-        /\b(Upload|Download|Save|Delete|Edit|Search|Filter|Sort)\b/gi,
-        /\b(Perplexity|PPLX|Pro Search)\b/gi
-      ],
-      // Временные метки и даты
-      timePatterns: [
-        /\b\d{1,2}:\d{2}\s*(?:AM|PM)?\b/gi,
-        /\b\d+\s*(?:hours?|minutes?|seconds?)\s*ago\b/gi,
-        /\b(?:Just now|Yesterday|Today|Tomorrow)\b/gi
-      ],
-      // Символы форматирования
-      formattingSymbols: [
-        /\xa0/g, /&nbsp;/g, /&[a-z]+;/gi
-      ],
-      // URL
-      urlPatterns: [
-        /\bhttps?:\/\/[^\s"]+?\b/gi, /\bwww\.[^\s"]+?\b/gi
-      ]
-    };
+    return {};
   }
 
   cleanContent(content, options = {}) {
@@ -720,7 +699,8 @@ class ContentCleaner {
     console.log('[ContentCleaner] Starting content cleaning, initial length:', content.length);
 
     let textContent = content;
-    if (/<\/?[a-z][\s\S]*>/i.test(content)) {
+    // Only explicitly identified HTML is parsed: the answer text may itself contain HTML examples.
+    if (options.format === 'html') {
       try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(content, 'text/html');
@@ -748,21 +728,7 @@ class ContentCleaner {
   }
 
   cleanTextContent(textContent, options) {
-    let cleanedText = textContent;
-    const allRules = [
-      ...this.cleaningRules.uiPhrases,
-      ...this.cleaningRules.timePatterns,
-      ...this.cleaningRules.urlPatterns,
-      ...this.cleaningRules.formattingSymbols
-    ];
-
-    allRules.forEach(pattern => {
-      const originalLength = cleanedText.length;
-      cleanedText = cleanedText.replace(pattern, ' ');
-      this.recordRemoval(originalLength - cleanedText.length);
-    });
-
-    return this.finalNormalization(cleanedText);
+    return String(textContent || '').trim();
   }
 
   recordRemoval(charactersRemoved) {
@@ -1829,7 +1795,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
     // Fallback: extract latest assistant text if pipeline missed it
     try {
       const latestMarkup = grabLatestAssistantMarkup();
-      const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
+      const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000, format: latestMarkup.html ? 'html' : 'text' });
       if (window.ContentUtils?.isBaselineEquivalent?.(cleanedFallback, preDispatchBaseline)) {
         console.warn('[content-perplexity] DOM fallback matched pre-dispatch baseline, ignoring stale answer');
         throw new Error('stale_baseline_answer');
@@ -1852,7 +1818,7 @@ async function injectAndGetResponse(prompt, attachments = [], meta = null) {
     // Last resort: SelectorFinder observation-based extraction (can traverse shadow DOM).
     try {
       const finderText = await trySelectorFinderResponse(prompt, 60000);
-      const cleanedFinder = window.contentCleaner.cleanContent(finderText || '', { maxLength: 200000 });
+      const cleanedFinder = window.contentCleaner.cleanContent(finderText || '', { maxLength: 200000, format: 'text' });
       if (cleanedFinder) {
         console.warn('[content-perplexity] DOM fallback empty, using SelectorFinder response');
         activity.stop({ status: 'success', answerLength: cleanedFinder.length, source: 'selector-finder' });

@@ -561,27 +561,9 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
       }
 
       initializeCleaningRules() {
-          return {
-              uiPhrases: [
-                  /\b(Send|Menu|Settings|New chat|Clear|Like|Reply|Copy|Share|Follow|Subscribe)\b/gi,
-                  /\b(Upload|Download|Save|Delete|Edit|Search|Filter|Sort)\b/gi,
-                  /\b(ChatGPT|OpenAI|GPT|Grok|Claude|Gemini|Perplexity)\b/gi
-              ],
-              timePatterns: [
-                  /\b\d{1,2}:\d{2}\s*(?:AM|PM)?\b/gi,
-                  /\b\d+\s*(?:hours?|minutes?|seconds?)\s*ago\b/gi,
-                  /\b(?:Just now|Yesterday|Today|Tomorrow)\b/gi
-              ],
-              formattingSymbols: [
-                  /\xa0/g, 
-                  /&nbsp;/g, 
-                  /&[a-z]+;/gi
-              ],
-              urlPatterns: [
-                  /\bhttps?:\/\/[^\s<>"]+?\b/gi, 
-                  /\bwww\.[^\s<>"]+?\b/gi
-              ]
-          };
+          // UI elements are excluded when the answer DOM is selected; deleting words (model names, "Search",
+          // "Copy"), times or links from extracted prose corrupts legitimate answers, JSON and code.
+          return {};
       }
 
       cleanContent(content, options = {}) {
@@ -590,7 +572,8 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
           console.log('[ContentCleaner] Starting content cleaning, initial length:', content.length);
 
           let textContent = content;
-          if (/<\/?[a-z][\s\S]*>/i.test(content)) {
+          // Only explicitly identified HTML is parsed: the answer text may itself contain HTML examples.
+          if (options.format === 'html') {
               try {
                   const parser = new DOMParser();
                   const doc = parser.parseFromString(content, 'text/html');
@@ -618,21 +601,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
       }
 
       cleanTextContent(textContent, options) {
-          let cleanedText = textContent;
-          const allRules = [
-              ...this.cleaningRules.uiPhrases,
-              ...this.cleaningRules.timePatterns,
-              ...this.cleaningRules.urlPatterns,
-              ...this.cleaningRules.formattingSymbols
-          ];
-          
-          allRules.forEach(pattern => {
-              const originalLength = cleanedText.length;
-              cleanedText = cleanedText.replace(pattern, ' ');
-              this.recordRemoval(originalLength - cleanedText.length);
-          });
-
-          return this.finalNormalization(cleanedText);
+          return String(textContent || '').trim();
       }
 
       recordRemoval(charactersRemoved) {
@@ -1356,7 +1325,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
         try {
           const latestMarkup = grabLatestAssistantMarkup();
           const answerHtml = await materializeGptAnswerHtml(latestMarkup.html);
-          const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
+          const cleanedFallback = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000, format: latestMarkup.html ? 'html' : 'text' });
           if (window.ContentUtils?.isBaselineEquivalent?.(cleanedFallback, preDispatchBaseline)) {
             console.warn('[CONTENT-GPT] DOM fallback matched pre-dispatch baseline, ignoring stale answer');
             throw new Error('stale_baseline_answer');
@@ -1439,7 +1408,7 @@ const chatgptScrollCoordinator = window.ScrollCoordinator
             try {
                 const latestMarkup = grabLatestAssistantMarkup();
                 const answerHtml = await materializeGptAnswerHtml(latestMarkup.html);
-                const cleaned = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000 });
+                const cleaned = window.contentCleaner.cleanContent(latestMarkup.html || latestMarkup.text || '', { maxLength: 200000, format: latestMarkup.html ? 'html' : 'text' });
                 if (cleaned && cleaned !== lastResponseSnapshot) {
                     lastResponseSnapshot = cleaned;
                     if (answerHtml) lastResponseHtml = answerHtml;
