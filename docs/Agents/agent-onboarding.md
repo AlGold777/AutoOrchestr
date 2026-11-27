@@ -202,7 +202,7 @@ scripts/agent/deliver.sh --docs "docs: что изменено" <путь>
 ```bash
 M=/Users/restart/Documents/GitHub/AutoOrchestr; L=$(git -C "$M" branch --show-current)
 git -C "$M" log -p --no-color "origin/$L..$L" | grep -v '^Author:' \
- | grep -nEi '(chatgpt\.com/(c|g)/|claude\.ai/(chat|code|artifact)/|gemini\.google\.com/app/|chat\.deepseek\.com/a/chat/s/|chat\.qwen\.ai/c/|grok\.com/(c|chat)/|perplexity\.ai/search/|kimi\.com/chat/)[0-9a-z_-]{8,}|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|sk-[a-z0-9_-]{20,}|ghp_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,}|AIza[0-9a-z_-]{30,}|PRIVATE KEY|Bearer [a-z0-9._-]{20,}' \
+ | grep -nEi '(chatgpt\.com/(c|g)/|claude\.ai/(chat|code|artifact)/|gemini\.google\.com/app/|chat\.deepseek\.com/a/chat/s/|chat\.qwen\.ai/c/|grok\.com/(c|chat)/|perplexity\.ai/search/|kimi\.com/chat/)[0-9a-z_-]{8,}|[a-z0-9._%+-]+@[a-z0-9-]+\.[a-z]{2,}|sk-[a-z0-9_-]{20,}|ghp_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,}|AIza[0-9a-z_-]{30,}|PRIVATE [K]EY|Bearer [a-z0-9._-]{20,}' \
  | grep -vE 'noreply@anthropic\.com|users\.noreply\.github\.com'
 git -C "$M" log --name-only --format= "origin/$L..$L" | grep -E '(^|/)(\.env|credentials|settings\.local\.json)|\.(pem|key)$'
 ```
