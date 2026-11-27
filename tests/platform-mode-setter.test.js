@@ -90,6 +90,16 @@ describe('подключение к отправке', () => {
     expect(dispatch).toContain("type: 'platform_mode_not_set'");
   });
 
+  test('Circle идёт без списка участников, но режимы сайтов выставляются', () => {
+    const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    const page = read('results.js');
+    const bridge = page.slice(page.indexOf('window.TheCycleMainPageBridge'), page.indexOf('async reread(request)', page.indexOf('window.TheCycleMainPageBridge')));
+    expect(bridge).toContain('platformModes: true');
+    const background = read('background/job-orchestrator.js');
+    expect(background).toContain('activePlatformModeRun = pipelineContext?.platformModes === true;');
+    expect(background).toContain('activePlatformModeRun || Boolean(activeParticipantRequests[llmName])');
+  });
+
   test('Qwen is set to Qwen4-Max (the site renamed Qwen4-Max-Preview, 2026-11-25), not to the older default', () => {
     const source = require('fs').readFileSync(require('path').join(__dirname, '..', 'content-scripts', 'platform-mode-setter.js'), 'utf8');
     expect(source).toContain("pillStep('Qwen4-Max', () => document.querySelector('.wms-trigger'), /qwen4-max/i, '[role=\"option\"]', /^qwen4-max/i)");

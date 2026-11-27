@@ -7807,7 +7807,9 @@ document.addEventListener('click', (event) => {
                         pipelineBatchId: batchId,
                         // Batches of a run go one after another: a returned batch is settled for the background.
                         settledBatches: Number(runContext.settledBatches || 0),
-                        anonymizeParticipants: false
+                        anonymizeParticipants: false,
+                        // The sites get the model modes of Basic before the prompt goes out (no per-participant chats here).
+                        platformModes: true
                     },
                     generationProfile: 'long',
                     onDispatchPrompts

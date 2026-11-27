@@ -1,5 +1,10 @@
 # CHANGELOG — Project
 
+### 2026-11-27 — Circle: режимы моделей перед отправкой, версия 2.81.1145
+
+- Прогон Circle не выставлял режимы сайтов: DeepSeek отвечал с включённым поиском и без DeepThink. Теперь режимы те же, что в Basic (`docs/Run Automation/model-modes.md`); режим не выставился — запрос участнику не уходит.
+- Код: `results.js` (`platformModes`), `background/job-orchestrator.js`. Тест: `tests/platform-mode-setter.test.js`.
+
 ### 2026-11-27 — Схема информации архитектора: сводка прогона и ответ GPT в файл отчёта, версия 2.81.1144
 
 - `scripts/agent/run-digest.js`: по копии TheCycle — таблица по циклам (решение аналитика, вердикт проверки, расход бюджета, причины пауз). Тесты: `tests/run-digest.test.js`.

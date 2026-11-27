@@ -5670,6 +5670,8 @@ let startProcessReserved = null;
 // Basic participants of the run (T07): modelName → { participantId, newChat }, given by the page in pipelineContext.participants.
 // The page sends one request per model in a batch, so the model name is unique here; a model without an entry is the legacy path.
 let activeParticipantRequests = {};
+// A run without a participant list (Circle) asks for the site model modes with this flag.
+let activePlatformModeRun = false;
 async function startProcess(prompt, selectedLLMs, resultsTab, options = {}) {
   const runGuard = self.RunGuard?.canStartNewRun?.(jobState?.session, options, jobState?.llms);
   if (runGuard && runGuard.ok === false) {
@@ -5772,6 +5774,7 @@ async function startProcessReservedRun(prompt, selectedLLMs, resultsTab, options
   jobState.session.runMode = String(pipelineContext?.runMode || '') || null;
   // The chats of the participants are bound per run (R01): each request carries its run and visit identity.
   await self.pruneParticipantRuns?.(pipelineContext?.pipelineRunId || null);
+  activePlatformModeRun = pipelineContext?.platformModes === true;
   activeParticipantRequests = pipelineContext?.participants && typeof pipelineContext.participants === 'object'
     ? Object.fromEntries(Object.entries(pipelineContext.participants).map(([modelName, participant]) => [modelName, {
       ...participant,
@@ -11681,7 +11684,7 @@ function sendCleanupCommand(llmName) {
   self.collectGetItBatch = collectGetItBatch;
   self.collectResponsesStaged = collectResponsesStaged;
   self.handleLLMResponse = handleLLMResponse;
-  self.isActiveBasicParticipant = (llmName) => Boolean(activeParticipantRequests[llmName]);
+  self.isActiveBasicParticipant = (llmName) => activePlatformModeRun || Boolean(activeParticipantRequests[llmName]);
   self.startBudgetPhase = startBudgetPhase;
   self.endBudgetPhase = endBudgetPhase;
   self.clearBudgetPhases = clearBudgetPhases;
