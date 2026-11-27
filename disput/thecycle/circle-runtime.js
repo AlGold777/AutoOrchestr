@@ -469,6 +469,8 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
    session.controller=controller;
    if(needsBackup){
     await emit('BACKUP_START',{reason:'resume'});
+    // The gate's record of verified packets may be gone (restore on another profile): the resume copy proves the last packet again.
+    if(state.lastCommittedPacket!=null)await observedGate.requireCommit(id,id+':cycle:'+state.lastCommittedPacket);
     await observedGate.persist(id,'manual');
     await emit('BACKUP_VERIFIED',{reason:'resume'});
    }
