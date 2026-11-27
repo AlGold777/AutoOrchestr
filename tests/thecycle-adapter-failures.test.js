@@ -148,3 +148,16 @@ test('hold: the page holds Basic and a second run between cycles (bridge hold/re
  assert.match(source,/if \(pipelineRunActive \|\| circlePageRunner \|\| theCycleHeld\) \{\s+showNotification\('Pipeline already running'/);
  assert.match(source,/circlePageRunner \|\| theCycleBridgeRunId \|\| theCycleHeld\) return \{ action: 'stop'/);
 });
+test('the recorded text of the Custom role is sent, whatever the page settings hold now',async()=>{
+ const custom={schemaVersion:1,origin:'user',run:{policy:'auto'},defaults:{roundPrompts:{r1:'Recorded role text'}},
+  steps:[{ref:'r1',kind:'round',models:[{name:'GPT',role:'custom'}]}]};
+ for(const page of ['','Another page text']){
+  const sent=[];
+  const adapter=createBasicAdapter({availableModels:['GPT'],isRole:()=>true,roleText:()=>page,accept:()=>({ok:true}),journal:async()=>{},
+   send:async(names,byModel)=>{sent.push(byModel.GPT);return {byModel:{GPT:{text:'Answer',status:'SUCCESS',answered:true}}};}});
+  await adapter.execute({researchId:'r',runId:'r:cycle:1',cycleId:1,schema:custom,task:'Task',maxCalls:4,maxPromptChars:20000});
+  assert.match(sent[0],/Recorded role text/);
+  assert.doesNotMatch(sent[0],/Another page text/);
+ }
+});
+

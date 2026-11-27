@@ -247,12 +247,13 @@ test('a busy transport refuses the restore: a running research, then a fresh hea
   assert.equal(refused, 'RESTORE_TRANSPORT_BUSY');
   assert.equal((await there.pointer()).revision, 0);
 
-  await there.storage.set({ 'thecycle.circle.heartbeat.other': { ownerId: 'tab', at: Date.now() } });
-  await assert.rejects(there.restoreCopy(source.dir, key), { code: 'RESTORE_TRANSPORT_BUSY' });
-  assert.equal((await there.pointer()).revision, 0);
+  const idle = await browser();
+  await idle.storage.set({ 'thecycle.circle.heartbeat.other': { ownerId: 'tab', at: Date.now() } });
+  await assert.rejects(idle.restoreCopy(source.dir, key), { code: 'RESTORE_TRANSPORT_BUSY' });
+  assert.equal((await idle.pointer()).revision, 0);
   // A heartbeat that stopped three minutes ago no longer holds the transport.
-  await there.storage.set({ 'thecycle.circle.heartbeat.other': { ownerId: 'tab', at: Date.now() - 180000 } });
-  assert.equal((await there.restoreCopy(source.dir, key)).revision, 1);
+  await idle.storage.set({ 'thecycle.circle.heartbeat.other': { ownerId: 'tab', at: Date.now() - 180000 } });
+  assert.equal((await idle.restoreCopy(source.dir, key)).revision, 1);
 });
 
 test('nothing starts or continues while a restore holds the writer lock', async () => {
@@ -274,22 +275,65 @@ test('a copy without researches is refused', async () => {
   assert.equal((await there.pointer()).revision, 0);
 });
 
-test('an older copy on the same device: its backup records restart from it and research continues', async () => {
+test('a copy older than the data of this browser is refused: an unknown request is not forgotten', async () => {
+  let calls = 0, page = null;
   const there = await browser(), dir = directory(), transport = [];
-  const analyst = [answer('WAIT_OWNER')];
-  const first = await there.page({ dir, analyst, transport }).start({ task: 'T', maxCalls: 8 });
-  const older = await latestKey(dir);
-  // A later state leaves a packet waiting for its copy.
+  page = there.page({ dir, analyst: [], transport, onSend: async () => { if (++calls !== 2) return undefined; await page.stop(); return { byModel: {} }; } });
+  const first = await page.start({ task: 'T', maxCalls: 8 });
+  assert.equal(first.state.phase, 'RECONCILE');
+  const sink = createDirectorySink({ directory: dir });
+  const oldest = (await sink.list()).sort((a, b) => a.lastModified - b.lastModified)[0].key;
+  await assert.rejects(there.restoreCopy(dir, oldest), { code: 'RESTORE_ACTIVE_NEWER' });
+  assert.deepEqual(await there.pointer(), { revision: 0, activeDatabase: 'auto-orchestr-thecycle' });
+  assert.equal((await page.snapshot(first.researchId)).state.budget.usedCalls, 2);
+  assert.equal(transport.length, 2);
+});
+
+test('a copy without a research of this browser, or from before its close, is refused', async () => {
+  const source = await elsewhere(), there = await browser(), key = await latestKey(source.dir);
+  const local = there.page({ dir: directory(), analyst: [answer('WAIT_OWNER')], transport: [], database: 'local' });
+  await local.start({ task: 'Local', maxCalls: 8 });
+  await assert.rejects(there.restoreCopy(source.dir, key), { code: 'RESTORE_ACTIVE_NEWER' });
+  assert.equal((await there.pointer()).revision, 0);
+
+  // A research closed without any request: only its phase tells that the copy is older.
+  const same = await browser(), dir = directory(), store = await createStateStore({ indexedDB: same.indexedDB });
+  await store.createResearch({ researchId: 'r-closed', task: 'T', pipelineRef: 'p', maxCalls: 8 });
+  await createBackupService({ store, sink: createDirectorySink({ directory: dir }) }).save('thecycle-manual-open');
+  const token = await store.acquire({ researchId: 'r-closed', ownerId: 'tab' });
+  await store.decide(token, { expectedVersion: (await store.load('r-closed')).stateVersion, action: 'COMPLETE' });
+  await assert.rejects(same.restoreCopy(dir, 'thecycle-manual-open'), { code: 'RESTORE_ACTIVE_NEWER' });
+  assert.equal((await same.pointer()).revision, 0);
+});
+
+test('backup records left by lost local data restart from the copy and research continues', async () => {
+  const source = await elsewhere(), there = await browser(), key = await latestKey(source.dir);
+  // The research data is gone, a packet of a later state still waits for its copy.
   const metadata = await createGateMetadata({ indexedDB: there.indexedDB });
-  const record = await metadata.get(first.researchId);
-  await metadata.put(first.researchId, record.revision, { ...record, revision: record.revision + 1, blocked: true,
-    pendingCommitIds: [first.researchId + ':cycle:99'] });
-  await there.restoreCopy(dir, older);
-  const reset = await metadata.get(first.researchId);
-  assert.deepEqual([reset.pendingCommitIds, reset.lastBackupId, reset.blocked], [[], older, true]);
-  analyst.push(answer('COMPLETE'), answer('COMPLETE'));
-  const resumed = await there.page({ dir, analyst, transport }).resume(first.researchId);
+  const researchId = source.first.researchId;
+  assert.equal(await metadata.put(researchId, 0, { researchId, revision: 1, blocked: true, lastVerifiedAt: null,
+    lastBackupId: 'gone', verifiedCommitId: null, pendingCommitIds: [researchId + ':cycle:99'] }), true);
+  await there.restoreCopy(source.dir, key);
+  const reset = await metadata.get(researchId);
+  assert.deepEqual([reset.pendingCommitIds, reset.lastBackupId, reset.blocked], [[], key, true]);
+  const resumed = await there.page({ dir: source.dir, analyst: source.analyst, transport: source.transport }).resume(researchId);
   assert.equal(resumed.state.phase, 'COMPLETED');
+});
+
+test('a copy taken between the answer and its record has no unknown request', async () => {
+  const there = await browser(), dir = directory();
+  const indexedDB = createFakeIndexedDB(), store = await createStateStore({ indexedDB });
+  await store.createResearch({ researchId: 'r-commit', task: 'T', pipelineRef: 'p', maxCalls: 8 });
+  const token = await store.acquire({ researchId: 'r-commit', ownerId: 'tab' });
+  await store.prepareRun(token, { expectedVersion: (await store.load('r-commit')).stateVersion, runId: 'run', cycleId: 1, pipelineRef: 'p', maxCalls: 2 });
+  const journal = store.journalFor(token), id = { researchId: 'r-commit', runId: 'run', cycleId: 1 };
+  await journal({ ...id, type: 'RUN_INTENT', maxCalls: 2 });
+  await journal({ ...id, type: 'DISPATCH_INTENT', batchId: 'b', models: ['GPT'] });
+  await journal({ ...id, type: 'DISPATCH_RESPONSE', batchId: 'b' });
+  await journal({ ...id, type: 'RUN_RESULT', report: id });
+  assert.equal((await store.load('r-commit')).phase, 'COMMIT');
+  await createBackupService({ store, sink: createDirectorySink({ directory: dir }) }).save('thecycle-manual-commit');
+  assert.equal((await there.restoreCopy(dir, 'thecycle-manual-commit')).requiresManualReconciliation, false);
 });
 
 test('a switch that fails puts the backup records back', async () => {
@@ -319,7 +363,9 @@ test('closing a research for good leaves a verified copy of the closed state', a
   assert.equal(closed.state.phase, 'COMPLETED');
   assert.equal(closed.closeCopy.verified, true);
   const other = await browser();
-  await other.restoreCopy(dir, closed.closeCopy.key);
+  assert.equal((await other.restoreCopy(dir, closed.closeCopy.key)).requiresManualReconciliation, false);
+  // The same copy over the data it was taken from loses nothing and is accepted.
+  assert.equal((await there.restoreCopy(dir, closed.closeCopy.key)).revision, 1);
   const copy = await other.page({ dir, analyst: [], transport }).snapshot(first.researchId);
   assert.deepEqual([copy.state.phase, copy.state.closedReason, copy.state.budget.usedCalls],
     ['COMPLETED', closed.state.closedReason, closed.state.budget.usedCalls]);

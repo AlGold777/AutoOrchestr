@@ -51,6 +51,7 @@ async function loadCopies(){
 function restoreErrorText(error){
  const code=String(error?.code||error?.message||error);
  if(code==='RESTORE_TRANSPORT_BUSY')return 'Восстановление не начато: идёт исследование Circle или оно прервано только что. Остановите его и повторите через 3 минуты.';
+ if(code==='RESTORE_ACTIVE_NEWER')return 'Восстановление не начато: в этом браузере есть данные исследований, которых нет в этой копии. Подходит только копия, в которой они есть.';
  if(code==='RESTORE_COPY_EMPTY')return 'В копии нет исследований. Выберите другую копию.';
  if(code==='BACKUP_NOT_FOUND')return 'Копия не найдена в каталоге. Нажмите «Обновить».';
  if(/DIRECTORY|PERMISSION/.test(code))return NO_DIRECTORY;

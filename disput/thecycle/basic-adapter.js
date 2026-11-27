@@ -115,7 +115,13 @@
       const checked = validate(schemaCopy);
       if (!checked.ok) throw fail('INVALID_SCHEMA', schemaApi.describeErrors(checked.errors));
       const settings = schemaApi.resolveRun(schemaCopy);
-      const steps = schemaApi.assemble(schemaCopy, { roleText: roleText || (() => '') });
+      // The text of the «Custom» role is part of the recorded schema: the research keeps it where the page settings
+      // differ (another browser after a restore, an edited pipeline).
+      const recordedRoleText = (role, ref) => {
+        const own = role === 'custom' ? schemaCopy.defaults?.roundPrompts?.[ref] : undefined;
+        return typeof own === 'string' ? own.trim() : (roleText ? roleText(role, ref) : '');
+      };
+      const steps = schemaApi.assemble(schemaCopy, { roleText: recordedRoleText });
       // Match the shared answer limit when a participant has no own override.
       for (const step of steps) {
         for (const model of step.models) if (model.maxWords == null) model.maxWords = settings.maxWords;

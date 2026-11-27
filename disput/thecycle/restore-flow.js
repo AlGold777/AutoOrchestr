@@ -5,6 +5,21 @@ const HB_PREFIX='thecycle.circle.heartbeat.',HB_FRESH_MS=180000;
 const PENDING_KEY='thecycle.circle.pending',ACTIVATION_KEY='thecycle.activation';
 const RESTORED_PHASES=['PAUSED','RECONCILE','COMPLETED'];
 const fail=(code,cause)=>Object.assign(Error(code),{code,...(cause?{cause}:{})});
+// True when this browser has recorded something the copy does not (a research, a sent request or its answer, a close):
+// switching to the copy would lose it, and the request could be sent again. State versions are not compared: restore and
+// takeover raise them.
+function activeIsNewer(active,copy){
+ const saved=new Map(copy.stores.research.map(row=>[row.researchId,row]));
+ const eventId=row=>JSON.stringify([row.researchId,row.runId,row.eventId]);
+ const events=new Set(copy.stores.events.map(eventId));
+ return active.stores.research.some(local=>!saved.has(local.researchId)||
+   (local.phase==='COMPLETED'&&saved.get(local.researchId).phase!=='COMPLETED'))||
+  active.stores.events.some(local=>!events.has(eventId(local)));
+}
+// A sent request whose outcome the copy does not know: the person chooses what to do with it on the Circle page.
+const hasUnknownRequest=snapshot=>snapshot.stores.research.some(research=>research.phase!=='COMPLETED'&&
+ snapshot.stores.runs.some(run=>run.researchId===research.researchId&&run.runId===research.activeRunId&&
+  run.batches.some(batch=>['INTENT','UNKNOWN'].includes(batch.status))));
 
 async function restoreFromCopy({backupKey,directory,storage=root.chrome?.storage?.local,indexedDB=root.indexedDB,
  writerLock=root.TheCycleWriterLock?.createWriterLock(),uuid=()=>root.crypto.randomUUID(),now=()=>Date.now(),
@@ -33,8 +48,11 @@ async function restoreFromCopy({backupKey,directory,storage=root.chrome?.storage
   await emit('RESTORE_START',{database:pointer.activeDatabase,backup:{key:backupKey}});
   // An empty copy would hide the researches of this browser behind an empty database.
   const sink=root.TheCycleDirectorySink.createDirectorySink({directory});
-  const info=await root.TheCycleBackup.createBackupService({store:source,sink}).inspect(backupKey);
+  const service=root.TheCycleBackup.createBackupService({store:source,sink});
+  const info=await service.inspect(backupKey);
   if(!info.counts.research)throw fail('RESTORE_COPY_EMPTY');
+  const content=await source.verifyBackup(await service.getVerifiedEnvelope(backupKey));
+  if(activeIsNewer(await source.exportSnapshot(),content))throw fail('RESTORE_ACTIVE_NEWER');
   // Integrity and compatibility, a new database, written rows read back: all inside the recovery runtime.
   const targetName='auto-orchestr-thecycle-restore-'+String(uuid()).replace(/[^a-zA-Z0-9_-]/g,'');
   const restored=await root.TheCycleRecoveryRuntime.recover({directory,stateStore:source,indexedDB,backupKey,targetName,
@@ -90,7 +108,7 @@ async function restoreFromCopy({backupKey,directory,storage=root.chrome?.storage
   await emit('RESTORE_ACTIVATED',{database:targetName,backup:{key:backupKey,sha256:info.sha256,verified:true}});
   return {backupKey,database:targetName,previousDatabase:pointer.activeDatabase,revision:next.revision,
    researchCount:restored.researchCount,researchId:subject.researchId,
-   requiresManualReconciliation:restored.requiresManualReconciliation};
+   requiresManualReconciliation:hasUnknownRequest(content)};
  }catch(error){
   await emit('RESTORE_REFUSED',{backup:{key:backupKey},error});
   throw error;
