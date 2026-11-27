@@ -272,7 +272,9 @@ function createPolicy({registry,models=null,validateSchema=null,estimateCalls=nu
   if(d.action==='CONTINUE'){if(exhausted)return {action:'PAUSE',reason:'BUDGET_EXHAUSTED',detail};return {action:'CONTINUE',reason:'ANALYST_CONTINUE',pipelineRef:await currentWorkRef(),detail};}
   if(d.action==='COMPLETE'){
    // VERIFIED_SOLUTION only straight after a verification cycle that proved itself on a fresh tab of another model.
-   const prev=state.lastCommittedPacket>1?await store.getPacket(state.researchId,state.lastCommittedPacket-1):null;
+   // Earlier analyst cycles (an interrupted one included) change nothing: the cycle before them decides.
+   let prev=null;
+   for(let n=state.lastCommittedPacket-1;n>=1;n--){prev=await store.getPacket(state.researchId,n);if(role(prev?.pipelineRef)!=='analyst')break;}
    const rec=prev&&role(prev.pipelineRef)==='verify'?prev.decision?.detail?.verificationRecord:null;
    if(rec&&rec.verdict==='VERIFIED'&&rec.independence==='FRESH_TAB_OTHER_MODEL'&&rec.checks.every(c=>c.result==='PASS')&&
     rec.checks.some(c=>c.id===COVERS_TASK.id&&c.result==='PASS'))

@@ -40,12 +40,14 @@
   }
 
   function createController({ store, makeAdapter, loadPipeline, maxCallsPerCycle, maxPromptChars,
-    ownerId = root.crypto?.randomUUID?.(), backupGate = null, resolveTask = null, policy = fixedPolicy } = {}) {
+    ownerId = root.crypto?.randomUUID?.(), backupGate = null, resolveTask = null, policy = fixedPolicy,
+    recoverReport = null } = {}) {
     if (!store || !['load', 'acquire', 'release', 'prepareRun', 'journalFor', 'getRun', 'getEvents',
       'getPacket', 'commitPacket', 'decide', 'requestStop', 'getOwnership'].every((key) => typeof store[key] === 'function') ||
       typeof makeAdapter !== 'function' || typeof loadPipeline !== 'function' ||
       !str(ownerId) || !pos(maxCallsPerCycle) || !pos(maxPromptChars) ||
       (resolveTask !== null && typeof resolveTask !== 'function') || typeof policy !== 'function' ||
+      (recoverReport !== null && typeof recoverReport !== 'function') ||
       (backupGate && (!['assertCanStartCycle', 'requireCommit', 'persist'].every((key) => typeof backupGate[key] === 'function') || typeof store.acknowledgePacketBackup !== 'function'))) {
       throw fail('INVALID_CONTROLLER_DEPENDENCIES');
     }
@@ -135,6 +137,14 @@
           return result(state, 'RECOVERY_REQUIRED', { runId: state.activeRunId });
         }
         if (state.phase === 'COMMIT') {
+          // Answers received before a Stop or a reload are not paid for again: an unfinished report is rebuilt from them.
+          const report = recoverReport && typeof store.recordRecoveredResult === 'function'
+            ? await recoverReport({ state, store }) : null;
+          if (report) {
+            state = await store.recordRecoveredResult(fence, {
+              expectedVersion: state.stateVersion, runId: state.activeRunId, report
+            });
+          }
           const committed = await store.commitPacket(fence, {
             expectedVersion: state.stateVersion, runId: state.activeRunId
           });
@@ -293,6 +303,62 @@
       } finally { busy = false; }
     }
 
+    // Owner Stop whose request is already out: pause. The run stays open for a later continuation, nothing is resent,
+    // and the transport is freed so another research can start without a reload.
+    async function suspend(researchId) {
+      if (!str(researchId)) throw fail('INVALID_RESEARCH');
+      if (busy) return { outcome: 'BUSY' };
+      busy = true;
+      try {
+        if (typeof store.suspendRun !== 'function') throw fail('SUSPEND_NOT_SUPPORTED');
+        let state = await safeState(researchId);
+        if (!state.stopRequested || !state.activeRunId || !['RECONCILE', 'RUNNING', 'INTENT'].includes(state.phase)) {
+          throw fail('SUSPEND_NOT_ALLOWED');
+        }
+        const fence = await owned(researchId);
+        state = await safeState(researchId);
+        const next = await store.suspendRun(fence, { expectedVersion: state.stateVersion, runId: state.activeRunId });
+        token = null;
+        return result(next, 'RUN_SUSPENDED', { runId: next.activeRunId });
+      } finally { busy = false; }
+    }
+
+    // Ownership of a research whose transport is free (a suspended run), before its outcome is settled.
+    async function claim(researchId) {
+      if (!str(researchId)) throw fail('INVALID_RESEARCH');
+      if (busy) return { outcome: 'BUSY' };
+      busy = true;
+      try {
+        await owned(researchId);
+        return result(await safeState(researchId), 'OWNERSHIP_ACQUIRED');
+      } finally { busy = false; }
+    }
+
+    // Clears the Stop flag of a run whose outcome is settled, so that it commits and the research goes on.
+    async function resumeRun(researchId) {
+      if (busy) return { outcome: 'BUSY' };
+      busy = true;
+      try {
+        if (typeof store.resumeRun !== 'function') throw fail('RESUME_NOT_SUPPORTED');
+        const fence = await owned(researchId);
+        const state = await safeState(researchId);
+        const next = await store.resumeRun(fence, { expectedVersion: state.stateVersion, runId: state.activeRunId });
+        return result(next, 'RESUMED');
+      } finally { busy = false; }
+    }
+
+    async function raiseBudget(researchId, maxCalls) {
+      if (busy) return { outcome: 'BUSY' };
+      busy = true;
+      try {
+        if (typeof store.raiseBudget !== 'function') throw fail('BUDGET_CHANGE_NOT_SUPPORTED');
+        const fence = await owned(researchId);
+        const state = await safeState(researchId);
+        const next = await store.raiseBudget(fence, { expectedVersion: state.stateVersion, maxCalls });
+        return result(next, 'BUDGET_RAISED');
+      } finally { busy = false; }
+    }
+
     // Frees the transport ownership of a settled research (no active run, nothing left to back up) using the
     // same release as the ticks; never frees a run that needs recovery.
     async function releaseSettled(researchId) {
@@ -321,10 +387,12 @@
       try {
         let state = await safeState(researchId);
         if (state.phase !== 'PAUSED' || state.activeRunId) throw fail('RESUME_NOT_ALLOWED');
-        if (state.budget.usedCalls >= state.budget.maxCalls) throw fail('BUDGET_EXHAUSTED');
         const fence = await owned(researchId);
         state = await safeState(researchId);
-        const next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'RESUME' });
+        // The store returns to the saved step: a recorded packet is evaluated again, otherwise a new cycle starts.
+        let next;
+        try { next = await store.decide(fence, { expectedVersion: state.stateVersion, action: 'RESUME' }); }
+        catch (error) { await releaseIfSettled(state); throw error; }
         return result(next, 'RESUMED');
       } finally { busy = false; }
     }
@@ -359,7 +427,8 @@
       } finally { busy = false; }
     }
 
-    return Object.freeze({ tick, stop, resume, takeOver, reconcile, abandonUnknown, closeStopped, releaseSettled, ownerId });
+    return Object.freeze({ tick, stop, resume, takeOver, claim, reconcile, abandonUnknown, suspend, resumeRun, raiseBudget,
+      closeStopped, releaseSettled, ownerId });
   }
 
   const api = Object.freeze({ createController, fixedPolicy, isCycleSettled, ControllerError });

@@ -7,6 +7,7 @@
   const DB_VERSION = 1;
   const STORES = ['research', 'control', 'runs', 'events', 'packets'];
   const LOCK = 'transport';
+  const MAX_BUDGET = 10000;
   const copy = (value) => JSON.parse(JSON.stringify(value));
   const str = (value) => typeof value === 'string' && value.trim().length > 0;
   const pos = (value) => Number.isSafeInteger(value) && value > 0;
@@ -350,6 +351,59 @@
       });
     }
 
+    // Owner Stop with a request already sent is a pause: the run stays active, the open batches become UNKNOWN (budget
+    // stays spent, nothing is resent) and the transport is freed in the same transaction, so another research can start.
+    // Any later write of this owner gets STALE_OWNER. The research is continued later by a new owner.
+    async function suspendRun(token, { expectedVersion, runId } = {}) {
+      if (!str(runId)) throw fail('INVALID_RUN');
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (!state.stopRequested || state.activeRunId !== runId ||
+            !['RECONCILE', 'RUNNING', 'INTENT'].includes(state.phase)) throw fail('SUSPEND_NOT_ALLOWED');
+        const run = await request(s.runs.get([state.researchId, runId]));
+        if (!run) throw fail('RUN_NOT_ACTIVE');
+        const unresolvedBatchIds = [];
+        for (const batch of run.batches) {
+          if (['INTENT', 'UNKNOWN'].includes(batch.status)) { batch.status = 'UNKNOWN'; unresolvedBatchIds.push(batch.batchId); }
+        }
+        run.eventCount += 1;
+        await request(s.events.add({ researchId: state.researchId, runId, eventId: 'RUN_SUSPENDED:' + run.eventCount,
+          sequence: run.eventCount, payload: { type: 'RUN_SUSPENDED', runId, unresolvedBatchIds } }));
+        await request(s.runs.put(run));
+        state.phase = 'RECONCILE';
+        await request(s.control.put({ key: LOCK, researchId: null, ownerId: null, epoch: token.epoch }));
+        return copy(await writeState(s, state));
+      });
+    }
+
+    // A person continues a stopped run after its outcome is settled (reread, recovery decision or abandoned batch):
+    // only the Stop flag is cleared; the run is committed by the ordinary path.
+    async function resumeRun(token, { expectedVersion, runId } = {}) {
+      if (!str(runId)) throw fail('INVALID_RUN');
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (state.phase !== 'COMMIT' || state.activeRunId !== runId) throw fail('RESUME_NOT_ALLOWED');
+        state.stopRequested = false;
+        return copy(await writeState(s, state));
+      });
+    }
+
+    // The limit only grows; the calls already used stay used. Every change is kept in the state.
+    async function raiseBudget(token, { expectedVersion, maxCalls } = {}) {
+      if (!pos(maxCalls) || maxCalls > MAX_BUDGET) throw fail('INVALID_BUDGET');
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (state.phase === 'COMPLETED' || maxCalls <= state.budget.maxCalls) throw fail('BUDGET_CHANGE_NOT_ALLOWED');
+        state.budgetHistory = [...(state.budgetHistory || []),
+          { from: state.budget.maxCalls, to: maxCalls, stateVersion: state.stateVersion }];
+        state.budget.maxCalls = maxCalls;
+        return copy(await writeState(s, state));
+      });
+    }
+
     // Human decision "continue without the batch": unresolved batches become ABANDONED_UNKNOWN (budget stays spent,
     // nothing is resent, no answer is invented); the run can only end as a PARTIAL_RECOVERY packet.
     async function abandonUnknown(token, { expectedVersion, runId, reason } = {}) {
@@ -370,6 +424,28 @@
           sequence: run.eventCount, payload: { type: 'ABANDONED_UNKNOWN', runId, reason, batchIds } }));
         await request(s.runs.put(run));
         state.phase = 'COMMIT';
+        return copy(await writeState(s, state));
+      });
+    }
+
+    // A report rebuilt from the journaled answers of an interrupted run is added next to the original one (which stays);
+    // the packet then references the rebuilt report.
+    async function recordRecoveredResult(token, { expectedVersion, runId, report } = {}) {
+      if (!str(runId) || !report || report.runId !== runId) throw fail('INVALID_RECOVERY');
+      const saved = copy(report);
+      return write(async (s) => {
+        const state = await mustOwn(s, token);
+        checkVersion(state, expectedVersion);
+        if (state.phase !== 'COMMIT' || state.activeRunId !== runId) throw fail('RECOVERY_NOT_ALLOWED');
+        const run = await request(s.runs.get([state.researchId, runId]));
+        if (!run || run.batches.some((item) => ['INTENT', 'UNKNOWN'].includes(item.status))) throw fail('RUN_UNSETTLED');
+        if (saved.researchId !== state.researchId || saved.cycleId !== run.cycleId) throw fail('INVALID_REPORT');
+        run.eventCount += 1;
+        await request(s.events.add({ researchId: state.researchId, runId, eventId: 'RECOVERED_RESULT',
+          sequence: run.eventCount, payload: { type: 'RECOVERED_RESULT', runId, report: saved } }));
+        run.phase = 'RESULT';
+        run.resultEventId = 'RECOVERED_RESULT';
+        await request(s.runs.put(run));
         return copy(await writeState(s, state));
       });
     }
@@ -416,13 +492,17 @@
       });
     }
 
+    const listResearch = () => read(async (s) => copy(await request(s.research.getAll())));
     const getPacket = (researchId, cycleId) => read(async (s) => copy((await request(s.packets.get([researchId, cycleId]))) || null));
 
     async function requestStop(researchId) {
       return write(async (s) => {
         const state = await mustState(s, researchId);
+        const pause = !state.activeRunId && !['PAUSED', 'COMPLETED'].includes(state.phase);
+        // A repeated Stop changes nothing: the state version must not move under a writer that is pausing the run.
+        if (state.stopRequested && !pause) return copy(state);
         state.stopRequested = true;
-        if (!state.activeRunId && state.phase !== 'COMPLETED') state.phase = 'PAUSED';
+        if (pause) state.phase = 'PAUSED';
         return copy(await writeState(s, state));
       });
     }
@@ -472,6 +552,20 @@
       return out;
     }
 
+    // A packet whose next step was never decided (Stop came first), or was only postponed by Stop or by the limit,
+    // is evaluated again on Resume: otherwise that step (analyst, verification, strategy change) would be lost.
+    function awaitsEvaluation(state, packet) {
+      const decision = packet.decision;
+      if (!decision) return packet.status === 'RECORDED_RESULT';
+      if (decision.action !== 'PAUSE') return false;
+      const remaining = state.budget.maxCalls - state.budget.usedCalls;
+      if (decision.reason === 'OWNER_STOP') return true;
+      if (decision.reason === 'BUDGET_EXHAUSTED') return remaining > 0;
+      if (decision.reason === 'BUDGET_INSUFFICIENT_FOR_VERIFY') return remaining >= 2;
+      return decision.reason === 'STRATEGY_REJECTED' &&
+        (state.budgetHistory || []).some((change) => change.stateVersion > decision.stateVersion);
+    }
+
     async function decide(token, { expectedVersion, action, pipelineRef, reason, detail, finalStatus, verificationRecord } = {}) {
       if (!['CONTINUE', 'PAUSE', 'COMPLETE', 'RESUME'].includes(action)) throw fail('INVALID_DECISION');
       const cleanedDetail = cleanDetail(detail);
@@ -488,6 +582,21 @@
           state.pipelineRef = pipelineRef; // C03 validates schema before dispatch
         }
         if (reason !== undefined && (!str(reason) || reason.length > 200)) throw fail('INVALID_DECISION_REASON');
+        let resumeTo = 'READY';
+        if (action === 'RESUME' && state.lastCommittedPacket !== null) {
+          const packet = await request(s.packets.get([state.researchId, state.lastCommittedPacket]));
+          if (packet && awaitsEvaluation(state, packet)) {
+            if (packet.decision) {
+              // The pause stays on record; the same packet is decided again.
+              packet.decisionHistory = [...(packet.decisionHistory || []), packet.decision];
+              delete packet.decision;
+              await request(s.packets.put(packet));
+            }
+            resumeTo = 'EVALUATE';
+          }
+        }
+        // Evaluating a recorded packet costs nothing; a new cycle needs at least one call.
+        if (action === 'RESUME' && resumeTo === 'READY' && state.budget.usedCalls >= state.budget.maxCalls) throw fail('BUDGET_EXHAUSTED');
         if (state.phase === 'EVALUATE' && state.lastCommittedPacket !== null) {
           const packet = await request(s.packets.get([state.researchId, state.lastCommittedPacket]));
           if (!packet || packet.decision) throw fail('DECISION_PACKET_INVALID');
@@ -502,7 +611,7 @@
         }
         if (finalStatus !== undefined) state.finalStatus = finalStatus;
         if (action === 'RESUME') state.stopRequested = false;
-        state.phase = action === 'COMPLETE' ? 'COMPLETED' : action === 'PAUSE' ? 'PAUSED' : 'READY';
+        state.phase = action === 'COMPLETE' ? 'COMPLETED' : action === 'PAUSE' ? 'PAUSED' : resumeTo;
         // No decision here asserts mathematical proof.
         return copy(await writeState(s, state));
       });
@@ -553,7 +662,7 @@
     }
 
     return Object.freeze({ createResearch, load, getOwnership, acquire, release, prepareRun, journalFor,
-      getRun, getEvents, getPacket, reconcileBatch, settleInterruptedRun, abandonRun, abandonUnknown, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
+      getRun, getEvents, getPacket, listResearch, reconcileBatch, settleInterruptedRun, suspendRun, resumeRun, recordRecoveredResult, raiseBudget, abandonRun, abandonUnknown, commitPacket, acknowledgePacketBackup, requestStop, decide, exportSnapshot, exportVerifiedBackup, verifyBackup,
       close: () => db.close() });
   }
   const api = Object.freeze({ createStateStore, StoreError, DB_NAME, DB_VERSION });

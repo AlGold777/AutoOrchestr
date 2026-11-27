@@ -54,6 +54,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
  const setPending=async(id,phase)=>{try{await storage.set({[PENDING_KEY]:{researchId:id,phase:phase||null,at:now()}});}catch(_){}};
  const clearPending=async()=>{try{await storage.set({[PENDING_KEY]:null});}catch(_){}};
  const settlePending=(id,state,closing)=>(state?.phase==='COMPLETED'||closing)?clearPending():setPending(id,state?.phase);
+ const unsettled=state=>Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase);
  async function snapshot(id){
   const active=await activeStore.createActiveStateStore();
   try{
@@ -63,9 +64,12 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    const report=events.find(e=>e.eventId===packet?.resultEventId)?.payload?.report||null;
    const source=(await storage.get(key(id)))[key(id)]||null;
    // After a reload a run left in flight has an unknown outcome: it is told apart from a live run by "nothing runs in this page".
+   // A run paused by Stop (open run, transport free) is unknown too, also right after the Stop in this page.
    const elsewhere=!running&&await activeElsewhere(id);
-   const unknown=!running&&!elsewhere&&Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase);
-   const pauseReason=elsewhere?'CIRCLE_ACTIVE_ELSEWHERE':unknown?'UNKNOWN_DISPATCH_AFTER_RELOAD':(['PAUSED','COMPLETED'].includes(state.phase)?(state.lastDecision?.reason||state.closedReason||null):null);
+   const suspended=!elsewhere&&unsettled(state)&&state.stopRequested&&state.phase==='RECONCILE'&&(await active.store.getOwnership())?.researchId!==id;
+   const unknown=suspended||(!running&&!elsewhere&&unsettled(state));
+   const pauseReason=elsewhere?'CIRCLE_ACTIVE_ELSEWHERE':suspended?'OWNER_STOP_UNRESOLVED':unknown?'UNKNOWN_DISPATCH_AFTER_RELOAD':
+    state.phase==='PAUSED'&&state.stopRequested?'OWNER_STOP':(['PAUSED','COMPLETED'].includes(state.phase)?(state.lastDecision?.reason||state.closedReason||null):null);
    return {researchId:id,database:active.database,state,packet,report,configured:source,unknown,activeElsewhere:elsewhere,pauseReason,lastDecision:state.lastDecision||null};
   }finally{active.close();}
  }
@@ -142,10 +146,13 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      };
     }
     const roleOfRef=r=>policyApi?.roleOf?policyApi.roleOf(registry,r):null;
-    // Only finished work cycles are evidence: a partial recovery packet has no report to read.
+    // A cycle without a complete result (interrupted, abandoned, no answer) stays in history but is not evidence.
+    const readable=async(researchId,n)=>{try{await contextApi.readCycle(store,researchId,n);return true;}
+     catch(error){if(['CIRCLE_RESULT_NOT_SETTLED','CIRCLE_NO_ACCEPTED_EVIDENCE','CIRCLE_COMMITTED_PACKET_MISSING'].includes(error?.message))return false;throw error;}};
+    // Only finished work cycles are evidence.
     const evidenceCycles=async(state,upTo)=>{
      const cycles=[];
-     for(let n=1;n<=upTo;n++){const p=await store.getPacket(state.researchId,n);if(p?.status==='RECORDED_RESULT'&&(!policyApi||roleOfRef(p.pipelineRef)==='work'))cycles.push(n);}
+     for(let n=1;n<=upTo;n++){const p=await store.getPacket(state.researchId,n);if(p&&(!policyApi||roleOfRef(p.pipelineRef)==='work')&&await readable(state.researchId,n))cycles.push(n);}
      return cycles;
     };
     // The latest independent check goes into every following work cycle, whole: a CONTRADICTED verdict must not be lost.
@@ -171,17 +178,19 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
         return task;
        }
        if(pipeline?.role==='analyst'){
-        // The analyst reads the last work cycle; after a verification cycle it also sees the verdict.
-        let workId=state.lastCommittedPacket,verification;
-        const last=await store.getPacket(state.researchId,workId);
-        if(roleOfRef(last?.pipelineRef)==='verify'){
-         const rec=last.decision?.detail?.verificationRecord;
-         if(!rec)throw Error('CIRCLE_VERIFY_RECORD_MISSING');
-         verification=policyApi.verificationText(rec);
-         workId=null;
-         for(let n=state.lastCommittedPacket-1;n>=1;n--){const p=await store.getPacket(state.researchId,n);if(p?.status==='RECORDED_RESULT'&&roleOfRef(p.pipelineRef)==='work'){workId=n;break;}}
-         if(workId===null)throw Error('CIRCLE_COMMITTED_PACKET_MISSING');
+        // The analyst reads the last finished work cycle; after a verification cycle it also sees the verdict.
+        // Unfinished cycles and earlier analyst attempts (an interrupted one included) are passed over.
+        const finished=async(from,roles)=>{for(let n=from;n>=1;n--){
+          const p=await store.getPacket(state.researchId,n),role=p?.status==='RECORDED_RESULT'?roleOfRef(p.pipelineRef):null;
+          if(roles.includes(role)&&(role==='verify'?p.decision?.detail?.verificationRecord:await readable(state.researchId,n)))return p;
+         }return null;};
+        let source=await finished(state.lastCommittedPacket,['work','verify']),verification;
+        if(source&&roleOfRef(source.pipelineRef)==='verify'){
+         verification=policyApi.verificationText(source.decision.detail.verificationRecord);
+         source=await finished(source.cycleId-1,['work']);
         }
+        if(!source)throw Error('CIRCLE_COMMITTED_PACKET_MISSING');
+        const workId=source.cycleId;
         const {packet,report,answers}=await contextApi.readCycle(store,state.researchId,workId);
         const current=(await loadPipeline(packet.pipelineRef))?.schema||schema;
         const allowedRefs=[];
@@ -209,7 +218,8 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
         return state.task+checked;
        }
        const task=await contextApi.buildTask({state,store,mode:contextMode,cycles:state.lastCommittedPacket!=null?cycles:null,maxChars:room,onContext:v=>{context=v;}})+checked;await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
-     maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:observedGate
+     maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:observedGate,
+     recoverReport:({state,store})=>recoverReport({state,store,models})
     });
     return {controller,observedGate};
    }};
@@ -257,6 +267,41 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    return true;
   }catch(error){return await fail('REREAD_ERROR',{error});}
  }
+ // A run interrupted by Stop or a reload may hold every answer in its journal while its report is unfinished. The Basic
+ // engine replays the recorded schema on those answers (no transport, nothing is written); the report is used only when it
+ // comes out settled. null: the original record stays as it is.
+ async function recoverReport({state,store,models}){
+  const id=state.researchId,runId=state.activeRunId;
+  const settled=report=>{try{contextApi.extractAnswers(report);return true;}catch(_){return false;}};
+  try{
+   const run=await store.getRun(id,runId);
+   if(!run||run.batches.some(b=>['INTENT','UNKNOWN','ABANDONED_UNKNOWN'].includes(b.status)))return null;
+   const rows=await store.getEvents(id,runId),events=rows.map(r=>r.payload);
+   if(settled(rows.find(r=>r.eventId===run.resultEventId)?.payload?.report))return null;
+   const start=events.find(e=>e?.type==='RUN_INTENT');
+   if(!start?.schema)return null;
+   const recorded=[];
+   for(const intent of events.filter(e=>e?.type==='DISPATCH_INTENT')){
+    const response=events.find(e=>e?.type==='DISPATCH_RESPONSE'&&e.batchId===intent.batchId)?.response?.byModel;
+    const reread=rows.find(r=>r.eventId==='RECONCILED:'+intent.batchId)?.payload;
+    const prompts=events.find(e=>e?.type==='DISPATCH_PROMPT'&&e.batchId===intent.batchId)?.prompts;
+    const byModel=response||(reread?.status==='RESPONSE'&&reread.evidence?.answers?Object.fromEntries(Object.entries(reread.evidence.answers).map(([model,text])=>
+     [model,{text,status:'SUCCESS',completion:'complete',answered:true,sentPrompt:typeof prompts==='string'?prompts:prompts?.[model]}])):null);
+    if(byModel)recorded.push({step:intent.meta?.step,byModel});
+   }
+   if(!recorded.length)return null;
+   const adapter=adapterApi.createBasicAdapter({
+    send:async(names,_,meta)=>{
+     const at=recorded.findIndex(r=>r.step===meta?.step&&names.every(name=>r.byModel[name]));
+     if(at<0)throw Object.assign(Error('CIRCLE_ANSWER_NOT_RECORDED'),{notSent:true});
+     return {byModel:recorded.splice(at,1)[0].byModel};
+    },
+    accept:bridge.accept,journal:async()=>{},availableModels:models,isRole:()=>true,roleText:bridge.roleText});
+   const report=await adapter.execute({researchId:id,cycleId:run.cycleId,runId,schema:start.schema,task:start.task,
+    maxCalls:start.maxCalls,maxPromptChars:start.maxPromptChars});
+   return settled(report)?{...report,reservedCalls:run.usedCalls,recovered:true}:null;
+  }catch(_){return null;}
+ }
  // The research loop: one bounded transition per iteration, shared by start and resume.
  async function drive({id,store,controller,observedGate,loadPipeline,schema,session,record,emit}){
   for(;;){
@@ -294,11 +339,12 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    break;
   }
   if(session.stopRequested){
-   // Stop after a request left the page: its outcome is unknown. Close the research (no resend) and free the transport.
+   // Stop after a request left the page: its outcome is unknown. The research pauses with the run open (no resend) and the
+   // transport is freed; a person continues or closes it later.
    const stopped=await store.load(id);
-   if(stopped.activeRunId&&['RECONCILE','RUNNING','INTENT'].includes(stopped.phase)){
-    try{await record(await controller.closeStopped(id));}
-    catch(error){await emit('RUN_CLOSE_FAILED',{state:stopped,error});}
+   if(unsettled(stopped)&&stopped.stopRequested){
+    try{await record(await controller.suspend(id));}
+    catch(error){await emit('RUN_SUSPEND_FAILED',{state:stopped,error});}
    }
   }
  }
@@ -372,11 +418,11 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    try{backup?.close?.();}finally{try{active?.close();}finally{running=null;if(held)try{bridge.release?.();}catch(_){}}}
   }
  }
- // Human-started continuation of a saved research after a page reload (mode: resume | abandon | close).
+ // Human-started continuation of a saved research after Stop, a pause or a page reload (mode: resume | abandon | close).
  // The outcome of a request that was in flight is never guessed: it pauses for a human choice; nothing is resent.
- async function recover(id,mode,onProgress=()=>{}){
+ async function recover(id,mode,onProgress=()=>{},maxCalls){
   if(running)throw Error('CIRCLE_ALREADY_RUNNING');
-  if(typeof id!=='string'||!id)throw Error('CIRCLE_INPUT_INVALID');
+  if(typeof id!=='string'||!id||(maxCalls!==undefined&&(!pos(maxCalls)||maxCalls>10000)))throw Error('CIRCLE_INPUT_INVALID');
   const session={researchId:id,controller:null,stopRequested:false,bridgeRun:null};
   running=session;
   let active,backup,held=false;
@@ -393,7 +439,10 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    const store=active.store;
    let state=await store.load(id);
    stopBeat=await startHeartbeat(id);await setPending(id,'ACTIVE');
-   const cfg={...saved,maxCallsPerCycle:pos(saved.maxCallsPerCycle)?saved.maxCallsPerCycle:state.budget.maxCalls,
+   // A higher limit given at Resume: the calls already used stay used. The per-cycle limit follows it when it was the whole budget.
+   const raise=mode==='resume'&&state.phase!=='COMPLETED'&&pos(maxCalls)&&maxCalls>state.budget.maxCalls;
+   const wholeBudget=!pos(saved.maxCallsPerCycle)||saved.maxCallsPerCycle===state.budget.maxCalls;
+   const cfg={...saved,maxCallsPerCycle:raise&&wholeBudget?maxCalls:pos(saved.maxCallsPerCycle)?saved.maxCallsPerCycle:state.budget.maxCalls,
     maxPromptChars:pos(saved.maxPromptChars)?saved.maxPromptChars:20000};
    await emit('RESEARCH_RESUME',{mode,state});
    const backupRef={gate:null};
@@ -424,8 +473,15 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     await controller.takeOver(id,owner.epoch);
     await emit('OWNERSHIP_TAKEN_OVER',{owner});
    }
+   if(raise){
+    await record(await controller.raiseBudget(id,maxCalls));
+    // Saved only after the budget is really raised.
+    if(wholeBudget)await storage.set({[key(id)]:{...saved,maxCallsPerCycle:maxCalls}});
+   }
    state=await store.load(id);
-   const inFlight=Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase);
+   const inFlight=unsettled(state);
+   // A person continues a stopped run: once its outcome is settled the Stop flag is cleared (a Stop pressed meanwhile stays).
+   const lift=async()=>{const current=await store.load(id);if(current.stopRequested&&!session.stopRequested)await record(await controller.resumeRun(id));};
    if(mode==='close'){
     await controller.stop(id);
     if(inFlight)await record(await controller.closeStopped(id));
@@ -435,15 +491,28 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    if(mode==='abandon'){
     if(!inFlight)throw Error('CIRCLE_NOTHING_TO_RESOLVE');
     await record(await controller.abandonUnknown(id));
+    await lift();
    }else{
     if(inFlight){
-     // The request may have gone out before the reload: it is never resent. The answer is taken only from the page, by the
-     // delivery token of the journaled request; without a confirmed answer a human chooses.
-     if(await rereadBatch(id,{store,controller,state,emit}))state=await store.load(id);
-     else{
-      await record({state,outcome:'PAUSED',reason:'UNKNOWN_DISPATCH_AFTER_RELOAD',runId:state.activeRunId});
+     // The request may have gone out before the Stop or the reload: it is never resent. The answer is taken only from the page,
+     // by the delivery token of the journaled request; without a confirmed answer a human chooses.
+     await controller.claim(id);
+     state=await store.load(id);
+     const run=await store.getRun(id,state.activeRunId);
+     let settled;
+     if(state.phase==='RECONCILE'&&run&&!run.batches.some(b=>['INTENT','UNKNOWN'].includes(b.status))){
+      // Nothing of the run is left unanswered: it is committed as it is.
+      await record(await controller.reconcile(id,{evidence:{source:'OWNER_RESUME',reference:state.activeRunId}}));
+      settled=true;
+     }else settled=await rereadBatch(id,{store,controller,state,emit});
+     if(!settled){
+      state=await store.load(id);
+      // A stopped research goes back to the pause and does not hold the transport.
+      if(state.stopRequested)await record(await controller.suspend(id));
+      await record({state:await store.load(id),outcome:'PAUSED',reason:'UNKNOWN_DISPATCH_AFTER_RELOAD',runId:state.activeRunId});
       return await finish();
      }
+     await lift();
     }else if(state.phase==='PAUSED'){
      if(state.backupRequiredCycleId!=null){
       await record(await controller.tick(id));
@@ -464,7 +533,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    try{backup?.close?.();}finally{try{active?.close();}finally{running=null;if(held)try{bridge.release?.();}catch(_){}}}
   }
  }
- const resume=(id,options={})=>recover(id,'resume',options.onProgress);
+ const resume=(id,options={})=>recover(id,'resume',options.onProgress,options.maxCalls);
  // choice: 'abandon' (continue without the unknown batch) | 'close' (close the research).
  async function resolveUnknown(id,choice,options={}){
   if(!['abandon','close'].includes(choice))throw Error('CIRCLE_INPUT_INVALID');
@@ -479,7 +548,19 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   return {status:'STOP_REQUESTED',researchId:session.researchId};
  }
  async function latest(){return (await storage.get('thecycle.circle.latest'))['thecycle.circle.latest']||null;}
- return Object.freeze({start,resume,resolveUnknown,stop,snapshot,latest,isRunning:()=>Boolean(running)});
+ // Saved researches of this runner, newest first: what a person chooses from to look at, continue or close.
+ async function list(){
+  const active=await activeStore.createActiveStateStore();
+  try{
+   const rows=[];
+   for(const state of await active.store.listResearch()){
+    const saved=(await storage.get(key(state.researchId)))[key(state.researchId)];
+    if(saved)rows.push({researchId:state.researchId,task:state.task,phase:state.phase,usedCalls:state.budget.usedCalls,maxCalls:state.budget.maxCalls,createdAt:saved.createdAt||''});
+   }
+   return rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  }finally{active.close();}
+ }
+ return Object.freeze({start,resume,resolveUnknown,stop,snapshot,latest,list,isRunning:()=>Boolean(running)});
 }
 const api=Object.freeze({createCircleRunner});
 root.TheCycleCircle=api;

@@ -202,11 +202,11 @@ test('4b. budget exactly spent on the last cycle: BUDGET_EXHAUSTED, nothing beyo
   await invariants(x, [r.researchId]);
 });
 
-test('5. Stop during a send: OWNER_STOP_UNRESOLVED, unknown batch kept, a new start goes through and does not resend', async () => {
+test('5. Stop during a send: research paused with the unknown batch kept, a new start goes through and does not resend', async () => {
   const x = await harness({ analyst: [complete(refOf(1))], onSend: async (ctx) => { if (ctx.n === 1) { await x.runner.stop(); return { byModel: {} }; } } }).init();
   const first = await x.runner.start({ task: 'Investigate', maxCalls: 6 });
   assert.equal(x.transport.length, 1);
-  assert.equal(first.state.phase, 'COMPLETED'); assert.equal(first.state.closedReason, 'OWNER_STOP_UNRESOLVED');
+  assert.equal(first.state.phase, 'RECONCILE'); assert.equal(first.pauseReason, 'OWNER_STOP_UNRESOLVED');
   assert.deepEqual((await x.store.getRun(first.researchId, first.researchId + ':cycle:1')).batches.map((b) => b.status), ['UNKNOWN']);
   assert.equal((await x.store.getOwnership())?.ownerId ?? null, null);
   const second = await x.runner.start({ task: 'Second', maxCalls: 4 });

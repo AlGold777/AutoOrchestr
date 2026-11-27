@@ -8963,13 +8963,41 @@ document.addEventListener('click', (event) => {
             pauseReason: result.pauseReason, lastDecision: result.lastDecision,
             lastOutcome: result.outcomes?.at(-1), result: result.report?.answers
         });
-        // An outcome left unknown by a reload: the two human choices appear next to Status.
+        // An outcome left unknown by Stop or a reload: the two human choices appear next to Status.
         const showCircleResult = (result) => {
             showCircleStatus(result.activeElsewhere ? 'Circle: исследование идёт в другой вкладке.' : circleSummary(result));
             for (const id of ['circle-abandon-unknown', 'circle-close']) {
                 const button = document.getElementById(id);
                 if (button) button.hidden = Boolean(result.activeElsewhere) || !(result.unknown || result.pauseReason === 'UNKNOWN_DISPATCH_AFTER_RELOAD' || result.outcomes?.at(-1)?.reason === 'UNKNOWN_DISPATCH_AFTER_RELOAD');
             }
+        };
+        // Saved researches: Status, Resume, Abandon and Close act on the selected one (newest by default).
+        let circleResearches = [];
+        const showCircleLimit = () => {
+            const select = document.getElementById('circle-research-select');
+            const input = document.getElementById('circle-resume-budget');
+            const row = circleResearches.find((item) => item.researchId === select?.value);
+            if (input) input.value = row ? String(row.maxCalls) : '';
+        };
+        const refreshCircleResearches = async (runner, selectedId) => {
+            const select = document.getElementById('circle-research-select');
+            if (!select) return;
+            circleResearches = await runner.list();
+            const wanted = selectedId || select.value;
+            select.replaceChildren(...circleResearches.map((row) => {
+                const option = document.createElement('option');
+                option.value = row.researchId;
+                option.textContent = `${row.createdAt.slice(0, 16).replace('T', ' ')} · ${row.phase} · ${row.usedCalls}/${row.maxCalls} · ${row.task.slice(0, 60)}`;
+                return option;
+            }));
+            if (circleResearches.some((row) => row.researchId === wanted)) select.value = wanted;
+            showCircleLimit();
+        };
+        const selectedCircleResearch = async (runner) =>
+            document.getElementById('circle-research-select')?.value || runner.latest();
+        // Fills the list when the Circle controls appear; a failure leaves it empty and Status reports the reason.
+        const loadCircleResearches = async () => {
+            try { await refreshCircleResearches(circlePageRunner || createPageCircle()); } catch (_) {}
         };
         const createPageCircle = () => {
             if (!window.TheCycleCircle?.createCircleRunner) throw new Error('CIRCLE_RUNTIME_UNAVAILABLE');
@@ -9019,6 +9047,7 @@ document.addEventListener('click', (event) => {
                 showCircleStatus('Circle: подготовка запуска и проверка бэкапа.');
                 const result = await circlePageRunner.start({ task, maxCalls, onProgress: showCircleStatus });
                 showCircleResult(result);
+                await refreshCircleResearches(circlePageRunner, result.researchId).catch(() => {});
                 const outcome = result.outcomes?.at(-1)?.outcome || result.state?.phase;
                 showNotification('Circle: ' + outcome + '. Циклов сохранено: ' + (result.state?.lastCommittedPacket || 0), 'info');
                 return !['RECOVERY_REQUIRED', 'BACKUP_REQUIRED', 'RUN_REJECTED'].includes(outcome);
@@ -9043,12 +9072,22 @@ document.addEventListener('click', (event) => {
         document.getElementById('circle-status')?.addEventListener('click', async () => {
             try {
                 const runner = circlePageRunner || createPageCircle();
-                const id = await runner.latest();
+                await refreshCircleResearches(runner);
+                const id = await selectedCircleResearch(runner);
                 if (id) showCircleResult(await runner.snapshot(id)); else showCircleStatus('Circle: исследований ещё нет.');
             } catch (error) { showCircleStatus('Circle: ' + String(error?.message || error)); }
         });
-        // Continue the saved research after a reload (G4.1). "resume" needs the backup directory, so its permission is requested
-        // first, inside the click; "abandon" / "close" are the human choices for an outcome left unknown by the reload.
+        // Another research chosen: show its state and its own limit; nothing is started.
+        document.getElementById('circle-research-select')?.addEventListener('change', async () => {
+            showCircleLimit();
+            try {
+                const runner = circlePageRunner || createPageCircle();
+                const id = await selectedCircleResearch(runner);
+                if (id) showCircleResult(await runner.snapshot(id));
+            } catch (error) { showCircleStatus('Circle: ' + String(error?.message || error)); }
+        });
+        // Continue the selected research after Stop, a pause or a reload (G4). "resume" needs the backup directory, so its permission is requested
+        // first, inside the click; "abandon" / "close" are the human choices for an outcome left unknown by Stop or a reload.
         const runCircleRecovery = async (mode) => {
             if (circlePageRunner || pipelineRunActive || theCycleHeld) { showNotification('Pipeline already running', 'warn'); return false; }
             if (circleAccessPending) return false;
@@ -9067,15 +9106,19 @@ document.addEventListener('click', (event) => {
                 runner = createPageCircle();
                 // Taken before the first await: a Run click in between sees the page busy.
                 circlePageRunner = runner;
-                const id = await runner.latest();
+                const id = await selectedCircleResearch(runner);
                 if (!id) { showCircleStatus('Circle: исследований ещё нет.'); return false; }
+                const limit = Number(document.getElementById('circle-resume-budget')?.value || 0);
                 setPipelineEditingEnabled(false);
                 setPipelineRunUi(true);
                 updateDebateButtonsUi();
                 showCircleStatus('Circle: продолжение исследования, проверка бэкапа.');
                 const options = { onProgress: showCircleStatus };
+                // The limit field of the selected research: only a value is passed on; a higher one raises the limit.
+                if (mode === 'resume' && limit) options.maxCalls = limit;
                 const result = mode === 'resume' ? await runner.resume(id, options) : await runner.resolveUnknown(id, mode === 'close' ? 'close' : 'abandon', options);
                 showCircleResult(result);
+                await refreshCircleResearches(runner, id).catch(() => {});
                 showNotification('Circle: ' + (result.outcomes?.at(-1)?.outcome || result.state?.phase), 'info');
                 return true;
             } catch (error) {
@@ -9799,7 +9842,9 @@ document.addEventListener('click', (event) => {
             const editable = draft || (!!activeName && !config?.disabled);
             const circleControls = document.getElementById('circle-pipeline-controls');
             if (circleControls) {
+                const wasHidden = circleControls.hidden;
                 circleControls.hidden = config?.protocol?.presetId !== 'CIRCLE';
+                if (wasHidden && !circleControls.hidden) void loadCircleResearches();
                 if (!circleControls.hidden && !pipelineRunActive) refreshCircleSchemaSelect();
             }
             if (pipelinePanel) {

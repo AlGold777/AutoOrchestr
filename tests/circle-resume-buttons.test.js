@@ -8,6 +8,8 @@ describe('Circle continue after reload: buttons', () => {
       const html = read(file);
       const block = html.slice(html.indexOf('id="circle-pipeline-controls"'), html.indexOf('</section>', html.indexOf('id="circle-pipeline-controls"')));
       expect(block).toContain('id="circle-resume"');
+      expect(block).toContain('id="circle-research-select"');
+      expect(block).toContain('id="circle-resume-budget"');
       expect(block).toMatch(/id="circle-abandon-unknown"[^>]*hidden/);
       expect(block).toMatch(/id="circle-close"[^>]*hidden/);
     });
@@ -20,6 +22,12 @@ describe('Circle continue after reload: buttons', () => {
     expect(results).toMatch(/const access = mode === 'close' \? null : ensureCircleBackupAccess\(\);/);
     expect(results).toContain("runner.resume(id, options)");
     expect(results).toContain("runner.resolveUnknown(id,");
+  });
+  test('saved researches are chosen by the person; the newest is only the fallback', () => {
+    expect(results).toContain('circleResearches = await runner.list();');
+    expect(results.match(/runner\.latest\(\)/g)).toHaveLength(1);
+    expect(results).toContain("if (mode === 'resume' && limit) options.maxCalls = limit;");
+    expect(results).toContain('if (wasHidden && !circleControls.hidden) void loadCircleResearches();');
   });
   test('busy page is refused like a start', () => {
     expect(results).toMatch(/const runCircleRecovery = async \(mode\) => \{\s*if \(circlePageRunner \|\| pipelineRunActive \|\| theCycleHeld\)/);
