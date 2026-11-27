@@ -159,7 +159,8 @@ test('2. strategy change: valid schema, the next work cycles run by it, stored o
 
 const proc = [{ id: 'p1', check: 'пересчитать' }, { id: 'p2', check: 'найти контрпример' }];
 const checks = (a = 'PASS', b = 'PASS') => [{ id: 'p1', result: a, evidence: 'e1' }, { id: 'p2', result: b, evidence: 'e2' }];
-const verdict = (v) => json({ verdict: v, checks: checks(), limitations: [] });
+const cover = { id: 'COVERS_TASK', result: 'PASS', evidence: 'covers' };
+const verdict = (v) => json({ verdict: v, checks: [...checks(), cover], limitations: [] });
 
 test('3a. verified final: VERIFY -> another model VERIFIED, all PASS -> COMPLETE gives VERIFIED_SOLUTION', async () => {
   const two = oneRound(['GPT', 'DeepSeek']);

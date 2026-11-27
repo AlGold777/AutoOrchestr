@@ -2,13 +2,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, json, isVerifier } = require('./thecycle-g3-fixture.js');
-const { parseVerification } = require('../disput/thecycle/circle-policy.js');
+const { parseVerification, COVERS_TASK } = require('../disput/thecycle/circle-policy.js');
 const REF = 'cycle=1 step=1 model=GPT';
 const proc = [{ id: 'p1', check: 'пересчитать' }, { id: 'p2', check: 'найти контрпример' }];
 const verify = json({ action: 'VERIFY', reason: 'SECRET-ANALYST-REASON', refs: [REF], claim: 'x=1', procedure: proc });
 const complete = json({ action: 'COMPLETE', reason: 'ok', refs: [REF] });
 const checks = (r1 = 'PASS', r2 = 'PASS') => [{ id: 'p1', result: r1, evidence: 'e1' }, { id: 'p2', result: r2, evidence: 'e2' }];
-const verdict = (v, c = checks(), extra = {}) => json({ verdict: v, checks: c, limitations: [], ...extra });
+// A live verifier also answers the check the code adds to every procedure.
+const cover = { id: 'COVERS_TASK', result: 'PASS', evidence: 'covers' };
+const verdict = (v, c = checks(), extra = {}) => json({ verdict: v, checks: [...c, cover], limitations: [], ...extra });
 const TWO = ['GPT', 'Claude'];
 
 const work2 = { schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'DeepSeek' }] }] };
@@ -25,8 +27,8 @@ test('verifier is a third model: not in refs, not the analyst, not a work answer
   const verifyPacket = await x.store.getPacket(r.researchId, 3);
   assert.match(verifyPacket.pipelineRef, /:verify:c2$/);
   const rec = verifyPacket.decision.detail.verificationRecord;
-  assert.deepEqual({ ...rec, checks: undefined }, { claim: 'x=1', procedure: proc, verdict: 'VERIFIED', checks: undefined, independence: 'FRESH_TAB_OTHER_MODEL', verifierModel: 'Qwen', limitations: [] });
-  assert.equal(rec.checks.length, 2);
+  assert.deepEqual({ ...rec, checks: undefined }, { claim: 'x=1', procedure: [...proc, { ...COVERS_TASK }], verdict: 'VERIFIED', checks: undefined, independence: 'FRESH_TAB_OTHER_MODEL', verifierModel: 'Qwen', limitations: [] });
+  assert.equal(rec.checks.length, 3);
   const second = x.sent.filter((s) => s.text.includes('Ты управляешь исследованием'))[1];
   assert.match(second.text, /РЕЗУЛЬТАТ ПРОВЕРКИ:\nвердикт: VERIFIED/);
   assert.equal(r.state.budget.usedCalls, 2 + 1 + 1 + 1);

@@ -120,13 +120,20 @@ test('without the policy module Circle keeps the fixed policy (no analyst)', asy
   assert.equal(x.prompts.length, 2); assert.ok(x.prompts.every((t) => !isAnalyst(t))); assert.equal(r.state.phase, 'PAUSED');
 });
 
-test('analyst summary is truncated like the work context: within 0.8 of maxPromptChars, with a mark', async () => {
+test('R04: an analyst summary that does not fit pauses with CIRCLE_CONTEXT_LIMIT; nothing is truncated or sent', async () => {
   const x = await fixture({ workText: 'W'.repeat(30000), analystAnswers: [json({ action: 'COMPLETE', reason: 'ok', refs: [REF] })] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 8000 });
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'CONTEXT_UNAVAILABLE');
+  assert.equal(r.outcomes.at(-1).error, 'CIRCLE_CONTEXT_LIMIT');
+  assert.equal(x.prompts.length, 1); assert.equal(x.prompts.filter(isAnalyst).length, 0);
+});
+
+test('R04: a summary that fits reaches the analyst whole', async () => {
+  const x = await fixture({ workText: 'W'.repeat(3000), analystAnswers: [json({ action: 'COMPLETE', reason: 'ok', refs: [REF] })] });
   const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 8000 });
   assert.equal(r.state.phase, 'COMPLETED');
   const analyst = x.prompts.find(isAnalyst);
-  assert.ok(analyst.length < 6400 + 300, String(analyst.length)); // the adapter adds its own suffix to the task assert.match(analyst, /\[TRUNCATED\]/);
-  assert.match(analyst, /ДОСТУПНЫЕ ДЕЙСТВИЯ:/);
+  assert.ok(analyst.includes('W'.repeat(3000))); assert.doesNotMatch(analyst, /TRUNCATED/);
 });
 
 test('a decision the store refuses to record pauses instead of sticking in EVALUATE', async () => {

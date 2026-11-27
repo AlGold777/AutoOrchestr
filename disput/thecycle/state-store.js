@@ -460,7 +460,7 @@
         out[key] = [...detail[key]];
       }
       if (detail.procedure !== undefined) {
-        if (!Array.isArray(detail.procedure) || detail.procedure.length > 10 || !detail.procedure.every((item) => isObj(item) &&
+        if (!Array.isArray(detail.procedure) || detail.procedure.length > 11 || !detail.procedure.every((item) => isObj(item) &&
             Object.keys(item).every((key) => ['id', 'check'].includes(key)) && typeof item.id === 'string' && typeof item.check === 'string')) throw fail('INVALID_DECISION_DETAIL');
         out.procedure = copy(detail.procedure);
       }

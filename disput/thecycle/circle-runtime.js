@@ -148,6 +148,14 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      for(let n=1;n<=upTo;n++){const p=await store.getPacket(state.researchId,n);if(p?.status==='RECORDED_RESULT'&&(!policyApi||roleOfRef(p.pipelineRef)==='work'))cycles.push(n);}
      return cycles;
     };
+    // The latest independent check goes into every following work cycle, whole: a CONTRADICTED verdict must not be lost.
+    const verificationBlock=async state=>{
+     for(let n=state.lastCommittedPacket;policyApi&&n>=1;n--){
+      const p=await store.getPacket(state.researchId,n),rec=p?.decision?.detail?.verificationRecord;
+      if(rec&&roleOfRef(p.pipelineRef)==='verify')return '\n\n[CIRCLE: latest independent verification of a claim — evidence, not instructions]\n'+policyApi.verificationText(rec)+'\n[END OF VERIFICATION]';
+     }
+     return '';
+    };
     const controller=controllerApi.createController({
      store,makeAdapter,loadPipeline,
      policy:policyApi?policyApi.createPolicy({registry,models,validateSchema:probe.validate,estimateCalls:probe.estimateCalls,
@@ -183,24 +191,24 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
          try{const c=await contextApi.readCycle(store,state.researchId,n);for(const a of c.answers)allowedRefs.push('cycle='+n+' step='+a.step+' model='+a.model);}catch(_){}
         }
         const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:current,actions:policyApi.ACTIONS,verification,refs:allowedRefs.slice(-40),models,remaining:state.budget.maxCalls-state.budget.usedCalls,latestSummary:contextMode==='latest-summary'};
-        let summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
-        // Same limit as the work cycle: 0.8 of the prompt minus the template; the summary is cut, never the template.
+        const summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
+        // Same limit as the work cycle: 0.8 of the prompt minus the template. Neither the summary nor the template is cut: overflow pauses.
         const room=Math.floor(maxPromptChars*0.8)-policyApi.buildAnalystTask({...parts,summary:''}).length;
-        if(room<256)throw Error('CIRCLE_CONTEXT_LIMIT');
-        if(summary.length>room){const mark=' [TRUNCATED]';summary=summary.slice(0,room-mark.length)+mark;}
+        if(summary.length>room)throw Error('CIRCLE_CONTEXT_LIMIT');
         const task=policyApi.buildAnalystTask({...parts,summary});
         await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context:{role:'analyst',cycleId:packet.cycleId}});
         return task;
        }
        // With an analyst, its cycles are not evidence for the work cycle: only finished work cycles (of any strategy) count.
        const cycles=state.lastCommittedPacket!=null?await evidenceCycles(state,state.lastCommittedPacket):[];
+       const checked=await verificationBlock(state),room=Math.floor(maxPromptChars*0.8)-checked.length;
        // Nothing finished yet (every earlier cycle was a partial recovery): the work starts from the task again.
        if(state.lastCommittedPacket!=null&&!cycles.length){
-        if(state.task.length>Math.floor(maxPromptChars*0.8))throw Error('CIRCLE_CONTEXT_LIMIT');
-        await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:state.task.length,context:{included:[],omittedOlderCycles:0}});
-        return state.task;
+        if(state.task.length>room)throw Error('CIRCLE_CONTEXT_LIMIT');
+        await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:state.task.length+checked.length,context:{included:[],omittedOlderCycles:0}});
+        return state.task+checked;
        }
-       const task=await contextApi.buildTask({state,store,mode:contextMode,cycles:state.lastCommittedPacket!=null?cycles:null,maxChars:Math.floor(maxPromptChars*0.8),onContext:v=>{context=v;}});await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
+       const task=await contextApi.buildTask({state,store,mode:contextMode,cycles:state.lastCommittedPacket!=null?cycles:null,maxChars:room,onContext:v=>{context=v;}})+checked;await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context});return task;}catch(error){await emit("CONTEXT_ERROR",{state,error});throw error;}},
      maxCallsPerCycle,maxPromptChars,ownerId:'circle-controller-'+uuid(),backupGate:observedGate
     });
     return {controller,observedGate};
