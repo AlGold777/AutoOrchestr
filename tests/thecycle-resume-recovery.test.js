@@ -154,3 +154,31 @@ test('a second Stop while the run is being paused leaves the transport free', as
   const first = await x.runner.start({ task: 'T', maxCalls: 4 });
   assert.equal(first.state.phase, 'RECONCILE'); await lockFree(x);
 });
+
+test('with page storage lost, the research continues from what the state (and so the file copy) holds', async () => {
+  const x = await harness({ analyst: [json({ action: 'WAIT_OWNER', reason: 'q', refs: [refOf(1)] }), complete(refOf(1))] }).init();
+  const first = await x.runner.start({ task: 'T', maxCalls: 4 });
+  x.values.clear();
+  assert.deepEqual((await x.runner.list()).map((r) => r.researchId), [first.researchId]);
+  const resumed = await x.runner.resume(first.researchId);
+  assert.equal(resumed.state.phase, 'COMPLETED');
+});
+
+test('Stop that interrupts a run makes a file copy of the paused state', async () => {
+  const copies = []; let x;
+  x = await harness({ createBackup: async ({ stateStore }) => ({ close() {}, gate: {
+    async requireCommit() {}, async assertCanStartCycle() {},
+    async persist(id) { copies.push((await stateStore.load(id)).phase); return {}; } } }),
+    onSend: async () => { await x.runner.stop(); return { byModel: {} }; } }).init();
+  const first = await x.runner.start({ task: 'T', maxCalls: 4 });
+  assert.equal(first.state.phase, 'RECONCILE'); assert.equal(copies.at(-1), 'RECONCILE'); await lockFree(x);
+});
+
+test('the per-cycle limit follows a raised budget without a second saved value', async () => {
+  const x = await harness({ analyst: Array(9).fill(json({ action: 'WAIT_OWNER', reason: 'q', refs: [refOf(1)] })) }).init();
+  const first = await x.runner.start({ task: 'T', maxCalls: 4 });
+  const before = clone([...x.values.entries()].find(([key]) => key.includes('research.'))[1]);
+  const resumed = await x.runner.resume(first.researchId, { maxCalls: 9 });
+  assert.equal(resumed.state.budget.maxCalls, 9);
+  assert.deepEqual([...x.values.entries()].find(([key]) => key.includes('research.'))[1], before);
+});

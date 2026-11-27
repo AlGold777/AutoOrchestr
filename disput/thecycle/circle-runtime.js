@@ -62,7 +62,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    const packet=state.lastCommittedPacket==null?null:await active.store.getPacket(id,state.lastCommittedPacket);
    const events=packet?await active.store.getEvents(id,packet.runId):[];
    const report=events.find(e=>e.eventId===packet?.resultEventId)?.payload?.report||null;
-   const source=(await storage.get(key(id)))[key(id)]||null;
+   const source=(await storage.get(key(id)))[key(id)]||state.config||null;
    // After a reload a run left in flight has an unknown outcome: it is told apart from a live run by "nothing runs in this page".
    // A run paused by Stop (open run, transport free) is unknown too, also right after the Stop in this page.
    const elsewhere=!running&&await activeElsewhere(id);
@@ -86,7 +86,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   return {outcomes,emit,record};
  };
  // One assembly for start and resume: schema registry, pipeline loader, adapter, controller.
- // cfg: the research config saved under thecycle.circle.research.<id>. backupRef.gate is filled once the backup is open.
+ // cfg: the research config saved under thecycle.circle.research.<id> and in the research state. backupRef.gate is filled once the backup is open.
  function assemble(id,cfg,{store,emit,session,backupRef}){
   const {schema,pipelineRef:ref,models,contextMode,maxCallsPerCycle,maxPromptChars}=cfg;
   // Registry of cycle schemas: the work schema and (when the policy module is present) the analyst schema built from it.
@@ -303,7 +303,10 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   }catch(_){return null;}
  }
  // The research loop: one bounded transition per iteration, shared by start and resume.
- async function drive({id,store,controller,observedGate,loadPipeline,schema,session,record,emit}){
+ // The file copy holds the paused state, an interrupted run included. A failed copy is journaled by the gate and keeps
+// the pause: the next Resume makes a verified copy before anything runs.
+async function copyPaused(observedGate,id){try{await observedGate.persist(id,'manual');}catch(_){}}
+async function drive({id,store,controller,observedGate,loadPipeline,schema,session,record,emit}){
   for(;;){
    let state=await store.load(id);
    if(session.stopRequested&&!state.stopRequested){await controller.stop(id);state=await store.load(id);}
@@ -346,6 +349,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     try{await record(await controller.suspend(id));}
     catch(error){await emit('RUN_SUSPEND_FAILED',{state:stopped,error});}
    }
+   await copyPaused(observedGate,id);
   }
  }
   async function start({task,maxCalls=24,maxCallsPerCycle=maxCalls,maxPromptChars=20000,onProgress=()=>{},contextMode=null}={}){
@@ -388,8 +392,9 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    if(!backup?.gate?.persist||!backup.gate.assertCanStartCycle)throw Error('CIRCLE_BACKUP_UNAVAILABLE');
    backupRef.gate=backup.gate;
    if(session.stopRequested)return {researchId:id,outcomes,state:{phase:'PAUSED'},reason:'OWNER_STOP'};
-    await storage.set({[key(id)]:{...cfg,analyst:parts.analyst||undefined,createdAt:new Date().toISOString(),database:active.database}});
-   await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls});created=true;
+    const saved={...cfg,analyst:parts.analyst||undefined,createdAt:new Date().toISOString(),database:active.database};
+    await storage.set({[key(id)]:saved});
+   await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls,config:saved});created=true;
    await storage.set({'thecycle.circle.latest':id});
    stopBeat=await startHeartbeat(id);await setPending(id,'ACTIVE');
    const {controller,observedGate}=parts.build();
@@ -433,16 +438,19 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    // The research may be working in another tab (fresh heartbeat of another runner): no takeover, no choice buttons.
    if(await activeElsewhere(id))throw Object.assign(new Error('CIRCLE_ACTIVE_ELSEWHERE'),{code:'CIRCLE_ACTIVE_ELSEWHERE'});
    if(typeof bridge.hold==='function'){bridge.hold({stop});held=true;}
-   const saved=(await storage.get(key(id)))[key(id)];
-   if(!saved?.schema||!saved.pipelineRef||!Array.isArray(saved.models))throw Error('CIRCLE_RESEARCH_NOT_FOUND');
+   const stored=(await storage.get(key(id)))[key(id)];
    active=await activeStore.createActiveStateStore();
    const store=active.store;
-   let state=await store.load(id);
+   let state=await store.load(id).catch(error=>{throw stored?error:Error('CIRCLE_RESEARCH_NOT_FOUND');});
+   // Page storage may be gone (a research restored from the file backup): the state carries the same config.
+   const saved=stored?.schema?stored:state.config;
+   if(!saved?.schema||!saved.pipelineRef||!Array.isArray(saved.models))throw Error('CIRCLE_RESEARCH_NOT_FOUND');
    stopBeat=await startHeartbeat(id);await setPending(id,'ACTIVE');
    // A higher limit given at Resume: the calls already used stay used. The per-cycle limit follows it when it was the whole budget.
    const raise=mode==='resume'&&state.phase!=='COMPLETED'&&pos(maxCalls)&&maxCalls>state.budget.maxCalls;
-   const wholeBudget=!pos(saved.maxCallsPerCycle)||saved.maxCallsPerCycle===state.budget.maxCalls;
-   const cfg={...saved,maxCallsPerCycle:raise&&wholeBudget?maxCalls:pos(saved.maxCallsPerCycle)?saved.maxCallsPerCycle:state.budget.maxCalls,
+   // Derived, not saved: the budget change stays a single write.
+   const wholeBudget=!pos(saved.maxCallsPerCycle)||saved.maxCallsPerCycle>=(state.budgetHistory?.[0]?.from??state.budget.maxCalls);
+   const cfg={...saved,maxCallsPerCycle:wholeBudget?(raise?maxCalls:state.budget.maxCalls):saved.maxCallsPerCycle,
     maxPromptChars:pos(saved.maxPromptChars)?saved.maxPromptChars:20000};
    await emit('RESEARCH_RESUME',{mode,state});
    const backupRef={gate:null};
@@ -473,11 +481,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     await controller.takeOver(id,owner.epoch);
     await emit('OWNERSHIP_TAKEN_OVER',{owner});
    }
-   if(raise){
-    await record(await controller.raiseBudget(id,maxCalls));
-    // Saved only after the budget is really raised.
-    if(wholeBudget)await storage.set({[key(id)]:{...saved,maxCallsPerCycle:maxCalls}});
-   }
+   if(raise)await record(await controller.raiseBudget(id,maxCalls));
    state=await store.load(id);
    const inFlight=unsettled(state);
    // A person continues a stopped run: once its outcome is settled the Stop flag is cleared (a Stop pressed meanwhile stays).
@@ -508,7 +512,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      if(!settled){
       state=await store.load(id);
       // A stopped research goes back to the pause and does not hold the transport.
-      if(state.stopRequested)await record(await controller.suspend(id));
+      if(state.stopRequested){await record(await controller.suspend(id));await copyPaused(observedGate,id);}
       await record({state:await store.load(id),outcome:'PAUSED',reason:'UNKNOWN_DISPATCH_AFTER_RELOAD',runId:state.activeRunId});
       return await finish();
      }
@@ -554,7 +558,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   try{
    const rows=[];
    for(const state of await active.store.listResearch()){
-    const saved=(await storage.get(key(state.researchId)))[key(state.researchId)];
+    const saved=(await storage.get(key(state.researchId)))[key(state.researchId)]||state.config;
     if(saved)rows.push({researchId:state.researchId,task:state.task,phase:state.phase,usedCalls:state.budget.usedCalls,maxCalls:state.budget.maxCalls,createdAt:saved.createdAt||''});
    }
    return rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));

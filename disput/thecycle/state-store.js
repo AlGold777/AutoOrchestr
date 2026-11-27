@@ -101,12 +101,15 @@
     const read = (work) => tx(db, 'readonly', work);
     const write = (work) => tx(db, 'readwrite', work);
 
-    async function createResearch({ researchId, task, pipelineRef, maxCalls } = {}) {
-      if (![researchId, task, pipelineRef].every(str) || !pos(maxCalls)) throw fail('INVALID_RESEARCH');
+    // config: what the runner needs to continue the research (schema, models, limits); it travels with the file backup.
+    async function createResearch({ researchId, task, pipelineRef, maxCalls, config = null } = {}) {
+      if (![researchId, task, pipelineRef].every(str) || !pos(maxCalls) ||
+          (config !== null && (typeof config !== 'object' || Array.isArray(config)))) throw fail('INVALID_RESEARCH');
       const state = {
         researchId, task, pipelineRef, stateVersion: 0, phase: 'READY',
         nextCycle: 1, activeRunId: null, lastCommittedPacket: null, backupRequiredCycleId: null,
-        stopRequested: false, budget: { maxCalls, usedCalls: 0 }
+        stopRequested: false, budget: { maxCalls, usedCalls: 0 },
+        ...(config === null ? {} : { config: copy(config) })
       };
       return write(async (s) => {
         if (await request(s.research.get(researchId))) throw fail('RESEARCH_EXISTS');
