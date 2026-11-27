@@ -26,13 +26,34 @@ async function openBackup({stateStore,storage,onDiagnostic}){
 function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
  activeStore=root.TheCycleActiveStateStore,controllerApi=root.TheCycleController,
  adapterApi=root.TheCycleBasicAdapter,contextApi=root.TheCycleCircleContext,policyApi=root.TheCycleCirclePolicy,
- createBackup=openBackup,telemetry=root.TheCycleTelemetry,uuid=()=>root.crypto.randomUUID()}={}){
+ createBackup=openBackup,telemetry=root.TheCycleTelemetry,uuid=()=>root.crypto.randomUUID(),
+ reconcileApi=root.TheCycleTransportReconciliation,now=()=>Date.now(),
+ runnerId='circle-page-'+(root.crypto?.randomUUID?.()||String(Date.now())+Math.random())}={}){
  if(!bridge||!['capture','send','begin','end','accept','roleText'].every(k=>typeof bridge[k]==='function')||
  !storage?.get||!storage?.set||!activeStore?.createActiveStateStore||!controllerApi?.createController||
   !adapterApi?.createBasicAdapter||!contextApi?.buildTask||!contextApi?.parseContextTask||
   !contextApi?.validateSummarySchema||typeof createBackup!=='function')throw Error('CIRCLE_DEPENDENCIES_MISSING');
  let running=null;
  const key=id=>'thecycle.circle.research.'+id;
+ // Liveness of the research owner: a heartbeat in storage, written every 15 s while this page works. It never touches the run.
+ // A fresh heartbeat of another runner means the research goes on in another tab: no recovery buttons, no takeover.
+ const HB_KEY='thecycle.circle.heartbeat.',HB_FRESH_MS=180000,HB_EVERY_MS=15000,PENDING_KEY='thecycle.circle.pending';
+ async function activeElsewhere(id){
+  try{const hb=(await storage.get(HB_KEY+id))[HB_KEY+id];
+   return Boolean(hb&&hb.ownerId&&hb.ownerId!==runnerId&&Number.isFinite(hb.at)&&now()-hb.at<HB_FRESH_MS);}
+  catch(_){return false;}
+ }
+ async function startHeartbeat(id){
+  const beat=async at=>{try{await storage.set({[HB_KEY+id]:{ownerId:runnerId,at}});}catch(_){}};
+  await beat(now());
+  const timer=setInterval(()=>{void beat(now());},HB_EVERY_MS);
+  timer.unref?.();
+  return async()=>{clearInterval(timer);await beat(0);};
+ }
+ // Flag for the toolbar badge: a research exists that waits for a person (or runs). Set at start/resume, cleared by a final state.
+ const setPending=async(id,phase)=>{try{await storage.set({[PENDING_KEY]:{researchId:id,phase:phase||null,at:now()}});}catch(_){}};
+ const clearPending=async()=>{try{await storage.set({[PENDING_KEY]:null});}catch(_){}};
+ const settlePending=(id,state,closing)=>(state?.phase==='COMPLETED'||closing)?clearPending():setPending(id,state?.phase);
  async function snapshot(id){
   const active=await activeStore.createActiveStateStore();
   try{
@@ -42,9 +63,10 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    const report=events.find(e=>e.eventId===packet?.resultEventId)?.payload?.report||null;
    const source=(await storage.get(key(id)))[key(id)]||null;
    // After a reload a run left in flight has an unknown outcome: it is told apart from a live run by "nothing runs in this page".
-   const unknown=!running&&Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase);
-   const pauseReason=unknown?'UNKNOWN_DISPATCH_AFTER_RELOAD':(['PAUSED','COMPLETED'].includes(state.phase)?(state.lastDecision?.reason||state.closedReason||null):null);
-   return {researchId:id,database:active.database,state,packet,report,configured:source,unknown,pauseReason,lastDecision:state.lastDecision||null};
+   const elsewhere=!running&&await activeElsewhere(id);
+   const unknown=!running&&!elsewhere&&Boolean(state.activeRunId)&&['RECONCILE','INTENT','RUNNING'].includes(state.phase);
+   const pauseReason=elsewhere?'CIRCLE_ACTIVE_ELSEWHERE':unknown?'UNKNOWN_DISPATCH_AFTER_RELOAD':(['PAUSED','COMPLETED'].includes(state.phase)?(state.lastDecision?.reason||state.closedReason||null):null);
+   return {researchId:id,database:active.database,state,packet,report,configured:source,unknown,activeElsewhere:elsewhere,pauseReason,lastDecision:state.lastDecision||null};
   }finally{active.close();}
  }
   const makeRecorder=(id,onProgress)=>{
@@ -87,7 +109,9 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    schemas.set(value,built);
    return {ref:value,role,schema:built,reserveCalls:1};
   };
-  const makeAdapter=({journal,fence})=>adapterApi.createBasicAdapter({
+  const makeAdapter=({journal:rawJournal,fence})=>{
+   const journal=async event=>{const saved=await rawJournal(event);let state;try{state=await store.load(id);}catch(_){}await emit(event.type,{event,state});return saved;};
+   return adapterApi.createBasicAdapter({
    send:async(modelNames,prompts,meta)=>{
     // A failure of this pre-check happens before the transport is called: the adapter journals it as NOT_SENT.
     const notSent=(error)=>Object.assign(error instanceof Error?error:new Error(String(error)),{notSent:true});
@@ -96,10 +120,12 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     try{await emit('TRANSPORT_FENCE',{owner,runId:meta.runId,cycleId:meta.cycleId,batchId:meta.batchId,step:meta.step});}catch(error){throw notSent(error);}
     if(owner?.researchId!==fence.researchId||owner?.ownerId!==fence.ownerId||owner?.epoch!==fence.epoch||meta.runId!==session.bridgeRun)
      throw notSent(new Error('CIRCLE_STALE_OWNER'));
-    return bridge.send(modelNames,prompts,meta);
-   },accept:bridge.accept,journal:async event=>{const saved=await journal(event);let state;try{state=await store.load(id);}catch(_){}await emit(event.type,{event,state});return saved;},availableModels:models,isRole:()=>true,roleText:bridge.roleText,
+    // The prompts as sent (delivery token included) are journaled before the request leaves: a reread after a reload looks for them.
+    const onDispatchPrompts=async sent=>{await journal({researchId:meta.researchId,cycleId:meta.cycleId,runId:meta.runId,type:'DISPATCH_PROMPT',batchId:meta.batchId,prompts:sent});};
+    return bridge.send(modelNames,prompts,{...meta,onDispatchPrompts});
+   },accept:bridge.accept,journal,availableModels:models,isRole:()=>true,roleText:bridge.roleText,
    reread:typeof bridge.reread==='function'?bridge.reread:null,settings:typeof bridge.settings==='function'?bridge.settings:null
-  });
+  });};
   const probe=makeAdapter({journal:async()=>{},fence:{}});
   return {registry,schemas,analyst,loadPipeline,makeAdapter,probe,
    check:async()=>{for(const [schemaRef,candidate] of schemas){
@@ -174,6 +200,49 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     return {controller,observedGate};
    }};
  }
+ // After a reload the answer of a batch left in flight is looked for on the model page, never resent. The batch is settled only when
+ // every model of it shows its own request (the delivery token of the journaled prompt) with the answer confirmed by that token,
+ // and the evidence passes the fail-closed reconciliation (exactly one verified item of this owner epoch). Anything else: false.
+ async function rereadBatch(id,{store,controller,state,emit}){
+  const fail=async(why,extra={})=>{await emit('REREAD_NOT_CONFIRMED',{state,reason:why,...extra});return false;};
+  try{
+   if(typeof bridge.reread!=='function'||!reconcileApi?.reconcile)return await fail('REREAD_UNAVAILABLE');
+   if(state.phase!=='RECONCILE'||!state.activeRunId)return await fail('NOT_RECONCILE');
+   const runId=state.activeRunId;
+   const run=await store.getRun(id,runId);
+   const open=(run?.batches||[]).filter(b=>['INTENT','UNKNOWN'].includes(b.status));
+   if(open.length!==1)return await fail('BATCH_NOT_SINGLE');
+   const batchId=open[0].batchId;
+   const events=(await store.getEvents(id,runId)).map(e=>e.payload);
+   const intent=events.find(e=>e?.type==='DISPATCH_INTENT'&&e.batchId===batchId);
+   const sent=events.find(e=>e?.type==='DISPATCH_PROMPT'&&e.batchId===batchId);
+   if(!intent||!Array.isArray(intent.models)||!intent.models.length||!sent?.prompts)return await fail('NO_JOURNALED_PROMPT');
+   const owner=await store.getOwnership();
+   if(!owner?.ownerId||owner.researchId!==id||!pos(owner.epoch))return await fail('NO_OWNERSHIP');
+   const answers={},tags=[];
+   for(const model of intent.models){
+    const prompt=typeof sent.prompts==='string'?sent.prompts:sent.prompts[model];
+    const tag=String(prompt||'').match(/\[\[AO-[a-z0-9]{6}\]\]/i)?.[0];
+    // Without the delivery token of the request nothing proves whose turn the page shows.
+    if(!tag)return await fail('NO_DELIVERY_TOKEN',{model});
+    const reply=await bridge.reread({modelName:model,sentPrompt:prompt,sentPrompts:[prompt],previousText:''});
+    // confirmed = the delivery token of THIS request is the tail of the answer (the model finished writing); completion 'complete' and status SUCCESS come with it.
+    if(reply?.found!==true||reply.confirmed!==true||typeof reply.text!=='string'||!reply.text.trim())return await fail('ANSWER_NOT_CONFIRMED',{model,found:reply?.found===true,pageReason:reply?.reason});
+    if(reply.completion!=='complete'||reply.status!=='SUCCESS')return await fail('ANSWER_NOT_COMPLETE',{model,completion:reply.completion,status:reply.status});
+    // The same acceptance as the ordinary bridge path.
+    const verdict=bridge.accept({text:reply.text,completion:reply.completion,status:reply.status,prompt,reason:reply.reason||''})||{};
+    if(verdict.ok===false)return await fail('ANSWER_REJECTED',{model,verdict:verdict.reason});
+    answers[model]=reply.text;tags.push(tag);
+   }
+   const evidence={runId,batchId,ownerEpoch:owner.epoch,source:'BASIC_REREAD_OWN_TURN',reference:tags.join(','),status:'RESPONSE',verified:true,answers};
+   const checked=reconcileApi.reconcile({run:{runId},batches:[{batchId}],evidence:[evidence],ownerEpoch:owner.epoch});
+   const item=checked.batches[0];
+   if(item?.status!=='RESPONSE')return await fail('EVIDENCE_REJECTED');
+   await controller.reconcile(id,{batchId,status:'RESPONSE',evidence:item.evidence});
+   await emit('REREAD_CONFIRMED',{state:await store.load(id),runId,batchId});
+   return true;
+  }catch(error){return await fail('REREAD_ERROR',{error});}
+ }
  // The research loop: one bounded transition per iteration, shared by start and resume.
  async function drive({id,store,controller,observedGate,loadPipeline,schema,session,record,emit}){
   for(;;){
@@ -232,6 +301,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   const id=session.researchId;
   const {outcomes,emit,record}=makeRecorder(id,onProgress);
   session.emit=emit;
+  let stopBeat=null;
   try{
    // Keeps Basic and a second Circle out of the page for the whole research, gaps between cycles included.
    if(typeof bridge.hold==='function'){bridge.hold({stop});held=true;}
@@ -261,6 +331,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     await storage.set({[key(id)]:{...cfg,analyst:parts.analyst||undefined,createdAt:new Date().toISOString(),database:active.database}});
    await store.createResearch({researchId:id,task,pipelineRef:ref,maxCalls});created=true;
    await storage.set({'thecycle.circle.latest':id});
+   stopBeat=await startHeartbeat(id);await setPending(id,'ACTIVE');
    const {controller,observedGate}=parts.build();
    session.controller=controller;
    // Initial checkpoint; gate starts blocked by design.
@@ -268,7 +339,9 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    await observedGate.persist(id,'manual');
    await emit('BACKUP_VERIFIED',{reason:'initial'});
    await drive({id,store,controller,observedGate,loadPipeline:parts.loadPipeline,schema,session,record,emit});
+   await stopBeat?.();stopBeat=null;
    const final=await snapshot(id);
+   await settlePending(id,final.state,false);
    await emit("RESEARCH_END",{state:final.state,outcome:outcomes.at(-1)?.outcome});
    return {...final,outcomes};
   }catch(error){
@@ -279,6 +352,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    }
    throw error;
   }finally{
+   try{await stopBeat?.();}catch(_){}
    // Free transport ownership of a settled research so the next Circle starts without a reload; a run needing recovery stays held.
    try{await session.controller?.releaseSettled?.(id);}catch(_){}
    try{backup?.close?.();}finally{try{active?.close();}finally{running=null;if(held)try{bridge.release?.();}catch(_){}}}
@@ -294,13 +368,17 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   let active,backup,held=false;
   const {outcomes,emit,record}=makeRecorder(id,onProgress);
   session.emit=emit;
+  let stopBeat=null;
   try{
+   // The research may be working in another tab (fresh heartbeat of another runner): no takeover, no choice buttons.
+   if(await activeElsewhere(id))throw Object.assign(new Error('CIRCLE_ACTIVE_ELSEWHERE'),{code:'CIRCLE_ACTIVE_ELSEWHERE'});
    if(typeof bridge.hold==='function'){bridge.hold({stop});held=true;}
    const saved=(await storage.get(key(id)))[key(id)];
    if(!saved?.schema||!saved.pipelineRef||!Array.isArray(saved.models))throw Error('CIRCLE_RESEARCH_NOT_FOUND');
    active=await activeStore.createActiveStateStore();
    const store=active.store;
    let state=await store.load(id);
+   stopBeat=await startHeartbeat(id);await setPending(id,'ACTIVE');
    const cfg={...saved,maxCallsPerCycle:pos(saved.maxCallsPerCycle)?saved.maxCallsPerCycle:state.budget.maxCalls,
     maxPromptChars:pos(saved.maxPromptChars)?saved.maxPromptChars:20000};
    await emit('RESEARCH_RESUME',{mode,state});
@@ -323,7 +401,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     await observedGate.persist(id,'manual');
     await emit('BACKUP_VERIFIED',{reason:'resume'});
    }
-   const finish=async()=>{const final=await snapshot(id);await emit('RESEARCH_END',{state:final.state,outcome:outcomes.at(-1)?.outcome});return {...final,outcomes};};
+   const finish=async()=>{await stopBeat?.();stopBeat=null;const final=await snapshot(id);await settlePending(id,final.state,mode==='close');await emit('RESEARCH_END',{state:final.state,outcome:outcomes.at(-1)?.outcome});return {...final,outcomes};};
    if(state.phase==='COMPLETED'&&state.backupRequiredCycleId==null&&mode!=='close')return await finish();
    // The new controller fences the old writer; a stale owner then gets STALE_OWNER on its next write.
    const owner=await store.getOwnership();
@@ -345,11 +423,14 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     await record(await controller.abandonUnknown(id));
    }else{
     if(inFlight){
-     // The request may have gone out before the reload: no pickup of an answer, no resend. A human chooses.
-     await record({state,outcome:'PAUSED',reason:'UNKNOWN_DISPATCH_AFTER_RELOAD',runId:state.activeRunId});
-     return await finish();
-    }
-    if(state.phase==='PAUSED'){
+     // The request may have gone out before the reload: it is never resent. The answer is taken only from the page, by the
+     // delivery token of the journaled request; without a confirmed answer a human chooses.
+     if(await rereadBatch(id,{store,controller,state,emit}))state=await store.load(id);
+     else{
+      await record({state,outcome:'PAUSED',reason:'UNKNOWN_DISPATCH_AFTER_RELOAD',runId:state.activeRunId});
+      return await finish();
+     }
+    }else if(state.phase==='PAUSED'){
      if(state.backupRequiredCycleId!=null){
       await record(await controller.tick(id));
       state=await store.load(id);
@@ -364,6 +445,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
    await emit('RESEARCH_ERROR',{error,runId:session.bridgeRun});
    throw error;
   }finally{
+   try{await stopBeat?.();}catch(_){}
    try{await session.controller?.releaseSettled?.(id);}catch(_){}
    try{backup?.close?.();}finally{try{active?.close();}finally{running=null;if(held)try{bridge.release?.();}catch(_){}}}
   }

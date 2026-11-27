@@ -74,7 +74,7 @@ function createFakeIndexedDB() {
           }
         };
         req.result = db;
-        if (fresh) req.onupgradeneeded?.();
+        if (fresh) req.onupgradeneeded?.({ oldVersion: 0 });
         req.onsuccess?.();
       }, 0);
       return req;

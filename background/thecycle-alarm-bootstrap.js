@@ -86,7 +86,25 @@ root.chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
  });
  return true;
 });
+// Toolbar badge: a Circle research waits (flag set, no fresh heartbeat of a working page). Only storage is read: no pages, no IndexedDB.
+async function updateCircleBadge(){
+ const action=root.chrome.action;
+ if(!action?.setBadgeText)return;
+ try{
+  const local=root.chrome.storage.local;
+  const pending=(await local.get('thecycle.circle.pending'))['thecycle.circle.pending'];
+  let waiting=false;
+  if(pending?.researchId){
+   const hbKey='thecycle.circle.heartbeat.'+pending.researchId;
+   const hb=(await local.get(hbKey))[hbKey];
+   waiting=!(hb&&Number.isFinite(hb.at)&&Date.now()-hb.at<=180000);
+  }
+  await action.setBadgeText({text:waiting?'\u27F3':''});
+  await action.setTitle?.({title:waiting?'Незавершённое исследование Circle':''});
+ }catch(error){console.warn('[TheCycle badge]',error);}
+}
 root.chrome.alarms.onAlarm.addListener(alarm=>{
+ void updateCircleBadge();
  void scheduler.dispatch(alarm).catch(error=>console.error('[TheCycle alarm]',error));
 });
 root.chrome.runtime.onInstalled.addListener(()=>{void scheduler.register().catch(console.error);});

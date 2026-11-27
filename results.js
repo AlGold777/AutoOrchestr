@@ -6327,7 +6327,8 @@ document.addEventListener('click', (event) => {
             timeoutMs = DEFAULT_PIPELINE_WAIT_TIMEOUT_MS,
             context = {},
             signal = null,
-            generationProfile = 'long'
+            generationProfile = 'long',
+            onDispatchPrompts = null
         }) => {
             if (!models.length) return { responses: {}, results: {}, missing: [], timedOut: false };
             if (signal?.aborted) throw new DOMException('Pipeline run cancelled', 'AbortError');
@@ -6554,6 +6555,13 @@ document.addEventListener('click', (event) => {
                 }
                 return sendToBackground({ ...payloadBase, attachments: Array.isArray(attachments) ? attachments : [] });
             };
+
+            // TheCycle: the prompts exactly as they will be sent (delivery token included) go to the journal BEFORE the
+            // dispatch, so a later reread can look for the request's own turn. A journal failure means nothing was sent.
+            if (typeof onDispatchPrompts === 'function') {
+                try { await onDispatchPrompts(sanitizedPromptMap || promptsByModel || null); }
+                catch (error) { abandonBatch(Object.assign(error instanceof Error ? error : new Error(String(error)), { notSent: true })); }
+            }
 
             // The background refuses a start while rounds run or a tab still
             // generates; wait for it within an explicit budget instead of
@@ -7751,7 +7759,7 @@ document.addEventListener('click', (event) => {
                 };
                 return true;
             },
-            async send(models, promptsByModel, { runId, batchId, signal, step = 0, maxWordsByModel = {}, correctionByModel = {} } = {}) {
+            async send(models, promptsByModel, { runId, batchId, signal, step = 0, maxWordsByModel = {}, correctionByModel = {}, onDispatchPrompts = null } = {}) {
                 // An error raised before runModelBatch is called means nothing was sent: the adapter journals it as NOT_SENT.
                 const notSent = (code, cause) => Object.assign(new Error(code), { code, notSent: true, ...(cause ? { cause } : {}) });
                 if (theCycleBridgeRunId !== runId || !activePipelineRunContext ||
@@ -7796,7 +7804,8 @@ document.addEventListener('click', (event) => {
                         settledBatches: Number(runContext.settledBatches || 0),
                         anonymizeParticipants: false
                     },
-                    generationProfile: 'long'
+                    generationProfile: 'long',
+                    onDispatchPrompts
                 });
                 runContext.settledBatches = Number(runContext.settledBatches || 0) + 1;
                 // The request finished: a model without a trustworthy answer gives "no answer" (the engine drops it as Basic does).
@@ -8949,15 +8958,23 @@ document.addEventListener('click', (event) => {
         });
         // An outcome left unknown by a reload: the two human choices appear next to Status.
         const showCircleResult = (result) => {
-            showCircleStatus(circleSummary(result));
+            showCircleStatus(result.activeElsewhere ? 'Circle: исследование идёт в другой вкладке.' : circleSummary(result));
             for (const id of ['circle-abandon-unknown', 'circle-close']) {
                 const button = document.getElementById(id);
-                if (button) button.hidden = !(result.unknown || result.pauseReason === 'UNKNOWN_DISPATCH_AFTER_RELOAD' || result.outcomes?.at(-1)?.reason === 'UNKNOWN_DISPATCH_AFTER_RELOAD');
+                if (button) button.hidden = Boolean(result.activeElsewhere) || !(result.unknown || result.pauseReason === 'UNKNOWN_DISPATCH_AFTER_RELOAD' || result.outcomes?.at(-1)?.reason === 'UNKNOWN_DISPATCH_AFTER_RELOAD');
             }
         };
         const createPageCircle = () => {
             if (!window.TheCycleCircle?.createCircleRunner) throw new Error('CIRCLE_RUNTIME_UNAVAILABLE');
-            return window.TheCycleCircle.createCircleRunner({ bridge: window.TheCycleMainPageBridge });
+            // One runner id per page load (kept only over a reload): the heartbeat of this tab never blocks its own recovery.
+            let runnerId;
+            try {
+                // Kept only over a reload of this tab: a duplicated tab copies sessionStorage and must get its own id.
+                const isReload = performance.getEntriesByType('navigation')[0]?.type === 'reload';
+                runnerId = isReload ? sessionStorage.getItem('thecycle.circle.runnerId') : null;
+                if (!runnerId) { runnerId = 'circle-tab-' + crypto.randomUUID(); sessionStorage.setItem('thecycle.circle.runnerId', runnerId); }
+            } catch (_) { runnerId = undefined; }
+            return window.TheCycleCircle.createCircleRunner({ bridge: window.TheCycleMainPageBridge, ...(runnerId ? { runnerId } : {}) });
         };
         // Restores the saved backup-directory permission. requestPermission needs the Run click's user gesture,
         // so startDebateFromPage starts this as the very first thing, before any other await.
@@ -9055,8 +9072,9 @@ document.addEventListener('click', (event) => {
                 showNotification('Circle: ' + (result.outcomes?.at(-1)?.outcome || result.state?.phase), 'info');
                 return true;
             } catch (error) {
-                showCircleStatus('Circle: ' + String(error?.message || error));
-                showNotification('Circle: ' + String(error?.message || error), 'error');
+                const text = String(error?.message || error) === 'CIRCLE_ACTIVE_ELSEWHERE' ? 'исследование идёт в другой вкладке.' : String(error?.message || error);
+                showCircleStatus('Circle: ' + text);
+                showNotification('Circle: ' + text, 'error');
                 return false;
             } finally {
                 if (circlePageRunner === runner) circlePageRunner = null;

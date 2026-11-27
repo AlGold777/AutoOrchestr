@@ -42,3 +42,44 @@ test('alarm bootstrap registers and dispatches without an enabled backup',async(
  assert.equal(response.ok,false);
  assert.equal(response.error,'BACKUP_NOT_ENABLED');
 });
+function badgeHarness(initial){
+ const listeners={},storage={thecycleBackupEnabled:false,...initial},calls=[];
+ const chrome={
+  runtime:{id:'test-extension',onMessage:{addListener:fn=>listeners.message=fn},
+   onInstalled:{addListener:fn=>listeners.installed=fn},onStartup:{addListener:fn=>listeners.startup=fn}},
+  alarms:{get:async()=>null,create:async()=>{},onAlarm:{addListener:fn=>listeners.alarm=fn}},
+  action:{setBadgeText:async v=>{calls.push(['text',v.text]);},setTitle:async v=>{calls.push(['title',v.title]);}},
+  storage:{local:{get:async key=>({[key]:storage[key]}),set:async values=>Object.assign(storage,values)}}
+ };
+ const context={chrome,crypto:{randomUUID:()=> '11111111-1111-1111-1111-111111111111'},console,Date,Promise};
+ context.self=context;context.globalThis=context;
+ vm.runInNewContext(source('disput/thecycle/alarm-scheduler.js'),context);
+ vm.runInNewContext(source('background/thecycle-alarm-bootstrap.js'),context);
+ const fire=async()=>{calls.length=0;listeners.alarm({name:'other-alarm'});await new Promise(r=>setTimeout(r,20));return calls.slice();};
+ return {fire,storage};
+}
+test('alarm sets the badge for a waiting Circle research without a fresh heartbeat',async()=>{
+ const id='circle-1';
+ const none=badgeHarness({'thecycle.circle.pending':{researchId:id,phase:'RECONCILE',at:1}});
+ assert.deepEqual(await none.fire(),[['text','⟳'],['title','Незавершённое исследование Circle']]);
+ const stale=badgeHarness({'thecycle.circle.pending':{researchId:id,phase:'PAUSED',at:1},['thecycle.circle.heartbeat.'+id]:{ownerId:'t',at:Date.now()-181000}});
+ assert.deepEqual(await stale.fire(),[['text','⟳'],['title','Незавершённое исследование Circle']]);
+ const released=badgeHarness({'thecycle.circle.pending':{researchId:id,phase:'PAUSED',at:1},['thecycle.circle.heartbeat.'+id]:{ownerId:'t',at:0}});
+ assert.equal((await released.fire())[0][1],'⟳');
+});
+test('alarm clears the badge with a fresh heartbeat or without the flag',async()=>{
+ const id='circle-1';
+ const fresh=badgeHarness({'thecycle.circle.pending':{researchId:id,phase:'ACTIVE',at:1},['thecycle.circle.heartbeat.'+id]:{ownerId:'t',at:Date.now()-5000}});
+ assert.deepEqual(await fresh.fire(),[['text',''],['title','']]);
+ const slowThrottled=badgeHarness({'thecycle.circle.pending':{researchId:id,phase:'ACTIVE',at:1},['thecycle.circle.heartbeat.'+id]:{ownerId:'t',at:Date.now()-120000}});
+ assert.deepEqual(await slowThrottled.fire(),[['text',''],['title','']]);
+ const noFlag=badgeHarness({});
+ assert.deepEqual(await noFlag.fire(),[['text',''],['title','']]);
+ const cleared=badgeHarness({'thecycle.circle.pending':null});
+ assert.deepEqual(await cleared.fire(),[['text',''],['title','']]);
+});
+test('badge needs no new manifest permission (action API is part of the manifest action key)',()=>{
+ const manifest=JSON.parse(source('manifest.json'));
+ assert.ok(manifest.action);
+ assert.ok(!manifest.permissions.includes('action'));
+});

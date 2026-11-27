@@ -176,7 +176,7 @@
     function eventKey(event) {
       const type = event.type;
       if (['RUN_INTENT', 'RUN_RESULT', 'RUN_ERROR'].includes(type)) return type;
-      if (['DISPATCH_INTENT', 'DISPATCH_RESPONSE', 'DISPATCH_UNKNOWN', 'NOT_SENT'].includes(type) && str(event.batchId)) {
+      if (['DISPATCH_INTENT', 'DISPATCH_PROMPT', 'DISPATCH_RESPONSE', 'DISPATCH_UNKNOWN', 'NOT_SENT'].includes(type) && str(event.batchId)) {
         return type + ':' + event.batchId;
       }
       throw fail('INVALID_EVENT');
@@ -225,6 +225,10 @@
               batch.status = 'NOT_SENT';
               run.usedCalls -= batch.count;
               state.budget.usedCalls -= batch.count;
+              break;
+            case 'DISPATCH_PROMPT':
+              // The prompts exactly as sent (delivery token included), written before the answer: evidence for a later reread.
+              if (!batch || batch.status !== 'INTENT') throw fail('INVALID_BATCH_TRANSITION');
               break;
             case 'DISPATCH_RESPONSE':
               if (!batch || batch.status !== 'INTENT') throw fail('INVALID_BATCH_TRANSITION');
