@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TheCycle — резервирование</title>
+<style>body{font:15px system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 20px;line-height:1.55}button{padding:10px 16px;margin:8px 8px 8px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#eee;padding:12px} .error{color:#a00}</style></head>
+<body><h1>TheCycle — резервирование</h1>
+<p>Резервные копии записываются в выбранный каталог. После перезапуска Chrome разрешение может потребовать повторного подтверждения.</p>
+<button id="choose">Выбрать каталог и включить</button>
+<button id="run">Создать копию</button>
+<button id="disable">Отключить</button>
+<button id="refresh">Обновить статус</button>
+<h2>Проверка резервной копии</h2>
+<p>Проверка выполняется без изменения активной базы. Активация восстановленной базы заблокирована до независимого подтверждения остановки транспорта.</p>
+<label for="backup-key">Ключ резервной копии</label>
+<input id="backup-key" type="text" autocomplete="off" size="52" placeholder="thecycle-alarm-...">
+<button id="inspect">Проверить копию</button>
+<pre id="inspection"></pre>
+<p id="message" role="status"></p><pre id="status"></pre>
+<script src="disput/thecycle/directory-handle-manager.js"></script>
+<script src="disput/thecycle/backup-setup.js"></script>
+<script src="disput/thecycle/state-store.js"></script>
+<script src="disput/thecycle/directory-sink.js"></script>
+<script src="disput/thecycle/backup-service.js"></script>
+<script src="disput/thecycle/restore-service.js"></script>
+<script src="disput/thecycle/recovery-repositories.js"></script>
+<script src="disput/thecycle/backup-inspector.js"></script>
+<script src="thecycle-backup-ui.js"></script></body></html>

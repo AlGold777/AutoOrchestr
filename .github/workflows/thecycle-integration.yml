@@ -1,0 +1,51 @@
+name: TheCycle integration checks
+on:
+  push:
+    branches:
+      - thecycle/c01-basic-adapter
+    paths:
+      - 'disput/thecycle/**'
+      - 'background/thecycle-alarm-bootstrap.js'
+      - 'background/index.js'
+      - 'thecycle-backup*'
+      - 'thecycle-g1-ui.js'
+      - 'results.js'
+      - 'result_new.html'
+      - 'disput/pipeline-presets.js'
+      - 'tests/thecycle-*.test.js'
+      - '.github/workflows/thecycle-integration.yml'
+  workflow_dispatch:
+jobs:
+  node-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check changed TheCycle modules
+        run: |
+          find disput/thecycle -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check background/thecycle-alarm-bootstrap.js
+          node --check background/index.js
+          node --check thecycle-backup-ui.js
+          node --check thecycle-g1-ui.js
+          node --check results.js
+      - name: Run TheCycle node tests
+        run: node --test tests/thecycle-*.test.js
+
+  g1-chromium-idb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install repository test dependencies
+        run: npm ci
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Browser G1 vertical with real IndexedDB and persisted reload
+        run: node --test tests/thecycle-g1-real-idb.browser.cjs tests/thecycle-extension-browser.browser.cjs
