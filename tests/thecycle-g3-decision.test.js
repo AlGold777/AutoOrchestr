@@ -106,3 +106,8 @@ test('задача аналитика содержит блок допустим
   assert.match(text, /ДОПУСТИМЫЕ ССЫЛКИ:\ncycle=1 step=1 model=GPT\ncycle=2 step=1 model=S/);
   assert.doesNotMatch(buildAnalystTask({ task: 'T', summary: 'S', budget: 'B', schema: {}, actions: ['CONTINUE'] }), /ДОПУСТИМЫЕ ССЫЛКИ/);
 });
+
+test('analyst strategy rules name the allowed run.maxWords values', () => {
+  const text = buildAnalystTask({ task: 't', summary: 's', budget: 'b', schema: {}, actions: 'CONTINUE', models: ['GPT'], remaining: 9 });
+  assert.match(text, /maxWords только 300, 500, 700 или 1000/);
+});

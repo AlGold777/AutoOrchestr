@@ -22,7 +22,8 @@ function strategyRulesText({models,remaining,latestSummary}={}){
   '- kind шага только "round".',
   '- input: "none" у первого раунда; у остальных "previous" (или не указывать).',
   '- models: только из списка: '+models.join(', ')+'; одна модель не повторяется в одном шаге.',
-  '- Без stopMarks, repeat, files, chat:"new", шагов owner.'];
+  '- Без stopMarks, repeat, files, chat:"new", шагов owner.',
+  '- run: policy только "auto"; maxWords только 300, 500, 700 или 1000 (или не указывать); strictLength — true или false (или не указывать). maxWords у модели — целое число больше 0.'];
  if(latestSummary)lines.push('- Последний шаг — раунд из одной модели с input "previous" (сводка); перед ним минимум один раунд.');
  if(Number.isFinite(remaining))lines.push('- Всего запросов (сумма включённых моделей по всем раундам) не больше '+Math.max(0,remaining-1)+' (остаток '+remaining+', один запрос нужен аналитику).');
  return lines.join('\n');
