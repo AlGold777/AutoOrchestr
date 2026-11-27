@@ -4,7 +4,7 @@
 
 ## Цель и «готово»
 
-Выполнить `docs/TheCycle/TheCycle-GLOBAL-PLAN.md`: этапы G1–G5. «Готово» — все обязательные P0-сценарии G5 пройдены, в том числе живая часть в реальном Chrome. Приёмка этапа — по его разделу «Приёмка» в плане.
+Выполнить этапы G1–G5 из `docs/TheCycle/TheCycle-GLOBAL-PLAN-v2-archive.md`; целевая архитектура — `docs/TheCycle/TheCycle-GLOBAL-PLAN.md` (v3). «Готово» — все обязательные P0-сценарии G5 пройдены, в том числе живая часть в реальном Chrome. Приёмка этапа — по его разделу «Приёмка» в плане.
 
 ## Этапы
 
@@ -31,7 +31,8 @@ Claude-участник — 3–4 запроса за всё время; про�
 
 ## Где что лежит
 
-- План: `docs/TheCycle/TheCycle-GLOBAL-PLAN.md`.
+- Генеральный план v3 (утверждён владельцем 28.11.2026, целевая архитектура): `docs/TheCycle/TheCycle-GLOBAL-PLAN.md`.
+- Прежний план с этапами G1–G5 и журналом хода реализации (действует до плана последующих действий): `docs/TheCycle/TheCycle-GLOBAL-PLAN-v2-archive.md`.
 - Концепция: `docs/TheCycle/TheCycle — архитектурная концепция v0.2.md`.
 - Контракты: `docs/TheCycle/TheCycle-executable-contracts-v1-2026-11-26.md`.
 - ТЗ на остаток работ: `docs/TheCycle/TheCycle-remaining-work-technical-spec-2026-11-26.md`.

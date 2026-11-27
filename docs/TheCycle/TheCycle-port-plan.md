@@ -5,7 +5,7 @@ Basic — движок запуска pipeline. Classic — существующ
 
 ## План
 ### Решения ведущего
-1. Работа GPT продолжается по его плану G1 → G5 (`docs/TheCycle/TheCycle-GLOBAL-PLAN.md`). Переносим всё как есть: модули следующих этапов (восстановление, активация, retention, restore), G1-панель, options-страница, alarm, workflows, документы — не удаляются. Архитектуру GPT не меняем.
+1. Работа GPT продолжается по его плану G1 → G5 (`docs/TheCycle/TheCycle-GLOBAL-PLAN-v2-archive.md`). Переносим всё как есть: модули следующих этапов (восстановление, активация, retention, restore), G1-панель, options-страница, alarm, workflows, документы — не удаляются. Архитектуру GPT не меняем.
 2. Перенос — настоящим слиянием ветки `origin/thecycle/c01-basic-adapter` в рабочую линию: новые коммиты GPT потом вливаются без повторного переноса.
 3. Правим только то, что мешает работе на 2.81.1115 и первому прогону:
    - конфликты (`results.js`, `disput/pipeline-presets.js`, два теста пресетов): сохранить всё из H и добавить Circle;
@@ -15,7 +15,7 @@ Basic — движок запуска pipeline. Classic — существующ
    - `background/index.js`: импорт модулей TheCycle — после lifecycle-барьера H, чтобы сбой в них не ломал service worker;
    - `manifest.json`: версия и permissions из H, плюс `options_page` из C.
 4. Тесты GPT написаны на `node:test`: не переписываем; Jest их не запускает (исключение в `tests/jest.config.js`), отдельный скрипт `npm run test:thecycle` = `node --test tests/thecycle-*.test.js`.
-5. Найденное, но не исправляемое сейчас (этапы GPT G2/G4), — в `docs/TheCycle/TheCycle-GLOBAL-PLAN.md`, раздел о переносе: блокировка транспорта навсегда после Stop/сбоя/перезагрузки (нужен вызов reconcile/takeOver из UI); бюджет не проверяется до цикла; фоновые копии без retention; доступ к каталогу после перезапуска Chrome; FSA в service worker не проверен; Stop в узком окне даёт STALE_STATE.
+5. Найденное, но не исправляемое сейчас (этапы GPT G2/G4), — в `docs/TheCycle/TheCycle-GLOBAL-PLAN-v2-archive.md`, раздел о переносе: блокировка транспорта навсегда после Stop/сбоя/перезагрузки (нужен вызов reconcile/takeOver из UI); бюджет не проверяется до цикла; фоновые копии без retention; доступ к каталогу после перезапуска Chrome; FSA в service worker не проверен; Stop в узком окне даёт STALE_STATE.
 
 ### Шаги
 - [ ] S1 слияние и правки по п. 3–4 (исполнитель Sonnet)

@@ -22,7 +22,7 @@
 |---|---|
 | Basic: движок, схемы | `docs/Pipeline scenarios/basic-start-here.md`, затем `basic-developer.md`, `basic-schema-guide.md`, `basic-windows.md` там же |
 | Составить схему | `docs/Scheme create/schema-craft-handbook.md`, `docs/Scheme create/basic-model-request.md` |
-| TheCycle / Circle | `docs/TheCycle/TheCycle-board.md`, `docs/TheCycle/TheCycle-GLOBAL-PLAN.md`, `docs/TheCycle/reports/` |
+| TheCycle / Circle | `docs/TheCycle/TheCycle-board.md`, `docs/TheCycle/TheCycle-GLOBAL-PLAN.md` (v3), `docs/TheCycle/TheCycle-GLOBAL-PLAN-v2-archive.md` (этапы), `docs/TheCycle/reports/` |
 | Долгая задача, внешний агент, работа часами | `docs/Agents/long-task-playbook.md` |
 | Живой прогон | `docs/Run Automation/run-procedure.md`, `docs/Run Automation/model-modes.md`, `docs/Platform specifics/` |
 | Страницы расширения | `docs/Agents/agent-extension-pages-spec.md`, `docs/Agents/agent-extension-page-control.md` |
