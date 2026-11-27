@@ -23,24 +23,33 @@ const MODES=Object.freeze(['all-evidence','latest-summary']);
 // Experiment-only opt-in via the existing composer, or an explicit runtime option.
 function parseContextTask(task, requestedMode=null){
  if(typeof task!=='string')throw Error('CIRCLE_INPUT_INVALID');
- const marker=/^\[CIRCLE_CONTEXT:[^\]\r\n]*\]/.exec(task);
+ const bad=why=>Error('CIRCLE_CONTEXT_MODE_INVALID: '+why);
  let mode=requestedMode??'all-evidence';
- if(marker){
-  const line=/^\[CIRCLE_CONTEXT: ([a-z-]+)\][ \t]*\r?\n/.exec(task);
-  if(!line||!MODES.includes(line[1]))throw Error('CIRCLE_CONTEXT_MODE_INVALID');
+ const lead=task.length-task.trimStart().length;
+ const rest=task.slice(lead);
+ const firstLine=rest.split(/\r?\n/,1)[0];
+ let body=task;
+ if(/^\[CIRCLE_CONTEXT:/i.test(rest)){
+  const line=/^\[CIRCLE_CONTEXT:[ \t]*([^\]\r\n]*?)[ \t]*\][ \t]*\r?\n/i.exec(rest);
+  if(!line)throw bad('служебная строка [CIRCLE_CONTEXT: режим] должна занимать всю строку и за ней должна идти задача');
+  if(!MODES.includes(line[1]))throw bad('допустимые режимы: '+MODES.join(', ')+' (строчными буквами)');
   if(requestedMode!=null&&requestedMode!==line[1])throw Error('CIRCLE_CONTEXT_MODE_CONFLICT');
-  mode=line[1];task=task.slice(line[0].length);
- }
+  mode=line[1];body=rest.slice(line[0].length);
+ }else if(/CIRCLE_CONTEXT/i.test(firstLine))
+  throw bad('[CIRCLE_CONTEXT: режим] допустима только отдельной первой строкой задачи');
+ if(/^[ \t]*\[CIRCLE_CONTEXT/im.test(body))
+  throw bad('служебная строка [CIRCLE_CONTEXT: режим] допустима один раз и только первой строкой задачи');
  if(!MODES.includes(mode))throw Error('CIRCLE_CONTEXT_MODE_INVALID');
- return {task,mode};
+ return {task:body,mode};
 }
 function validateSummarySchema(schema){
  const steps=schema?.steps;
- const last=steps?.at(-1);
- if(!Array.isArray(steps)||steps.length<2||last?.kind!=='round'||
-    !steps.slice(0,-1).some(s=>s.kind==='round'&&(s.models||[]).some(m=>m.enabled!==false))||
+ const enabled=s=>Array.isArray(s?.models)?s.models.filter(m=>m&&typeof m==='object'&&m.enabled!==false):[];
+ const last=Array.isArray(steps)?steps.at(-1):null;
+ if(!Array.isArray(steps)||steps.length<2||!last||typeof last!=='object'||last.kind!=='round'||
+    !steps.slice(0,-1).some(s=>s&&typeof s==='object'&&s.kind==='round'&&enabled(s).length)||
     (last.input!=null&&last.input!=='previous')||
-    (last.models||[]).filter(m=>m.enabled!==false).length!==1)
+    enabled(last).length!==1)
   throw Error('CIRCLE_SUMMARY_SCHEMA_INVALID');
 }
 async function latestSummaryTask({state,store,maxChars,onContext,cycles}){

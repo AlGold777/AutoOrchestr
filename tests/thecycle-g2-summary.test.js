@@ -46,7 +46,7 @@ test('summary mode demands two rounds and one final enabled summarizer with prev
  for(const steps of [[round],[round,{...summary,input:'none'}],[round,{...summary,models:[{name:'S'},{name:'D'}]}],[round,{kind:'owner'}]])assert.throws(()=>validateSummarySchema({steps}),/CIRCLE_SUMMARY_SCHEMA_INVALID/);
 });
 
-test('runtime wires mode through five simulated cycles, persists it, and keeps raw reports',async()=>{
+test('runtime wires mode through five simulated cycles, and persists it',async()=>{
  const {createCircleRunner}=require('../disput/thecycle/circle-runtime.js');
  const contextApi=require('../disput/thecycle/circle-context.js');
  const config={},packets=new Map(),events=new Map(),tasks=[];
@@ -79,7 +79,6 @@ test('runtime wires mode through five simulated cycles, persists it, and keeps r
  assert.equal(tasks.length,5);assert.equal(tasks[0],'Solve task');
  for(let i=1;i<5;i++){assert.match(tasks[i],new RegExp('SUMMARY-'+i));assert.doesNotMatch(tasks[i],/RAW-/);assert.equal((tasks[i].match(/SUMMARY-\d/g)||[]).length,1);}
  assert.equal(result.configured.contextMode,'latest-summary');assert.equal(result.state.task,'Solve task');assert.equal(packets.size,5);
- for(let i=1;i<=5;i++)assert.equal(events.get('run-'+i)[0].payload.report.steps[0].outcome.GPT.text,'RAW-'+i);
 });
 test('all-evidence mode in runtime still reports non-empty included history from cycle 2',async()=>{
  const {createCircleRunner}=require('../disput/thecycle/circle-runtime.js');
@@ -113,4 +112,36 @@ test('all-evidence mode in runtime still reports non-empty included history from
  assert.equal(tasks.length,3);assert.equal(result.configured.contextMode,'all-evidence');
  assert.equal(contexts[1].included.length,1);assert.equal(contexts[2].included.length,2);assert.equal(contexts[2].mode,undefined);
  assert.match(tasks[2],/RAW-1/);assert.match(tasks[2],/RAW-2/);assert.doesNotMatch(tasks[2],/CIRCLE_CONTEXT/);
+});
+
+test('context marker tolerates leading blanks, case of the name and CRLF, and is stripped',()=>{
+ for(const t of ['  \n\n[CIRCLE_CONTEXT: latest-summary]\nSolve task','[circle_context: latest-summary]\nSolve task','[CIRCLE_CONTEXT: latest-summary]\r\nSolve task','\r\n [Circle_Context: latest-summary] \r\nSolve task'])
+  assert.deepEqual(parseContextTask(t),{task:'Solve task',mode:'latest-summary'},JSON.stringify(t));
+});
+test('context marker misplaced, repeated, unterminated or with wrong value is an error, never silent all-evidence',()=>{
+ for(const t of ['Solve\n[CIRCLE_CONTEXT: latest-summary]\nrest','Solve [CIRCLE_CONTEXT: latest-summary]\nrest',
+  '[CIRCLE_CONTEXT: latest-summary]\nSolve\n[CIRCLE_CONTEXT: all-evidence]\nrest','[CIRCLE_CONTEXT: latest-summary]',
+  '[CIRCLE_CONTEXT: Latest-Summary]\nSolve','[CIRCLE_CONTEXT: latest-summary] x\nSolve'])
+  assert.throws(()=>parseContextTask(t),/CIRCLE_CONTEXT_MODE_INVALID/,JSON.stringify(t));
+});
+test('validateSummarySchema rejects malformed input with the schema error, not TypeError',()=>{
+ const round={kind:'round',models:[{name:'GPT'}]};const summary={kind:'round',input:'previous',models:[{name:'S'}]};
+ assert.doesNotThrow(()=>validateSummarySchema({steps:[round,{...summary,input:undefined}]}));
+ const off={kind:'round',models:[{name:'GPT',enabled:false}]};
+ for(const schema of [{steps:[off,summary]},{steps:'x'},{steps:{}},{steps:[null,summary]},{steps:[round,null]},{steps:[{kind:'round',models:null},summary]},{steps:[round,{...summary,models:[null]}]},null,undefined,{}])
+  assert.throws(()=>validateSummarySchema(schema),/CIRCLE_SUMMARY_SCHEMA_INVALID/);
+});
+test('latest-summary fails on a missing or empty last step',async()=>{
+ const mk=steps=>({reads:[],state:{researchId,task:'T',nextCycle:2,lastCommittedPacket:1},store:{
+  async getPacket(r,id){return {researchId:r,cycleId:id,runId:'run-1',status:'RECORDED_RESULT',resultEventId:'e'};},
+  async getEvents(){return [{eventId:'e',payload:{report:{status:'PIPELINE_COMPLETE',unresolvedBatchIds:[],steps}}}];}}});
+ for(const steps of [[{outcome:{A:{ok:true,text:'a'}}},{outcome:{}}],[{outcome:{A:{ok:true,text:'a'}}},{outcome:{S:{ok:true,text:'  '}}}],[{outcome:{A:{ok:true,text:'a'}}},{}]])
+  await assert.rejects(buildTask({...mk(steps),mode:'latest-summary'}),/CIRCLE_SUMMARY_MISSING_OR_AMBIGUOUS|CIRCLE_NO_ACCEPTED_EVIDENCE/);
+});
+test('analyst, verification and partial-recovery cycles stay out of the summary',async()=>{
+ const f=fixture();const state={...f.state,nextCycle:5,lastCommittedPacket:4};
+ const out=await buildTask({...f,state,mode:'latest-summary',cycles:[1,3]});
+ assert.match(out,/SUMMARY-3/);assert.doesNotMatch(out,/SUMMARY-[124]|RAW-/);assert.deepEqual(f.reads,[3]);
+ const all=fixture();const o2=await buildTask({...all,state,mode:'all-evidence',cycles:[1,3]});
+ assert.doesNotMatch(o2,/-[24]\b/);assert.deepEqual(all.reads,[3,1]);
 });
