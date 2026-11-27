@@ -14,8 +14,22 @@ const str=v=>typeof v==='string'&&v.trim().length>0;
 
 // Single pass over the template: substituted data is never searched for placeholders again.
 function fill(template,values){return template.replace(/\{\{(\w+)\}\}/g,(m,k)=>Object.prototype.hasOwnProperty.call(values,k)?String(values[k]):m);}
-function buildAnalystTask({task,summary,budget,schema,actions,verification,refs}={}){
- const refsText=Array.isArray(refs)&&refs.length?'\n\nДОПУСТИМЫЕ ССЫЛКИ:\n'+refs.join('\n'):'';
+// Rules the schema of CHANGE_STRATEGY must satisfy (checked by BasicSchema.validate, the Circle adapter and the policy); text only, nothing is fixed silently.
+function strategyRulesText({models,remaining,latestSummary}={}){
+ if(!Array.isArray(models)||!models.length)return '';
+ const lines=['ПРАВИЛА НОВОЙ СХЕМЫ (CHANGE_STRATEGY):',
+  '- ref раундов строго r1, r2, r3, … по порядку, без пропусков и других имён (не «branch_A»).',
+  '- kind шага только "round".',
+  '- input: "none" у первого раунда; у остальных "previous" (или не указывать).',
+  '- models: только из списка: '+models.join(', ')+'; одна модель не повторяется в одном шаге.',
+  '- Без stopMarks, repeat, files, chat:"new", шагов owner.'];
+ if(latestSummary)lines.push('- Последний шаг — раунд из одной модели с input "previous" (сводка); перед ним минимум один раунд.');
+ if(Number.isFinite(remaining))lines.push('- Всего запросов (сумма включённых моделей по всем раундам) не больше '+Math.max(0,remaining-1)+' (остаток '+remaining+', один запрос нужен аналитику).');
+ return lines.join('\n');
+}
+function buildAnalystTask({task,summary,budget,schema,actions,verification,refs,models,remaining,latestSummary}={}){
+ const rules=strategyRulesText({models,remaining,latestSummary});
+ const refsText=(rules?'\n\n'+rules:'')+(Array.isArray(refs)&&refs.length?'\n\nДОПУСТИМЫЕ ССЫЛКИ:\n'+refs.join('\n'):'');
  const text=fill(ANALYST_PROMPT,{task,summary,budget,
   schema:typeof schema==='string'?schema:JSON.stringify(schema,null,1),
   actions:(Array.isArray(actions)?actions.join(', '):actions)+refsText});
@@ -307,7 +321,7 @@ function createPolicy({registry,models=null,validateSchema=null,estimateCalls=nu
  };
 }
 
-const api=Object.freeze({ANALYST_PROMPT,VERIFIER_PROMPT,ACTIONS,buildAnalystTask,buildAnalystSchema,buildVerifierSchema,buildVerifierTask,verificationText,parseVerification,roleOf,cycleOfRef,summaryFromAnswers,budgetText,parseDecision,createPolicy});
+const api=Object.freeze({strategyRulesText,ANALYST_PROMPT,VERIFIER_PROMPT,ACTIONS,buildAnalystTask,buildAnalystSchema,buildVerifierSchema,buildVerifierTask,verificationText,parseVerification,roleOf,cycleOfRef,summaryFromAnswers,budgetText,parseDecision,createPolicy});
 root.TheCycleCirclePolicy=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

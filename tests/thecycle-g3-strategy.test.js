@@ -82,3 +82,21 @@ test('schema that does not fit the analyst prompt is rejected with SCHEMA_TOO_LA
   const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 12000 });
   rejected(r, /SCHEMA_TOO_LARGE_FOR_PROMPT/);
 });
+
+test('analyst task carries the new-schema rules with real models and budget; a schema built by them is accepted', async () => {
+  const bySchema = { schemaVersion: 1, origin: 'user', steps: [round('r1', { input: 'none', task: 'A' }), round('r2', { input: 'previous', task: 'B' })] };
+  const x = await fixture({ analystAnswers: [change(bySchema), done] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10 });
+  assert.equal(r.state.phase, 'COMPLETED');
+  const text = x.sent[1].text;
+  assert.ok(isAnalyst(text));
+  assert.match(text, /ПРАВИЛА НОВОЙ СХЕМЫ \(CHANGE_STRATEGY\):/);
+  assert.match(text, /ref раундов строго r1, r2, r3/);
+  assert.match(text, /только из списка: GPT/);
+  assert.match(text, /не больше 8 \(остаток 9/);
+  assert.ok(text.indexOf('ПРАВИЛА НОВОЙ СХЕМЫ') < text.indexOf('ДОПУСТИМЫЕ ССЫЛКИ'));
+  // the old names are rejected by the engine as before: the code only hints, never repairs
+  const bad = { schemaVersion: 1, origin: 'user', steps: [round('branch_A', { input: 'none' })] };
+  const y = await fixture({ analystAnswers: [change(bad)] });
+  rejected(await y.runner.start({ task: 'Solve it', maxCalls: 10 }), /r1/);
+});
