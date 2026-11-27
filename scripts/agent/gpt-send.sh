@@ -7,15 +7,10 @@ set -u
 D=${0:A:h}; NEEDLE=$1; JS=$(mktemp -t gptsend).js
 # печатает: число сообщений, ключ последнего хода (или -), длину черновика в поле
 state() { "$D/tab-js.sh" "$NEEDLE" "$D/gpt-state.js" | python3 -I -c 'import json,sys;d=json.loads(sys.stdin.read());print(d["users"],d["turn"] or "-",d["draft"])' 2>/dev/null; }
-python3 -I - "$2" "$JS" <<'PY'
+python3 -I - "$2" "$JS" "$D/gpt-type.js" <<'PY'
 import json,sys
-t=open(sys.argv[1],encoding='utf-8').read().strip()
-js="""(()=>{const box=document.querySelector('#prompt-textarea')||document.querySelector('.ProseMirror[contenteditable="true"]');if(!box)return 'NO_COMPOSER';
-if([...document.querySelectorAll('button')].find(b=>b.dataset.testid==='stop-button'||/^(Остановить|Stop)/.test(b.getAttribute('aria-label')||'')))return 'BUSY';
-box.focus();document.execCommand('selectAll',false,null);document.execCommand('insertText',false,%s);
-setTimeout(()=>{const b=document.querySelector('[data-testid="send-button"],#composer-submit-button,button[aria-label*="Отправ"],button[aria-label*="Send"]');if(b&&!b.disabled)b.click();},800);
-return 'TYPED';})()"""%json.dumps(t)
-open(sys.argv[2],'w',encoding='utf-8').write(js)
+read=lambda p:open(p,encoding='utf-8').read().strip()
+open(sys.argv[2],'w',encoding='utf-8').write(read(sys.argv[3])+'('+json.dumps(read(sys.argv[1]))+')')
 PY
 before=(${=$(state)}); (( $#before == 3 )) || { echo "NO_TAB"; rm -f "$JS"; exit 3; }
 r=$("$D/tab-js.sh" "$NEEDLE" "$JS"); rm -f "$JS"

@@ -165,6 +165,7 @@ npx jest --config tests/jest.config.js tests/<файл>.test.js
 | `tab-js.sh <часть адреса> <файл.js>` | JS в первой подходящей вкладке Chrome |
 | `gpt-send.sh <часть адреса> <файл>` | отправить текст в чат ChatGPT и проверить, что ушёл |
 | `gpt-watch.sh <часть адреса> <куда> [сек] [мин] [--append <файл>]` | дождаться нового законченного ответа |
+| `gpt-type.js` | вставка и отправка на странице (внутри `gpt-send.sh`) |
 | `gpt-state.js`, `gpt-last.js` | состояние чата и текст последнего ответа (через `tab-js.sh`) |
 | `check-run.js [--flagged] <выгрузка Basic>.json` | какие ответы прогона надо прочитать глазами |
 | `run-digest.js <копия>.thecycle.json [отчёт.md]` | таблица прогона TheCycle по циклам |
