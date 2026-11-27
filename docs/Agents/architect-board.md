@@ -44,4 +44,4 @@
 - Реестр проблем движка: `docs/Agents/basic-issues-registry.md`.
 - Опыт долгих задач: `docs/Agents/long-task-playbook.md`.
 - Команда агентов: `docs/Agents/agent-team.md`.
-- Скрипты: `scripts/agent/` — `deliver.sh`, `gpt-watch.sh`, `gpt-send.sh`, `gpt-state.js`, `gpt-last.js`, `tab-js.sh`.
+- Скрипты: `scripts/agent/` — `deliver.sh`, `gpt-watch.sh`, `gpt-send.sh`, `gpt-state.js`, `gpt-last.js`, `tab-js.sh`, `check-run.js`.
