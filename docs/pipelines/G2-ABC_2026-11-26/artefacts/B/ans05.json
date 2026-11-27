@@ -1,0 +1,1 @@
+{"feasible_count": 89, "top3": [{"ids": "ACHIJ", "cost": 20, "value": 100, "uncovered": []}, {"ids": "CEGHK", "cost": 20, "value": 96, "uncovered": [6]}, {"ids": "BCDFJ", "cost": 20, "value": 94, "uncovered": [9]}], "robust_optimum": {"ids": "BCDFJ", "cost": 20, "value": 94, "worst": 77, "after_failure": {"B": 82, "C": 78, "D": 77, "F": 80, "J": 91}}}

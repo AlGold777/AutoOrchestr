@@ -1,0 +1,1 @@
+{"feasible_count": 89, "top3": [{"ids": ["A", "C", "H", "I", "J"], "cost": 20, "value": 100, "uncovered": []}, {"ids": ["C", "E", "G", "H", "K"], "cost": 20, "value": 96, "uncovered": [6]}, {"ids": ["B", "C", "D", "F", "J"], "cost": 20, "value": 94, "uncovered": [9]}], "robust_optimum": null}

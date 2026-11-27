@@ -1,0 +1,16 @@
+0 User 20:19  Реши конечну blocks 1 {"score": 0, "max": 22, "failed": ["feasible_count", "top1_ids", "top1_cost", "top1_value", "top1_uncovered", "top2_ids", "top2_cost", "top2_value", "
+1 Claude R1 ⚠ копия неполн blocks 1 {"score": 11, "max": 22, "failed": ["feasible_count", "top3_ids", "robust_ids", "robust_cost", "robust_value", "robust_worst", "after_B", "after_C", "
+2 GPT R1 Basic · Раунд 1 2 blocks 1 {"score": 22, "max": 22, "failed": []}
+3 GPT R2 Basic · Раунд 2 2 blocks 1 {"score": 22, "max": 22, "failed": []}
+4 GPT R3 Basic · Раунд 3 2 blocks 1 {"score": 0, "max": 22, "failed": ["feasible_count", "top1_ids", "top1_cost", "top1_value", "top1_uncovered", "top2_ids", "top2_cost", "top2_value", "
+5 Claude R3 20:25 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+6 GPT R4 Basic · Раунд 4 2 blocks 1 {"score": 22, "max": 22, "failed": []}
+7 GPT R5 Basic · Раунд 5 2 blocks 1 {"score": 22, "max": 22, "failed": []}
+8 Claude R5 20:29 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+9 GPT R6 Basic · Раунд 6 2 blocks 1 {"score": 22, "max": 22, "failed": []}
+10 Claude R7 20:31 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+11 GPT R7 Basic · Раунд 7 2 blocks 1 {"score": 1, "max": 22, "failed": ["top1_ids", "top1_cost", "top1_value", "top1_uncovered", "top2_ids", "top2_cost", "top2_value", "top2_uncovered", "
+12 GPT R8 Basic · Раунд 8 2 blocks 1 {"score": 1, "max": 22, "failed": ["top1_ids", "top1_cost", "top1_value", "top1_uncovered", "top2_ids", "top2_cost", "top2_value", "top2_uncovered", "
+13 GPT R9 Basic · Раунд 9 2 blocks 1 {"score": 1, "max": 22, "failed": ["top1_ids", "top1_cost", "top1_value", "top1_uncovered", "top2_ids", "top2_cost", "top2_value", "top2_uncovered", "
+14 Claude R9 20:34 Ответ Cl blocks 1 {"score": 22, "max": 22, "failed": []}
+15 GPT R10 Basic · Раунд 10 blocks 1 {"score": 13, "max": 22, "failed": ["robust_ids", "robust_cost", "robust_value", "robust_worst", "after_B", "after_C", "after_D", "after_F", "after_J"
