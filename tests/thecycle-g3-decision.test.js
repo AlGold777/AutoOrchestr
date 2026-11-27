@@ -84,3 +84,11 @@ test('analyst schema: one round, one model, no input', () => {
   assert.equal(work.steps.length, 2);
   assert.throws(() => buildAnalystSchema({ steps: [] }), /CIRCLE_ANALYST_NO_MODEL/);
 });
+
+test('JSON followed by the delivery token line is accepted; the prompts allow the token line', () => {
+  const r = ok(null, '{"action":"CONTINUE","reason":"дальше","refs":[]}\n[[AO-abc123]]');
+  assert.equal(r.ok, true);
+  assert.equal(r.decision.action, 'CONTINUE');
+  assert.match(ANALYST_PROMPT, /служебная метка последней строкой/);
+  assert.match(VERIFIER_PROMPT, /служебная метка последней строкой/);
+});
