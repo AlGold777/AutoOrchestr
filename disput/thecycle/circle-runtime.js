@@ -28,6 +28,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
  adapterApi=root.TheCycleBasicAdapter,contextApi=root.TheCycleCircleContext,policyApi=root.TheCycleCirclePolicy,
  createBackup=openBackup,telemetry=root.TheCycleTelemetry,uuid=()=>root.crypto.randomUUID(),
  reconcileApi=root.TheCycleTransportReconciliation,now=()=>Date.now(),
+ writerLock=root.TheCycleWriterLock?.createWriterLock(),
  runnerId='circle-page-'+(root.crypto?.randomUUID?.()||String(Date.now())+Math.random())}={}){
  if(!bridge||!['capture','send','begin','end','accept','roleText'].every(k=>typeof bridge[k]==='function')||
  !storage?.get||!storage?.set||!activeStore?.createActiveStateStore||!controllerApi?.createController||
@@ -35,6 +36,13 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
   !contextApi?.validateSummarySchema||typeof createBackup!=='function')throw Error('CIRCLE_DEPENDENCIES_MISSING');
  let running=null;
  const key=id=>'thecycle.circle.research.'+id;
+ // Held while this page writes the active database: a restore cannot switch it meanwhile, and nothing starts during a restore.
+ const lockWriter=async()=>{
+  if(!writerLock)return null;
+  const release=await writerLock.shared();
+  if(!release)throw Object.assign(new Error('THECYCLE_RESTORE_IN_PROGRESS'),{code:'THECYCLE_RESTORE_IN_PROGRESS'});
+  return release;
+ };
  // Liveness of the research owner: a heartbeat in storage, written every 15 s while this page works. It never touches the run.
  // A fresh heartbeat of another runner means the research goes on in another tab: no recovery buttons, no takeover.
  const HB_KEY='thecycle.circle.heartbeat.',HB_FRESH_MS=180000,HB_EVERY_MS=15000,PENDING_KEY='thecycle.circle.pending';
@@ -363,7 +371,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
    throw Error('CIRCLE_INPUT_INVALID');
   const session={researchId:'circle-'+uuid(),controller:null,stopRequested:false,bridgeRun:null};
   running=session;
-  let active,backup,created=false,held=false;
+  let active,backup,unlock,created=false,held=false;
   const id=session.researchId;
   const {outcomes,emit,record}=makeRecorder(id,onProgress);
   session.emit=emit;
@@ -381,6 +389,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
    schema.run={...(schema.run||{}),policy:'auto'};
     if(contextMode==='latest-summary')contextApi.validateSummarySchema(schema);
    const ref='thecycle:circle:'+id+':schema:1';
+   unlock=await lockWriter();
    active=await activeStore.createActiveStateStore();
    const store=active.store;
    await emit('SCHEMA_CAPTURED',{schema,database:active.database,pipelineRef:ref});
@@ -422,7 +431,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
    try{await stopBeat?.();}catch(_){}
    // Free transport ownership of a settled research so the next Circle starts without a reload; a run needing recovery stays held.
    try{await session.controller?.releaseSettled?.(id);}catch(_){}
-   try{backup?.close?.();}finally{try{active?.close();}finally{running=null;if(held)try{bridge.release?.();}catch(_){}}}
+   try{backup?.close?.();}finally{try{active?.close();}finally{try{await unlock?.();}catch(_){}running=null;if(held)try{bridge.release?.();}catch(_){}}}
   }
  }
  // Human-started continuation of a saved research after Stop, a pause or a page reload (mode: resume | abandon | close).
@@ -432,7 +441,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
   if(typeof id!=='string'||!id||(maxCalls!==undefined&&(!pos(maxCalls)||maxCalls>10000)))throw Error('CIRCLE_INPUT_INVALID');
   const session={researchId:id,controller:null,stopRequested:false,bridgeRun:null};
   running=session;
-  let active,backup,held=false;
+  let active,backup,unlock,held=false;
   const {outcomes,emit,record}=makeRecorder(id,onProgress);
   session.emit=emit;
   let stopBeat=null;
@@ -441,6 +450,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
    if(await activeElsewhere(id))throw Object.assign(new Error('CIRCLE_ACTIVE_ELSEWHERE'),{code:'CIRCLE_ACTIVE_ELSEWHERE'});
    if(typeof bridge.hold==='function'){bridge.hold({stop});held=true;}
    const stored=(await storage.get(key(id)))[key(id)];
+   unlock=await lockWriter();
    active=await activeStore.createActiveStateStore();
    const store=active.store;
    let state=await store.load(id).catch(error=>{throw stored?error:Error('CIRCLE_RESEARCH_NOT_FOUND');});
@@ -494,7 +504,21 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
     await controller.stop(id);
     if(inFlight)await record(await controller.closeStopped(id));
     else await controller.releaseSettled(id);
-    return await finish();
+    // The closed research gets its own verified copy. It stays closed when the copy fails; the result says so.
+    let closeCopy;
+    try{
+     await emit('BACKUP_START',{reason:'close'});
+     backup=await createBackup({stateStore:store,storage,onDiagnostic:emit});
+     const closed=await store.load(id);
+     if(closed.lastCommittedPacket!=null)await backup.gate.requireCommit(id,id+':cycle:'+closed.lastCommittedPacket);
+     const saved=await backup.gate.persist(id,'manual');
+     await emit('BACKUP_VERIFIED',{reason:'close'});
+     closeCopy={verified:true,key:saved?.lastBackupId||null};
+    }catch(error){
+     closeCopy={verified:false,error:String(error?.code||error?.message||error)};
+     await emit('BACKUP_CLOSE_FAILED',{reason:'close',error});
+    }
+    return {...await finish(),closeCopy};
    }
    if(mode==='abandon'){
     if(!inFlight)throw Error('CIRCLE_NOTHING_TO_RESOLVE');
@@ -538,7 +562,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
   }finally{
    try{await stopBeat?.();}catch(_){}
    try{await session.controller?.releaseSettled?.(id);}catch(_){}
-   try{backup?.close?.();}finally{try{active?.close();}finally{running=null;if(held)try{bridge.release?.();}catch(_){}}}
+   try{backup?.close?.();}finally{try{active?.close();}finally{try{await unlock?.();}catch(_){}running=null;if(held)try{bridge.release?.();}catch(_){}}}
   }
  }
  const resume=(id,options={})=>recover(id,'resume',options.onProgress,options.maxCalls);

@@ -21,6 +21,14 @@ require('../disput/thecycle/backup-gate.js');
 require('../disput/thecycle/backup-retention.js');
 const { createBackupRuntime } = require('../disput/thecycle/backup-runtime.js');
 const { restore } = require('../disput/thecycle/restore-service.js');
+const { createRecoveryRepositories } = require('../disput/thecycle/recovery-repositories.js');
+require('../disput/thecycle/recovery-runtime.js');
+require('../disput/thecycle/database-activation.js');
+require('../disput/thecycle/activation-coordinator.js');
+const activeStoreApi = require('../disput/thecycle/active-state-store.js');
+const { createGateMetadata } = require('../disput/thecycle/gate-metadata.js');
+const { createWriterLock } = require('../disput/thecycle/writer-lock.js');
+const { restoreFromCopy, listCopies } = require('../disput/thecycle/restore-flow.js');
 installKeyRange();
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -43,10 +51,27 @@ function directory() {
     async removeEntry(n) { if (!files.delete(n)) throw notFound(); } };
 }
 
+function pageStorage(values = new Map()) {
+  return { values, async get(k) { return k === null ? Object.fromEntries(values) : { [k]: values.get(k) }; },
+    async set(o) { for (const [k, v] of Object.entries(o)) values.set(k, clone(v)); } };
+}
+
+// Web Locks of one browser: shared holders exclude the exclusive one and the other way round; nothing queues.
+function webLocks() {
+  let shared = 0, exclusive = false;
+  return { request(name, { mode }, callback) {
+    return Promise.resolve().then(async () => {
+      if (exclusive || (mode === 'exclusive' && shared)) return callback(null);
+      if (mode === 'exclusive') exclusive = true; else shared += 1;
+      try { return await callback({ name, mode }); } finally { if (mode === 'exclusive') exclusive = false; else shared -= 1; }
+    });
+  } };
+}
+
 // One device: its own database and page storage; the file directory is shared between devices.
-function device({ dir, analyst, transport, store, indexedDB, database = 'auto-orchestr-thecycle', onSend }) {
-  const values = new Map(); let seq = 0;
-  const storage = { async get(k) { return { [k]: values.get(k) }; }, async set(o) { for (const [k, v] of Object.entries(o)) values.set(k, clone(v)); } };
+// Without a fixed store the runner opens the active database of the device, as the page does.
+function device({ dir, analyst, transport, store, indexedDB, database = 'auto-orchestr-thecycle', onSend, storage = pageStorage(), writerLock }) {
+  let seq = 0;
   const bridge = {
     capture: () => ({ models: ['GPT'], errors: [], schema: { schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] } }),
     accept: () => ({ ok: true }), roleText: () => '', begin() {}, end() {}, hold() {}, release() {},
@@ -62,7 +87,9 @@ function device({ dir, analyst, transport, store, indexedDB, database = 'auto-or
       return { byModel: out };
     }
   };
-  return createCircleRunner({ bridge, storage, activeStore: { async createActiveStateStore() { return { store, database, close() {} }; } },
+  const activeStore = store ? { async createActiveStateStore() { return { store, database, close() {} }; } }
+    : { createActiveStateStore: () => activeStoreApi.createActiveStateStore({ indexedDB }) };
+  return createCircleRunner({ bridge, storage, activeStore, writerLock,
     controllerApi: { createController }, adapterApi: { createBasicAdapter }, contextApi: context, policyApi, reconcileApi: reconciliation, telemetry: null,
     createBackup: ({ stateStore, onDiagnostic }) => createBackupRuntime({ directory: dir, indexedDB, stateStore, onDiagnostic, storage }),
     uuid: () => database + '-' + String(++seq) });
@@ -116,4 +143,197 @@ test('a research stopped in flight continues from the file copy after a human ch
   assert.equal(resumed.state.phase, 'COMPLETED');
   assert.deepEqual(transport, ['1:work', '2:analyst', '3:analyst']);
   assert.equal(resumed.state.budget.usedCalls, 3);
+});
+
+const latestKey = async (dir) => (await createDirectorySink({ directory: dir }).list()).sort((a, b) => b.lastModified - a.lastModified)[0].key;
+// The browser of a person: default database, page storage, backup gate records, one set of Web Locks.
+async function browser() {
+  const indexedDB = createFakeIndexedDB(), storage = pageStorage(), locks = webLocks();
+  await createStateStore({ indexedDB });
+  const pointer = async () => { const r = await createRecoveryRepositories({ indexedDB }); try { return await r.activation.read(); } finally { r.close(); } };
+  const restoreCopy = (dir, backupKey, extra = {}) => restoreFromCopy({ backupKey, directory: dir, storage, indexedDB,
+    writerLock: createWriterLock({ locks }), telemetry: null, ...extra });
+  const page = (options) => device({ indexedDB, storage, writerLock: createWriterLock({ locks }), ...options });
+  return { indexedDB, storage, locks, pointer, restoreCopy, page };
+}
+
+// A research on another device; the directory keeps its copies.
+async function elsewhere({ answers = [answer('WAIT_OWNER'), answer('COMPLETE'), answer('COMPLETE')], onSend } = {}) {
+  const dir = directory(), transport = [], indexedDB = createFakeIndexedDB(), store = await createStateStore({ indexedDB });
+  const here = device({ dir, analyst: answers, transport, store, indexedDB, onSend: onSend && (() => onSend(here)) });
+  const first = await here.start({ task: 'T', maxCalls: 8 });
+  return { dir, transport, analyst: answers, indexedDB, store, first };
+}
+
+test('one action restores a copy on an empty device, activates it and lists the research; resume sends only new requests', async () => {
+  const source = await elsewhere(), there = await browser();
+  const result = await there.restoreCopy(source.dir, await latestKey(source.dir));
+  assert.deepEqual(await there.pointer(), { revision: 1, activeDatabase: result.database });
+  assert.equal(result.previousDatabase, 'auto-orchestr-thecycle');
+  assert.equal(result.researchId, source.first.researchId);
+  assert.equal(there.storage.values.get('thecycle.circle.latest'), source.first.researchId);
+  assert.equal(there.storage.values.get('thecycle.circle.pending').researchId, source.first.researchId);
+  assert.equal(there.storage.values.get('thecycle.activation').activeDatabase, result.database);
+
+  const page = there.page({ dir: source.dir, analyst: source.analyst, transport: source.transport });
+  assert.deepEqual((await page.list()).map((r) => [r.researchId, r.usedCalls, r.maxCalls]), [[source.first.researchId, 2, 8]]);
+  const restored = await page.snapshot(source.first.researchId);
+  assert.deepEqual(restored.report, source.first.report);
+  assert.deepEqual(restored.state.config, source.first.state.config);
+  const resumed = await page.resume(source.first.researchId);
+  assert.equal(resumed.state.phase, 'COMPLETED');
+  assert.equal(resumed.state.budget.usedCalls, 3);
+  assert.deepEqual(source.transport, ['1:work', '2:analyst', '3:analyst']);
+});
+
+test('a copy taken before the evaluation continues it after the restore, without resending the work', async () => {
+  const source = await elsewhere({ answers: [answer('COMPLETE'), answer('COMPLETE')] });
+  // The first copy that holds the committed work cycle and no analyst request.
+  const sink = createDirectorySink({ directory: source.dir }), service = createBackupService({ store: source.store, sink });
+  let key = null;
+  for (const row of (await sink.list()).sort((a, b) => a.lastModified - b.lastModified)) {
+    const snapshot = await source.store.verifyBackup(await service.getVerifiedEnvelope(row.key));
+    const state = snapshot.stores.research[0];
+    if (state?.phase === 'EVALUATE' && state.lastCommittedPacket === 1) { key = row.key; break; }
+  }
+  assert.ok(key, 'a copy at EVALUATE exists');
+  const there = await browser();
+  await there.restoreCopy(source.dir, key);
+  const transport = [];
+  const resumed = await there.page({ dir: source.dir, analyst: [answer('COMPLETE')], transport }).resume(source.first.researchId);
+  assert.equal(resumed.state.phase, 'COMPLETED');
+  assert.deepEqual(transport, ['2:analyst']);
+});
+
+test('a request with an unknown outcome stays for a human choice after the restore and is not sent again', async () => {
+  let calls = 0;
+  const source = await elsewhere({ answers: [answer('COMPLETE')],
+    onSend: async (here) => { if (++calls !== 2) return undefined; await here.stop(); return { byModel: {} }; } });
+  assert.equal(source.first.state.phase, 'RECONCILE');
+  const there = await browser();
+  const result = await there.restoreCopy(source.dir, await latestKey(source.dir));
+  assert.equal(result.requiresManualReconciliation, true);
+  const page = there.page({ dir: source.dir, analyst: source.analyst, transport: source.transport });
+  assert.equal((await page.snapshot(source.first.researchId)).unknown, true);
+  assert.equal((await page.resume(source.first.researchId)).state.phase, 'RECONCILE');
+  await page.resolveUnknown(source.first.researchId, 'abandon');
+  assert.equal((await page.resume(source.first.researchId)).state.phase, 'COMPLETED');
+  assert.deepEqual(source.transport, ['1:work', '2:analyst', '3:analyst']);
+});
+
+test('a damaged copy is listed as damaged and refused; the active database stays', async () => {
+  const source = await elsewhere(), there = await browser();
+  const key = await latestKey(source.dir), file = source.dir.files.get(key + '.thecycle.json');
+  const whole = file.text;
+  for (const damaged of [whole.slice(0, whole.length >> 1), whole.replace('"payload":"', '"payload":"x')]) {
+    file.text = damaged;
+    const sourceStore = await createStateStore({ indexedDB: there.indexedDB });
+    const row = (await listCopies({ directory: source.dir, store: sourceStore })).find((copy) => copy.key === key);
+    assert.ok(row.damaged);
+    await assert.rejects(there.restoreCopy(source.dir, key), /BACKUP_|INVALID_BACKUP|RESTORE_/);
+    assert.deepEqual(await there.pointer(), { revision: 0, activeDatabase: 'auto-orchestr-thecycle' });
+    assert.equal(there.storage.values.size, 0);
+  }
+  file.text = whole;
+  assert.equal((await there.restoreCopy(source.dir, key)).revision, 1);
+});
+
+test('a busy transport refuses the restore: a running research, then a fresh heartbeat', async () => {
+  const source = await elsewhere(), there = await browser(), key = await latestKey(source.dir);
+  let refused = null;
+  const running = there.page({ dir: directory(), analyst: [answer('COMPLETE')], transport: [],
+    onSend: async () => { refused ||= await there.restoreCopy(source.dir, key).then(() => 'restored', (error) => error.code); return undefined; } });
+  await running.start({ task: 'Local', maxCalls: 8 });
+  assert.equal(refused, 'RESTORE_TRANSPORT_BUSY');
+  assert.equal((await there.pointer()).revision, 0);
+
+  await there.storage.set({ 'thecycle.circle.heartbeat.other': { ownerId: 'tab', at: Date.now() } });
+  await assert.rejects(there.restoreCopy(source.dir, key), { code: 'RESTORE_TRANSPORT_BUSY' });
+  assert.equal((await there.pointer()).revision, 0);
+  // A heartbeat that stopped three minutes ago no longer holds the transport.
+  await there.storage.set({ 'thecycle.circle.heartbeat.other': { ownerId: 'tab', at: Date.now() - 180000 } });
+  assert.equal((await there.restoreCopy(source.dir, key)).revision, 1);
+});
+
+test('nothing starts or continues while a restore holds the writer lock', async () => {
+  const source = await elsewhere(), there = await browser(), transport = [];
+  const release = await createWriterLock({ locks: there.locks }).exclusive();
+  const page = there.page({ dir: source.dir, analyst: [], transport });
+  await assert.rejects(page.start({ task: 'T', maxCalls: 8 }), { code: 'THECYCLE_RESTORE_IN_PROGRESS' });
+  await assert.rejects(page.resume(source.first.researchId), { code: 'THECYCLE_RESTORE_IN_PROGRESS' });
+  assert.deepEqual(transport, []);
+  await release();
+  assert.deepEqual(await page.list(), []);
+});
+
+test('a copy without researches is refused', async () => {
+  const dir = directory(), there = await browser();
+  const store = await createStateStore({ indexedDB: there.indexedDB });
+  await createBackupService({ store, sink: createDirectorySink({ directory: dir }) }).save('thecycle-manual-empty');
+  await assert.rejects(there.restoreCopy(dir, 'thecycle-manual-empty'), { code: 'RESTORE_COPY_EMPTY' });
+  assert.equal((await there.pointer()).revision, 0);
+});
+
+test('an older copy on the same device: its backup records restart from it and research continues', async () => {
+  const there = await browser(), dir = directory(), transport = [];
+  const analyst = [answer('WAIT_OWNER')];
+  const first = await there.page({ dir, analyst, transport }).start({ task: 'T', maxCalls: 8 });
+  const older = await latestKey(dir);
+  // A later state leaves a packet waiting for its copy.
+  const metadata = await createGateMetadata({ indexedDB: there.indexedDB });
+  const record = await metadata.get(first.researchId);
+  await metadata.put(first.researchId, record.revision, { ...record, revision: record.revision + 1, blocked: true,
+    pendingCommitIds: [first.researchId + ':cycle:99'] });
+  await there.restoreCopy(dir, older);
+  const reset = await metadata.get(first.researchId);
+  assert.deepEqual([reset.pendingCommitIds, reset.lastBackupId, reset.blocked], [[], older, true]);
+  analyst.push(answer('COMPLETE'), answer('COMPLETE'));
+  const resumed = await there.page({ dir, analyst, transport }).resume(first.researchId);
+  assert.equal(resumed.state.phase, 'COMPLETED');
+});
+
+test('a switch that fails puts the backup records back', async () => {
+  const there = await browser(), dir = directory(), transport = [];
+  const first = await there.page({ dir, analyst: [answer('WAIT_OWNER')], transport }).start({ task: 'T', maxCalls: 8 });
+  const metadata = await createGateMetadata({ indexedDB: there.indexedDB });
+  const before = await metadata.get(first.researchId), key = await latestKey(dir);
+  // The transport turns busy between the data write and the switch.
+  let reads = 0;
+  const storage = { ...there.storage, async get(k) {
+    if (k === null && ++reads === 3) await there.storage.set({ 'thecycle.circle.heartbeat.late': { ownerId: 'tab', at: Date.now() } });
+    return there.storage.get(k);
+  } };
+  await assert.rejects(there.restoreCopy(dir, key, { storage }), /ACTIVATION_/);
+  assert.equal((await there.pointer()).revision, 0);
+  const after = await metadata.get(first.researchId);
+  assert.deepEqual({ ...after, revision: 0 }, { ...before, revision: 0 });
+});
+
+test('closing a research for good leaves a verified copy of the closed state', async () => {
+  let calls = 0;
+  const there = await browser(), dir = directory(), transport = [];
+  let page = null;
+  page = there.page({ dir, analyst: [], transport, onSend: async () => { if (++calls !== 2) return undefined; await page.stop(); return { byModel: {} }; } });
+  const first = await page.start({ task: 'T', maxCalls: 8 });
+  const closed = await page.resolveUnknown(first.researchId, 'close');
+  assert.equal(closed.state.phase, 'COMPLETED');
+  assert.equal(closed.closeCopy.verified, true);
+  const other = await browser();
+  await other.restoreCopy(dir, closed.closeCopy.key);
+  const copy = await other.page({ dir, analyst: [], transport }).snapshot(first.researchId);
+  assert.deepEqual([copy.state.phase, copy.state.closedReason, copy.state.budget.usedCalls],
+    ['COMPLETED', closed.state.closedReason, closed.state.budget.usedCalls]);
+  assert.equal(transport.length, 2);
+});
+
+test('a close without a writable directory still closes and reports the missing copy', async () => {
+  let calls = 0;
+  const there = await browser(), dir = directory(), transport = [];
+  let page = null;
+  page = there.page({ dir, analyst: [], transport, onSend: async () => { if (++calls !== 2) return undefined; await page.stop(); return { byModel: {} }; } });
+  const first = await page.start({ task: 'T', maxCalls: 8 });
+  dir.queryPermission = async () => 'prompt';
+  const closed = await page.resolveUnknown(first.researchId, 'close');
+  assert.equal(closed.state.phase, 'COMPLETED');
+  assert.deepEqual(closed.closeCopy, { verified: false, error: 'BACKUP_DIRECTORY_PERMISSION_REQUIRED' });
 });

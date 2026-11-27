@@ -35,6 +35,13 @@ async function performBackupOnce(){
      throw error;
     }
     store=await root.TheCycleStateStore.createStateStore({name:pointer.activeDatabase});
+    // Nothing to save; an empty copy must not push real copies of this directory out of the rotation.
+    if(!(await store.listResearch()).length){
+      await root.chrome.storage.local.set({thecycleBackupStatus:{
+        state:'SKIPPED',reason:'NO_RESEARCH',database:pointer.activeDatabase,at:Date.now()
+      }});
+      return {skipped:'NO_RESEARCH'};
+    }
     const sink=root.TheCycleDirectorySink.createDirectorySink({directory});
     const backup=root.TheCycleBackup.createBackupService({store,sink});
     const key='thecycle-alarm-'+Date.now()+'-'+root.crypto.randomUUID().replace(/-/g,'');

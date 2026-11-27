@@ -6,7 +6,7 @@ const copy = v => JSON.parse(JSON.stringify(v));
 function createG1Runner({bridge,storage=root.chrome?.storage?.local,
  activeStore=root.TheCycleActiveStateStore,
  controllerApi=root.TheCycleController,adapterApi=root.TheCycleBasicAdapter,
- uuid=()=>root.crypto.randomUUID()}={}){
+ uuid=()=>root.crypto.randomUUID(),writerLock=root.TheCycleWriterLock?.createWriterLock()}={}){
  if(!bridge||!['capture','send','begin','end','accept','roleText'].every(k=>typeof bridge[k]==='function')||
  !storage?.get||!storage?.set||!activeStore?.createActiveStateStore||
  !controllerApi?.createController||!adapterApi?.createBasicAdapter)
@@ -43,7 +43,12 @@ function createG1Runner({bridge,storage=root.chrome?.storage?.local,
   const researchId='g1-'+uuid();
   const runId=researchId+':cycle:1';
   const pipelineRef='thecycle:g1:'+researchId+':schema:1';
-  const active=await activeStore.createActiveStateStore();
+  // Held while this page writes the active database: a restore cannot switch it meanwhile.
+  const unlock=writerLock?await writerLock.shared():null;
+  if(writerLock&&!unlock)throw new Error('THECYCLE_RESTORE_IN_PROGRESS');
+  let active;
+  try{active=await activeStore.createActiveStateStore();}
+  catch(error){await unlock?.();throw error;}
   const store=active.store;
   const makeAdapter=({journal,fence})=>adapterApi.createBasicAdapter({
    send:async(modelNames,prompts,meta)=>{
@@ -111,6 +116,7 @@ function createG1Runner({bridge,storage=root.chrome?.storage?.local,
     running=null;
     try{active.close();}
     finally{
+     try{await unlock?.();}catch(_){}
      if(held)try{bridge.release?.();}catch(_){}
     }
    }

@@ -19,7 +19,9 @@ describe('Circle continue after reload: buttons', () => {
     expect(results).toContain("document.getElementById('circle-resume')?.addEventListener('click'");
     expect(results).toContain("document.getElementById('circle-abandon-unknown')?.addEventListener('click'");
     expect(results).toContain("document.getElementById('circle-close')?.addEventListener('click'");
-    expect(results).toMatch(/const access = mode === 'close' \? null : ensureCircleBackupAccess\(\);/);
+    expect(results).toMatch(/const access = ensureCircleBackupAccess\(\);\s*let runner = null;/);
+    // Closing asks too (it leaves a copy), but does not depend on the answer.
+    expect(results).toContain("if (!granted.ok && mode !== 'close') {");
     expect(results).toContain("runner.resume(id, options)");
     expect(results).toContain("runner.resolveUnknown(id,");
   });

@@ -8962,8 +8962,12 @@ document.addEventListener('click', (event) => {
             cycle: result.state?.lastCommittedPacket, budget: result.state?.budget,
             decision: result.packet?.decision, pendingBackup: result.state?.backupRequiredCycleId,
             pauseReason: result.pauseReason, lastDecision: result.lastDecision,
-            lastOutcome: result.outcomes?.at(-1), result: result.report?.answers
+            lastOutcome: result.outcomes?.at(-1), result: result.report?.answers, closeCopy: result.closeCopy
         });
+        const circleErrorText = (error) => ({
+            CIRCLE_ACTIVE_ELSEWHERE: 'исследование идёт в другой вкладке.',
+            THECYCLE_RESTORE_IN_PROGRESS: 'идёт восстановление из резервной копии. Повторите после него.'
+        }[String(error?.message || error)] || String(error?.message || error));
         // An outcome left unknown by Stop or a reload: the two human choices appear next to Status.
         const showCircleResult = (result) => {
             showCircleStatus(result.activeElsewhere ? 'Circle: исследование идёт в другой вкладке.' : circleSummary(result));
@@ -9060,8 +9064,8 @@ document.addEventListener('click', (event) => {
                 showNotification('Circle: ' + outcome + '. Циклов сохранено: ' + (result.state?.lastCommittedPacket || 0), 'info');
                 return !['RECOVERY_REQUIRED', 'BACKUP_REQUIRED', 'RUN_REJECTED'].includes(outcome);
             } catch (error) {
-                showCircleStatus('Circle: ' + String(error?.message || error));
-                showNotification('Circle: ' + String(error?.message || error), 'error');
+                showCircleStatus('Circle: ' + circleErrorText(error));
+                showNotification('Circle: ' + circleErrorText(error), 'error');
                 return false;
             } finally {
                 circlePageRunner = null;
@@ -9099,11 +9103,12 @@ document.addEventListener('click', (event) => {
         const runCircleRecovery = async (mode) => {
             if (circlePageRunner || pipelineRunActive || theCycleHeld) { showNotification('Pipeline already running', 'warn'); return false; }
             if (circleAccessPending) return false;
-            const access = mode === 'close' ? null : ensureCircleBackupAccess();
+            const access = ensureCircleBackupAccess();
             let runner = null;
             try {
-                const granted = access ? await access : { ok: true };
-                if (!granted.ok) {
+                const granted = await access;
+                // Closing does not depend on the backup directory: without it the research closes and the missing copy is reported.
+                if (!granted.ok && mode !== 'close') {
                     const text = granted.message || window.TheCycleDirectoryHandleManager?.NO_ACCESS_MESSAGE || 'Нет доступа к каталогу копий.';
                     try { await window.TheCycleTelemetry?.append('RUN_BLOCKED', { reason: 'BACKUP_DIRECTORY_' + (granted.outcome || granted.code || 'NO_ACCESS') }); } catch (_) {}
                     showCircleStatus('Circle: ' + text);
@@ -9127,10 +9132,12 @@ document.addEventListener('click', (event) => {
                 const result = mode === 'resume' ? await runner.resume(id, options) : await runner.resolveUnknown(id, mode === 'close' ? 'close' : 'abandon', options);
                 showCircleResult(result);
                 await refreshCircleResearches(runner, id).catch(() => {});
-                showNotification('Circle: ' + (result.outcomes?.at(-1)?.outcome || result.state?.phase), 'info');
+                if (result.closeCopy?.verified === false) {
+                    showNotification('Circle: исследование закрыто, но резервная копия не создана. Создайте её в настройках копий.', 'warn');
+                } else showNotification('Circle: ' + (result.outcomes?.at(-1)?.outcome || result.state?.phase), 'info');
                 return true;
             } catch (error) {
-                const text = String(error?.message || error) === 'CIRCLE_ACTIVE_ELSEWHERE' ? 'исследование идёт в другой вкладке.' : String(error?.message || error);
+                const text = circleErrorText(error);
                 showCircleStatus('Circle: ' + text);
                 showNotification('Circle: ' + text, 'error');
                 return false;
@@ -9141,6 +9148,18 @@ document.addEventListener('click', (event) => {
                 updateDebateButtonsUi();
             }
         };
+        // A restore on the backup page switched the database: the list shows its researches and the restored one is selected.
+        window.chrome?.storage?.onChanged?.addListener((changes, area) => {
+            const activation = area === 'local' ? changes?.['thecycle.activation']?.newValue : null;
+            if (!activation) return;
+            void (async () => {
+                try {
+                    const runner = circlePageRunner || createPageCircle();
+                    await refreshCircleResearches(runner, activation.researchId);
+                    if (activation.researchId) showCircleResult(await runner.snapshot(activation.researchId));
+                } catch (error) { showCircleStatus('Circle: ' + circleErrorText(error)); }
+            })();
+        });
         document.getElementById('circle-resume')?.addEventListener('click', () => { void runCircleRecovery('resume'); });
         document.getElementById('circle-abandon-unknown')?.addEventListener('click', () => { void runCircleRecovery('abandon'); });
         document.getElementById('circle-close')?.addEventListener('click', () => { void runCircleRecovery('close'); });
