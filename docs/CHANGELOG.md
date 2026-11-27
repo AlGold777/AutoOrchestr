@@ -8,7 +8,8 @@
 - Копия, в которой нет части данных этого браузера (например, старая), не восстанавливается: иначе записанный здесь запрос мог бы уйти повторно.
 - Своя роль (Custom) продолжает работать с текстом из записанной схемы, даже если в этом браузере его нет.
 - Пустая база не создаёт копий, чтобы они не вытесняли настоящие.
-- Код: `disput/thecycle/restore-flow.js`, `writer-lock.js`, `circle-runtime.js`, `g1-runtime.js`, `thecycle-backup.html`, `thecycle-backup-ui.js`, `background/thecycle-alarm-bootstrap.js`, `results.js`, `disput/thecycle/basic-adapter.js`. Тесты: `tests/thecycle-restore-resume.test.js`, `tests/thecycle-adapter-failures.test.js`. Живьём не проверено.
+- Код: `disput/thecycle/restore-flow.js`, `writer-lock.js`, `circle-runtime.js`, `g1-runtime.js`, `thecycle-backup.html`, `thecycle-backup-ui.js`, `background/thecycle-alarm-bootstrap.js`, `results.js`, `disput/thecycle/basic-adapter.js`. Тесты: `tests/thecycle-restore-resume.test.js`, `tests/thecycle-adapter-failures.test.js`.
+- Живая приёмка в Chrome пройдена 27.11.2026, G4.3 закрыт (отчёт `docs/TheCycle/reports/G4-restore.md`).
 
 ### 2026-11-27 — Circle: живая приёмка выбора при неизвестном исходе (документы, версия 2.81.1151)
 
