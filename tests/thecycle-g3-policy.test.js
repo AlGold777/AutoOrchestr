@@ -120,20 +120,29 @@ test('without the policy module Circle keeps the fixed policy (no analyst)', asy
   assert.equal(x.prompts.length, 2); assert.ok(x.prompts.every((t) => !isAnalyst(t))); assert.equal(r.state.phase, 'PAUSED');
 });
 
-test('R04: an analyst summary that does not fit pauses with CIRCLE_CONTEXT_LIMIT; nothing is truncated or sent', async () => {
+test('R04/ARCH-001: a summary that does not fit is shortened with a mark, not a dead pause', async () => {
   const x = await fixture({ workText: 'W'.repeat(30000), analystAnswers: [json({ action: 'COMPLETE', reason: 'ok', refs: [REF] })] });
-  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 8000 });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 10000 });
+  assert.equal(r.state.phase, 'COMPLETED');
+  const analyst = x.prompts.find(isAnalyst);
+  assert.ok(analyst.length <= 8000); assert.match(analyst, /сводка сокращена: показано \d+ из 30\d+ знаков/);
+  const ready = (await x.store.getEvents(r.researchId, (await x.store.getPacket(r.researchId, 2)).runId)).length; assert.ok(ready >= 0);
+});
+
+test('R04/ARCH-001: when even the template does not fit the cycle pauses before sending', async () => {
+  const x = await fixture({ workText: 'W'.repeat(300), analystAnswers: [json({ action: 'COMPLETE', reason: 'ok', refs: [REF] })] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 5000 });
   assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'CONTEXT_UNAVAILABLE');
   assert.equal(r.outcomes.at(-1).error, 'CIRCLE_CONTEXT_LIMIT');
-  assert.equal(x.prompts.length, 1); assert.equal(x.prompts.filter(isAnalyst).length, 0);
+  assert.equal(x.prompts.filter(isAnalyst).length, 0);
 });
 
 test('R04: a summary that fits reaches the analyst whole', async () => {
   const x = await fixture({ workText: 'W'.repeat(3000), analystAnswers: [json({ action: 'COMPLETE', reason: 'ok', refs: [REF] })] });
-  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 8000 });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10, maxPromptChars: 10000 });
   assert.equal(r.state.phase, 'COMPLETED');
   const analyst = x.prompts.find(isAnalyst);
-  assert.ok(analyst.includes('W'.repeat(3000))); assert.doesNotMatch(analyst, /TRUNCATED/);
+  assert.ok(analyst.includes('W'.repeat(3000))); assert.doesNotMatch(analyst, /сводка сокращена/);
 });
 
 test('a decision the store refuses to record pauses instead of sticking in EVALUATE', async () => {
@@ -142,4 +151,50 @@ test('a decision the store refuses to record pauses instead of sticking in EVALU
   const r = await x.runner.start({ task: 'Solve it', maxCalls: 10 });
   assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'DECISION_RECORD_INVALID');
   assert.equal(r.state.finalStatus, undefined);
+});
+
+// P4: накопление, использование и пересмотр знаний между циклами.
+const basis = (id, cycleId, kind) => ({ id, kind, ref: { cycleId, step: 1, model: 'GPT' }, provenance: { model: 'GPT', role: 'work' } });
+const delta1 = { bases: [basis('b1', 1, 'MODEL_ANSWER')],
+  obligations: [{ id: 'o1', rev: 1, requirementRef: 'R1', statement: 'доказать границу X', status: 'OPEN' }],
+  claims: [{ id: 'k1', rev: 1, statement: 'граница X равна 5', status: 'CANDIDATE', basisRefs: ['b1'] }] };
+
+test('P4: знания накапливаются, видны следующим циклам и пересматриваются с основанием', async () => {
+  const delta2 = { bases: [basis('b2', 3, 'EXPERT_CONFIRMATION')],
+    obligations: [{ id: 'o1', rev: 2, status: 'CLOSED', closeBasisRefs: ['b2'] }],
+    claims: [{ id: 'k1', rev: 2, statement: 'граница X равна 5', status: 'SUPPORTED', basisRefs: ['b2'] }] };
+  const x = await fixture({ analystAnswers: [
+    json({ action: 'CONTINUE', reason: 'уточнить', refs: [REF], knowledge: delta1 }),
+    json({ action: 'COMPLETE', reason: 'готово', refs: ['cycle=3 step=1 model=GPT'], knowledge: delta2 })
+  ] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10 });
+  assert.equal(r.state.phase, 'COMPLETED');
+  // аналитик видит просьбу о дельте; первый цикл знаний ещё не имеет
+  assert.match(x.prompts[1], /ЗНАНИЯ\. Необязательный ключ knowledge/); assert.match(x.prompts[1], /НАКОПЛЕННЫЕ ЗНАНИЯ:\nпока нет/);
+  // рабочий цикл 3 и аналитик цикла 4 получают состояние из цикла 2
+  assert.match(x.prompts[2], /Открытые обязательства:\n- o1 r1 \(требование R1\): доказать границу X/);
+  assert.match(x.prompts[3], /- o1 r1/); assert.match(x.prompts[3], /k1 r1 \[CANDIDATE\] граница X равна 5/);
+  // итог: обязательство закрыто основанием, утверждение пересмотрено, ревизии подряд, прежнее основание сохранено
+  const K = require('../disput/thecycle/knowledge.js');
+  const packets = [await x.store.getPacket(r.researchId, 2), await x.store.getPacket(r.researchId, 4)];
+  const s = K.fold(packets);
+  assert.equal(s.obligations.o1.status, 'CLOSED'); assert.equal(s.claims.k1.status, 'SUPPORTED'); assert.deepEqual(s.claims.k1.basisRefs, ['b1', 'b2']);
+  assert.equal(packets[0].knowledgeRejected, undefined);
+});
+
+test('P4: завершение с открытым обязательством не проходит', async () => {
+  const x = await fixture({ analystAnswers: [json({ action: 'COMPLETE', reason: 'готово', refs: [REF], knowledge: delta1 })] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10 });
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'OBLIGATIONS_OPEN');
+  assert.deepEqual(r.state.lastDecision.detail.errors, ['o1']);
+  assert.ok((await x.store.getPacket(r.researchId, 2)).knowledge); // допустимая дельта записана
+});
+
+test('P4: завершение на основании отклонённой дельты невозможно', async () => {
+  const bad = { bases: [basis('b1', 1, 'MODEL_ANSWER')], claims: [{ id: 'k1', rev: 1, statement: 'всё доказано', status: 'SUPPORTED', basisRefs: ['b1'] }] };
+  const x = await fixture({ analystAnswers: [json({ action: 'COMPLETE', reason: 'готово', refs: [REF], knowledge: bad })] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 10 });
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'KNOWLEDGE_REJECTED');
+  const p = await x.store.getPacket(r.researchId, 2);
+  assert.equal(p.knowledge, undefined); assert.equal(p.knowledgeRejected.code, 'KNOWLEDGE_WEAK_BASIS');
 });

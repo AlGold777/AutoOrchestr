@@ -44,9 +44,9 @@ test('no third model: the check runs by a non-analyst, UNPROVEN, never VERIFIED_
 });
 
 test('verifier prompt larger than 0.8 of maxPromptChars pauses before sending', async () => {
-  const big = json({ action: 'VERIFY', reason: 'r', refs: [REF], claim: 'x'.repeat(2000), procedure: proc });
+  const big = json({ action: 'VERIFY', reason: 'r', refs: [REF], claim: 'x'.repeat(2000), procedure: Array.from({ length: 10 }, (_, i) => ({ id: 'p' + i, check: 'y'.repeat(600) })) });
   const x = await fixture({ models: TWO, analystAnswers: [big], verifierAnswers: [verdict('VERIFIED')] });
-  const r = await x.runner.start({ task: 'Solve it', maxCalls: 12, maxPromptChars: 3600 });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 12, maxPromptChars: 8000 });
   assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'VERIFY_PROMPT_TOO_LARGE');
   assert.equal(x.sent.filter((s) => isVerifier(s.text)).length, 0);
 });

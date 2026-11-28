@@ -171,6 +171,13 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
      }
      return '';
     };
+    // P4: accumulated knowledge goes into the work cycle too (open obligations, disputed claims), capped at a quarter of the prompt room.
+    const knowledgeBlock=async state=>{
+     const K=root.TheCycleKnowledge||(typeof require==='function'?require('./knowledge.js'):null);
+     if(!policyApi||!K||state.lastCommittedPacket==null)return '';
+     const proj=K.projection(await K.load(store,state,state.lastCommittedPacket),Math.floor(maxPromptChars*0.2));
+     return proj.text?'\n\n'+proj.text:'';
+    };
     const controller=controllerApi.createController({
      store,makeAdapter,loadPipeline,
      policy:policyApi?policyApi.createPolicy({registry,models,validateSchema:probe.validate,estimateCalls:probe.estimateCalls,
@@ -208,17 +215,34 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
          try{const c=await contextApi.readCycle(store,state.researchId,n);for(const a of c.answers)allowedRefs.push('cycle='+n+' step='+a.step+' model='+a.model);}catch(_){}
         }
         const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:current,actions:policyApi.ACTIONS,verification,refs:allowedRefs.slice(-40),models,remaining:state.budget.maxCalls-state.budget.usedCalls,latestSummary:contextMode==='latest-summary'};
-        const summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
-        // Same limit as the work cycle: 0.8 of the prompt minus the template. Neither the summary nor the template is cut: overflow pauses.
+        let summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
+        // P4: the accumulated knowledge is part of the prompt. Neither the template nor the knowledge is cut silently:
+        // the knowledge gets at most 40% of the room (the manifest says what is omitted), the summary the rest and is marked when shortened.
+        // A long summary no longer ends in a dead pause (ARCH-001): the full text stays on record and in the references.
         const room=Math.floor(maxPromptChars*0.8)-policyApi.buildAnalystTask({...parts,summary:''}).length;
-        if(summary.length>room)throw Error('CIRCLE_CONTEXT_LIMIT');
-        const task=policyApi.buildAnalystTask({...parts,summary});
-        await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context:{role:'analyst',cycleId:packet.cycleId}});
+        const K=root.TheCycleKnowledge||(typeof require==='function'?require('./knowledge.js'):null);
+        let knowledge='',kManifest=null;
+        if(K){
+         const known=await K.load(store,state,state.lastCommittedPacket);
+         let proj=K.projection(known,Infinity);
+         if(proj.text.length>Math.floor(room*0.4))proj=K.projection(known,Math.floor(room*0.4));
+         knowledge=proj.text;kManifest=proj.manifest;
+        }
+        const left=room-knowledge.length;
+        if(left<500)throw Error('CIRCLE_CONTEXT_LIMIT');
+        let truncated=null;
+        if(summary.length>left){
+         const mark='\n[…сводка сокращена: показано '+(left-120)+' из '+summary.length+' знаков; полный текст — по ссылкам cycle=N step=N model=…]';
+         truncated={from:summary.length,to:left-120+mark.length};
+         summary=summary.slice(0,left-120)+mark;
+        }
+        const task=policyApi.buildAnalystTask({...parts,summary,knowledge});
+        await emit("CONTEXT_READY",{cycleId:state.nextCycle,state,contextChars:task.length,context:{role:'analyst',cycleId:packet.cycleId,knowledge:kManifest,summaryTruncated:truncated}});
         return task;
        }
        // With an analyst, its cycles are not evidence for the work cycle: only finished work cycles (of any strategy) count.
        const cycles=state.lastCommittedPacket!=null?await evidenceCycles(state,state.lastCommittedPacket):[];
-       const checked=await verificationBlock(state),room=Math.floor(maxPromptChars*0.8)-checked.length;
+       const checked=(await verificationBlock(state))+(await knowledgeBlock(state)),room=Math.floor(maxPromptChars*0.8)-checked.length;
        // Nothing finished yet (every earlier cycle was a partial recovery): the work starts from the task again.
        if(state.lastCommittedPacket!=null&&!cycles.length){
         if(state.task.length>room)throw Error('CIRCLE_CONTEXT_LIMIT');
