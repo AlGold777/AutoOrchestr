@@ -388,7 +388,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
    await copyPaused(observedGate,id);
   }
  }
-  async function start({task,maxCalls=24,maxCallsPerCycle=maxCalls,maxPromptChars=20000,onProgress=()=>{},contextMode=null}={}){
+  async function start({task,maxCalls=24,maxCallsPerCycle=maxCalls,maxPromptChars=48000,onProgress=()=>{},contextMode=null}={}){
   if(running)throw Error('CIRCLE_ALREADY_RUNNING');
    const parsed=contextApi.parseContextTask(task,contextMode);
    task=parsed.task;contextMode=parsed.mode;
@@ -489,7 +489,7 @@ async function drive({id,store,controller,observedGate,loadPipeline,schema,sessi
    // Derived, not saved: the budget change stays a single write.
    const wholeBudget=!pos(saved.maxCallsPerCycle)||saved.maxCallsPerCycle>=(state.budgetHistory?.[0]?.from??state.budget.maxCalls);
    const cfg={...saved,maxCallsPerCycle:wholeBudget?(raise?maxCalls:state.budget.maxCalls):saved.maxCallsPerCycle,
-    maxPromptChars:pos(saved.maxPromptChars)?saved.maxPromptChars:20000};
+    maxPromptChars:pos(saved.maxPromptChars)?saved.maxPromptChars:48000};
    await emit('RESEARCH_RESUME',{mode,state});
    const backupRef={gate:null};
    const parts=assemble(id,cfg,{store,emit,session,backupRef});

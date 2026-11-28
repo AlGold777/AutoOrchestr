@@ -26,7 +26,7 @@ function createG1Runner({bridge,storage=root.chrome?.storage?.local,
     configured:source?{createdAt:source.createdAt,models:source.models,pipelineRef:source.pipelineRef}:null};
   }finally{active.close();}
  }
- async function start({task,maxCalls=24,maxCallsPerCycle=24,maxPromptChars=20000}={}){
+ async function start({task,maxCalls=24,maxCallsPerCycle=24,maxPromptChars=48000}={}){
   if(running)throw new Error('G1_ALREADY_RUNNING');
   if(!nonempty(task)||task.length>10000)throw new Error('G1_TASK_INVALID');
   if(!Number.isSafeInteger(maxCalls)||maxCalls<1||maxCalls>10000||
