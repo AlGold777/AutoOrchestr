@@ -52,7 +52,8 @@ describe('an answer is delivered with the identity of its own dispatch', () => {
   test('the manual-ping path is the one that carried no identity', () => {
     // Kept as documentation of the trigger: a manual ping forwards msg?.meta,
     // which is absent, so normalisation inside sendResult is what fixes it.
-    expect(DEEPSEEK).toContain("sendResult({ text: cleaned, html: latest.html || lastResponseHtml }, true, 'LLM_RESPONSE', msg?.meta || null)");
+    const manualPing = DEEPSEEK.slice(DEEPSEEK.indexOf("msg.action === 'getResponses'"));
+    expect(manualPing).toMatch(/sendResult\(\{\s*text: cleaned,[\s\S]*?\}, true, 'LLM_RESPONSE', msg\?\.meta \|\| null\)/);
   });
 
   test('normalisation fills gaps rather than overriding an explicit meta', () => {

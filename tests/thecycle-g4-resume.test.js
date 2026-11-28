@@ -9,23 +9,24 @@ const { createStateStore } = require('../disput/thecycle/state-store.js');
 const { createBasicAdapter } = require('../disput/thecycle/basic-adapter.js');
 const { createController } = require('../disput/thecycle/controller.js');
 const context = require('../disput/thecycle/circle-context.js');
+const acceptance = require('../disput/debate-response-acceptance.js');
 const { createCircleRunner } = require('../disput/thecycle/circle-runtime.js');
 const { createBackupGate } = require('../disput/thecycle/backup-gate.js');
 const telemetryApi = require('../disput/thecycle/telemetry.js');
 installKeyRange();
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-async function fixture() {
+async function fixture(response = null) {
   let denyBackup = false;
   const store = await createStateStore({ indexedDB: createFakeIndexedDB() });
   const values = new Map(), prompts = [], metadata = new Map(); let seq = 0, backups = 0, crashPrepare = true, held = 0;
   const storage = { async get(k) { return { [k]: values.get(k) }; }, async set(o) { for (const [k, v] of Object.entries(o)) values.set(k, clone(v)); } };
   const bridge = {
     capture: () => ({ models: ['GPT'], errors: [], schema: { schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] } }),
-    accept: () => ({ ok: true }), roleText: () => '', begin() {}, end() {}, hold() { held++; }, release() { held--; },
+    accept: response ? ({ text, ...meta }) => acceptance.evaluate({ text, meta }) : () => ({ ok: true }), roleText: () => '', begin() {}, end() {}, hold() { held++; }, release() { held--; },
     async send(models, byModel, meta) {
       prompts.push({ runId: meta.runId, text: byModel.GPT });
-      return { byModel: { GPT: { text: 'Evidence ' + prompts.length, status: 'SUCCESS', answered: true } } };
+      return { byModel: { GPT: response || { text: 'Evidence ' + prompts.length, status: 'SUCCESS', answered: true } } };
     }
   };
   const gate = createBackupGate({ clock: () => 1000 + backups, metadata: {
@@ -179,4 +180,24 @@ test('no access to the backup directory: nothing sent, ownership and state untou
 test('unknown research id is refused', async () => {
   const x = await fixture();
   await assert.rejects(x.newRunner().resume('circle-none'), /CIRCLE_RESEARCH_NOT_FOUND/);
+});
+
+test('PARTIAL from transport records the partial text and its spent call without another dispatch', async () => {
+  const text = 'Partial evidence from the provider';
+  const x = await fixture({ text, status: 'PARTIAL', answered: true, confirmed: false, completion: 'partial' });
+
+  const result = await x.newRunner().resume(x.id);
+
+  assert.equal(result.state.phase, 'PAUSED');
+  assert.equal(result.state.lastDecision.reason, 'PARTIAL_OR_UNCERTAIN');
+  assert.equal(result.state.budget.usedCalls, 1);
+  assert.equal(x.prompts.length, 1);
+  const packet = await x.store.getPacket(x.id, 1);
+  assert.equal(packet.usedCalls, 1);
+  const events = await x.store.getEvents(x.id, packet.runId);
+  const response = events.find((event) => event.payload.type === 'DISPATCH_RESPONSE').payload.response.byModel.GPT;
+  const report = events.find((event) => event.eventId === packet.resultEventId).payload.report;
+  assert.equal(response.status, 'PARTIAL');
+  assert.equal(response.text, text);
+  assert.equal(report.status, 'PARTIAL');
 });

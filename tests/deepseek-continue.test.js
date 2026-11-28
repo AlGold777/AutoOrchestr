@@ -35,16 +35,25 @@ function loadPipeline({ completes }) {
   return { run, click };
 }
 
-test('a visible Continue after five attempts rejects with the longest partial answer', async () => {
+test('a visible Continue after five attempts delivers the longest text as partial', async () => {
   const { run, click } = loadPipeline({ completes: false });
   const stop = jest.fn();
 
-  await expect(run('', { stop })).rejects.toMatchObject({
-    type: 'answer_truncated',
-    partialAnswer: 'Initial answer with continuation'
-  });
+  await run('', { stop });
+
   expect(click).toHaveBeenCalledTimes(5);
-  expect(stop).not.toHaveBeenCalled();
+  expect(stop).toHaveBeenCalledTimes(1);
+  expect(stop).toHaveBeenCalledWith(expect.objectContaining({
+    status: 'partial',
+    answer: 'Initial answer with continuation',
+    answerHtml: '',
+    responseMeta: {
+      source: 'pipeline',
+      completionReason: 'answer_truncated',
+      partial: true,
+      degraded: true
+    }
+  }));
 });
 
 test('a completed continuation is delivered once with the updated text', async () => {

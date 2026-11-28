@@ -535,13 +535,16 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       }
       if (last && last.length >= text.length) text = last;
     }
-    if (findDeepSeekContinueButton()) {
-      throw Object.assign(new Error('DeepSeek answer still requires Continue'), {
-        type: 'answer_truncated',
-        partialAnswer: text
-      });
-    }
-    return text;
+    return { text, partial: Boolean(findDeepSeekContinueButton()) };
+  }
+
+  function buildDeepSeekPartialMeta(source) {
+    return {
+      source,
+      completionReason: 'answer_truncated',
+      partial: true,
+      degraded: true
+    };
   }
 
   async function tryDeepseekPipeline(promptText = '', lifecycle = {}, baselineText = '') {
@@ -560,22 +563,27 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       const result = await pipeline.execute();
       if (result?.success && result.answer && findDeepSeekContinueButton()) {
         const full = await continueTruncatedDeepSeekAnswer(result.answer);
-        if (full && full.length > result.answer.length) { result.answer = full; result.answerHtml = ''; }
+        if (full.partial || full.text.length > result.answer.length) {
+          result.answer = full.text;
+          result.answerHtml = '';
+        }
+        if (full.partial) result.partial = true;
       }
       if (result?.success && result.answer) {
         heartbeat?.({
-          stage: 'success',
+          stage: result.partial ? 'partial' : 'success',
           answerLength: result.answer.length,
           pipeline: 'UnifiedAnswerPipeline'
         });
         if (typeof stop === 'function') {
           await stop({
-            status: 'success',
+            status: result.partial ? 'partial' : 'success',
             source: 'pipeline',
             answer: result.answer,
             answerHtml: result.answerHtml || '',
             answerLength: result.answer.length,
-            metadata: result.metadata || null
+            metadata: result.metadata || null,
+            responseMeta: result.partial ? buildDeepSeekPartialMeta('pipeline') : null
           });
         }
         return result;
@@ -591,7 +599,6 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         error: err?.message || String(err),
         pipeline: 'UnifiedAnswerPipeline'
       });
-      if (err?.type === 'answer_truncated') throw err;
       console.warn('[DeepSeek] UnifiedAnswerPipeline failed, reverting to legacy reply watcher', err);
     }
     return null;
@@ -1300,14 +1307,6 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     throw new Error(`Element not found: ${selectors.join(" | ")}`);
   }
 
-  function deepSeekResponseError(error) {
-    return {
-      type: error?.type || 'generic_error',
-      message: error?.message || String(error) || 'Unknown error',
-      ...(error?.partialAnswer ? { partialAnswer: error.partialAnswer } : {})
-    };
-  }
-
   function sendResult(resp, ok = true, responseType = 'LLM_RESPONSE', meta = null) {
     const { text, html, meta: responseMeta } = normalizeResponsePayload(resp, lastResponseHtml);
     // Field evidence 2026-08-01: an answer was rejected with
@@ -1334,7 +1333,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       llmName: MODEL,
       answer: ok ? text : '',
       answerHtml: ok ? html : '',
-      error: ok ? null : deepSeekResponseError(resp),
+      error: ok ? null : { type: 'generic_error', message: text },
       meta: responseMeta
         ? Object.assign({}, identity || {}, { responseMeta })
         : identity
@@ -1575,7 +1574,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
             let pipelineAnswer = null;
             await tryDeepseekPipeline(prompt, {
               heartbeat: (meta = {}) => activity.heartbeat(0.75, Object.assign({ phase: 'pipeline' }, meta)),
-              stop: async ({ answer, answerHtml, metadata }) => {
+              stop: async ({ status, answer, answerHtml, metadata, responseMeta }) => {
                 let cleanedPipeline = contentCleaner.clean(answer, { maxLength: 200000 });
                 let html = String(answerHtml || '').trim();
                 if (!String(cleanedPipeline || '').trim()) {
@@ -1589,11 +1588,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
                 if (!String(cleanedPipeline || '').trim()) {
                   throw new Error('Empty answer extracted');
                 }
-                if (html) lastResponseHtml = html;
+                if (html || responseMeta?.partial) lastResponseHtml = html;
                 pipelineAnswer = {
                   text: cleanedPipeline,
                   html,
-                  meta: window.ContentUtils?.buildResponseMeta?.(metadata, { source: 'pipeline' }) || null
+                  meta: responseMeta || window.ContentUtils?.buildResponseMeta?.(metadata, { source: 'pipeline' }) || null
                 };
                 copyTextToClipboard(cleanedPipeline).catch(() => {});
                 console.log('[DeepSeek] UnifiedAnswerPipeline completed, skipping legacy watcher');
@@ -1606,7 +1605,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
                 if (autoNotify) {
                   sendResult(pipelineAnswer, true, responseType, dispatchMeta);
                 }
-                activity.stop({ status: 'success', answerLength: cleanedPipeline.length, source: 'pipeline' });
+                activity.stop({ status, answerLength: cleanedPipeline.length, source: 'pipeline' });
                 return pipelineAnswer;
               }
             }, preDispatchBaseline);
@@ -1615,8 +1614,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
             }
 
             let response = await waitForDeepSeekReply(prompt, 150000);
+            let partial = false;
             if (findDeepSeekContinueButton()) {
-              response = await continueTruncatedDeepSeekAnswer(response);
+              const continuation = await continueTruncatedDeepSeekAnswer(response);
+              response = continuation.text;
+              partial = continuation.partial;
               lastResponseHtml = '';
             }
 
@@ -1639,20 +1641,17 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
               responseLength: cleanedResponse.length,
               duration: Date.now() - startTime
             });
-            if (autoNotify) {
-              sendResult({
-                text: cleanedResponse,
-                html: lastResponseHtml,
-                meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback' }) || null
-              }, true, responseType, dispatchMeta);
-            }
-            activity.heartbeat(0.9, { phase: 'response-processed' });
-            activity.stop({ status: 'success', answerLength: cleanedResponse.length });
-            return {
+            const payload = {
               text: cleanedResponse,
               html: lastResponseHtml,
-              meta: window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback' }) || null
+              meta: partial
+                ? buildDeepSeekPartialMeta('dom_fallback')
+                : window.ContentUtils?.buildResponseMeta?.(null, { source: 'dom_fallback' }) || null
             };
+            if (autoNotify) sendResult(payload, true, responseType, dispatchMeta);
+            activity.heartbeat(0.9, { phase: 'response-processed' });
+            activity.stop({ status: partial ? 'partial' : 'success', answerLength: cleanedResponse.length });
+            return payload;
           }, { keepAliveInterval: 2000, operationTimeout: 300000, debug: false });
           return responsePayload;
       } catch (error) {
@@ -1664,7 +1663,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         metricsCollector.recordError(error, 'injectAndGetResponse', opId);
         metricsCollector.endOperation(opId, false, { error: error?.message });
         if (autoNotify) {
-          sendResult(error, false, responseType, dispatchMeta);
+          sendResult(error?.message || String(error), false, responseType, dispatchMeta);
         }
         activity.error(error, true);
         throw error;
@@ -1783,7 +1782,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
               type: responseType,
               llmName: MODEL,
               answer: '',
-              error: deepSeekResponseError(err),
+              error: { type: err?.type || 'generic_error', message: err?.message || String(err) || 'Unknown error' },
               meta: msg.meta || null
             });
           })
@@ -1821,7 +1820,12 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
             if (cleaned !== lastResponseCache || forceEmitOnUnchanged) {
               const reEmitted = cleaned === lastResponseCache;
               lastResponseCache = cleaned;
-              sendResult({ text: cleaned, html: latest.html || lastResponseHtml }, true, 'LLM_RESPONSE', msg?.meta || null);
+              const partial = Boolean(findDeepSeekContinueButton());
+              sendResult({
+                text: cleaned,
+                html: latest.html || lastResponseHtml,
+                ...(partial ? { meta: buildDeepSeekPartialMeta('dom_fallback') } : {})
+              }, true, 'LLM_RESPONSE', msg?.meta || null);
               chrome.runtime.sendMessage({
                 type: 'MANUAL_PING_RESULT',
                 llmName: MODEL,
