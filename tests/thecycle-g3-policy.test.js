@@ -198,3 +198,20 @@ test('P4: завершение на основании отклонённой д
   const p = await x.store.getPacket(r.researchId, 2);
   assert.equal(p.knowledge, undefined); assert.equal(p.knowledgeRejected.code, 'KNOWLEDGE_WEAK_BASIS');
 });
+
+test('P4: Resume пересчитывает дельту без потери: прежняя уходит в knowledgeHistory, принятое знание то же', async () => {
+  const x = await fixture({ analystAnswers: [json({ action: 'CONTINUE', reason: 'ещё', refs: [REF], knowledge: delta1 }), json({ action: 'WAIT_OWNER', reason: 'стоп', refs: [], question: 'q' })] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 2 });
+  assert.equal(r.state.lastDecision.reason, 'BUDGET_EXHAUSTED');
+  const before = (await x.store.getPacket(r.researchId, 2)).knowledge;
+  assert.ok(before);
+  const again = await x.runner.resume(r.researchId, { maxCalls: 6 });
+  assert.equal(again.state.budget.maxCalls, 6);
+  const p = await x.store.getPacket(r.researchId, 2);
+  assert.deepEqual(p.knowledge, before);
+  assert.equal(p.knowledgeHistory.length, 1); assert.deepEqual(p.knowledgeHistory[0].knowledge, before);
+  assert.equal(p.decisionHistory.length, 1);
+  // решение по тому же пакету принято заново, знание не продублировано: итоговое состояние то же
+  const K = require('../disput/thecycle/knowledge.js');
+  assert.equal(K.fold([p]).claims.k1.rev, 1);
+});

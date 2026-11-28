@@ -598,7 +598,9 @@
               // The pause stays on record; the same packet is decided again.
               packet.decisionHistory = [...(packet.decisionHistory || []), packet.decision];
               delete packet.decision;
-              delete packet.knowledge; delete packet.knowledgeRejected; // дельта пересчитывается вместе с решением
+              // Дельта пересчитывается вместе с решением; прежняя не теряется, а уходит в историю пакета.
+              if (packet.knowledge || packet.knowledgeRejected) packet.knowledgeHistory = [...(packet.knowledgeHistory || []), { decisionIndex: (packet.decisionHistory || []).length - 1, knowledge: packet.knowledge || null, knowledgeRejected: packet.knowledgeRejected || null }];
+              delete packet.knowledge; delete packet.knowledgeRejected;
               await request(s.packets.put(packet));
             }
             resumeTo = 'EVALUATE';
