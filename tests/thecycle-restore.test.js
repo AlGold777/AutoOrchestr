@@ -34,3 +34,14 @@ test('restore requires explicit transport quiescence', async () => {
     key: 'backup', targetName: 'auto-orchestr-thecycle-restore-12345678' }),
     /RESTORE_PRECONDITION_FAILED/);
 });
+test('REL-002: rejects dangling references and exhausted budget overrun', () => {
+  const bad = patch => { const s = snapshot(); Object.assign(s.stores.research[0], patch); return s; };
+  assert.throws(() => validate(bad({ lastCommittedPacket: 999 })), /RESTORE_REFERENCE_INVALID/);
+  assert.throws(() => validate(bad({ activeRunId: 'ghost' })), /RESTORE_REFERENCE_INVALID/);
+  assert.throws(() => validate(bad({ budget: { maxCalls: 1, usedCalls: 5 } })), /RESTORE_REFERENCE_INVALID/);
+  const s = snapshot(); s.stores.packets.push({ researchId: 'r', cycleId: 0 });
+  assert.throws(() => validate(s), /RESTORE_REFERENCE_INVALID/);
+  const ok = bad({ lastCommittedPacket: 1, budget: { maxCalls: 3, usedCalls: 1 } });
+  ok.stores.packets.push({ researchId: 'r', cycleId: 1 });
+  assert.equal(validate(ok).stores.packets.length, 1);
+});

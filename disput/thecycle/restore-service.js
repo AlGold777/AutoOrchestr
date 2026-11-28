@@ -36,6 +36,18 @@
     for (const name of ['runs','events','packets'])
       if (snapshot.stores[name].some(r => !researchIds.has(r.researchId)))
         throw new Error('RESTORE_ORPHAN_ROW');
+    const packetKeys = new Set(snapshot.stores.packets.map(p => p.researchId + '|' + p.cycleId));
+    const runKeys = new Set(snapshot.stores.runs.map(r => r.researchId + '|' + r.runId));
+    for (const r of snapshot.stores.research) {
+      const last = r.lastCommittedPacket;
+      if (own(r, 'lastCommittedPacket') && last !== undefined && last !== null) {
+        if (!Number.isSafeInteger(last) || last < 0) throw new Error('RESTORE_REFERENCE_INVALID');
+        for (let n = 1; n <= last; n++) if (!packetKeys.has(r.researchId + '|' + n)) throw new Error('RESTORE_REFERENCE_INVALID');
+      }
+      if (validString(r.activeRunId) && !runKeys.has(r.researchId + '|' + r.activeRunId)) throw new Error('RESTORE_REFERENCE_INVALID');
+      if (r.budget && Number.isFinite(r.budget.usedCalls) && Number.isFinite(r.budget.maxCalls) && r.budget.usedCalls > r.budget.maxCalls) throw new Error('RESTORE_REFERENCE_INVALID');
+    }
+    if (snapshot.stores.packets.some(p => !Number.isSafeInteger(p.cycleId) || p.cycleId < 1)) throw new Error('RESTORE_REFERENCE_INVALID');
     if (snapshot.stores.control.some(r => r.key !== 'transport'))
       throw new Error('RESTORE_CONTROL_INVALID');
     return snapshot;

@@ -257,7 +257,7 @@ function createPolicy({registry,models=null,validateSchema=null,estimateCalls=nu
   if(text===null)parsed={ok:false,errors:['нет принятого ответа аналитика']};
   else{
    const packets=new Map();
-   const need=new Set([...text.matchAll(/cycle=(\d+)/g)].map(m=>Number(m[1])).filter(n=>n>=1&&n<=state.lastCommittedPacket));
+   const need=new Set([...text.matchAll(/cycle=\s*(\d+)/g)].map(m=>Number(m[1])).filter(n=>n>=1&&n<=state.lastCommittedPacket));
    for(const n of need){
     const p=await store.getPacket(state.researchId,n);
     const events=p?await store.getEvents(state.researchId,p.runId):[];
