@@ -1,0 +1,4 @@
+{"items":[
+ {"id":"p7-r1","pipeline":"P7 Gemini-DS","taskFile":"docs/TheCycle/runs/P7-live_2026-11-28/schema/task1.txt","maxCalls":25,"status":"running"},
+ {"id":"p7-r2","pipeline":"P7 Gemini-DS","taskFile":"docs/TheCycle/runs/P7-live_2026-11-28/schema/task2.txt","maxCalls":25,"status":"queued","autostart":false}
+]}
