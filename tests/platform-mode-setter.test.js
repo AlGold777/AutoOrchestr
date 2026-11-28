@@ -21,9 +21,9 @@ beforeAll(() => {
 beforeEach(() => { document.body.innerHTML = ''; });
 
 describe('режимы сайтов перед отправкой', () => {
-  test('DeepSeek: DeepThink включается, Search выключается', async () => {
+  test('DeepSeek: DeepThink выключается, Search выключается', async () => {
     document.body.innerHTML = `
-      <div class="ds-toggle-button" aria-pressed="false">DeepThink</div>
+      <div class="ds-toggle-button" aria-pressed="true">DeepThink</div>
       <div class="ds-toggle-button" aria-pressed="true">Search</div>`;
     document.querySelectorAll('.ds-toggle-button').forEach((el) => el.addEventListener('click', () => {
       el.setAttribute('aria-pressed', String(el.getAttribute('aria-pressed') !== 'true'));
@@ -31,7 +31,7 @@ describe('режимы сайтов перед отправкой', () => {
     const result = await window.PlatformModeSetter.ensure('chat.deepseek.com');
     expect(result.ok).toBe(true);
     expect(result.steps.map((step) => [step.label, step.before, step.after])).toEqual([
-      ['DeepThink on', 'false', 'true'], ['Search off', 'true', 'false']
+      ['DeepThink off', 'true', 'false'], ['Search off', 'true', 'false']
     ]);
   });
 

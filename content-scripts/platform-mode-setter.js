@@ -78,9 +78,10 @@
   });
 
   const gptTrigger = () => last(all('button[aria-haspopup="menu"][aria-label*="ChatGPT"]'));
-  const gptHigh = /высок|high/i;
+  // Режим на время P7 (2026-11-28, владелец): быстрый Instant вместо High.
+  const gptHigh = /instant|мгновен|быстр/i;
   const gpt = [{
-    label: 'reasoning High',
+    label: 'reasoning Instant',
     trigger: gptTrigger,
     read: textOf,
     isSet: (value) => gptHigh.test(value),
@@ -89,8 +90,8 @@
       const slider = await until(() => all('[role="menu"] [role="slider"]')[0] || null);
       if (!slider) { closeMenus(); return 'effort_control_not_found'; }
       slider.focus();
-      for (let i = 0; i < 3 && slider.getAttribute('aria-valuenow') !== slider.getAttribute('aria-valuemax'); i += 1) {
-        key(slider, 'ArrowRight', 39);
+      for (let i = 0; i < 3 && slider.getAttribute('aria-valuenow') !== slider.getAttribute('aria-valuemin'); i += 1) {
+        key(slider, 'ArrowLeft', 37);
         await until(() => false, 200);
       }
       closeMenus();
@@ -109,7 +110,7 @@
     'chat.openai.com': gpt,
     'claude.ai': [pillStep('Sonnet 5.5', () => document.querySelector('[data-testid="model-selector-dropdown"]'),
       /sonnet 5\.5/i, () => document.querySelector('[role="menuitemradio"][data-model-id="claude-sonnet-5-5"]'), null, arrowOpen)],
-    'chat.deepseek.com': [deepseekToggle('DeepThink', true), deepseekToggle('Search', false)],
+    'chat.deepseek.com': [deepseekToggle('DeepThink', false), deepseekToggle('Search', false)],
     'chat.qwen.ai': [
       // The site renamed Qwen4-Max-Preview to Qwen4-Max (seen 2026-11-25: the menu offers Qwen3.7-Plus, Qwen4-Max, Qwen3.8-Max).
       pillStep('Qwen4-Max', () => document.querySelector('.wms-trigger'), /qwen4-max/i, '[role="option"]', /^qwen4-max/i),
