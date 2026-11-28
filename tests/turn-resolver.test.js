@@ -36,6 +36,18 @@ describe('authoritative turn resolver', () => {
     expect(result.messageRoot.contains(result.answerNode)).toBe(true);
   });
 
+  test('DeepSeek waits for the answer when the only markdown is inside its reasoning panel', () => {
+    document.body.innerHTML = '<div class="ds-think-content"><div class="ds-markdown">Reasoning text</div></div>';
+    const options = { platform: 'deepseek', selectors: window.AnswerPipelineSelectors.PLATFORM_SELECTORS.deepseek, document };
+    expect(TurnResolver.resolveTurn(options).answerNode).toBeNull();
+
+    const reply = document.createElement('div');
+    reply.className = 'ds-markdown ds-assistant-message-main-content';
+    reply.textContent = 'Final answer.';
+    document.body.append(reply);
+    expect(TurnResolver.resolveTurn(options).answerNode).toBe(reply);
+  });
+
   test('configured secondary candidate is explicit fallback and cannot masquerade as exact', () => {
     document.body.innerHTML = '<section data-role="assistant"><div class="secondary">answer</div></section>';
     const result = TurnResolver.resolveTurn({

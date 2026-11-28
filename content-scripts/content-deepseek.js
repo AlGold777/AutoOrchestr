@@ -425,7 +425,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
   }
 
   function extractDeepSeekVisibleText(node) {
-    if (!node) return '';
+    if (!node || node.closest?.('.ds-think-content')) return '';
     const clone = node.cloneNode(true);
     stripDeepSeekReasoningNodes(clone);
     const textRoots = [
@@ -476,7 +476,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       const nodes = [];
       const seen = new Set();
       const pushUnique = (el) => {
-        if (!el || el.nodeType !== 1) return;
+        if (!el || el.nodeType !== 1 || el.closest?.('.ds-think-content')) return;
         if (seen.has(el)) return;
         seen.add(el);
         nodes.push(el);
@@ -1173,6 +1173,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     const seen = new Set();
     const result = [];
     for (const node of nodes) {
+      if (node.closest?.('.ds-think-content')) continue;
       const container = resolveDeepSeekMessageContainer(node) || node;
       if (!container || seen.has(container)) continue;
       const text = extractDeepSeekVisibleText(container);

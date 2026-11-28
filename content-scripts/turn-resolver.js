@@ -216,6 +216,7 @@
         return true;
       }
       if (String(options.platform || '').toLowerCase() === 'kimi' && isKimiReasoningNode(node)) return true;
+      if (options.platform === 'deepseek' && node.closest?.('.ds-think-content')) return true;
       if (candidateEligible) {
         let eligible = false;
         try { eligible = candidateEligible({ node, text, index, pool }) !== false; } catch (_) { eligible = false; }

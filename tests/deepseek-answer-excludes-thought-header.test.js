@@ -60,3 +60,38 @@ describe.each([['Thought for 4 seconds'], ['Thinking']])('header "%s"', (header)
     onlyAnswer(window.ContentUtils.collectLateSnapshotCandidate('DeepSeek', 80, { withMarkdown: true }));
   });
 });
+
+describe('DeepSeek adapter fallback with a reasoning-only turn', () => {
+  const source = read('content-scripts/content-deepseek.js');
+  const start = source.indexOf('  const DEEPSEEK_FALLBACK_LAST_MESSAGE_SELECTORS');
+  const end = source.indexOf('  const findDeepSeekContinueButton', start);
+
+  function grabAdapterAnswer() {
+    return new Function('buildInlineHtml', source.slice(start, end) + '\nreturn grabLatestAssistantText();')(
+      (node) => node.outerHTML
+    );
+  }
+
+  beforeEach(() => {
+    loadAll();
+    window.eval(read('content-scripts/answer-pipeline-selectors.js'));
+    document.body.innerHTML = `<div class="ds-message"><div class="ds-think-content">
+      <div class="ds-markdown">${'We need to solve the task before we write the final answer. '.repeat(200)}</div>
+    </div></div>`;
+  });
+
+  test('a markdown node inside reasoning is not a reply candidate', () => {
+    expect(grabAdapterAnswer()).toMatchObject({ text: '', html: '', node: null });
+  });
+
+  test('the actual answer block remains readable beside a reasoning block', () => {
+    const reply = document.createElement('div');
+    reply.className = 'ds-markdown ds-assistant-message-main-content';
+    reply.textContent = 'The completed answer.';
+    document.querySelector('.ds-message').append(reply);
+
+    const answer = grabAdapterAnswer();
+    expect(answer.text).toBe('The completed answer.');
+    expect(answer.node).toBe(reply);
+  });
+});
