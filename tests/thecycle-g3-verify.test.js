@@ -107,3 +107,36 @@ test('budget must cover the check plus the analyst after it, before anything is 
   assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'BUDGET_INSUFFICIENT_FOR_VERIFY');
   assert.equal(x.sent.length, 2);
 });
+
+// P6: проверка привязана к утверждению реестра; финал, не совпадающий с проверенным, не получает VERIFIED_SOLUTION.
+const bas = (id, cycleId) => ({ id, kind: 'EXPERT_CONFIRMATION', ref: { cycleId, step: 1, model: 'GPT' }, provenance: { model: 'GPT', role: 'work' } });
+const k1 = { bases: [bas('b1', 1)], claims: [{ id: 'k1', rev: 1, statement: 'x=1', status: 'SUPPORTED', basisRefs: ['b1'] }] };
+const verifyK = json({ action: 'VERIFY', reason: 'r', refs: ['cycle=1 step=1 model=DeepSeek'], claim: 'x=1', procedure: proc, knowledge: k1 });
+const p6 = (analystAnswers) => fixture({ models: ['GPT', 'DeepSeek', 'Qwen'], workSchema: work2, analystAnswers, verifierAnswers: [verdict('VERIFIED')] });
+
+test('P6: COMPLETE с verifies на проверенное SUPPORTED-утверждение даёт VERIFIED_SOLUTION', async () => {
+  const x = await p6([verifyK, json({ action: 'COMPLETE', reason: 'ok', refs: [REF], verifies: 'k1' })]);
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 12 });
+  assert.equal(r.state.finalStatus, 'VERIFIED_SOLUTION');
+});
+
+test('P6: проверка без привязки к утверждению не засчитывается: возобновляемая пауза VERIFICATION_MISMATCH', async () => {
+  const x = await p6([verifyK, json({ action: 'COMPLETE', reason: 'ok', refs: [REF] })]);
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 12 });
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'VERIFICATION_MISMATCH');
+  assert.equal(r.state.finalStatus, undefined);
+  assert.match(r.state.lastDecision.detail.errors[0], /verifies/);
+});
+
+test('P6: финал с иным содержанием (утверждение пересмотрено после проверки) не получает VERIFIED_SOLUTION', async () => {
+  const revised = { bases: [bas('b2', 4)], claims: [{ id: 'k1', rev: 2, statement: 'x=2', status: 'SUPPORTED', basisRefs: ['b2'] }] };
+  const x = await p6([verifyK, json({ action: 'COMPLETE', reason: 'ok', refs: [REF], verifies: 'k1', knowledge: revised })]);
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 12 });
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'VERIFICATION_MISMATCH');
+  assert.match(r.state.lastDecision.detail.errors[0], /не совпадает с проверенным/);
+});
+
+test('P6: verifies допустим только при COMPLETE', () => {
+  const p = require('../disput/thecycle/circle-policy.js').parseDecision(json({ action: 'CONTINUE', reason: 'x', refs: [], verifies: 'k1' }), { lastCommittedPacket: 1, packets: new Map() });
+  assert.equal(p.ok, false);
+});

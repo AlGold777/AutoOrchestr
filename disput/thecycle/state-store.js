@@ -515,7 +515,7 @@
     // C03's decision hook: only from a settled run or a deliberate pause.
     const FINAL_STATUSES = ['PARTIAL', 'INCONCLUSIVE', 'BUDGET_EXHAUSTED', 'CANCELLED', 'ERROR', 'VERIFIED_SOLUTION'];
     // detail is a bounded record of why the policy chose the action: only these keys, only strings.
-    const DETAIL_KEYS = ['action', 'refs', 'reason', 'question', 'errors', 'schema', 'claim', 'procedure', 'verifier', 'independence', 'verificationRecord', 'expected'];
+    const DETAIL_KEYS = ['action', 'refs', 'reason', 'question', 'errors', 'schema', 'claim', 'procedure', 'verifier', 'independence', 'verificationRecord', 'expected', 'verifies'];
     const VERDICTS = ['SUPPORTED', 'CONTRADICTED', 'INSUFFICIENT', 'VERIFIED'];
     const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
     const jsonSize = (v) => JSON.stringify(v).length;
@@ -534,7 +534,7 @@
       const strs = (list, max) => Array.isArray(list) && list.length <= max && list.every((v) => typeof v === 'string' && v.length <= 400);
       if (!isObj(detail) || Object.keys(detail).some((key) => !DETAIL_KEYS.includes(key))) throw fail('INVALID_DECISION_DETAIL');
       const out = {};
-      for (const key of ['action', 'reason', 'question', 'claim', 'verifier', 'independence', 'expected']) {
+      for (const key of ['action', 'reason', 'question', 'claim', 'verifier', 'independence', 'expected', 'verifies']) {
         if (detail[key] === undefined) continue;
         if (typeof detail[key] !== 'string' || detail[key].length > 2000) throw fail('INVALID_DECISION_DETAIL');
         out[key] = detail[key];
