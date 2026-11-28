@@ -16,7 +16,7 @@ const json = (o) => JSON.stringify(o);
 const isAnalyst = (t) => t.includes('Ты управляешь исследованием');
 const isVerifier = (t) => t.includes('Ты независимый проверяющий');
 
-async function fixture({ models = ['GPT'], analystAnswers = [], verifierAnswers = [], workSchema = null } = {}) {
+async function fixture({ models = ['GPT'], analystAnswers = [], verifierAnswers = [], workSchema = null, noJournal = false, verifierJournalSuffix = '' } = {}) {
   const indexedDB = createFakeIndexedDB();
   const store = await createStateStore({ indexedDB });
   const values = new Map(), sent = [], metadata = new Map(), begins = []; let seq = 0, backups = 0, work = 0;
@@ -26,8 +26,9 @@ async function fixture({ models = ['GPT'], analystAnswers = [], verifierAnswers 
       steps: [{ ref: 'r1', kind: 'round', models: models.map((name) => ({ name })) }] } }),
     accept: () => ({ ok: true }), roleText: () => '',
     begin({ runId, schema }) { begins.push({ runId, ref: schema.steps[0].task || (schema.steps[0].input === 'none' ? 'single' : 'work') }); }, end() {},
-    async send(names, byModel) {
+    async send(names, byModel, meta) {
       const out = {};
+      if (!noJournal) await meta?.onDispatchPrompts?.(Object.fromEntries(names.map((n) => [n, byModel[n] + (isVerifier(byModel[n]) ? verifierJournalSuffix : '') + ' [[AO-abc123]]'])));
       for (const name of names) {
         const text = byModel[name];
         sent.push({ model: name, text });

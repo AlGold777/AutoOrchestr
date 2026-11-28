@@ -49,6 +49,7 @@ function harness({ models = ['GPT'], workSchema = null, analyst = [], verifier =
     accept: () => ({ ok: true }), roleText: () => '', begin() {}, end() {}, hold() {}, release() {},
     async send(names, byModel, meta) {
       const out = {};
+      await meta?.onDispatchPrompts?.(Object.fromEntries(names.map((n) => [n, byModel[n] + ' [[AO-abc123]]'])));
       for (const name of names) {
         const text = byModel[name], nth = perRun.get(meta.runId) || 0;
         const role = isAnalyst(text) ? 'analyst' : isVerifier(text) ? 'verifier' : 'work';
@@ -162,10 +163,11 @@ const checks = (a = 'PASS', b = 'PASS') => [{ id: 'p1', result: a, evidence: 'e1
 const cover = { id: 'COVERS_TASK', result: 'PASS', evidence: 'covers' };
 const verdict = (v) => json({ verdict: v, checks: [...checks(), cover], limitations: [] });
 
+const kn = (claim) => ({ bases: [{ id: 'b1', kind: 'EXPERT_CONFIRMATION', ref: { cycleId: 1, step: 1, model: 'GPT' }, provenance: { model: 'GPT', role: 'work' } }], claims: [{ id: 'k1', rev: 1, statement: claim, status: 'SUPPORTED', basisRefs: ['b1'] }] });
 test('3a. verified final: VERIFY -> another model VERIFIED, all PASS -> COMPLETE gives VERIFIED_SOLUTION', async () => {
   const two = oneRound(['GPT', 'DeepSeek']);
-  const verify = json({ action: 'VERIFY', reason: 'r', refs: [refOf(1, 1, 'DeepSeek')], claim: 'x=1', procedure: proc });
-  const x = await harness({ models: ['GPT', 'DeepSeek', 'Qwen'], workSchema: two, analyst: [verify, complete(refOf(1))], verifier: [verdict('VERIFIED')] }).init();
+  const verify = json({ action: 'VERIFY', reason: 'r', refs: [refOf(1, 1, 'DeepSeek')], claim: 'x=1', procedure: proc, knowledge: kn('x=1') });
+  const x = await harness({ models: ['GPT', 'DeepSeek', 'Qwen'], workSchema: two, analyst: [verify, { ...JSON.parse(complete(refOf(1))), verifies: 'k1' } && json({ ...JSON.parse(complete(refOf(1))), verifies: 'k1' })], verifier: [verdict('VERIFIED')] }).init();
   const r = await x.runner.start({ task: 'Solve it', maxCalls: 12 });
   assert.equal(r.state.phase, 'COMPLETED'); assert.equal(r.state.finalStatus, 'VERIFIED_SOLUTION');
   const v = x.transport.filter((t) => t.role === 'verifier');

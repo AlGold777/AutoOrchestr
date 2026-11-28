@@ -515,14 +515,14 @@
     // C03's decision hook: only from a settled run or a deliberate pause.
     const FINAL_STATUSES = ['PARTIAL', 'INCONCLUSIVE', 'BUDGET_EXHAUSTED', 'CANCELLED', 'ERROR', 'VERIFIED_SOLUTION'];
     // detail is a bounded record of why the policy chose the action: only these keys, only strings.
-    const DETAIL_KEYS = ['action', 'refs', 'reason', 'question', 'errors', 'schema', 'claim', 'procedure', 'verifier', 'independence', 'verificationRecord', 'expected', 'verifies'];
+    const DETAIL_KEYS = ['action', 'refs', 'reason', 'question', 'errors', 'schema', 'claim', 'procedure', 'verifier', 'independence', 'verificationRecord', 'expected', 'verifies', 'claimRef'];
     const VERDICTS = ['SUPPORTED', 'CONTRADICTED', 'INSUFFICIENT', 'VERIFIED'];
     const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
     const jsonSize = (v) => JSON.stringify(v).length;
     const DETAIL_JSON_MAX = 65536;
     // Verification record of one VERIFY cycle: bounded, only these keys.
     function cleanVerificationRecord(rec) {
-      const keys = ['claim', 'procedure', 'verdict', 'checks', 'independence', 'verifierModel', 'limitations', 'downgrades'];
+      const keys = ['claim', 'procedure', 'verdict', 'checks', 'independence', 'verifierModel', 'limitations', 'downgrades', 'claimRef', 'standard'];
       if (!isObj(rec) || Object.keys(rec).some((key) => !keys.includes(key)) || !VERDICTS.includes(rec.verdict) ||
           typeof rec.claim !== 'string' || !Array.isArray(rec.procedure) || !Array.isArray(rec.checks) ||
           typeof rec.independence !== 'string' || typeof rec.verifierModel !== 'string' || jsonSize(rec) > DETAIL_JSON_MAX) throw fail('INVALID_DECISION_DETAIL');
@@ -534,7 +534,7 @@
       const strs = (list, max) => Array.isArray(list) && list.length <= max && list.every((v) => typeof v === 'string' && v.length <= 400);
       if (!isObj(detail) || Object.keys(detail).some((key) => !DETAIL_KEYS.includes(key))) throw fail('INVALID_DECISION_DETAIL');
       const out = {};
-      for (const key of ['action', 'reason', 'question', 'claim', 'verifier', 'independence', 'expected', 'verifies']) {
+      for (const key of ['action', 'reason', 'question', 'claim', 'verifier', 'independence', 'expected', 'verifies', 'claimRef']) {
         if (detail[key] === undefined) continue;
         if (typeof detail[key] !== 'string' || detail[key].length > 2000) throw fail('INVALID_DECISION_DETAIL');
         out[key] = detail[key];

@@ -14,10 +14,12 @@ const verdict = (v, c = checks(), extra = {}) => json({ verdict: v, checks: [...
 const TWO = ['GPT', 'Claude'];
 
 const work2 = { schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }, { name: 'DeepSeek' }] }] };
-const verifyDS = json({ action: 'VERIFY', reason: 'SECRET-ANALYST-REASON', refs: ['cycle=1 step=1 model=DeepSeek'], claim: 'x=1', procedure: proc });
+const kn = (claim) => ({ bases: [{ id: 'b1', kind: 'EXPERT_CONFIRMATION', ref: { cycleId: 1, step: 1, model: 'GPT' }, provenance: { model: 'GPT', role: 'work' } }], claims: [{ id: 'k1', rev: 1, statement: claim, status: 'SUPPORTED', basisRefs: ['b1'] }] });
+const verifyDS = json({ action: 'VERIFY', reason: 'SECRET-ANALYST-REASON', refs: ['cycle=1 step=1 model=DeepSeek'], claim: 'x=1', procedure: proc, knowledge: kn('x=1') });
+const completeK = json({ action: 'COMPLETE', reason: 'ok', refs: [REF], verifies: 'k1' });
 
 test('verifier is a third model: not in refs, not the analyst, not a work answerer; fresh independence; sees only task, claim and procedure', async () => {
-  const x = await fixture({ models: ['GPT', 'DeepSeek', 'Qwen'], workSchema: work2, analystAnswers: [verifyDS, complete], verifierAnswers: [verdict('VERIFIED')] });
+  const x = await fixture({ models: ['GPT', 'DeepSeek', 'Qwen'], workSchema: work2, analystAnswers: [verifyDS, completeK], verifierAnswers: [verdict('VERIFIED')] });
   const r = await x.runner.start({ task: 'Solve it', maxCalls: 12 });
   assert.equal(r.state.phase, 'COMPLETED'); assert.equal(r.state.finalStatus, 'VERIFIED_SOLUTION');
   const v = x.sent.filter((s) => isVerifier(s.text));
@@ -27,7 +29,7 @@ test('verifier is a third model: not in refs, not the analyst, not a work answer
   const verifyPacket = await x.store.getPacket(r.researchId, 3);
   assert.match(verifyPacket.pipelineRef, /:verify:c2$/);
   const rec = verifyPacket.decision.detail.verificationRecord;
-  assert.deepEqual({ ...rec, checks: undefined }, { claim: 'x=1', procedure: [...proc, { ...COVERS_TASK }], verdict: 'VERIFIED', checks: undefined, independence: 'FRESH_TAB_OTHER_MODEL', verifierModel: 'Qwen', limitations: [] });
+  assert.deepEqual({ ...rec, checks: undefined }, { claim: 'x=1', procedure: [...proc, { ...COVERS_TASK }], verdict: 'VERIFIED', checks: undefined, independence: 'FRESH_TAB_OTHER_MODEL', verifierModel: 'Qwen', limitations: [], standard: 'E1', claimRef: 'k1@1' });
   assert.equal(rec.checks.length, 3);
   const second = x.sent.filter((s) => s.text.includes('Ты управляешь исследованием'))[1];
   assert.match(second.text, /РЕЗУЛЬТАТ ПРОВЕРКИ:\nвердикт: VERIFIED/);
@@ -139,4 +141,46 @@ test('P6: финал с иным содержанием (утверждение 
 test('P6: verifies допустим только при COMPLETE', () => {
   const p = require('../disput/thecycle/circle-policy.js').parseDecision(json({ action: 'CONTINUE', reason: 'x', refs: [], verifies: 'k1' }), { lastCommittedPacket: 1, packets: new Map() });
   assert.equal(p.ok, false);
+});
+
+// P6 (замечания GPT): реестр обязателен; изоляция проверяющего — по фактически отправленному запросу; привязка к ревизии.
+const noKn = json({ action: 'VERIFY', reason: 'r', refs: ['cycle=1 step=1 model=DeepSeek'], claim: 'x=1', procedure: proc });
+const completeK2 = json({ action: 'COMPLETE', reason: 'ok', refs: [REF], verifies: 'k1' });
+const run6 = async (analystAnswers, extra = {}) => {
+  const x = await fixture({ models: ['GPT', 'DeepSeek', 'Qwen'], workSchema: work2, analystAnswers, verifierAnswers: [verdict('VERIFIED')], ...extra });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 12 });
+  const rec = (await x.store.getPacket(r.researchId, 3)).decision.detail.verificationRecord;
+  return { x, r, rec };
+};
+
+test('P6: без реестра знаний VERIFIED_SOLUTION невозможен даже при полной проверке: пауза с причиной', async () => {
+  const { r } = await run6([noKn, completeK2]);
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'VERIFICATION_MISMATCH');
+  assert.match(r.state.lastDecision.detail.errors[0], /реестр знаний пуст/);
+});
+
+test('P6: запрос проверяющему не зафиксирован в журнале отправки — независимость UNPROVEN, финал PARTIAL', async () => {
+  const { r, rec } = await run6([verifyDS, completeK2], { noJournal: true });
+  assert.equal(rec.independence, 'UNPROVEN'); assert.match(rec.downgrades.join(' '), /не зафиксирован/);
+  assert.equal(r.state.finalStatus, 'PARTIAL');
+});
+
+test('P6: в отправленный проверяющему запрос попал чужой ответ — независимость UNPROVEN, финал PARTIAL', async () => {
+  const { r, rec } = await run6([verifyDS, completeK2], { verifierJournalSuffix: ' ' + verifyDS });
+  assert.equal(rec.independence, 'UNPROVEN'); assert.match(rec.downgrades.join(' '), /ответ другой модели/);
+  assert.equal(r.state.finalStatus, 'PARTIAL');
+});
+
+test('P6: проверка записана с ревизией утверждения и стандартом; новая ревизия с тем же текстом допустима', async () => {
+  const rev2 = { bases: [{ id: 'b2', kind: 'REPRODUCIBLE_CHECK', ref: { cycleId: 3, step: 1, model: 'Qwen' }, provenance: { model: 'Qwen', role: 'verify' } }],
+    claims: [{ id: 'k1', rev: 2, statement: 'x=1', status: 'SUPPORTED', basisRefs: ['b1', 'b2'] }] };
+  const { r, rec } = await run6([verifyDS, json({ action: 'COMPLETE', reason: 'ok', refs: [REF], verifies: 'k1', knowledge: rev2 })]);
+  assert.equal(rec.claimRef, 'k1@1'); assert.equal(rec.standard, 'E1');
+  assert.equal(r.state.finalStatus, 'VERIFIED_SOLUTION');
+});
+
+test('P6: утверждение зарегистрировано только при COMPLETE — проверка не привязана к ревизии, VERIFIED_SOLUTION невозможен', async () => {
+  const { r } = await run6([noKn, json({ action: 'COMPLETE', reason: 'ok', refs: [REF], verifies: 'k1', knowledge: kn('x=1') })]);
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'VERIFICATION_MISMATCH');
+  assert.match(r.state.lastDecision.detail.errors.join(' '), /не привязана к утверждению реестра/);
 });

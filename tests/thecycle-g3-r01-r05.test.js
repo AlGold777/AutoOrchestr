@@ -10,8 +10,10 @@ const proc = [{ id: 'p1', check: 'пересчитать' }];
 const p1 = { id: 'p1', result: 'PASS', evidence: 'e1' };
 const cover = (result = 'PASS') => ({ id: 'COVERS_TASK', result, evidence: 'охват' });
 const verdict = (v, checks = [p1, cover()], limitations = []) => json({ verdict: v, checks, limitations });
-const verify = (procedure = proc, claim = 'часть задачи решена') => json({ action: 'VERIFY', reason: 'r', refs: [REF], claim, procedure });
+const kn = (claim) => ({ bases: [{ id: 'b1', kind: 'EXPERT_CONFIRMATION', ref: { cycleId: 1, step: 1, model: 'GPT' }, provenance: { model: 'GPT', role: 'work' } }], claims: [{ id: 'k1', rev: 1, statement: claim, status: 'SUPPORTED', basisRefs: ['b1'] }] });
+const verify = (procedure = proc, claim = 'часть задачи решена') => json({ action: 'VERIFY', reason: 'r', refs: [REF], claim, procedure, knowledge: kn(claim) });
 const complete = json({ action: 'COMPLETE', reason: 'ok', refs: [REF] });
+const completeK = json({ action: 'COMPLETE', reason: 'ok', refs: [REF], verifies: 'k1' });
 const cont = json({ action: 'CONTINUE', reason: 'ещё', refs: [REF] });
 const work = { schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }] }] };
 const THREE = ['GPT', 'Claude', 'Qwen'];
@@ -22,7 +24,7 @@ const run = async (analystAnswers, verifierAnswers, options = {}) => {
 };
 
 test('R01: the code adds COVERS_TASK to the procedure; the verifier sees it with the original task', async () => {
-  const { x, r, rec } = await run([verify(), complete], [verdict('VERIFIED')]);
+  const { x, r, rec } = await run([verify(), completeK], [verdict('VERIFIED')]);
   const sent = x.sent.find((s) => isVerifier(s.text)).text;
   assert.match(sent, /ИСХОДНАЯ ЗАДАЧА:\nSolve the whole task/);
   assert.ok(sent.includes('COVERS_TASK: ' + COVERS_TASK.check));
@@ -43,7 +45,7 @@ test('R01: the analyst cannot replace the text of COVERS_TASK; ten own checks st
   const ten = Array.from({ length: 10 }, (_, i) => ({ id: 'q' + i, check: 'c' }));
   for (const procedure of [own, ten]) {
     const checks = [...procedure.filter((p) => p.id !== 'COVERS_TASK').map((p) => ({ id: p.id, result: 'PASS', evidence: 'e' })), cover()];
-    const { x, r, rec } = await run([verify(procedure), complete], [verdict('VERIFIED', checks)]);
+    const { x, r, rec } = await run([verify(procedure), completeK], [verdict('VERIFIED', checks)]);
     assert.doesNotMatch(x.sent.find((s) => isVerifier(s.text)).text, /достаточно части/);
     assert.equal((await rec()).procedure.length, checks.length);
     assert.equal(r.state.finalStatus, 'VERIFIED_SOLUTION');
