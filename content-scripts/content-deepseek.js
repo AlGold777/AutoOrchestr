@@ -510,42 +510,19 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
   }
 
   // DeepSeek cuts a long answer and shows a «Continue» button under it. The answer is then not final: the button is pressed
-  // (a full pointer sequence, a bare click() is ignored by the page) until it disappears, and the whole answer is read again.
+  // (a humanoid click, as for Send; a bare click() is ignored by the page) until it disappears, and the whole answer is read again.
   const findDeepSeekContinueButton = () => Array.from(document.querySelectorAll('div[role="button"], button'))
     .find((el) => el.offsetParent !== null && /^(continue|продолжить)$/i.test((el.innerText || el.textContent || '').trim())) || null;
-  const pressDeepSeekButton = (el) => {
-    const rect = el.getBoundingClientRect();
-    const init = { bubbles: true, cancelable: true, view: window, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0 };
-    for (const type of ['pointerover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-      el.dispatchEvent(type.startsWith('pointer') ? new PointerEvent(type, { ...init, pointerType: 'mouse', isPrimary: true }) : new MouseEvent(type, init));
-    }
-  };
   async function continueTruncatedDeepSeekAnswer(initialText = '') {
     let text = initialText;
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const button = findDeepSeekContinueButton();
       if (!button) break;
       console.log('[DeepSeek] Answer is cut («Continue» is shown): continuing, attempt', attempt + 1);
-      pressDeepSeekButton(button);
+      await deepseekHumanClick(button);
       await sleep(2500);
-      // The page ignores synthetic events: if «Continue» is still there, ask in the chat — the continuation is a new message.
-      let viaMessage = false;
-      const stillCut = findDeepSeekContinueButton();
-      const busyNow = document.querySelector('.typing-indicator, [data-generating="true"], [aria-busy="true"], .animate-spin');
-      if (stillCut && !busyNow) {
-        const box = document.querySelector('textarea');
-        if (box) {
-          box.focus();
-          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'продолжай');
-          box.dispatchEvent(new Event('input', { bubbles: true }));
-          await sleep(300);
-          const key = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
-          box.dispatchEvent(new KeyboardEvent('keydown', key));
-          box.dispatchEvent(new KeyboardEvent('keyup', key));
-          viaMessage = true;
-          await sleep(2500);
-        }
-      }
+      // The continuation is written into the same answer: no separate chat message is ever sent (it would split the answer).
+      const viaMessage = false;
       let last = '';
       let stable = 0;
       const deadline = Date.now() + 240000;
