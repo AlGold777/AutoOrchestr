@@ -299,6 +299,7 @@ try {
   importScripts(
     '../disput/thecycle/alarm-scheduler.js',
     '../disput/thecycle/directory-handle-manager.js',
+    '../disput/thecycle/knowledge.js',
     '../disput/thecycle/state-store.js',
     '../disput/thecycle/recovery-repositories.js',
     '../disput/thecycle/directory-sink.js',

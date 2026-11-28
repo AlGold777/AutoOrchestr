@@ -99,3 +99,14 @@
 2. Подтвердить на первом шаге уровни стандарта `EXPERT_SUPPORTED` и `FORMALLY_VERIFIED`; формальная — только где есть детерминированный метод.
 3. Подтвердить паузу вместо принудительного завершения при недостатке обоснования (§4).
 4. Целевая граница автономности G4 (A1 или A2) — после спайка, отчёт `TheCycle-P2-verification.md`.
+
+## P3. Как реализован §2 (уточнения при реализации)
+
+Код: `disput/thecycle/knowledge.js` (`fold`, `applyDelta`, `applyTaskVersion`), запись — `state-store.decide`, проверка при восстановлении — `restore-service.validate`. Тесты: `tests/thecycle-knowledge.test.js`, `tests/thecycle-knowledge-store.test.js`.
+
+- Аналитик может приложить к решению ключ `knowledge` (дельта). Она проверяется свёрткой со всеми прежними пакетами и записывается в `packet.knowledge` пакета, который оценивается, в той же транзакции, что и решение. Недопустимая дельта отклоняется целиком: решение проходит, в пакет пишется `knowledgeRejected {code, message}`; пауза не наступает.
+- Всякая запись имеет `rev` (с 1). Основание (`Basis`) имеет собственный `id`; утверждения и обязательства ссылаются на него по `id` (`basisRefs`, `closeBasisRefs`).
+- Допустимость переходов: смена статуса утверждения требует новое основание этого цикла; `SUPPORTED`/`REFUTED` — только основание вида `EXPERT_CONFIRMATION`, `REPRODUCIBLE_CHECK` или `OWNER_EVIDENCE` и не частичное; ответ модели даёт максимум `DISPUTED`. Прежние основания не удаляются. Обязательство из постановки (`requirementRef`) модель не снимает (`KNOWLEDGE_OWNER_ONLY`). Новое обязательство возникает `OPEN`.
+- Версию задачи вносит владелец в `research.taskVersions` (`[{taskVersion, atCycle}]`): затронутое помечается `needsReassessment`, не стирается. Интерфейса владельца для этого пока нет — он нужен к P6.
+- Коды отказа: `KNOWLEDGE_SHAPE_INVALID`, `KNOWLEDGE_FORMAT_UNSUPPORTED`, `KNOWLEDGE_NO_BASIS`, `KNOWLEDGE_WEAK_BASIS`, `KNOWLEDGE_BAD_REF`, `KNOWLEDGE_REV_INVALID`, `KNOWLEDGE_OWNER_ONLY`. При восстановлении — `RESTORE_KNOWLEDGE_INVALID`, `RESTORE_KNOWLEDGE_UNSUPPORTED`.
+- Не сделано в P3 (по плану): показ накопленного состояния аналитику и проекция контекста (P4), стандарт достаточности и связь с итоговым статусом (P6). Промпт аналитика пока не просит `knowledge`, поэтому дельты появятся после P4.

@@ -48,6 +48,16 @@
       if (r.budget && Number.isFinite(r.budget.usedCalls) && Number.isFinite(r.budget.maxCalls) && r.budget.usedCalls > r.budget.maxCalls) throw new Error('RESTORE_REFERENCE_INVALID');
     }
     if (snapshot.stores.packets.some(p => !Number.isSafeInteger(p.cycleId) || p.cycleId < 1)) throw new Error('RESTORE_REFERENCE_INVALID');
+    // P3: записи знаний в пакетах должны сворачиваться; формат новее известного не активируется.
+    const K = root.TheCycleKnowledge || (typeof require === 'function' ? require('./knowledge.js') : null);
+    if (K) for (const r of snapshot.stores.research) {
+      try { K.fold(snapshot.stores.packets.filter(p => p.researchId === r.researchId), r.taskVersions); }
+      catch (error) {
+        if (error?.code === 'KNOWLEDGE_FORMAT_UNSUPPORTED') throw new Error('RESTORE_KNOWLEDGE_UNSUPPORTED');
+        if (/^KNOWLEDGE_/.test(error?.code || '')) throw new Error('RESTORE_KNOWLEDGE_INVALID');
+        throw error;
+      }
+    }
     if (snapshot.stores.control.some(r => r.key !== 'transport'))
       throw new Error('RESTORE_CONTROL_INVALID');
     return snapshot;

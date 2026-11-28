@@ -9,6 +9,8 @@
   const LOCK = 'transport';
   const MAX_BUDGET = 10000;
   const copy = (value) => JSON.parse(JSON.stringify(value));
+  const isObj = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
+  const knowledgeApi = () => root.TheCycleKnowledge || (typeof require === 'function' ? require('./knowledge.js') : null);
   const str = (value) => typeof value === 'string' && value.trim().length > 0;
   const pos = (value) => Number.isSafeInteger(value) && value > 0;
   const nat = (value) => Number.isSafeInteger(value) && value >= 0;
@@ -571,6 +573,9 @@
 
     async function decide(token, { expectedVersion, action, pipelineRef, reason, detail, finalStatus, verificationRecord } = {}) {
       if (!['CONTINUE', 'PAUSE', 'COMPLETE', 'RESUME'].includes(action)) throw fail('INVALID_DECISION');
+      // P3: дельта знаний идёт отдельно от детали решения и записывается в пакет вместе с решением.
+      let knowledgeDelta;
+      if (isObj(detail) && detail.knowledge !== undefined) { const { knowledge, ...rest } = detail; knowledgeDelta = knowledge; detail = rest; }
       const cleanedDetail = cleanDetail(detail);
       if (finalStatus !== undefined && (!FINAL_STATUSES.includes(finalStatus) || action !== 'COMPLETE' ||
           (finalStatus === 'VERIFIED_SOLUTION' && verificationRecord !== true))) throw fail('INVALID_FINAL_STATUS');
@@ -604,6 +609,19 @@
           const packet = await request(s.packets.get([state.researchId, state.lastCommittedPacket]));
           if (!packet || packet.decision) throw fail('DECISION_PACKET_INVALID');
           packet.decision = { action, reason: reason || null, stateVersion: state.stateVersion };
+          if (knowledgeDelta !== undefined) {
+            // Недопустимая дельта отклоняется целиком и не мешает решению: данные целы, причина в пакете.
+            const K = knowledgeApi();
+            try {
+              if (!K) throw fail('KNOWLEDGE_UNAVAILABLE');
+              const all = (await request(s.packets.getAll())).filter((p) => p.researchId === state.researchId && p.cycleId !== packet.cycleId);
+              K.fold([...all, { cycleId: packet.cycleId, knowledge: { knowledgeFormat: K.FORMAT, ...knowledgeDelta } }], state.taskVersions);
+              packet.knowledge = { knowledgeFormat: K.FORMAT, ...copy(knowledgeDelta) };
+            } catch (error) {
+              if (!str(error?.code) || !/^KNOWLEDGE_/.test(error.code)) throw error;
+              packet.knowledgeRejected = { code: error.code, message: String(error.message).slice(0, 300) };
+            }
+          }
           if (cleanedDetail !== undefined) packet.decision.detail = copy(cleanedDetail);
           await request(s.packets.put(packet));
         }
