@@ -522,7 +522,6 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       await deepseekHumanClick(button);
       await sleep(2500);
       // The continuation is written into the same answer: no separate chat message is ever sent (it would split the answer).
-      const viaMessage = false;
       let last = '';
       let stable = 0;
       const deadline = Date.now() + 240000;
@@ -534,10 +533,13 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         last = now;
         if (stable >= 3) break;
       }
-      if (viaMessage) {
-        if (last && last !== text && !last.startsWith(text)) text = `${text}\n${last}`;
-        else if (last && last.length >= text.length) text = last;
-      } else if (last && last.length >= text.length) text = last;
+      if (last && last.length >= text.length) text = last;
+    }
+    if (findDeepSeekContinueButton()) {
+      throw Object.assign(new Error('DeepSeek answer still requires Continue'), {
+        type: 'answer_truncated',
+        partialAnswer: text
+      });
     }
     return text;
   }
@@ -589,6 +591,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         error: err?.message || String(err),
         pipeline: 'UnifiedAnswerPipeline'
       });
+      if (err?.type === 'answer_truncated') throw err;
       console.warn('[DeepSeek] UnifiedAnswerPipeline failed, reverting to legacy reply watcher', err);
     }
     return null;
@@ -1297,6 +1300,14 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     throw new Error(`Element not found: ${selectors.join(" | ")}`);
   }
 
+  function deepSeekResponseError(error) {
+    return {
+      type: error?.type || 'generic_error',
+      message: error?.message || String(error) || 'Unknown error',
+      ...(error?.partialAnswer ? { partialAnswer: error.partialAnswer } : {})
+    };
+  }
+
   function sendResult(resp, ok = true, responseType = 'LLM_RESPONSE', meta = null) {
     const { text, html, meta: responseMeta } = normalizeResponsePayload(resp, lastResponseHtml);
     // Field evidence 2026-08-01: an answer was rejected with
@@ -1323,7 +1334,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       llmName: MODEL,
       answer: ok ? text : '',
       answerHtml: ok ? html : '',
-      error: ok ? null : { type: 'generic_error', message: text },
+      error: ok ? null : deepSeekResponseError(resp),
       meta: responseMeta
         ? Object.assign({}, identity || {}, { responseMeta })
         : identity
@@ -1603,7 +1614,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
               return pipelineAnswer;
             }
 
-            const response = await waitForDeepSeekReply(prompt, 150000);
+            let response = await waitForDeepSeekReply(prompt, 150000);
+            if (findDeepSeekContinueButton()) {
+              response = await continueTruncatedDeepSeekAnswer(response);
+              lastResponseHtml = '';
+            }
 
             let cleanedResponse = contentCleaner.clean(response, { maxLength: 200000 });
             if (!String(cleanedResponse || '').trim()) {
@@ -1649,7 +1664,7 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         metricsCollector.recordError(error, 'injectAndGetResponse', opId);
         metricsCollector.endOperation(opId, false, { error: error?.message });
         if (autoNotify) {
-          sendResult(error?.message || String(error), false, responseType, dispatchMeta);
+          sendResult(error, false, responseType, dispatchMeta);
         }
         activity.error(error, true);
         throw error;
@@ -1764,12 +1779,11 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
             if (err?.code === 'background-force-stop') {
               return;
             }
-            const errorMessage = err?.message || String(err) || 'Unknown error';
             chrome.runtime.sendMessage({
               type: responseType,
               llmName: MODEL,
               answer: '',
-              error: { type: err?.type || 'generic_error', message: errorMessage },
+              error: deepSeekResponseError(err),
               meta: msg.meta || null
             });
           })
