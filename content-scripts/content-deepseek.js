@@ -528,6 +528,24 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
       console.log('[DeepSeek] Answer is cut («Continue» is shown): continuing, attempt', attempt + 1);
       pressDeepSeekButton(button);
       await sleep(2500);
+      // The page ignores synthetic events: if «Continue» is still there, ask in the chat — the continuation is a new message.
+      let viaMessage = false;
+      const stillCut = findDeepSeekContinueButton();
+      const busyNow = document.querySelector('.typing-indicator, [data-generating="true"], [aria-busy="true"], .animate-spin');
+      if (stillCut && !busyNow) {
+        const box = document.querySelector('textarea');
+        if (box) {
+          box.focus();
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'продолжай');
+          box.dispatchEvent(new Event('input', { bubbles: true }));
+          await sleep(300);
+          const key = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+          box.dispatchEvent(new KeyboardEvent('keydown', key));
+          box.dispatchEvent(new KeyboardEvent('keyup', key));
+          viaMessage = true;
+          await sleep(2500);
+        }
+      }
       let last = '';
       let stable = 0;
       const deadline = Date.now() + 240000;
@@ -539,7 +557,10 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         last = now;
         if (stable >= 3) break;
       }
-      if (last && last.length >= text.length) text = last;
+      if (viaMessage) {
+        if (last && last !== text && !last.startsWith(text)) text = `${text}\n${last}`;
+        else if (last && last.length >= text.length) text = last;
+      } else if (last && last.length >= text.length) text = last;
     }
     return text;
   }
