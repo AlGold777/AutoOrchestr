@@ -153,6 +153,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
       catch(error){await emit('BACKUP_GATE_ERROR',{reason:method,error,durationMs:Date.now()-started});throw error;}
      };
     }
+    const RESERVE_CALLS=2; // P5: вызовы, которые остаются на проверку и завершение
     const roleOfRef=r=>policyApi?.roleOf?policyApi.roleOf(registry,r):null;
     // A cycle without a complete result (interrupted, abandoned, no answer) stays in history but is not evidence.
     const readable=async(researchId,n)=>{try{await contextApi.readCycle(store,researchId,n);return true;}
@@ -181,7 +182,7 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
     const controller=controllerApi.createController({
      store,makeAdapter,loadPipeline,
      policy:policyApi?policyApi.createPolicy({registry,models,validateSchema:probe.validate,estimateCalls:probe.estimateCalls,
-       validateSummarySchema:contextMode==='latest-summary'?contextApi.validateSummarySchema:null,maxPromptChars}):undefined,
+       validateSummarySchema:contextMode==='latest-summary'?contextApi.validateSummarySchema:null,maxPromptChars,reserveCalls:RESERVE_CALLS}):undefined,
       resolveTask:async({state,store,pipeline})=>{try{let context;
        if(pipeline?.role==='verify'){
         // The verifier sees only the task, the claim and the procedure: no research answers, no analyst text.
@@ -214,7 +215,8 @@ function createCircleRunner({bridge,storage=root.chrome?.storage?.local,
          if(p?.status!=='RECORDED_RESULT'||roleOfRef(p.pipelineRef)!=='work')continue;
          try{const c=await contextApi.readCycle(store,state.researchId,n);for(const a of c.answers)allowedRefs.push('cycle='+n+' step='+a.step+' model='+a.model);}catch(_){}
         }
-        const parts={task:state.task,budget:policyApi.budgetText(state.budget),schema:current,actions:policyApi.ACTIONS,verification,refs:allowedRefs.slice(-40),models,remaining:state.budget.maxCalls-state.budget.usedCalls,latestSummary:contextMode==='latest-summary'};
+        const dyn=await policyApi.dynamics({store,state,role:ref=>roleOfRef(ref),reserveCalls:RESERVE_CALLS});
+        const parts={dynamics:dyn?dyn.text():'',task:state.task,budget:policyApi.budgetText(state.budget),schema:current,actions:policyApi.ACTIONS,verification,refs:allowedRefs.slice(-40),models,remaining:state.budget.maxCalls-state.budget.usedCalls,latestSummary:contextMode==='latest-summary'};
         let summary=policyApi.summaryFromAnswers(answers,packet.cycleId,contextMode,report.steps.length);
         // P4: the accumulated knowledge is part of the prompt. Neither the template nor the knowledge is cut silently:
         // the knowledge gets at most 40% of the room (the manifest says what is omitted), the summary the rest and is marked when shortened.

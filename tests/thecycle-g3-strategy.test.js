@@ -5,7 +5,7 @@ const { fixture, json, isAnalyst, createStateStore } = require('./thecycle-g3-fi
 const REF = 'cycle=1 step=1 model=GPT';
 const round = (ref, extra = {}, model = 'GPT') => ({ ref, kind: 'round', models: [{ name: model }], ...extra });
 const change = (schema) => json({ action: 'CHANGE_STRATEGY', reason: 'другая стратегия', refs: [REF], schema });
-const newSchema = () => ({ schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [round('r1', { input: 'none', task: 'NEWSTRATEGY' })] });
+const newSchema = (v = 1) => ({ schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [round('r1', { input: 'none', task: 'NEWSTRATEGY' + (v > 1 ? ' v' + v : '') })] });
 const done = json({ action: 'COMPLETE', reason: 'ok', refs: [REF] });
 const rejected = (r, pattern) => {
   assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'STRATEGY_REJECTED');
@@ -61,12 +61,12 @@ test('rejected: invalid schema, foreign model, stopMarks, too expensive, too big
 });
 
 test('limit: the sixth strategy change is rejected', async () => {
-  const answers = Array.from({ length: 5 }, () => change(newSchema()));
-  answers.push(change(newSchema()));
+  const answers = Array.from({ length: 5 }, (_, i) => change(newSchema(i + 1)));
+  answers.push(change(newSchema(6)));
   const x = await fixture({ analystAnswers: answers });
   const r = await x.runner.start({ task: 'Solve it', maxCalls: 40 });
   rejected(r, /лимит/);
-  assert.equal(x.begins.filter((b) => b.ref === 'NEWSTRATEGY').length, 5);
+  assert.equal(x.begins.filter((b) => String(b.ref).startsWith('NEWSTRATEGY')).length, 5);
 });
 
 test('latest-summary: a new schema without a summary step is rejected', async () => {

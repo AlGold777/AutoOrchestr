@@ -215,3 +215,47 @@ test('P4: Resume пересчитывает дельту без потери: п
   const K = require('../disput/thecycle/knowledge.js');
   assert.equal(K.fold([p]).claims.k1.rev, 1);
 });
+
+// P5: стагнация, смена исчерпанной стратегии, резерв бюджета.
+const revBump = (rev) => ({ claims: [{ id: 'k1', rev, statement: 'граница X равна 5', status: 'CANDIDATE', basisRefs: ['b1'] }] });
+const stratSchema = (task) => ({ schemaVersion: 1, origin: 'user', run: { policy: 'manual' }, steps: [{ ref: 'r1', kind: 'round', models: [{ name: 'GPT' }], input: 'none', task }] });
+const cont = (knowledge) => json({ action: 'CONTINUE', reason: 'ещё раз', refs: [REF], ...(knowledge ? { knowledge } : {}) });
+
+test('P5: формально меняющийся реестр не позволяет продолжать бесконечно: остановка с лучшим кандидатом', async () => {
+  const x = await fixture({ analystAnswers: [cont(delta1), cont(revBump(2)), cont(revBump(3)), cont(revBump(4)), cont(revBump(5))] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 30 });
+  assert.equal(r.state.phase, 'PAUSED'); assert.equal(r.state.lastDecision.reason, 'STAGNATION');
+  assert.match(r.state.lastDecision.detail.errors[0], /лучшие кандидаты: k1 \[CANDIDATE\]/);
+  assert.match(r.state.lastDecision.detail.errors[1], /открытые обязательства: o1/);
+  // счётчик виден аналитику до остановки
+  assert.match(x.prompts[5], /подряд продолжений той же стратегии без изменений знаний: 1 \(предел 3/);
+  assert.match(x.prompts[7], /без изменений знаний: 2 \(предел 3/);
+  assert.equal(x.prompts.length, 8); // пятый цикл аналитика не запускался
+});
+
+test('P5: при стагнации допустима смена стратегии, ожидание записывается и показывается следующему аналитику', async () => {
+  const x = await fixture({ analystAnswers: [cont(delta1), cont(revBump(2)), cont(revBump(3)),
+    json({ action: 'CHANGE_STRATEGY', reason: 'метод исчерпан', refs: [REF], schema: stratSchema('иной метод'), expected: 'найти контрпример к k1', knowledge: revBump(4) }),
+    json({ action: 'COMPLETE', reason: 'стоп', refs: [REF] })] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 40 });
+  assert.notEqual(r.state.lastDecision.reason, 'STAGNATION');
+  const p = await x.store.getPacket(r.researchId, 8);
+  assert.equal(p.decision.detail.expected, 'найти контрпример к k1');
+  const last = x.prompts[x.prompts.length - 1];
+  assert.match(last, /смен стратегии: 1 из 5/); assert.match(last, /ожидалось «найти контрпример к k1»; знания не менялись/);
+});
+
+test('P5: исчерпанная схема без новых знаний не применяется повторно', async () => {
+  const same = () => json({ action: 'CHANGE_STRATEGY', reason: 'снова', refs: [REF], schema: stratSchema('тот же метод') });
+  const x = await fixture({ analystAnswers: [same(), same()] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 30 });
+  assert.equal(r.state.lastDecision.reason, 'STRATEGY_REJECTED');
+  assert.match(r.state.lastDecision.detail.errors[0], /STRATEGY_REPEATED/);
+});
+
+test('P5: новая схема не съедает резерв на проверку и завершение', async () => {
+  const x = await fixture({ analystAnswers: [json({ action: 'CHANGE_STRATEGY', reason: 'смена', refs: [REF], schema: stratSchema('иной метод') })] });
+  const r = await x.runner.start({ task: 'Solve it', maxCalls: 5 });
+  assert.equal(r.state.lastDecision.reason, 'STRATEGY_REJECTED');
+  assert.match(r.state.lastDecision.detail.errors[0], /резерв/);
+});
