@@ -509,6 +509,41 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
     return { text: '', html: '', node: null };
   }
 
+  // DeepSeek cuts a long answer and shows a «Continue» button under it. The answer is then not final: the button is pressed
+  // (a full pointer sequence, a bare click() is ignored by the page) until it disappears, and the whole answer is read again.
+  const findDeepSeekContinueButton = () => Array.from(document.querySelectorAll('div[role="button"], button'))
+    .find((el) => el.offsetParent !== null && /^(continue|продолжить)$/i.test((el.innerText || el.textContent || '').trim())) || null;
+  const pressDeepSeekButton = (el) => {
+    const rect = el.getBoundingClientRect();
+    const init = { bubbles: true, cancelable: true, view: window, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0 };
+    for (const type of ['pointerover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      el.dispatchEvent(type.startsWith('pointer') ? new PointerEvent(type, { ...init, pointerType: 'mouse', isPrimary: true }) : new MouseEvent(type, init));
+    }
+  };
+  async function continueTruncatedDeepSeekAnswer(initialText = '') {
+    let text = initialText;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const button = findDeepSeekContinueButton();
+      if (!button) break;
+      console.log('[DeepSeek] Answer is cut («Continue» is shown): continuing, attempt', attempt + 1);
+      pressDeepSeekButton(button);
+      await sleep(2500);
+      let last = '';
+      let stable = 0;
+      const deadline = Date.now() + 240000;
+      while (Date.now() < deadline) {
+        await sleep(1000);
+        const generating = document.querySelector('.typing-indicator, [data-generating="true"], [aria-busy="true"], .animate-spin');
+        const now = grabLatestAssistantText().text || '';
+        stable = !generating && now === last ? stable + 1 : 0;
+        last = now;
+        if (stable >= 3) break;
+      }
+      if (last && last.length >= text.length) text = last;
+    }
+    return text;
+  }
+
   async function tryDeepseekPipeline(promptText = '', lifecycle = {}, baselineText = '') {
     const { heartbeat, stop } = lifecycle || {};
     if (!window.UnifiedAnswerPipeline) return null;
@@ -523,6 +558,10 @@ const buildLifecycleContext = (prompt = '', extra = {}) => ({
         baselineText: baselineText || ''
       }, pipelineOverrides));
       const result = await pipeline.execute();
+      if (result?.success && result.answer && findDeepSeekContinueButton()) {
+        const full = await continueTruncatedDeepSeekAnswer(result.answer);
+        if (full && full.length > result.answer.length) { result.answer = full; result.answerHtml = ''; }
+      }
       if (result?.success && result.answer) {
         heartbeat?.({
           stage: 'success',
